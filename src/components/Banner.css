@@ -1,0 +1,43 @@
+.banner-canvas {
+  width: 100%;
+  position: relative;
+  border-bottom: 2px solid var(--clr-border);
+  transition: height 0.3s ease;
+}
+
+.canvas-container {
+  position: relative;
+  width: 100%;
+  max-width: 1200px;
+  height: 100%;
+  margin: 0 auto;
+}
+
+.canvas-element {
+  position: absolute;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none; /* Let clicks pass through if needed, but keeps layout stable */
+  transition: left 0.1s ease, top 0.1s ease, width 0.1s ease, height 0.1s ease;
+}
+
+.canvas-img {
+  display: block;
+}
+
+@media (max-width: 768px) {
+  .banner-canvas {
+    height: auto !important;
+    min-height: 200px;
+  }
+  
+  .canvas-element {
+    position: relative !important;
+    left: 0 !important;
+    top: 0 !important;
+    margin: 1rem auto;
+    width: auto !important;
+    max-width: 90%;
+  }
+}

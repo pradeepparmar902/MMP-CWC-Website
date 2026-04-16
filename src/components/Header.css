@@ -1,0 +1,88 @@
+.header {
+  background-color: var(--clr-white);
+  box-shadow: 0 2px 4px var(--clr-shadow);
+  position: sticky;
+  top: 0;
+  z-index: 101; /* Above banner elements */
+  padding: 0.75rem 0;
+  transition: all 0.3s ease;
+}
+
+.header-hidden {
+  height: 0;
+  padding: 0;
+  box-shadow: none;
+  background-color: transparent;
+  pointer-events: none;
+}
+
+.header-container {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.hamburger-btn {
+  font-size: 1.5rem;
+  color: var(--clr-primary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.25rem;
+  transition: transform 0.2s ease;
+}
+
+.hamburger-btn:hover {
+  transform: scale(1.1);
+}
+
+.logo-title {
+  font-size: 1.125rem;
+  font-weight: 700;
+  color: var(--clr-primary);
+  text-align: center;
+  flex: 1;
+  margin: 0 1rem;
+}
+
+.profile-btn {
+  color: var(--clr-primary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.25rem;
+  transition: color 0.2s ease;
+}
+
+.profile-btn:hover {
+  color: var(--clr-secondary);
+}
+
+.hamburger-btn.floating,
+.profile-btn.floating {
+  position: fixed;
+  top: 10px;
+  z-index: 102;
+  pointer-events: auto;
+  background: rgba(255, 255, 255, 0.8);
+  backdrop-filter: blur(4px);
+  border-radius: 50%;
+  width: 40px;
+  height: 40px;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+  border: 1px solid var(--clr-border);
+}
+
+.hamburger-btn.floating {
+  left: 10px;
+}
+
+.profile-btn.floating {
+  right: 10px;
+}
+
+@media (min-width: 768px) {
+  .logo-title {
+    font-size: 1.5rem;
+  }
+}
