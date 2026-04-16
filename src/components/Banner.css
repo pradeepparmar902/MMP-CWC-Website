@@ -2,7 +2,18 @@
   width: 100%;
   position: relative;
   border-bottom: 2px solid var(--clr-border);
-  transition: height 0.3s ease;
+  transition: all 0.3s ease;
+  background-color: var(--clr-white); /* Ensure it's opaque */
+}
+
+.banner-sticky {
+  position: sticky;
+  top: 0;
+  z-index: 100;
+  box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+  border-bottom: 2px solid var(--clr-primary);
+  max-height: 40vh; /* Don't take more than 40% of screen height when sticky */
+  overflow-y: auto; /* Allow scrolling within banner if it's huge */
 }
 
 .canvas-container {

@@ -1,9 +1,21 @@
 import { useState, useEffect } from 'react';
+import { doc, getDoc, setDoc } from 'firebase/firestore';
+import { db } from './firebase';
 import Header from './components/Header';
 import Banner from './components/Banner';
 import Navigation from './components/Navigation';
 import ContentArea from './components/ContentArea';
 import AdminPanel from './components/AdminPanel';
+
+const DEFAULT_NAV_ITEMS = [
+  { id: 'home', label: 'Home', color: '#3B82F6', visible: true, protected: true },
+  { id: 'education', label: 'Education', color: '#10B981', visible: true },
+  { id: 'matrimony', label: 'Matrimony', color: '#EC4899', visible: true },
+  { id: 'meghpush', label: 'MeghPush (News)', color: '#F59E0B', visible: true },
+  { id: 'election', label: 'Election Card', color: '#6366F1', visible: true },
+  { id: 'samaj', label: 'Samaj Jog Sandesh', color: '#8B5CF6', visible: true },
+  { id: 'admin', label: 'Admin', color: '#374151', visible: true, protected: true }
+];
 
 const DEFAULT_BANNER_CONFIG = {
   elements: [
@@ -12,47 +24,96 @@ const DEFAULT_BANNER_CONFIG = {
     { id: '3', name: 'Right Portrait', url: '', width: 100, height: 100, x: 85, y: 10, scale: 1 }
   ],
   bannerHeight: 180,
-  bgColor: '#ffffff',
-  showHeaderTitle: true
+  bannerBgColor: '#ffffff',
+  bodyBgColor: '#f9fafb',
+  showHeaderTitle: true,
+  navItems: DEFAULT_NAV_ITEMS
 };
 
 function App() {
   const [activeSection, setActiveSection] = useState('home');
+  const [isCloudLoaded, setIsCloudLoaded] = useState(false);
   const [bannerConfig, setBannerConfig] = useState(() => {
     const saved = localStorage.getItem('mmp_banner_config');
     if (!saved) return DEFAULT_BANNER_CONFIG;
     
     const parsed = JSON.parse(saved);
-    // Migration: If it's the old object format, convert to array format
-    if (parsed.left || parsed.center || parsed.right) {
-      return {
-        elements: [
-          { id: '1', name: 'Left Logo', ...parsed.left, x: 5, y: 10 },
-          { id: '2', name: 'Center Title', ...parsed.center, x: 30, y: 5 },
-          { id: '3', name: 'Right Portrait', ...parsed.right, x: 85, y: 10 }
-        ],
-        bannerHeight: parsed.bannerHeight,
-        bgColor: parsed.bgColor,
-        showHeaderTitle: true
-      };
-    }
-    // Ensure showHeaderTitle exists in newer formats too
-    if (parsed.showHeaderTitle === undefined) {
-      return { ...parsed, showHeaderTitle: true };
-    }
-    return parsed;
+  
+    // Migration and initialization for new properties
+    const migratedItems = (parsed.navItems || DEFAULT_NAV_ITEMS).map(item => {
+      if (item.id === 'home' || item.id === 'admin') {
+        return { ...item, protected: true };
+      }
+      return item;
+    });
+
+    return {
+      ...parsed,
+      showHeaderTitle: parsed.showHeaderTitle ?? true,
+      bannerBgColor: parsed.bannerBgColor || parsed.bgColor || '#ffffff',
+      bodyBgColor: parsed.bodyBgColor || '#f9fafb',
+      navItems: migratedItems
+    };
   });
 
+  // 1. Initial Cloud Load
   useEffect(() => {
+    const fetchConfig = async () => {
+      try {
+        const docRef = doc(db, "site_settings", "banner_config");
+        const docSnap = await getDoc(docRef);
+        
+        if (docSnap.exists()) {
+          console.log("Cloud config loaded:", docSnap.data());
+          setBannerConfig(docSnap.data());
+        } else {
+          console.log("No cloud config found, using local/default.");
+        }
+      } catch (error) {
+        console.error("Error fetching cloud config:", error);
+      } finally {
+        setIsCloudLoaded(true);
+      }
+    };
+    fetchConfig();
+  }, []);
+
+  // 2. Debounced Cloud Save & Local Persistence
+  useEffect(() => {
+    // Save to localStorage immediately for UI performance
     localStorage.setItem('mmp_banner_config', JSON.stringify(bannerConfig));
-  }, [bannerConfig]);
+    
+    // Apply body background
+    if (bannerConfig.bodyBgColor) {
+      document.body.style.backgroundColor = bannerConfig.bodyBgColor;
+    }
+
+    // Only save to cloud if we've successfully checked the cloud state first
+    if (!isCloudLoaded) return;
+
+    const timeoutId = setTimeout(async () => {
+      try {
+        const docRef = doc(db, "site_settings", "banner_config");
+        await setDoc(docRef, bannerConfig);
+        console.log("Cloud config synced!");
+      } catch (error) {
+        console.error("Error saving to cloud:", error);
+      }
+    }, 2000); // 2-second debounce
+
+    return () => clearTimeout(timeoutId);
+  }, [bannerConfig, isCloudLoaded]);
 
   return (
-    <div className="app-container">
+    <div className="app-container" style={{ backgroundColor: bannerConfig.bodyBgColor || '#f9fafb', minHeight: '100vh' }}>
       <Header config={bannerConfig} />
       <main>
-        <Banner config={bannerConfig} />
-        <Navigation activeSection={activeSection} setActiveSection={setActiveSection} />
+        <Banner config={bannerConfig} isSticky={activeSection === 'admin'} />
+        <Navigation 
+          activeSection={activeSection} 
+          setActiveSection={setActiveSection} 
+          navItems={bannerConfig.navItems || []} 
+        />
         {activeSection === 'admin' ? (
           <AdminPanel config={bannerConfig} setConfig={setBannerConfig} />
         ) : (

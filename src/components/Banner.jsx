@@ -1,15 +1,15 @@
 import './Banner.css';
 
-export default function Banner({ config }) {
+export default function Banner({ config, isSticky }) {
   const hasImages = config.elements?.some(el => el.url);
   const bannerHeight = hasImages ? `${config.bannerHeight}px` : '40px';
 
   return (
     <section 
-      className="banner-canvas" 
+      className={`banner-canvas ${isSticky ? 'banner-sticky' : ''}`} 
       style={{ 
         height: bannerHeight, 
-        backgroundColor: config.bgColor 
+        backgroundColor: config.bannerBgColor 
       }}
     >
       <div className="canvas-container">

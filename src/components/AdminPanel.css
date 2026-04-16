@@ -172,6 +172,111 @@
   border-color: var(--clr-primary);
 }
 
+.nav-items-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  margin-top: 1rem;
+}
+
+.nav-item-admin {
+  padding: 0.75rem;
+  background: var(--clr-bg-alt);
+  border: 1px solid var(--clr-border);
+  border-radius: 8px;
+}
+
+.nav-item-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.nav-item-main {
+  display: flex;
+  gap: 0.5rem;
+  flex: 1;
+}
+
+.nav-label-input {
+  flex: 1;
+  padding: 0.4rem 0.8rem;
+  border: 1px solid var(--clr-border);
+  border-radius: 4px;
+  font-size: 0.875rem;
+}
+
+.nav-color-picker {
+  width: 40px;
+  height: 32px;
+  padding: 0;
+  border: 1px solid var(--clr-border);
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.nav-item-actions {
+  display: flex;
+  gap: 0.4rem;
+  margin-left: 1rem;
+}
+
+.move-btn, .visibility-btn {
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: white;
+  border: 1px solid var(--clr-border);
+  border-radius: 4px;
+  font-size: 0.875rem;
+  transition: all 0.2s;
+}
+
+.move-btn:disabled {
+  opacity: 0.3;
+  cursor: not-allowed;
+}
+
+.move-btn:not(:disabled):hover {
+  background: var(--clr-primary);
+  color: white;
+}
+
+.visibility-btn.off {
+  opacity: 0.5;
+  background: #f3f4f6;
+}
+
+.visibility-btn:hover {
+  border-color: var(--clr-primary);
+}
+
+.section-header-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 0.5rem;
+}
+
+.add-element-btn.small {
+  padding: 0.4rem 0.8rem;
+  font-size: 0.75rem;
+}
+
+.delete-btn.small {
+  padding: 0.4rem;
+  font-size: 0.75rem;
+  background: #fee2e2;
+  border-radius: 4px;
+}
+
+.delete-btn.small:hover {
+  background: #ef4444;
+  color: white;
+}
+
 .checkbox-label input {
   width: 18px;
   height: 18px;

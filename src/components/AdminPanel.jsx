@@ -11,11 +11,39 @@ export default function AdminPanel({ config, setConfig }) {
     }));
   };
 
-  const handleGlobalChange = (field, value) => {
-    setConfig(prev => ({
-      ...prev,
-      [field]: value
-    }));
+  const handleGlobalChange = (key, value) => {
+    setConfig(prev => ({ ...prev, [key]: value }));
+  };
+
+  const handleNavItemChange = (id, key, value) => {
+    const newItems = config.navItems.map(item => 
+      item.id === id ? { ...item, [key]: value } : item
+    );
+    handleGlobalChange('navItems', newItems);
+  };
+
+  const moveNavItem = (index, direction) => {
+    const newItems = [...config.navItems];
+    const newIndex = index + direction;
+    if (newIndex >= 0 && newIndex < newItems.length) {
+      [newItems[index], newItems[newIndex]] = [newItems[newIndex], newItems[index]];
+      handleGlobalChange('navItems', newItems);
+    }
+  };
+
+  const addNavItem = () => {
+    const newId = `nav_${Date.now()}`;
+    const newItem = { id: newId, label: 'New Page', color: '#6366F1', visible: true };
+    handleGlobalChange('navItems', [...(config.navItems || []), newItem]);
+  };
+
+  const removeNavItem = (id) => {
+    const item = config.navItems.find(i => i.id === id);
+    if (item?.protected) {
+      alert("This item is protected and cannot be deleted.");
+      return;
+    }
+    handleGlobalChange('navItems', config.navItems.filter(item => item.id !== id));
   };
 
   const handleImageUpload = (id, e) => {
@@ -208,6 +236,70 @@ export default function AdminPanel({ config, setConfig }) {
           </div>
         ))}
 
+        <div className="slot-editor card menu-management">
+          <div className="section-header-row">
+            <h3 className="slot-name">Menu Management</h3>
+            <button className="add-element-btn small" onClick={addNavItem}>+ Add Menu</button>
+          </div>
+          
+          <div className="nav-items-list">
+            {(config.navItems || []).map((item, index) => (
+              <div key={item.id} className="nav-item-admin">
+                <div className="nav-item-header">
+                  <div className="nav-item-main">
+                    <input 
+                      type="text" 
+                      className="nav-label-input" 
+                      value={item.label} 
+                      onChange={(e) => handleNavItemChange(item.id, 'label', e.target.value)}
+                    />
+                    <input 
+                      type="color" 
+                      className="nav-color-picker" 
+                      value={item.color} 
+                      onChange={(e) => handleNavItemChange(item.id, 'color', e.target.value)}
+                    />
+                  </div>
+                  <div className="nav-item-actions">
+                    <button 
+                      className="move-btn" 
+                      disabled={index === 0} 
+                      onClick={() => moveNavItem(index, -1)}
+                      title="Move Up"
+                    >
+                      ↑
+                    </button>
+                    <button 
+                      className="move-btn" 
+                      disabled={index === config.navItems.length - 1} 
+                      onClick={() => moveNavItem(index, 1)}
+                      title="Move Down"
+                    >
+                      ↓
+                    </button>
+                    <button 
+                      className={`visibility-btn ${item.visible ? 'on' : 'off'}`}
+                      onClick={() => handleNavItemChange(item.id, 'visible', !item.visible)}
+                      title={item.visible ? "Visible" : "Hidden"}
+                    >
+                      {item.visible ? '👁️' : '🕶️'}
+                    </button>
+                    {!item.protected && (
+                      <button 
+                        className="delete-btn small" 
+                        onClick={() => removeNavItem(item.id)}
+                        title="Delete"
+                      >
+                        🗑️
+                      </button>
+                    )}
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+
         <div className="slot-editor card global-settings">
           <h3 className="slot-name">Canvas Settings</h3>
           
@@ -232,13 +324,24 @@ export default function AdminPanel({ config, setConfig }) {
             </label>
           </div>
 
-          <div className="control-group">
-            <label>Canvas Background</label>
-            <input 
-              type="color" 
-              value={config.bgColor} 
-              onChange={(e) => handleGlobalChange('bgColor', e.target.value)} 
-            />
+          <div className="canvas-controls-row">
+            <div className="control-group">
+              <label>Banner Background</label>
+              <input 
+                type="color" 
+                value={config.bannerBgColor || '#ffffff'} 
+                onChange={(e) => handleGlobalChange('bannerBgColor', e.target.value)} 
+              />
+            </div>
+
+            <div className="control-group">
+              <label>Website Background</label>
+              <input 
+                type="color" 
+                value={config.bodyBgColor || '#f9fafb'} 
+                onChange={(e) => handleGlobalChange('bodyBgColor', e.target.value)} 
+              />
+            </div>
           </div>
           
           <button 
