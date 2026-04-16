@@ -1,0 +1,50 @@
+:root {
+  --primary: #1E3A8A;
+  --secondary: #F97316;
+  --bg: #F9FAFB;
+  --text: #111827;
+
+  /* Navigation Tab Colors exactly for Amul aesthetic */
+  --tab-home: #1E3A8A;
+  --tab-edu: #10B981;
+  --tab-matri: #EF4444;
+  --tab-news: #F97316;
+  --tab-elec: #06B6D4;
+  --tab-sandesh: #8B5CF6;
+}
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  font-family: system-ui, -apple-system, sans-serif;
+  background-color: var(--bg);
+  color: var(--text);
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+
+a {
+  text-decoration: none;
+  color: inherit;
+}
+
+button {
+  border: none;
+  background: none;
+  cursor: pointer;
+  font-family: inherit;
+}
+
+/* Common Animations */
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(5px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.fade-in {
+  animation: fadeIn 0.3s ease forwards;
+}
