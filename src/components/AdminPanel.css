@@ -12,6 +12,37 @@
   gap: 1rem;
 }
 
+.admin-title-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.sync-indicator {
+  font-size: 0.85rem;
+  font-weight: 600;
+  padding: 0.25rem 0.5rem;
+  border-radius: 4px;
+  width: fit-content;
+}
+
+.sync-indicator.saving {
+  color: #f59e0b;
+  background: #fef3c7;
+  animation: pulse 1.5s infinite;
+}
+
+.sync-indicator.synced {
+  color: #059669;
+  background: #ecfdf5;
+}
+
+.sync-indicator.error {
+  color: #dc2626;
+  background: #fee2e2;
+}
+
+
 .admin-title {
   font-size: 1.5rem;
   font-weight: 800;
@@ -303,3 +334,16 @@
     grid-template-columns: 1fr;
   }
 }
+
+.uploading-indicator {
+  color: var(--clr-primary);
+  font-weight: 700;
+  animation: pulse 1.5s infinite;
+}
+
+@keyframes pulse {
+  0% { opacity: 0.6; }
+  50% { opacity: 1; }
+  100% { opacity: 0.6; }
+}
+

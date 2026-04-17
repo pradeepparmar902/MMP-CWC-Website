@@ -1,7 +1,11 @@
 import { useState } from 'react';
+import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
+import { storage } from '../firebase';
 import './AdminPanel.css';
 
-export default function AdminPanel({ config, setConfig }) {
+export default function AdminPanel({ config, setConfig, syncStatus }) {
+  const [uploadingMap, setUploadingMap] = useState({});
+
   const handleElementChange = (id, field, value) => {
     setConfig(prev => ({
       ...prev,
@@ -46,14 +50,23 @@ export default function AdminPanel({ config, setConfig }) {
     handleGlobalChange('navItems', config.navItems.filter(item => item.id !== id));
   };
 
-  const handleImageUpload = (id, e) => {
+  const handleImageUpload = async (id, e) => {
     const file = e.target.files[0];
-    if (file) {
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        handleElementChange(id, 'url', reader.result);
-      };
-      reader.readAsDataURL(file);
+    if (!file) return;
+
+    setUploadingMap(prev => ({ ...prev, [id]: true }));
+
+    try {
+      const storageRef = ref(storage, `banner_images/${id}_${Date.now()}`);
+      const snapshot = await uploadBytes(storageRef, file);
+      const downloadURL = await getDownloadURL(snapshot.ref);
+      
+      handleElementChange(id, 'url', downloadURL);
+    } catch (error) {
+      console.error("Error uploading image:", error);
+      alert("Failed to upload image. Please check your Firebase Storage rules.");
+    } finally {
+      setUploadingMap(prev => ({ ...prev, [id]: false }));
     }
   };
 
@@ -120,7 +133,14 @@ export default function AdminPanel({ config, setConfig }) {
   return (
     <section className="admin-panel container">
       <div className="admin-header">
-        <h2 className="admin-title">Canvas Banner Management</h2>
+        <div className="admin-title-group">
+          <h2 className="admin-title">Canvas Banner Management</h2>
+          <div className={`sync-indicator ${syncStatus}`}>
+            {syncStatus === 'saving' && '⏳ Saving to Cloud...'}
+            {syncStatus === 'synced' && '✅ All changes synced'}
+            {syncStatus === 'error' && '❌ Sync Error! Check connection'}
+          </div>
+        </div>
         <div className="admin-actions">
           <button className="fit-btn" onClick={fitBannerToContent} title="Auto-calculate height to fit images">
             📏 Auto-Fit Height
@@ -150,10 +170,13 @@ export default function AdminPanel({ config, setConfig }) {
             </div>
             
             <div className="control-group">
-              <label>Image Upload</label>
+              <label>
+                Image Upload {uploadingMap[el.id] && <span className="uploading-indicator"> (⏳ Uploading...)</span>}
+              </label>
               <input 
                 type="file" 
                 accept="image/*" 
+                disabled={uploadingMap[el.id]}
                 onChange={(e) => handleImageUpload(el.id, e)} 
               />
             </div>

@@ -33,6 +33,7 @@ const DEFAULT_BANNER_CONFIG = {
 function App() {
   const [activeSection, setActiveSection] = useState('home');
   const [isCloudLoaded, setIsCloudLoaded] = useState(false);
+  const [syncStatus, setSyncStatus] = useState('synced'); // 'idle', 'saving', 'synced', 'error'
   const [bannerConfig, setBannerConfig] = useState(() => {
     const saved = localStorage.getItem('mmp_banner_config');
     if (!saved) return DEFAULT_BANNER_CONFIG;
@@ -91,13 +92,16 @@ function App() {
     // Only save to cloud if we've successfully checked the cloud state first
     if (!isCloudLoaded) return;
 
+    setSyncStatus('saving');
     const timeoutId = setTimeout(async () => {
       try {
         const docRef = doc(db, "site_settings", "banner_config");
         await setDoc(docRef, bannerConfig);
         console.log("Cloud config synced!");
+        setSyncStatus('synced');
       } catch (error) {
         console.error("Error saving to cloud:", error);
+        setSyncStatus('error');
       }
     }, 2000); // 2-second debounce
 
@@ -115,7 +119,7 @@ function App() {
           navItems={bannerConfig.navItems || []} 
         />
         {activeSection === 'admin' ? (
-          <AdminPanel config={bannerConfig} setConfig={setBannerConfig} />
+          <AdminPanel config={bannerConfig} setConfig={setBannerConfig} syncStatus={syncStatus} />
         ) : (
           <ContentArea activeSection={activeSection} />
         )}
