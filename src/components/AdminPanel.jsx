@@ -77,20 +77,23 @@ export default function AdminPanel({ config, setConfig, syncStatus }) {
     setUploadingMap(prev => ({ ...prev, [id]: true }));
 
     try {
-      // Cleanup old image if it exists before uploading new one
+      // Cleanup old image if it exists - NO AWAIT here so upload starts immediately
       const oldElement = config.elements.find(el => el.id === id);
       if (oldElement?.url) {
-        await deleteFromStorage(oldElement.url);
+        deleteFromStorage(oldElement.url); 
       }
 
+      console.log("Starting upload to Storage...");
       const storageRef = ref(storage, `banner_images/${id}_${Date.now()}`);
       const snapshot = await uploadBytes(storageRef, file);
+      console.log("Upload successful, getting URL...");
       const downloadURL = await getDownloadURL(snapshot.ref);
       
       handleElementChange(id, 'url', downloadURL);
+      console.log("Storage URL mapped to element:", id);
     } catch (error) {
-      console.error("Error uploading image:", error);
-      alert("Failed to upload image. Please check your Firebase Storage rules.");
+      console.error("CRITICAL UPLOAD ERROR:", error);
+      alert(`Upload failed: ${error.code || error.message}. Have you enabled Storage Rules?`);
     } finally {
       setUploadingMap(prev => ({ ...prev, [id]: false }));
     }
