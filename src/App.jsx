@@ -6,6 +6,8 @@ import Banner from './components/Banner';
 import Navigation from './components/Navigation';
 import ContentArea from './components/ContentArea';
 import AdminPanel from './components/AdminPanel';
+import { useAuth } from './context/AuthContext';
+import AuthModal from './components/AuthModal';
 
 const DEFAULT_NAV_ITEMS = [
   { id: 'home', label: 'Home', color: '#3B82F6', visible: true, protected: true },
@@ -31,6 +33,8 @@ const DEFAULT_BANNER_CONFIG = {
 };
 
 function App() {
+  const { isAdmin, logout } = useAuth();
+  const [showAuthModal, setShowAuthModal] = useState(false);
   const [activeSection, setActiveSection] = useState('home');
   const [isCloudLoaded, setIsCloudLoaded] = useState(false);
   const [syncStatus, setSyncStatus] = useState('synced');
@@ -168,13 +172,33 @@ function App() {
           navItems={bannerConfig.navItems || []} 
         />
         {activeSection === 'admin' ? (
-          <AdminPanel 
-            config={bannerConfig} 
-            setConfig={setBannerConfig} 
-            syncStatus={syncStatus}
-            assets={siteAssets}
-            setAssets={setSiteAssets}
-          />
+          isAdmin ? (
+            <>
+              <div style={{ background: '#111827', padding: '10px 20px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', color: 'white' }}>
+                <span style={{ fontSize: '14px', fontWeight: 'bold' }}>Admin Control Panel Verified</span>
+                <button onClick={logout} style={{ background: '#ef4444', color: 'white', border: 'none', borderRadius: '4px', padding: '6px 12px', cursor: 'pointer', fontSize: '14px', fontWeight: 'bold' }}>Logout</button>
+              </div>
+              <AdminPanel 
+                config={bannerConfig} 
+                setConfig={setBannerConfig} 
+                syncStatus={syncStatus}
+                assets={siteAssets}
+                setAssets={setSiteAssets}
+              />
+            </>
+          ) : (
+            <div style={{ textAlign: 'center', padding: '100px 20px' }}>
+              <h2 style={{ fontSize: '24px', marginBottom: '16px', color: '#111827' }}>Admin Access Required</h2>
+              <p style={{ color: '#4b5563', marginBottom: '24px' }}>You must verify your identity to access the management portal.</p>
+              <button 
+                onClick={() => setShowAuthModal(true)}
+                style={{ padding: '12px 24px', background: '#2563eb', color: 'white', border: 'none', borderRadius: '8px', cursor: 'pointer', fontSize: '16px', fontWeight: 'bold' }}
+              >
+                Login as Admin
+              </button>
+              {showAuthModal && <AuthModal onClose={() => setShowAuthModal(false)} />}
+            </div>
+          )
         ) : (
           <ContentArea activeSection={activeSection} assets={siteAssets} />
         )}
