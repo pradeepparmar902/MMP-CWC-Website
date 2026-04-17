@@ -66,23 +66,26 @@ export default function AdminPanel({ config, setConfig, syncStatus, assets, setA
     }
   };
 
-  const deleteFromStorage = async (url, storagePath) => {
-    // Priority: 1. stored path, 2. path extracted from URL, 3. give up
+  const deleteFromStorage = async (url, storagePath, logFn) => {
     const path = storagePath
       || (url && url.includes('firebasestorage.googleapis.com') ? extractFirebasePath(url) : null);
 
+    const log = logFn || ((msg) => console.log(msg));
+
     if (!path) {
-      console.log('No Firebase path to delete — skipping cleanup.');
+      log('🔗 External link — no Firebase file to delete.');
       return;
     }
+    log(`🗑️ Attempting delete: ${path}`);
     try {
       await deleteObject(ref(storage, path));
-      console.log('\u2705 Deleted from Firebase Storage:', path);
+      log('✅ File permanently deleted from Firebase Storage!');
     } catch (error) {
       if (error.code === 'storage/object-not-found') {
-        console.warn('File already gone (object-not-found):', path);
+        log('⚠️ File was already deleted or not found in Storage.');
       } else {
-        console.error('Delete failed:', error.code, error.message);
+        log(`❌ Delete failed: ${error.code} — ${error.message}`);
+        console.error('Delete failed:', error);
       }
     }
   };
@@ -90,13 +93,18 @@ export default function AdminPanel({ config, setConfig, syncStatus, assets, setA
   const removeImage = async (id) => {
     const el = config.elements.find(el => el.id === id);
     if (el && el.url) {
-      await deleteFromStorage(el.url, el.storagePath);
+      setUploadLog([`🗑️ Removing image from: ${el.name || id}`]);
+      await deleteFromStorage(el.url, el.storagePath, (msg) => {
+        setUploadLog(prev => [...prev, msg]);
+      });
       setConfig(prev => ({
         ...prev,
         elements: prev.elements.map(e =>
           e.id === id ? { ...e, url: '', storagePath: '' } : e
         )
       }));
+    } else {
+      setUploadLog(['⚠️ No image URL found on this element to remove.']);
     }
   };
 
