@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { doc, getDoc, setDoc } from 'firebase/firestore';
+import { doc, getDoc, setDoc, collection, getDocs } from 'firebase/firestore';
 import { db } from './firebase';
 import Header from './components/Header';
 import Banner from './components/Banner';
@@ -33,7 +33,8 @@ const DEFAULT_BANNER_CONFIG = {
 function App() {
   const [activeSection, setActiveSection] = useState('home');
   const [isCloudLoaded, setIsCloudLoaded] = useState(false);
-  const [syncStatus, setSyncStatus] = useState('synced'); // 'idle', 'saving', 'synced', 'error'
+  const [syncStatus, setSyncStatus] = useState('synced');
+  const [siteAssets, setSiteAssets] = useState([]);
   const [bannerConfig, setBannerConfig] = useState(() => {
     const saved = localStorage.getItem('mmp_banner_config');
     if (!saved) return DEFAULT_BANNER_CONFIG;
@@ -79,6 +80,35 @@ function App() {
     fetchConfig();
   }, []);
 
+  // 1b. Fetch Site Assets from Firestore
+  useEffect(() => {
+    const fetchAssets = async () => {
+      try {
+        const snapshot = await getDocs(collection(db, 'site_assets'));
+        const assets = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
+        setSiteAssets(assets);
+      } catch (err) {
+        console.error('Failed to fetch assets:', err);
+      }
+    };
+    fetchAssets();
+  }, []);
+
+  // 1c. Sync assets to Firestore whenever they change
+  useEffect(() => {
+    if (!isCloudLoaded) return;
+    const syncAssets = async () => {
+      try {
+        const docRef = doc(db, 'site_settings', 'site_assets');
+        await setDoc(docRef, { assets: siteAssets });
+      } catch (err) {
+        console.error('Failed to sync assets:', err);
+      }
+    };
+    const timer = setTimeout(syncAssets, 2000);
+    return () => clearTimeout(timer);
+  }, [siteAssets, isCloudLoaded]);
+
   // 2. Debounced Cloud Save & Local Persistence
   useEffect(() => {
     // Save to localStorage immediately for UI performance
@@ -119,9 +149,15 @@ function App() {
           navItems={bannerConfig.navItems || []} 
         />
         {activeSection === 'admin' ? (
-          <AdminPanel config={bannerConfig} setConfig={setBannerConfig} syncStatus={syncStatus} />
+          <AdminPanel 
+            config={bannerConfig} 
+            setConfig={setBannerConfig} 
+            syncStatus={syncStatus}
+            assets={siteAssets}
+            setAssets={setSiteAssets}
+          />
         ) : (
-          <ContentArea activeSection={activeSection} />
+          <ContentArea activeSection={activeSection} assets={siteAssets} />
         )}
       </main>
     </div>

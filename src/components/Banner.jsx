@@ -1,3 +1,4 @@
+import { getDirectUrl } from '../utils/assetUtils';
 import './Banner.css';
 
 export default function Banner({ config, isSticky }) {
@@ -30,7 +31,7 @@ export default function Banner({ config, isSticky }) {
               }}
             >
               <img 
-                src={el.url} 
+                src={getDirectUrl(el.url)} 
                 alt={el.name} 
                 className="canvas-img"
                 style={{ 

@@ -1,9 +1,11 @@
 import { useState } from 'react';
 import { ref, uploadBytes, getDownloadURL, deleteObject } from 'firebase/storage';
 import { storage } from '../firebase';
+import { getDirectUrl, getSourceType } from '../utils/assetUtils';
+import AssetManager from './AssetManager';
 import './AdminPanel.css';
 
-export default function AdminPanel({ config, setConfig, syncStatus }) {
+export default function AdminPanel({ config, setConfig, syncStatus, assets, setAssets }) {
   const [uploadingMap, setUploadingMap] = useState({});
 
   const handleElementChange = (id, field, value) => {
@@ -207,10 +209,28 @@ export default function AdminPanel({ config, setConfig, syncStatus }) {
             </div>
             
             <div className="control-group">
+              <label>Source Type</label>
+              <div className="source-toggle">
+                <button 
+                  className={`toggle-btn ${!el.url || getSourceType(el.url) === 'firebase' ? 'active' : ''}`}
+                  onClick={() => {/* purely visual or handling logic if needed */}}
+                >
+                  ☁️ Firebase
+                </button>
+                <button 
+                  className={`toggle-btn ${el.url && getSourceType(el.url) !== 'firebase' ? 'active' : ''}`}
+                  onClick={() => {/* purely visual */}}
+                >
+                  🔗 External / Drive
+                </button>
+              </div>
+            </div>
+
+            <div className="control-group">
               <label>Current Image Preview</label>
               <div className="element-preview-box">
                 {el.url ? (
-                  <img src={el.url} alt="Preview" className="admin-thumb-preview" />
+                  <img src={getDirectUrl(el.url)} alt="Preview" className="admin-thumb-preview" />
                 ) : (
                   <div className="thumb-placeholder">No Image</div>
                 )}
@@ -219,23 +239,50 @@ export default function AdminPanel({ config, setConfig, syncStatus }) {
 
             <div className="control-group">
               <label>
-                Image Upload {uploadingMap[el.id] && <span className="uploading-indicator"> (⏳ Uploading...)</span>}
+                {el.url && getSourceType(el.url) !== 'firebase' ? 'External Image URL' : 'Image Upload'} 
+                {uploadingMap[el.id] && <span className="uploading-indicator"> (⏳ Uploading...)</span>}
               </label>
-              <input 
-                type="file" 
-                accept="image/*" 
-                disabled={uploadingMap[el.id]}
-                onChange={(e) => handleImageUpload(el.id, e)} 
-              />
+              
+              {el.url && getSourceType(el.url) !== 'firebase' ? (
+                <div className="link-input-group">
+                  <input 
+                    type="text" 
+                    placeholder="Paste Google Drive or Image URL"
+                    value={el.url}
+                    onChange={(e) => handleElementChange(el.id, 'url', e.target.value)}
+                    className="url-input"
+                  />
+                  <button className="switch-source-btn" onClick={() => handleElementChange(el.id, 'url', '')}>
+                    Switch to Upload
+                  </button>
+                </div>
+              ) : (
+                <input 
+                  type="file" 
+                  accept="image/*" 
+                  disabled={uploadingMap[el.id]}
+                  onChange={(e) => handleImageUpload(el.id, e)} 
+                />
+              )}
+
               {el.url && (
                 <button 
                   type="button" 
                   className="remove-img-btn" 
                   onClick={() => removeImage(el.id)}
-                  title="Remove this picture but keep the slot"
+                  title="Remove this picture"
                 >
                   ❌ Remove Picture
                 </button>
+              )}
+              
+              {!el.url && (
+                <div className="manual-link-row">
+                  <span className="or-text">OR</span>
+                  <button className="link-mode-btn" onClick={() => handleElementChange(el.id, 'url', 'https://')}>
+                    🔗 Paste External Link
+                  </button>
+                </div>
               )}
             </div>
 
@@ -438,6 +485,9 @@ export default function AdminPanel({ config, setConfig, syncStatus }) {
           </button>
         </div>
       </div>
+
+      {/* Universal Asset & Document Manager */}
+      <AssetManager assets={assets} setAssets={setAssets} />
     </section>
   );
 }
