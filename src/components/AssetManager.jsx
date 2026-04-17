@@ -66,24 +66,32 @@ export default function AssetManager({ assets = [], setAssets }) {
     setForm({ title: '', category: 'Education', type: 'pdf', source: 'upload', url: '', storagePath: '', description: '' });
   };
 
+  const extractFirebasePath = (url) => {
+    try {
+      const match = url.match(/\/o\/([^?#]+)/);
+      return match ? decodeURIComponent(match[1]) : null;
+    } catch {
+      return null;
+    }
+  };
+
   const handleDelete = async (id) => {
     if (!confirm('Delete this asset? This cannot be undone.')) return;
     const asset = assets.find(a => a.id === id);
     if (asset) {
-      try {
-        // Use stored path (most reliable) or fallback to URL-based ref
-        if (asset.storagePath) {
-          await deleteObject(ref(storage, asset.storagePath));
-          console.log('✅ Deleted from Firebase Storage:', asset.storagePath);
-        } else if (asset.url && asset.url.includes('firebasestorage.googleapis.com')) {
-          await deleteObject(ref(storage, asset.url));
-          console.log('✅ Deleted from Firebase Storage (URL fallback)');
-        }
-      } catch (err) {
-        if (err.code === 'storage/object-not-found') {
-          console.warn('File already deleted or not found');
-        } else {
-          console.error('Storage cleanup failed:', err.code, err.message);
+      const path = asset.storagePath
+        || (asset.url && asset.url.includes('firebasestorage.googleapis.com')
+          ? extractFirebasePath(asset.url) : null);
+      if (path) {
+        try {
+          await deleteObject(ref(storage, path));
+          console.log('✅ Deleted from Firebase Storage:', path);
+        } catch (err) {
+          if (err.code === 'storage/object-not-found') {
+            console.warn('File already gone:', path);
+          } else {
+            console.error('Storage delete failed:', err.code, err.message);
+          }
         }
       }
     }

@@ -53,25 +53,36 @@ export default function AdminPanel({ config, setConfig, syncStatus, assets, setA
     handleGlobalChange('navItems', config.navItems.filter(item => item.id !== id));
   };
   
-  const deleteFromStorage = async (url, storagePath) => {
+  /**
+   * Extracts the storage object path from a Firebase download URL.
+   * URL format: https://firebasestorage.googleapis.com/v0/b/{bucket}/o/{encoded-path}?...
+   */
+  const extractFirebasePath = (url) => {
     try {
-      let storageRef;
-      if (storagePath) {
-        // Most reliable: use the stored path directly
-        storageRef = ref(storage, storagePath);
-      } else if (url && url.includes('firebasestorage.googleapis.com')) {
-        // Fallback: try to create ref from URL
-        storageRef = ref(storage, url);
-      } else {
-        return; // Not a Firebase file, nothing to delete
-      }
-      await deleteObject(storageRef);
-      console.log('✅ Deleted from Firebase Storage:', storagePath || url);
+      const match = url.match(/\/o\/([^?#]+)/);
+      return match ? decodeURIComponent(match[1]) : null;
+    } catch {
+      return null;
+    }
+  };
+
+  const deleteFromStorage = async (url, storagePath) => {
+    // Priority: 1. stored path, 2. path extracted from URL, 3. give up
+    const path = storagePath
+      || (url && url.includes('firebasestorage.googleapis.com') ? extractFirebasePath(url) : null);
+
+    if (!path) {
+      console.log('No Firebase path to delete — skipping cleanup.');
+      return;
+    }
+    try {
+      await deleteObject(ref(storage, path));
+      console.log('\u2705 Deleted from Firebase Storage:', path);
     } catch (error) {
       if (error.code === 'storage/object-not-found') {
-        console.warn('File already deleted or not found:', storagePath || url);
+        console.warn('File already gone (object-not-found):', path);
       } else {
-        console.error('Failed to delete from Storage:', error.code, error.message);
+        console.error('Delete failed:', error.code, error.message);
       }
     }
   };
