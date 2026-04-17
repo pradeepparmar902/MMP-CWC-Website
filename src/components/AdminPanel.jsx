@@ -7,6 +7,7 @@ import './AdminPanel.css';
 
 export default function AdminPanel({ config, setConfig, syncStatus, assets, setAssets }) {
   const [uploadingMap, setUploadingMap] = useState({});
+  const [uploadLog, setUploadLog] = useState([]);
 
   const handleElementChange = (id, field, value) => {
     setConfig(prev => ({
@@ -93,32 +94,37 @@ export default function AdminPanel({ config, setConfig, syncStatus, assets, setA
     if (!file) return;
 
     setUploadingMap(prev => ({ ...prev, [id]: true }));
+    setUploadLog([`[1/4] Starting upload: ${file.name} (${(file.size/1024).toFixed(1)} KB)`]);
 
     try {
-      // Cleanup old image BEFORE uploading new one (background, no await)
+      // Cleanup old image (background, no await)
       const oldElement = config.elements.find(el => el.id === id);
       if (oldElement?.url) {
         deleteFromStorage(oldElement.url, oldElement.storagePath);
       }
 
-      console.log('Starting upload to Storage...');
       const path = `banner_images/${id}_${Date.now()}`;
       const storageRef = ref(storage, path);
+
+      setUploadLog(prev => [...prev, `[2/4] Uploading to Firebase bucket: ${path}`]);
       const snapshot = await uploadBytes(storageRef, file);
-      console.log('Upload successful, getting URL...');
+      
+      setUploadLog(prev => [...prev, `[3/4] Upload OK (${snapshot.totalBytes} bytes). Getting URL...`]);
       const downloadURL = await getDownloadURL(snapshot.ref);
 
-      // Store BOTH the download URL and the storage path for reliable deletion
+      setUploadLog(prev => [...prev, `[4/4] ✅ Done! URL acquired. Updating preview...`]);
+
       setConfig(prev => ({
         ...prev,
         elements: prev.elements.map(el =>
           el.id === id ? { ...el, url: downloadURL, storagePath: path } : el
         )
       }));
-      console.log('Storage URL mapped to element:', id);
     } catch (error) {
-      console.error("CRITICAL UPLOAD ERROR:", error);
-      alert(`Upload failed: ${error.code || error.message}. Have you enabled Storage Rules?`);
+      const msg = `❌ ERROR: ${error.code || error.message}`;
+      setUploadLog(prev => [...prev, msg]);
+      console.error('UPLOAD ERROR:', error);
+      alert(`Upload failed: ${error.code || error.message}\n\nCheck the upload log in the Admin Panel for details.`);
     } finally {
       setUploadingMap(prev => ({ ...prev, [id]: false }));
     }
@@ -209,6 +215,20 @@ export default function AdminPanel({ config, setConfig, syncStatus, assets, setA
           <button className="add-element-btn" onClick={addElement}>+ Add New Image</button>
         </div>
       </div>
+
+      {uploadLog.length > 0 && (
+        <div className="upload-log-panel">
+          <div className="upload-log-header">
+            <span>📡 Upload Status</span>
+            <button className="upload-log-clear" onClick={() => setUploadLog([])}>✕ Clear</button>
+          </div>
+          {uploadLog.map((line, i) => (
+            <div key={i} className={`upload-log-line ${line.includes('❌') ? 'error' : line.includes('✅') ? 'success' : ''}`}>
+              {line}
+            </div>
+          ))}
+        </div>
+      )}
       
       <div className="admin-grid">
         {config.elements.map((el) => (
