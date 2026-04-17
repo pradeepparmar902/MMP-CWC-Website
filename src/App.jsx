@@ -66,8 +66,27 @@ function App() {
         const docSnap = await getDoc(docRef);
         
         if (docSnap.exists()) {
-          console.log("Cloud config loaded:", docSnap.data());
-          setBannerConfig(docSnap.data());
+          const cloudData = docSnap.data();
+          console.log("Cloud config loaded:", cloudData);
+          
+          // Ensure we merge in default properties if they are missing in the cloud (like navItems)
+          setBannerConfig(prev => {
+            const mergedNavItems = cloudData.navItems || prev.navItems || DEFAULT_NAV_ITEMS;
+            
+            // Apply protected status to home and admin if they don't have it
+            const finalizedNavItems = mergedNavItems.map(item => {
+              if (item.id === 'home' || item.id === 'admin') {
+                return { ...item, protected: true };
+              }
+              return item;
+            });
+
+            return {
+              ...DEFAULT_BANNER_CONFIG,
+              ...cloudData,
+              navItems: finalizedNavItems
+            };
+          });
         } else {
           console.log("No cloud config found, using local/default.");
         }
