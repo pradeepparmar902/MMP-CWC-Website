@@ -52,23 +52,39 @@ export default function AdminPanel({ config, setConfig, syncStatus, assets, setA
     handleGlobalChange('navItems', config.navItems.filter(item => item.id !== id));
   };
   
-  const deleteFromStorage = async (url) => {
-    if (!url || !url.includes('firebasestorage.googleapis.com')) return;
+  const deleteFromStorage = async (url, storagePath) => {
     try {
-      const storageRef = ref(storage, url);
+      let storageRef;
+      if (storagePath) {
+        // Most reliable: use the stored path directly
+        storageRef = ref(storage, storagePath);
+      } else if (url && url.includes('firebasestorage.googleapis.com')) {
+        // Fallback: try to create ref from URL
+        storageRef = ref(storage, url);
+      } else {
+        return; // Not a Firebase file, nothing to delete
+      }
       await deleteObject(storageRef);
-      console.log("Deleted old image from storage:", url);
+      console.log('✅ Deleted from Firebase Storage:', storagePath || url);
     } catch (error) {
-      console.error("Failed to delete object from storage:", error);
-      // We don't block the UI if delete fails (e.g. file already gone)
+      if (error.code === 'storage/object-not-found') {
+        console.warn('File already deleted or not found:', storagePath || url);
+      } else {
+        console.error('Failed to delete from Storage:', error.code, error.message);
+      }
     }
   };
 
   const removeImage = async (id) => {
     const el = config.elements.find(el => el.id === id);
     if (el && el.url) {
-      await deleteFromStorage(el.url);
-      handleElementChange(id, 'url', '');
+      await deleteFromStorage(el.url, el.storagePath);
+      setConfig(prev => ({
+        ...prev,
+        elements: prev.elements.map(e =>
+          e.id === id ? { ...e, url: '', storagePath: '' } : e
+        )
+      }));
     }
   };
 
@@ -79,20 +95,27 @@ export default function AdminPanel({ config, setConfig, syncStatus, assets, setA
     setUploadingMap(prev => ({ ...prev, [id]: true }));
 
     try {
-      // Cleanup old image if it exists - NO AWAIT here so upload starts immediately
+      // Cleanup old image BEFORE uploading new one (background, no await)
       const oldElement = config.elements.find(el => el.id === id);
       if (oldElement?.url) {
-        deleteFromStorage(oldElement.url); 
+        deleteFromStorage(oldElement.url, oldElement.storagePath);
       }
 
-      console.log("Starting upload to Storage...");
-      const storageRef = ref(storage, `banner_images/${id}_${Date.now()}`);
+      console.log('Starting upload to Storage...');
+      const path = `banner_images/${id}_${Date.now()}`;
+      const storageRef = ref(storage, path);
       const snapshot = await uploadBytes(storageRef, file);
-      console.log("Upload successful, getting URL...");
+      console.log('Upload successful, getting URL...');
       const downloadURL = await getDownloadURL(snapshot.ref);
-      
-      handleElementChange(id, 'url', downloadURL);
-      console.log("Storage URL mapped to element:", id);
+
+      // Store BOTH the download URL and the storage path for reliable deletion
+      setConfig(prev => ({
+        ...prev,
+        elements: prev.elements.map(el =>
+          el.id === id ? { ...el, url: downloadURL, storagePath: path } : el
+        )
+      }));
+      console.log('Storage URL mapped to element:', id);
     } catch (error) {
       console.error("CRITICAL UPLOAD ERROR:", error);
       alert(`Upload failed: ${error.code || error.message}. Have you enabled Storage Rules?`);
@@ -127,15 +150,14 @@ export default function AdminPanel({ config, setConfig, syncStatus, assets, setA
       const elements = prev.elements || [];
       const target = elements.find(el => String(el.id) === String(id));
       
-      // Cleanup storage if needed
-      if (target?.url) {
-        deleteFromStorage(target.url);
+      // Delete from Firebase Storage using stored path (most reliable)
+      if (target) {
+        deleteFromStorage(target.url, target.storagePath);
       }
 
-      const newElements = elements.filter(el => String(el.id) !== String(id));
       return {
         ...prev,
-        elements: newElements
+        elements: elements.filter(el => String(el.id) !== String(id))
       };
     });
   };
