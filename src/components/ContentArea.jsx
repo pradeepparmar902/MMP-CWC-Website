@@ -1,4 +1,4 @@
-import { getDirectUrl } from '../utils/assetUtils';
+import { getDirectUrl, getOpenUrl } from '../utils/assetUtils';
 import './ContentArea.css';
 
 const SECTION_MAP = {
@@ -31,7 +31,7 @@ export default function ContentArea({ activeSection, assets = [] }) {
           {sectionAssets.map(asset => (
             <a
               key={asset.id}
-              href={getDirectUrl(asset.url)}
+              href={getOpenUrl(asset.url)}
               target="_blank"
               rel="noreferrer"
               className="content-asset-card"

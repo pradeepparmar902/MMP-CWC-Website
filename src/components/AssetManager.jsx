@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { ref, uploadBytes, getDownloadURL, deleteObject } from 'firebase/storage';
 import { storage } from '../firebase';
-import { getDirectUrl, getSourceType } from '../utils/assetUtils';
+import { getDirectUrl, getOpenUrl, getSourceType } from '../utils/assetUtils';
 import './AssetManager.css';
 
 const CATEGORIES = ['Education', 'Matrimony', 'MeghPush', 'Election', 'Samaj', 'General'];
@@ -161,6 +161,18 @@ export default function AssetManager({ assets = [], setAssets }) {
               onChange={e => handleFormChange('url', e.target.value)}
             />
             <p className="am-hint">💡 Paste the "Anyone with the link can view" sharing URL from Google Drive.</p>
+            {form.url && form.url.length > 10 && (
+              <div className="am-link-preview">
+                <span className="am-hint">Preview:</span>
+                {form.type === 'image' ? (
+                  <img src={getDirectUrl(form.url)} alt="preview" className="am-preview-img" />
+                ) : (
+                  <a href={getOpenUrl(form.url)} target="_blank" rel="noreferrer" className="am-preview-link">
+                    👁️ Open File in Google Drive
+                  </a>
+                )}
+              </div>
+            )}
           </div>
         )}
 
@@ -207,7 +219,7 @@ export default function AssetManager({ assets = [], setAssets }) {
               </div>
               <div className="am-asset-actions">
                 <a
-                  href={getDirectUrl(asset.url)}
+                  href={getOpenUrl(asset.url)}
                   target="_blank"
                   rel="noreferrer"
                   className="am-open-btn"
