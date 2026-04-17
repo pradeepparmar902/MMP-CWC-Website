@@ -207,6 +207,17 @@ export default function AdminPanel({ config, setConfig, syncStatus }) {
             </div>
             
             <div className="control-group">
+              <label>Current Image Preview</label>
+              <div className="element-preview-box">
+                {el.url ? (
+                  <img src={el.url} alt="Preview" className="admin-thumb-preview" />
+                ) : (
+                  <div className="thumb-placeholder">No Image</div>
+                )}
+              </div>
+            </div>
+
+            <div className="control-group">
               <label>
                 Image Upload {uploadingMap[el.id] && <span className="uploading-indicator"> (⏳ Uploading...)</span>}
               </label>
