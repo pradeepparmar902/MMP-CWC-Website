@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
+import { ref, uploadBytes, getDownloadURL, deleteObject } from 'firebase/storage';
 import { storage } from '../firebase';
 import './AdminPanel.css';
 
@@ -49,6 +49,26 @@ export default function AdminPanel({ config, setConfig, syncStatus }) {
     }
     handleGlobalChange('navItems', config.navItems.filter(item => item.id !== id));
   };
+  
+  const deleteFromStorage = async (url) => {
+    if (!url || !url.includes('firebasestorage.googleapis.com')) return;
+    try {
+      const storageRef = ref(storage, url);
+      await deleteObject(storageRef);
+      console.log("Deleted old image from storage:", url);
+    } catch (error) {
+      console.error("Failed to delete object from storage:", error);
+      // We don't block the UI if delete fails (e.g. file already gone)
+    }
+  };
+
+  const removeImage = async (id) => {
+    const el = config.elements.find(el => el.id === id);
+    if (el && el.url) {
+      await deleteFromStorage(el.url);
+      handleElementChange(id, 'url', '');
+    }
+  };
 
   const handleImageUpload = async (id, e) => {
     const file = e.target.files[0];
@@ -57,6 +77,12 @@ export default function AdminPanel({ config, setConfig, syncStatus }) {
     setUploadingMap(prev => ({ ...prev, [id]: true }));
 
     try {
+      // Cleanup old image if it exists before uploading new one
+      const oldElement = config.elements.find(el => el.id === id);
+      if (oldElement?.url) {
+        await deleteFromStorage(oldElement.url);
+      }
+
       const storageRef = ref(storage, `banner_images/${id}_${Date.now()}`);
       const snapshot = await uploadBytes(storageRef, file);
       const downloadURL = await getDownloadURL(snapshot.ref);
@@ -90,9 +116,17 @@ export default function AdminPanel({ config, setConfig, syncStatus }) {
   };
 
   const removeElement = (id) => {
+    if (!confirm('Are you sure you want to delete this image slot completely?')) return;
+    
     setConfig(prev => {
       const elements = prev.elements || [];
-      // Use String() to ensure types match perfectly
+      const target = elements.find(el => String(el.id) === String(id));
+      
+      // Cleanup storage if needed
+      if (target?.url) {
+        deleteFromStorage(target.url);
+      }
+
       const newElements = elements.filter(el => String(el.id) !== String(id));
       return {
         ...prev,
@@ -135,10 +169,10 @@ export default function AdminPanel({ config, setConfig, syncStatus }) {
       <div className="admin-header">
         <div className="admin-title-group">
           <h2 className="admin-title">Canvas Banner Management</h2>
-          <div className={`sync-indicator ${syncStatus}`}>
+          <div className={`sync-indicator ${syncStatus.startsWith('error') ? 'error' : syncStatus}`}>
             {syncStatus === 'saving' && '⏳ Saving to Cloud...'}
             {syncStatus === 'synced' && '✅ All changes synced'}
-            {syncStatus === 'error' && '❌ Sync Error! Check connection'}
+            {syncStatus.startsWith('error') && `❌ ${syncStatus.replace('error: ', '')}`}
           </div>
         </div>
         <div className="admin-actions">
@@ -179,6 +213,16 @@ export default function AdminPanel({ config, setConfig, syncStatus }) {
                 disabled={uploadingMap[el.id]}
                 onChange={(e) => handleImageUpload(el.id, e)} 
               />
+              {el.url && (
+                <button 
+                  type="button" 
+                  className="remove-img-btn" 
+                  onClick={() => removeImage(el.id)}
+                  title="Remove this picture but keep the slot"
+                >
+                  ❌ Remove Picture
+                </button>
+              )}
             </div>
 
             <div className="control-group">

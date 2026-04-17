@@ -101,7 +101,7 @@ function App() {
         setSyncStatus('synced');
       } catch (error) {
         console.error("Error saving to cloud:", error);
-        setSyncStatus('error');
+        setSyncStatus(`error: ${error.message || 'Check connection'}`);
       }
     }, 2000); // 2-second debounce
 

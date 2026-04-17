@@ -341,9 +341,34 @@
   animation: pulse 1.5s infinite;
 }
 
+.remove-img-btn {
+  margin-top: 0.5rem;
+  background-color: #fee2e2;
+  color: #dc2626;
+  border: 1px solid #fecaca;
+  padding: 0.4rem 0.75rem;
+  border-radius: 6px;
+  font-size: 0.75rem;
+  font-weight: 700;
+  cursor: pointer;
+  width: 100%;
+  transition: all 0.2s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.25rem;
+}
+
+.remove-img-btn:hover {
+  background-color: #dc2626;
+  color: white;
+  border-color: #dc2626;
+}
+
 @keyframes pulse {
   0% { opacity: 0.6; }
   50% { opacity: 1; }
   100% { opacity: 0.6; }
 }
+
 
