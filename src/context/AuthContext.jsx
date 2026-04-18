@@ -130,14 +130,21 @@ export const AuthProvider = ({ children }) => {
   const logout = () => signOut(auth);
 
   const setupRecaptcha = (containerId) => {
-    if (!window.recaptchaVerifier) {
-      window.recaptchaVerifier = new RecaptchaVerifier(auth, containerId, {
-        size: 'invisible',
-        callback: (response) => {
-          // reCAPTCHA solved
-        }
-      });
+    // Clear any old verifier to avoid stale element errors
+    if (window.recaptchaVerifier) {
+      try {
+        window.recaptchaVerifier.clear();
+      } catch (e) {}
+      window.recaptchaVerifier = null;
     }
+
+    window.recaptchaVerifier = new RecaptchaVerifier(auth, containerId, {
+      size: 'invisible',
+      callback: (response) => {
+        // reCAPTCHA solved
+      }
+    });
+    
     return window.recaptchaVerifier;
   };
 
