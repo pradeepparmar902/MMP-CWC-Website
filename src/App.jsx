@@ -6,6 +6,7 @@ import Banner from './components/Banner';
 import Navigation from './components/Navigation';
 import ContentArea from './components/ContentArea';
 import AdminPanel from './components/AdminPanel';
+import SuperAdminPanel from './components/SuperAdminPanel';
 import { useAuth } from './context/AuthContext';
 import AuthModal from './components/AuthModal';
 
@@ -33,7 +34,7 @@ const DEFAULT_BANNER_CONFIG = {
 };
 
 function App() {
-  const { isAdmin, forceAdmin, logout } = useAuth();
+  const { isAdmin, isSuperAdmin, userStatus, forceAdmin, logout } = useAuth();
   const [showAuthModal, setShowAuthModal] = useState(false);
   const [activeSection, setActiveSection] = useState('home');
   const [isCloudLoaded, setIsCloudLoaded] = useState(false);
@@ -172,7 +173,21 @@ function App() {
           navItems={bannerConfig.navItems || []} 
         />
         {activeSection === 'admin' ? (
-          isAdmin ? (
+          isSuperAdmin ? (
+            <>
+              <div style={{ background: '#1e293b', borderBottom: '1px solid #334155', padding: '10px 20px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', color: 'white' }}>
+                <span style={{ fontSize: '14px', fontWeight: 'bold' }}>🌐 Senior Management Infrastructure</span>
+                <button onClick={logout} style={{ background: '#ef4444', color: 'white', border: 'none', borderRadius: '4px', padding: '6px 12px', cursor: 'pointer', fontSize: '14px', fontWeight: 'bold' }}>Logout</button>
+              </div>
+              <SuperAdminPanel 
+                config={bannerConfig} 
+                setConfig={setBannerConfig} 
+                syncStatus={syncStatus}
+                assets={siteAssets}
+                setAssets={setSiteAssets}
+              />
+            </>
+          ) : isAdmin ? (
             <>
               <div style={{ background: '#111827', padding: '10px 20px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', color: 'white' }}>
                 <span style={{ fontSize: '14px', fontWeight: 'bold' }}>Admin Control Panel Verified</span>
@@ -186,6 +201,41 @@ function App() {
                 setAssets={setSiteAssets}
               />
             </>
+          ) : userStatus === 'pending' ? (
+            <div style={{ textAlign: 'center', padding: '100px 20px', background: 'white', borderRadius: '12px', margin: '20px 0', border: '1px solid #e2e8f0' }}>
+              <div style={{ fontSize: '60px', marginBottom: '20px' }}>⏳</div>
+              <h2 style={{ fontSize: '28px', color: '#1e293b', marginBottom: '16px' }}>Account Pending Approval</h2>
+              <p style={{ color: '#64748b', fontSize: '18px', maxWidth: '600px', margin: '0 auto 24px' }}>
+                Your registration has been received! For security, a **Senior Admin** must review and approve your account before you can access the portal.
+              </p>
+              <div style={{ background: '#f8fafc', padding: '15px', borderRadius: '8px', display: 'inline-block', marginBottom: '30px', border: '1px solid #edf2f7' }}>
+                <span style={{ color: '#4a5568', fontWeight: '600' }}>Registered Mobile:</span> 
+                <span style={{ marginLeft: '10px', color: '#2b6cb0', fontWeight: 'bold' }}>{useAuth().currentUser?.phoneNumber || "Admin User"}</span>
+              </div>
+              <div>
+                <button 
+                  onClick={logout}
+                  style={{ padding: '12px 24px', background: '#ef4444', color: 'white', border: 'none', borderRadius: '8px', cursor: 'pointer', fontSize: '16px', fontWeight: 'bold' }}
+                >
+                  Logout & Check Later
+                </button>
+              </div>
+              <p style={{ marginTop: '30px', color: '#94a3b8', fontSize: '14px' }}>Please contact the central office if this takes longer than 24 hours.</p>
+            </div>
+          ) : userStatus === 'rejected' ? (
+            <div style={{ textAlign: 'center', padding: '100px 20px', background: '#fff1f2', borderRadius: '12px', margin: '20px 0', border: '1px solid #fda4af' }}>
+              <div style={{ fontSize: '60px', marginBottom: '20px' }}>🚫</div>
+              <h2 style={{ fontSize: '28px', color: '#9f1239', marginBottom: '16px' }}>Access Denied</h2>
+              <p style={{ color: '#be123c', fontSize: '18px', maxWidth: '600px', margin: '0 auto 24px' }}>
+                Sorry, your admin access request was not approved by the senior management.
+              </p>
+              <button 
+                onClick={logout}
+                style={{ padding: '12px 24px', background: '#e11d48', color: 'white', border: 'none', borderRadius: '8px', cursor: 'pointer', fontSize: '16px', fontWeight: 'bold' }}
+              >
+                Logout
+              </button>
+            </div>
           ) : (
             <div style={{ textAlign: 'center', padding: '100px 20px' }}>
               <h2 

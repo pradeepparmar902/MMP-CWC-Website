@@ -1,0 +1,256 @@
+.super-admin-panel {
+  padding-bottom: 50px;
+  background: white;
+  min-height: 80vh;
+  margin-top: 20px;
+  margin-bottom: 40px;
+  border-radius: 12px;
+  box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.1);
+  overflow: hidden;
+}
+
+/* Header & Tabs */
+.sap-header {
+  background: #1e293b;
+  color: white;
+  padding: 30px 40px 0 40px;
+}
+
+.sap-title-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 30px;
+}
+
+.sap-title-row h1 {
+  font-size: 28px;
+  font-weight: 800;
+  margin: 0;
+  letter-spacing: -0.025em;
+  background: linear-gradient(to right, #f8fafc, #94a3b8);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+.sap-badge {
+  background: rgba(59, 130, 246, 0.2);
+  color: #60a5fa;
+  border: 1px solid rgba(59, 130, 246, 0.3);
+  padding: 4px 12px;
+  border-radius: 20px;
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.sap-tabs {
+  display: flex;
+  gap: 10px;
+}
+
+.sap-tab {
+  background: transparent;
+  border: none;
+  color: #94a3b8;
+  padding: 12px 24px;
+  font-size: 15px;
+  font-weight: 600;
+  cursor: pointer;
+  border-bottom: 3px solid transparent;
+  transition: all 0.2s;
+  position: relative;
+}
+
+.sap-tab:hover {
+  color: white;
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.sap-tab.active {
+  color: #3b82f6;
+  border-bottom-color: #3b82f6;
+}
+
+.notif-dot {
+  background: #ef4444;
+  color: white;
+  font-size: 10px;
+  padding: 2px 6px;
+  border-radius: 10px;
+  margin-left: 6px;
+  font-weight: 800;
+}
+
+/* Content Area */
+.sap-content {
+  padding: 40px;
+}
+
+.view-header {
+  margin-bottom: 30px;
+}
+
+.view-header h2 {
+  font-size: 22px;
+  color: #1e293b;
+  margin: 0 0 8px 0;
+}
+
+.view-header p {
+  color: #64748b;
+  margin: 0;
+}
+
+/* Approvals Table */
+.approvals-table-wrapper {
+  background: white;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  overflow: hidden;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+}
+
+.approvals-table {
+  width: 100%;
+  border-collapse: collapse;
+  text-align: left;
+}
+
+.approvals-table th {
+  background: #f8fafc;
+  padding: 16px 20px;
+  font-size: 12px;
+  font-weight: 700;
+  color: #64748b;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  border-bottom: 1px solid #e2e8f0;
+}
+
+.approvals-table td {
+  padding: 16px 20px;
+  border-bottom: 1px solid #f1f5f9;
+  vertical-align: middle;
+}
+
+.user-phone {
+  font-weight: 600;
+  color: #1e293b;
+  font-family: 'JetBrains Mono', monospace;
+}
+
+.user-date {
+  color: #64748b;
+  font-size: 14px;
+}
+
+.user-time {
+  margin-left: 8px;
+  opacity: 0.6;
+}
+
+/* Status Pills */
+.status-pill {
+  padding: 4px 10px;
+  border-radius: 12px;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.status-pill.pending { background: #fef3c7; color: #92400e; }
+.status-pill.approved { background: #dcfce7; color: #166534; }
+.status-pill.rejected { background: #fee2e2; color: #991b1b; }
+
+/* Action Buttons */
+.action-btns {
+  display: flex;
+  gap: 8px;
+}
+
+.approve-btn, .reject-btn, .delete-btn-sap {
+  padding: 6px 14px;
+  border-radius: 6px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  border: 1px solid transparent;
+  transition: all 0.2s;
+}
+
+.approve-btn {
+  background: #2563eb;
+  color: white;
+}
+
+.approve-btn:hover {
+  background: #1d4ed8;
+  transform: translateY(-1px);
+}
+
+.reject-btn {
+  background: white;
+  border-color: #e2e8f0;
+  color: #64748b;
+}
+
+.reject-btn:hover {
+  border-color: #ef4444;
+  color: #ef4444;
+}
+
+.delete-btn-sap {
+  background: transparent;
+  color: #94a3b8;
+  padding: 6px 10px;
+}
+
+.delete-btn-sap:hover {
+  color: #ef4444;
+}
+
+/* Empty States */
+.empty-state {
+  text-align: center;
+  padding: 80px 20px;
+  background: #f8fafc;
+  border-radius: 12px;
+  border: 2px dashed #e2e8f0;
+}
+
+.empty-icon {
+  font-size: 48px;
+  margin-bottom: 20px;
+}
+
+.empty-state h3 {
+  margin: 0 0 10px 0;
+  color: #1e293b;
+}
+
+.empty-state p {
+  color: #64748b;
+  margin: 0;
+}
+
+.sap-loader {
+  text-align: center;
+  padding: 40px;
+  color: #64748b;
+  font-style: italic;
+}
+
+/* Mobile Responsive SAP */
+@media (max-width: 768px) {
+  .sap-header {
+    padding: 20px 20px 0 20px;
+  }
+  .sap-content {
+    padding: 20px;
+  }
+  .action-btns {
+    flex-direction: column;
+  }
+}

@@ -19,6 +19,8 @@ export const useAuth = () => useContext(AuthContext);
 export const AuthProvider = ({ children }) => {
   const [currentUser, setCurrentUser] = useState(null);
   const [isAdmin, setIsAdmin] = useState(false);
+  const [isSuperAdmin, setIsSuperAdmin] = useState(false);
+  const [userStatus, setUserStatus] = useState(null); // 'pending', 'approved', 'rejected'
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -46,29 +48,47 @@ export const AuthProvider = ({ children }) => {
           superPhones.includes(user.phoneNumber) ||
           (extractedPhone && superPhones.includes(extractedPhone))
         ) {
+          setIsSuperAdmin(true);
           setIsAdmin(true);
+          setUserStatus('approved');
           setLoading(false);
           return;
         }
 
         try {
-          // Check Firestore admins collection using user.uid
+          // Check Firestore admins collection first
           const adminDocRef = doc(db, 'admins', user.uid);
           const adminDoc = await getDoc(adminDocRef);
           
-          if (adminDoc.exists()) {
+          if (adminDoc.exists() && adminDoc.data().status === 'approved') {
             setIsAdmin(true);
+            setIsSuperAdmin(false);
+            setUserStatus('approved');
           } else {
-            console.warn(`User ${user.uid} is logged in, but not found in the 'admins' Firestore collection.`);
+            // If not in admins or not approved, check pending_users
+            const pendingDocRef = doc(db, 'pending_users', user.uid);
+            const pendingDoc = await getDoc(pendingDocRef);
+            
+            if (pendingDoc.exists()) {
+              setUserStatus(pendingDoc.data().status); // 'pending' or 'rejected'
+            } else {
+               setUserStatus(null);
+            }
+            
             setIsAdmin(false);
+            setIsSuperAdmin(false);
           }
         } catch (error) {
-          console.error("Error checking admin status:", error);
+          console.error("Error checking roles:", error);
           setIsAdmin(false);
+          setIsSuperAdmin(false);
+          setUserStatus(null);
         }
       } else {
         setCurrentUser(null);
         setIsAdmin(false);
+        setIsSuperAdmin(false);
+        setUserStatus(null);
       }
       setLoading(false);
     });
@@ -107,12 +127,22 @@ export const AuthProvider = ({ children }) => {
     const userCredential = await createUserWithEmailAndPassword(auth, finalEmail, password);
     const user = userCredential.user;
 
-    // 4. Save mapping in Firestore
+    // 4. Save mapping in Firestore user_mappings
     await setDoc(doc(db, 'user_mappings', formattedPhone), {
       email: finalEmail,
       realEmail: email || null,
       uid: user.uid,
       createdAt: new Date().toISOString()
+    });
+
+    // 5. Add to pending_users queue
+    await setDoc(doc(db, 'pending_users', user.uid), {
+      uid: user.uid,
+      phone: formattedPhone,
+      email: email || null,
+      virtualEmail: finalEmail,
+      status: 'pending',
+      registeredAt: new Date().toISOString()
     });
 
     return userCredential;
@@ -152,11 +182,16 @@ export const AuthProvider = ({ children }) => {
     return signInWithPhoneNumber(auth, phoneNumber, appVerifier);
   };
 
-  const forceAdmin = () => setIsAdmin(true);
+  const forceAdmin = () => {
+    setIsAdmin(true);
+    setIsSuperAdmin(true);
+  };
 
   const value = {
     currentUser,
     isAdmin,
+    isSuperAdmin,
+    userStatus,
     forceAdmin,
     loginWithEmail,
     registerWithEmail,

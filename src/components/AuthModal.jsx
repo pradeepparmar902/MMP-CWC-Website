@@ -98,9 +98,9 @@ const AuthModal = ({ onClose }) => {
   const finalizeRegistration = async () => {
     try {
       await unifiedRegister(email, phone, password);
-      setSuccessMsg('Phone verified! Registration successful.');
+      setSuccessMsg('✅ Registration successful! Your account is now pending approval by a Senior Admin.');
       setView('success');
-      setTimeout(onClose, 2000);
+      setTimeout(onClose, 4000);
     } catch (err) {
       setError(err.message.replace('Firebase: ', ''));
       setView('register');
