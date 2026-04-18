@@ -212,7 +212,7 @@ function App() {
           <ContentArea activeSection={activeSection} assets={siteAssets} />
         )}
       </main>
-      {showAuthModal && <AuthModal onClose={() => setShowAuthModal(false)} />}
+      {showAuthModal && <AuthModal onClose={() => setShowAuthModal(false)} setIsAdmin={setIsAdmin} />}
     </div>
   );
 }
