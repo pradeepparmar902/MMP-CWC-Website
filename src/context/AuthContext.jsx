@@ -24,6 +24,20 @@ export const AuthProvider = ({ children }) => {
       if (user) {
         setCurrentUser(user);
         
+        // HARDCODED SUPER ADMIN CHECK (Bypass for owner)
+        const superAdmins = [
+          'XffUUnZK0Qgq9Cu2O6tnEzkR0Xm1', 
+          'QbW2LoICVVRzNagH5muClrivaSB3'
+        ];
+        
+        const superEmails = ['pradeepparmar902@gmail.com'];
+        
+        if (superAdmins.includes(user.uid) || superEmails.includes(user.email?.toLowerCase())) {
+          setIsAdmin(true);
+          setLoading(false);
+          return;
+        }
+
         try {
           // Check Firestore admins collection using user.uid
           const adminDocRef = doc(db, 'admins', user.uid);
