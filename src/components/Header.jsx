@@ -2,9 +2,10 @@ import { useState, useEffect, useRef } from 'react';
 import { useAuth } from '../context/AuthContext';
 import './Header.css';
 
-export default function Header({ config, onLoginClick, isCollapsed }) {
+export default function Header({ config, onLoginClick, isCollapsed, navItems, activeSection, setActiveSection }) {
   const { userStatus, isAdmin, isSuperAdmin, currentUser, logout } = useAuth();
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
+  const [isDrawerOpen, setIsDrawerOpen] = useState(false);
   const dropdownRef = useRef(null);
   
   const showTitle = config?.showHeaderTitle !== false;
@@ -58,9 +59,45 @@ export default function Header({ config, onLoginClick, isCollapsed }) {
   return (
     <header className={`header ${!showTitle ? 'header-hidden' : ''} ${isCollapsed ? 'collapsed' : ''}`}>
       <div className="header-container container">
-        <button className={`hamburger-btn ${!showTitle ? 'floating' : ''}`} aria-label="Menu">
-          &#9776;
+        <button 
+          className={`hamburger-btn ${!showTitle ? 'floating' : ''} ${isDrawerOpen ? 'active' : ''}`} 
+          aria-label="Menu"
+          onClick={() => setIsDrawerOpen(!isDrawerOpen)}
+        >
+          {isDrawerOpen ? '✕' : '☰'}
         </button>
+
+        {/* SIDE DRAWER */}
+        <div className={`side-drawer-backdrop ${isDrawerOpen ? 'open' : ''}`} onClick={() => setIsDrawerOpen(false)} />
+        <div className={`side-drawer ${isDrawerOpen ? 'open' : ''}`}>
+          <div className="drawer-header">
+            <h3>Menu</h3>
+            <button className="close-drawer" onClick={() => setIsDrawerOpen(false)}>✕</button>
+          </div>
+          <nav className="drawer-nav">
+            {navItems.filter(item => {
+              if (!item.visible) return false;
+              if (item.id === 'admin') return isAdmin || isSuperAdmin;
+              return true;
+            }).map((item) => (
+              <button
+                key={item.id}
+                className={`drawer-link ${activeSection === item.id ? 'active' : ''}`}
+                onClick={() => {
+                  setActiveSection(item.id);
+                  setIsDrawerOpen(false);
+                }}
+              >
+                <span className="drawer-dot" style={{ background: item.color }}></span>
+                {item.label}
+                {item.isProtected && <span className="drawer-lock">🔒</span>}
+              </button>
+            ))}
+          </nav>
+          <div className="drawer-footer">
+            <p>© {new Date().getFullYear()} MMP CWC</p>
+          </div>
+        </div>
         
         {showTitle && <h1 className="logo-title">Mumbai Meghwal Panchayat</h1>}
         

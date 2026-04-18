@@ -164,7 +164,14 @@ function App() {
 
   return (
     <div className={`app-container ${isHeaderCollapsed ? 'header-collapsed' : ''}`} style={{ backgroundColor: bannerConfig.bodyBgColor || '#f9fafb', minHeight: '100vh' }}>
-      <Header config={bannerConfig} onLoginClick={() => setShowAuthModal(true)} isCollapsed={isHeaderCollapsed} />
+      <Header 
+        config={bannerConfig} 
+        onLoginClick={() => setShowAuthModal(true)} 
+        isCollapsed={isHeaderCollapsed} 
+        navItems={bannerConfig.navItems || []}
+        activeSection={activeSection}
+        setActiveSection={setActiveSection}
+      />
       <main>
         <Banner config={bannerConfig} isSticky={activeSection === 'admin'} isCollapsed={isHeaderCollapsed} />
         <Navigation 
