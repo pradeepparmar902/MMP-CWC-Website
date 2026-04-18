@@ -1,7 +1,7 @@
 import { useAuth } from '../context/AuthContext';
 import './Navigation.css';
 
-export default function Navigation({ activeSection, setActiveSection, navItems }) {
+export default function Navigation({ activeSection, setActiveSection, navItems, isHeaderCollapsed, setIsHeaderCollapsed }) {
   const { isAdmin, isSuperAdmin } = useAuth();
   
   // Only show visible items, and strictly hide 'admin' for non-staff users
@@ -13,7 +13,15 @@ export default function Navigation({ activeSection, setActiveSection, navItems }
   });
 
   return (
-    <nav className="navigation">
+    <nav className={`navigation ${isHeaderCollapsed ? 'collapsed' : ''}`}>
+      <button 
+        className="side-toggle left"
+        onClick={() => setIsHeaderCollapsed(!isHeaderCollapsed)}
+        title={isHeaderCollapsed ? "Expand Header" : "Collapse Header"}
+      >
+        {isHeaderCollapsed ? '▼' : '▲'}
+      </button>
+
       <div className="nav-bar">
         <ul className="nav-list">
           {visibleItems.map((item) => (
@@ -29,6 +37,7 @@ export default function Navigation({ activeSection, setActiveSection, navItems }
             </li>
           ))}
         </ul>
+        
         <div className="search-container">
           <input 
             type="text" 
@@ -40,6 +49,14 @@ export default function Navigation({ activeSection, setActiveSection, navItems }
           </button>
         </div>
       </div>
+
+      <button 
+        className="side-toggle right"
+        onClick={() => setIsHeaderCollapsed(!isHeaderCollapsed)}
+        title={isHeaderCollapsed ? "Expand Header" : "Collapse Header"}
+      >
+        {isHeaderCollapsed ? '▼' : '▲'}
+      </button>
     </nav>
   );
 }

@@ -211,10 +211,10 @@ const AuthModal = ({ onClose }) => {
       <div className="auth-modal">
         <button className="close-btn" onClick={onClose}>&times;</button>
         
-        <h2>{view === 'register' ? 'Join the Portal' : 'Admin Portal'}</h2>
+        <h2>{view === 'register' ? 'Join the Community' : 'Community Login'}</h2>
         <p className="auth-subtitle">
           {view === 'login' && 'Enter your email or mobile to continue'}
-          {view === 'register' && 'Create your unified admin account'}
+          {view === 'register' && 'Create your unified account'}
           {view === 'forgot' && 'Identify your account to reset password'}
           {view === 'otp-verify' && (isRegistering ? 'Verify your number to create account' : 'Verify your number to reset password')}
           {view === 'new-password' && 'Set your new secure password'}
@@ -276,7 +276,7 @@ const AuthModal = ({ onClose }) => {
                 type="email" 
                 value={email} 
                 onChange={(e) => setEmail(e.target.value)} 
-                placeholder="admin@example.com"
+                placeholder="user@example.com"
               />
             </div>
             <div className="form-group">

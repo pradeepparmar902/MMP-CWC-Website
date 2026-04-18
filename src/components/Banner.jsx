@@ -1,15 +1,15 @@
 import { getDirectUrl } from '../utils/assetUtils';
 import './Banner.css';
 
-export default function Banner({ config, isSticky }) {
+export default function Banner({ config, isSticky, isCollapsed }) {
   const hasImages = config.elements?.some(el => el.url);
   const bannerHeight = hasImages ? `${config.bannerHeight}px` : '40px';
 
   return (
     <section 
-      className={`banner-canvas ${isSticky ? 'banner-sticky' : ''}`} 
+      className={`banner-canvas ${isSticky ? 'banner-sticky' : ''} ${isCollapsed ? 'collapsed' : ''}`} 
       style={{ 
-        height: bannerHeight, 
+        height: isCollapsed ? '0px' : bannerHeight, 
         backgroundColor: config.bannerBgColor 
       }}
     >

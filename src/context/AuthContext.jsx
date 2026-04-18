@@ -20,6 +20,8 @@ export const AuthProvider = ({ children }) => {
   const [currentUser, setCurrentUser] = useState(null);
   const [isAdmin, setIsAdmin] = useState(false);
   const [isSuperAdmin, setIsSuperAdmin] = useState(false);
+  const [isSamajAdmin, setIsSamajAdmin] = useState(false);
+  const [isEduAdmin, setIsEduAdmin] = useState(false);
   const [userStatus, setUserStatus] = useState(null); // 'pending', 'approved', 'rejected'
   const [loading, setLoading] = useState(true);
 
@@ -28,26 +30,10 @@ export const AuthProvider = ({ children }) => {
       if (user) {
         setCurrentUser(user);
         
-        // HARDCODED SUPER ADMIN CHECK (Bypass for owner)
-        const superAdmins = [
-          'XffUUnZK0Qgq9Cu2O6tnEzkR0Xm1', 
-          'QbW2LoICVVRzNagH5muClrivaSB3',
-          'Wio99wnWmTgqaFeNB7slegaHshg2'
-        ];
+        // ROOT SUPER ADMIN CHECK (Unique recovery email)
+        const rootAdmin = 'admin@cwc.com';
         
-        const superEmails = ['pradeepparmar902@gmail.com'];
-        const superPhones = ['+919876543210', '+919819984437', '+910000000000']; 
-
-        // Check if user is logged in via our virtual mobile email
-        const isVirtualMobile = user.email?.endsWith('@mmp-cwc.admin');
-        const extractedPhone = isVirtualMobile ? `+${user.email.split('@')[0]}` : null;
-
-        if (
-          superAdmins.includes(user.uid) || 
-          superEmails.includes(user.email?.toLowerCase()) ||
-          superPhones.includes(user.phoneNumber) ||
-          (extractedPhone && superPhones.includes(extractedPhone))
-        ) {
+        if (user.email?.toLowerCase() === rootAdmin) {
           setIsSuperAdmin(true);
           setIsAdmin(true);
           setUserStatus('approved');
@@ -58,12 +44,22 @@ export const AuthProvider = ({ children }) => {
         try {
           // Check Firestore admins collection first
           const adminDocRef = doc(db, 'admins', user.uid);
-          const adminDoc = await getDoc(adminDocRef);
+          const adminDocSnap = await getDoc(adminDocRef);
           
-          if (adminDoc.exists() && adminDoc.data().status === 'approved') {
-            setIsAdmin(true);
-            setIsSuperAdmin(false);
-            setUserStatus('approved');
+          if (adminDocSnap.exists()) {
+            const userData = adminDocSnap.data();
+            
+            // Set base admin flags
+            setIsAdmin(['super', 'admin', 'samaj_admin', 'edu_admin'].includes(userData.role));
+            setIsSuperAdmin(userData.role === 'super' || userData.role === 'admin'); // Full admins count as super for now
+            
+            // Set granular flags
+            setIsSamajAdmin(userData.role === 'samaj_admin');
+            setIsEduAdmin(userData.role === 'edu_admin');
+            
+            setUserStatus(userData.status || 'approved');
+            setLoading(false);
+            return;
           } else {
             // If not in admins or not approved, check pending_users
             const pendingDocRef = doc(db, 'pending_users', user.uid);

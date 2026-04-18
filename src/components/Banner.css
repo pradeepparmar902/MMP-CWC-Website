@@ -52,3 +52,19 @@
     max-width: 90%;
   }
 }
+
+
+/* FOCUS MODE / COLLAPSED STATE */
+.banner-canvas {
+  transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+  overflow: hidden;
+}
+
+.banner-canvas.collapsed {
+  height: 0 !important;
+  padding: 0;
+  margin: 0;
+  opacity: 0;
+  border: none;
+  pointer-events: none;
+}

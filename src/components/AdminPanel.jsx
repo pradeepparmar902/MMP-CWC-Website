@@ -2,10 +2,12 @@ import { useState } from 'react';
 import { ref, uploadBytes, getDownloadURL, deleteObject } from 'firebase/storage';
 import { storage } from '../firebase';
 import { getDirectUrl, getSourceType } from '../utils/assetUtils';
+import { useAuth } from '../context/AuthContext';
 import AssetManager from './AssetManager';
 import './AdminPanel.css';
 
 export default function AdminPanel({ config, setConfig, syncStatus, assets, setAssets }) {
+  const { isSuperAdmin } = useAuth();
   const [uploadingMap, setUploadingMap] = useState({});
   const [uploadLog, setUploadLog] = useState([]);
 
@@ -428,8 +430,14 @@ export default function AdminPanel({ config, setConfig, syncStatus, assets, setA
         <div className="slot-editor card menu-management">
           <div className="section-header-row">
             <h3 className="slot-name">Menu Management</h3>
-            <button className="add-element-btn small" onClick={addNavItem}>+ Add Menu</button>
+            {isSuperAdmin && (
+              <button className="add-element-btn small" onClick={addNavItem}>+ Add Menu</button>
+            )}
           </div>
+          
+          {!isSuperAdmin && (
+            <p className="admin-hint-text">Structural changes (renaming, visibility, and protection) are reserved for Senior Management.</p>
+          )}
           
           <div className="nav-items-list">
             {(config.navItems || []).map((item, index) => (
@@ -441,18 +449,20 @@ export default function AdminPanel({ config, setConfig, syncStatus, assets, setA
                       className="nav-label-input" 
                       value={item.label} 
                       onChange={(e) => handleNavItemChange(item.id, 'label', e.target.value)}
+                      disabled={!isSuperAdmin}
                     />
                     <input 
                       type="color" 
                       className="nav-color-picker" 
                       value={item.color} 
                       onChange={(e) => handleNavItemChange(item.id, 'color', e.target.value)}
+                      disabled={!isSuperAdmin}
                     />
                   </div>
                   <div className="nav-item-actions">
                     <button 
                       className="move-btn" 
-                      disabled={index === 0} 
+                      disabled={!isSuperAdmin || index === 0} 
                       onClick={() => moveNavItem(index, -1)}
                       title="Move Up"
                     >
@@ -460,7 +470,7 @@ export default function AdminPanel({ config, setConfig, syncStatus, assets, setA
                     </button>
                     <button 
                       className="move-btn" 
-                      disabled={index === config.navItems.length - 1} 
+                      disabled={!isSuperAdmin || index === config.navItems.length - 1} 
                       onClick={() => moveNavItem(index, 1)}
                       title="Move Down"
                     >
@@ -468,6 +478,7 @@ export default function AdminPanel({ config, setConfig, syncStatus, assets, setA
                     </button>
                     <button 
                       className={`visibility-btn ${item.visible ? 'on' : 'off'}`}
+                      disabled={!isSuperAdmin}
                       onClick={() => handleNavItemChange(item.id, 'visible', !item.visible)}
                       title={item.visible ? "Visible" : "Hidden"}
                     >
@@ -477,11 +488,11 @@ export default function AdminPanel({ config, setConfig, syncStatus, assets, setA
                       className={`protection-btn ${item.isProtected ? 'locked' : 'unlocked'}`}
                       onClick={() => handleNavItemChange(item.id, 'isProtected', !item.isProtected)}
                       title={item.isProtected ? "Protected (Login Required)" : "Public (No Login)"}
-                      disabled={item.id === 'admin'}
+                      disabled={!isSuperAdmin || item.id === 'admin'}
                     >
                       {item.isProtected ? '🔒' : '🔓'}
                     </button>
-                    {!item.protected && (
+                    {isSuperAdmin && !item.protected && (
                       <button 
                         className="delete-btn small" 
                         onClick={() => removeNavItem(item.id)}
