@@ -11,13 +11,13 @@ import { useAuth } from './context/AuthContext';
 import AuthModal from './components/AuthModal';
 
 const DEFAULT_NAV_ITEMS = [
-  { id: 'home', label: 'Home', color: '#3B82F6', visible: true, protected: true },
-  { id: 'education', label: 'Education', color: '#10B981', visible: true },
-  { id: 'matrimony', label: 'Matrimony', color: '#EC4899', visible: true },
-  { id: 'meghpush', label: 'MeghPush (News)', color: '#F59E0B', visible: true },
-  { id: 'election', label: 'Election Card', color: '#6366F1', visible: true },
-  { id: 'samaj', label: 'Samaj Jog Sandesh', color: '#8B5CF6', visible: true },
-  { id: 'admin', label: 'Admin', color: '#374151', visible: true, protected: true }
+  { id: 'home', label: 'Home', color: '#3B82F6', visible: true, isProtected: false },
+  { id: 'education', label: 'Education', color: '#10B981', visible: true, isProtected: true },
+  { id: 'matrimony', label: 'Matrimony', color: '#EC4899', visible: true, isProtected: true },
+  { id: 'meghpush', label: 'MeghPush (News)', color: '#F59E0B', visible: true, isProtected: false },
+  { id: 'election', label: 'Election Card', color: '#6366F1', visible: true, isProtected: true },
+  { id: 'samaj', label: 'Samaj Jog Sandesh', color: '#8B5CF6', visible: true, isProtected: false },
+  { id: 'admin', label: 'Admin', color: '#374151', visible: true, isProtected: true }
 ];
 
 const DEFAULT_BANNER_CONFIG = {
@@ -48,17 +48,15 @@ function App() {
   
     // Migration and initialization for new properties
     const migratedItems = (parsed.navItems || DEFAULT_NAV_ITEMS).map(item => {
-      if (item.id === 'home' || item.id === 'admin') {
-        return { ...item, protected: true };
-      }
-      return item;
+      // Ensure 'isProtected' exists, migrating from old 'protected' if needed
+      return { 
+        ...item, 
+        isProtected: item.isProtected ?? item.protected ?? false 
+      };
     });
 
     return {
       ...parsed,
-      showHeaderTitle: parsed.showHeaderTitle ?? true,
-      bannerBgColor: parsed.bannerBgColor || parsed.bgColor || '#ffffff',
-      bodyBgColor: parsed.bodyBgColor || '#f9fafb',
       navItems: migratedItems
     };
   });
@@ -173,6 +171,7 @@ function App() {
           navItems={bannerConfig.navItems || []} 
         />
         {activeSection === 'admin' ? (
+          /* ADMIN TAB GUARD: Only for Staff/Seniors */
           isSuperAdmin ? (
             <>
               <div style={{ background: '#1e293b', borderBottom: '1px solid #334155', padding: '10px 20px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', color: 'white' }}>
@@ -201,43 +200,10 @@ function App() {
                 setAssets={setSiteAssets}
               />
             </>
-          ) : userStatus === 'pending' ? (
-            <div style={{ textAlign: 'center', padding: '100px 20px', background: 'white', borderRadius: '12px', margin: '20px 0', border: '1px solid #e2e8f0' }}>
-              <div style={{ fontSize: '60px', marginBottom: '20px' }}>⏳</div>
-              <h2 style={{ fontSize: '28px', color: '#1e293b', marginBottom: '16px' }}>Account Pending Approval</h2>
-              <p style={{ color: '#64748b', fontSize: '18px', maxWidth: '600px', margin: '0 auto 24px' }}>
-                Your registration has been received! For security, a **Senior Admin** must review and approve your account before you can access the portal.
-              </p>
-              <div style={{ background: '#f8fafc', padding: '15px', borderRadius: '8px', display: 'inline-block', marginBottom: '30px', border: '1px solid #edf2f7' }}>
-                <span style={{ color: '#4a5568', fontWeight: '600' }}>Registered Mobile:</span> 
-                <span style={{ marginLeft: '10px', color: '#2b6cb0', fontWeight: 'bold' }}>{useAuth().currentUser?.phoneNumber || "Admin User"}</span>
-              </div>
-              <div>
-                <button 
-                  onClick={logout}
-                  style={{ padding: '12px 24px', background: '#ef4444', color: 'white', border: 'none', borderRadius: '8px', cursor: 'pointer', fontSize: '16px', fontWeight: 'bold' }}
-                >
-                  Logout & Check Later
-                </button>
-              </div>
-              <p style={{ marginTop: '30px', color: '#94a3b8', fontSize: '14px' }}>Please contact the central office if this takes longer than 24 hours.</p>
-            </div>
-          ) : userStatus === 'rejected' ? (
-            <div style={{ textAlign: 'center', padding: '100px 20px', background: '#fff1f2', borderRadius: '12px', margin: '20px 0', border: '1px solid #fda4af' }}>
-              <div style={{ fontSize: '60px', marginBottom: '20px' }}>🚫</div>
-              <h2 style={{ fontSize: '28px', color: '#9f1239', marginBottom: '16px' }}>Access Denied</h2>
-              <p style={{ color: '#be123c', fontSize: '18px', maxWidth: '600px', margin: '0 auto 24px' }}>
-                Sorry, your admin access request was not approved by the senior management.
-              </p>
-              <button 
-                onClick={logout}
-                style={{ padding: '12px 24px', background: '#e11d48', color: 'white', border: 'none', borderRadius: '8px', cursor: 'pointer', fontSize: '16px', fontWeight: 'bold' }}
-              >
-                Logout
-              </button>
-            </div>
           ) : (
+            /* Non-admins trying to access Admin tab */
             <div style={{ textAlign: 'center', padding: '100px 20px' }}>
+              <div style={{ fontSize: '60px', marginBottom: '20px' }}>🔐</div>
               <h2 
                 style={{ fontSize: '24px', marginBottom: '16px', color: '#111827', cursor: 'default' }}
                 onClick={(e) => {
@@ -249,17 +215,81 @@ function App() {
               >
                 Admin Access Required
               </h2>
-              <p style={{ color: '#4b5563', marginBottom: '24px' }}>You must verify your identity to access the management portal.</p>
+              <p style={{ color: '#4b5563', marginBottom: '24px', maxWidth: '500px', margin: '0 auto 24px' }}>
+                The Management Portal is reserved for authorized personnel. Please log in with an administrator account.
+              </p>
               <button 
                 onClick={() => setShowAuthModal(true)}
-                style={{ padding: '12px 24px', background: '#2563eb', color: 'white', border: 'none', borderRadius: '8px', cursor: 'pointer', fontSize: '16px', fontWeight: 'bold' }}
+                style={{ padding: '12px 30px', background: '#2563eb', color: 'white', border: 'none', borderRadius: '8px', cursor: 'pointer', fontSize: '16px', fontWeight: 'bold', boxShadow: '0 4px 6px -1px rgba(37, 99, 235, 0.2)' }}
               >
-                Login as Admin
+                Identification Required
               </button>
             </div>
           )
         ) : (
-          <ContentArea activeSection={activeSection} assets={siteAssets} />
+          /* PUBLIC & PROTECTED CONTENT SECTIONS */
+          (() => {
+            const activeItem = bannerConfig.navItems.find(i => i.id === activeSection);
+            
+            // 1. Check if section is protected
+            if (activeItem?.isProtected) {
+              // 2. If guest, show Login Wall
+              if (!userStatus) {
+                return (
+                  <div style={{ textAlign: 'center', padding: '120px 20px', background: 'rgba(255,255,255,0.7)', backdropFilter: 'blur(10px)', borderRadius: '20px', margin: '40px auto', maxWidth: '800px', border: '1px solid #e2e8f0' }}>
+                     <div style={{ fontSize: '50px', marginBottom: '20px' }}>🔒</div>
+                     <h2 style={{ fontSize: '32px', color: '#1e293b', marginBottom: '12px' }}>Members Only Content</h2>
+                     <p style={{ color: '#64748b', fontSize: '18px', marginBottom: '32px' }}>Access to <strong>{activeItem.label}</strong> requires a verified account. Please login or join the community.</p>
+                     <div style={{ display: 'flex', gap: '15px', justifyContent: 'center' }}>
+                        <button 
+                          onClick={() => setShowAuthModal(true)}
+                          style={{ padding: '14px 32px', background: '#3b82f6', color: 'white', border: 'none', borderRadius: '12px', cursor: 'pointer', fontSize: '16px', fontWeight: 'bold' }}
+                        >
+                          Login to View
+                        </button>
+                     </div>
+                  </div>
+                );
+              }
+              
+              // 3. If logged in but pending, show Awaiting Approval
+              if (userStatus === 'pending') {
+                return (
+                  <div style={{ textAlign: 'center', padding: '100px 20px', background: 'white', borderRadius: '12px', margin: '20px auto', maxWidth: '800px', border: '1px solid #e2e8f0' }}>
+                    <div style={{ fontSize: '60px', marginBottom: '20px' }}>⏳</div>
+                    <h2 style={{ fontSize: '28px', color: '#1e293b', marginBottom: '16px' }}>Account Pending Approval</h2>
+                    <p style={{ color: '#64748b', fontSize: '18px', maxWidth: '600px', margin: '0 auto 24px' }}>
+                      Your account is currently being reviewed by our administrators. You will have access to protected sections like **{activeItem.label}** once approved.
+                    </p>
+                    <div style={{ background: '#f8fafc', padding: '15px', borderRadius: '8px', display: 'inline-block', marginBottom: '30px', border: '1px solid #edf2f7' }}>
+                      <span style={{ color: '#4a5568', fontWeight: '600' }}>Account ID:</span> 
+                      <span style={{ marginLeft: '10px', color: '#2b6cb0', fontWeight: 'bold' }}>{useAuth().currentUser?.phoneNumber || "Member"}</span>
+                    </div>
+                    <div>
+                      <button onClick={logout} style={{ padding: '12px 24px', background: '#ef4444', color: 'white', border: 'none', borderRadius: '8px', cursor: 'pointer', fontSize: '14px', fontWeight: 'bold' }}>Logout</button>
+                    </div>
+                  </div>
+                );
+              }
+
+              // 4. If rejected, show Access Denied
+              if (userStatus === 'rejected') {
+                return (
+                  <div style={{ textAlign: 'center', padding: '100px 20px', background: '#fff1f2', borderRadius: '12px', margin: '20px auto', maxWidth: '800px', border: '1px solid #fda4af' }}>
+                    <div style={{ fontSize: '60px', marginBottom: '20px' }}>🚫</div>
+                    <h2 style={{ fontSize: '28px', color: '#9f1239', marginBottom: '16px' }}>Access Denied</h2>
+                    <p style={{ color: '#be123c', fontSize: '18px', maxWidth: '600px', margin: '0 auto 24px' }}>
+                      Sorry, your account was not approved for viewing protected segments.
+                    </p>
+                    <button onClick={logout} style={{ padding: '12px 24px', background: '#e11d48', color: 'white', border: 'none', borderRadius: '8px', cursor: 'pointer', fontSize: '14px', fontWeight: 'bold' }}>Logout</button>
+                  </div>
+                );
+              }
+            }
+
+            // 5. Default Case: Show ContentArea (Public tab or Approved Member)
+            return <ContentArea activeSection={activeSection} assets={siteAssets} />;
+          })()
         )}
       </main>
       {showAuthModal && <AuthModal onClose={() => setShowAuthModal(false)} />}

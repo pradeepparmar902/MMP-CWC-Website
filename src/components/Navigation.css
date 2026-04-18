@@ -55,6 +55,18 @@
   filter: brightness(1.2);
 }
 
+.nav-lock-icon {
+  font-size: 0.75rem;
+  margin-left: 0.5rem;
+  opacity: 0.8;
+  filter: grayscale(1);
+}
+
+.nav-btn:hover .nav-lock-icon {
+  opacity: 1;
+  filter: none;
+}
+
 .search-container {
   display: flex;
   align-items: center;

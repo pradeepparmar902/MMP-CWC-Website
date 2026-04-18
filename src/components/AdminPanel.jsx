@@ -473,6 +473,14 @@ export default function AdminPanel({ config, setConfig, syncStatus, assets, setA
                     >
                       {item.visible ? '👁️' : '🕶️'}
                     </button>
+                    <button 
+                      className={`protection-btn ${item.isProtected ? 'locked' : 'unlocked'}`}
+                      onClick={() => handleNavItemChange(item.id, 'isProtected', !item.isProtected)}
+                      title={item.isProtected ? "Protected (Login Required)" : "Public (No Login)"}
+                      disabled={item.id === 'admin'}
+                    >
+                      {item.isProtected ? '🔒' : '🔓'}
+                    </button>
                     {!item.protected && (
                       <button 
                         className="delete-btn small" 
