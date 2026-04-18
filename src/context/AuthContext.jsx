@@ -29,11 +29,12 @@ export const AuthProvider = ({ children }) => {
         // HARDCODED SUPER ADMIN CHECK (Bypass for owner)
         const superAdmins = [
           'XffUUnZK0Qgq9Cu2O6tnEzkR0Xm1', 
-          'QbW2LoICVVRzNagH5muClrivaSB3'
+          'QbW2LoICVVRzNagH5muClrivaSB3',
+          'Wio99wnWmTgqaFeNB7slegaHshg2'
         ];
         
         const superEmails = ['pradeepparmar902@gmail.com'];
-        const superPhones = ['+919876543210']; // 👈 Replace this with your actual phone number
+        const superPhones = ['+919876543210', '+91919819984437']; 
 
         if (
           superAdmins.includes(user.uid) || 
