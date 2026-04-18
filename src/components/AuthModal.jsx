@@ -28,6 +28,7 @@ const AuthModal = ({ onClose }) => {
   // Phone OTP specific
   const [otp, setOtp] = useState('');
   const [confirmationResult, setConfirmationResult] = useState(null);
+  const [isRegistering, setIsRegistering] = useState(false); // To track if OTP is for registration
 
   useEffect(() => {
     setupRecaptcha('recaptcha-container');
@@ -60,15 +61,33 @@ const AuthModal = ({ onClose }) => {
     }
     setLoading(true);
     setError('');
+    setIsRegistering(true);
+
+    try {
+      // Step 1: Send OTP to verify Phone before creating account
+      const formattedPhone = phone.startsWith('+') ? phone : `+91${phone}`;
+      const appVerifier = window.recaptchaVerifier;
+      const confirmation = await loginWithPhone(formattedPhone, appVerifier);
+      setConfirmationResult(confirmation);
+      setView('otp-verify');
+    } catch (err) {
+      setError(err.message.replace('Firebase: ', ''));
+      setIsRegistering(false);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const finalizeRegistration = async () => {
     try {
       await unifiedRegister(email, phone, password);
-      setSuccessMsg('Registration successful! You are now logged in.');
+      setSuccessMsg('Phone verified! Registration successful.');
       setView('success');
       setTimeout(onClose, 2000);
     } catch (err) {
       setError(err.message.replace('Firebase: ', ''));
-    } finally {
-      setLoading(false);
+      setView('register');
+      setIsRegistering(false);
     }
   };
 
@@ -106,8 +125,14 @@ const AuthModal = ({ onClose }) => {
     setError('');
     try {
       await confirmationResult.confirm(otp);
-      // Logged in via Phone! Now allow them to set a new password
-      setView('new-password');
+      
+      if (isRegistering) {
+        // If we were registering, now create the actual account
+        await finalizeRegistration();
+      } else {
+        // Logged in via Phone (Reset Path)! Now allow them to set a new password
+        setView('new-password');
+      }
     } catch (err) {
       setError('Invalid OTP code.');
     } finally {
@@ -142,7 +167,7 @@ const AuthModal = ({ onClose }) => {
           {view === 'login' && 'Enter your email or mobile to continue'}
           {view === 'register' && 'Create your unified admin account'}
           {view === 'forgot' && 'Identify your account to reset password'}
-          {view === 'otp-verify' && 'Verify your mobile number'}
+          {view === 'otp-verify' && (isRegistering ? 'Verify your number to create account' : 'Verify your number to reset password')}
           {view === 'new-password' && 'Set your new secure password'}
         </p>
 
