@@ -3,28 +3,34 @@ import { useAuth } from '../context/AuthContext';
 import './AuthModal.css';
 
 const AuthModal = ({ onClose }) => {
-  const { loginWithEmail, registerWithEmail, loginWithPhone, setupRecaptcha } = useAuth();
+  const { 
+    unifiedLogin, 
+    unifiedRegister, 
+    loginWithPhone, 
+    setupRecaptcha, 
+    resetPasswordByEmail, 
+    updateUserPassword 
+  } = useAuth();
   
-  const [activeTab, setActiveTab] = useState('email'); // 'email' or 'phone'
-  const [isRegistering, setIsRegistering] = useState(false);
+  // States: 'login', 'register', 'forgot', 'otp-verify', 'new-password', 'success'
+  const [view, setView] = useState('login');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [successMsg, setSuccessMsg] = useState('');
 
-  // Email state
+  // Form states
+  const [identifier, setIdentifier] = useState(''); // Email or Phone
   const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
-
-  // Phone state
   const [phone, setPhone] = useState('');
+  const [password, setPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  
+  // Phone OTP specific
   const [otp, setOtp] = useState('');
-  const [otpSent, setOtpSent] = useState(false);
   const [confirmationResult, setConfirmationResult] = useState(null);
 
   useEffect(() => {
-    // Setup recaptcha once component mounts
     setupRecaptcha('recaptcha-container');
-    
-    // Cleanup recaptcha on unmount
     return () => {
       if (window.recaptchaVerifier) {
         window.recaptchaVerifier.clear();
@@ -33,51 +39,62 @@ const AuthModal = ({ onClose }) => {
     };
   }, [setupRecaptcha]);
 
-  const handleEmailSubmit = async (e) => {
+  const handleUnifiedLogin = async (e) => {
     e.preventDefault();
     setLoading(true);
     setError('');
-    
     try {
-      if (isRegistering) {
-        await registerWithEmail(email, password);
-      } else {
-        await loginWithEmail(email, password);
-      }
+      await unifiedLogin(identifier, password);
       onClose();
     } catch (err) {
-      setError(err.message.replace('Firebase: ', '')); // Clean up the firebase error prefix
+      setError(err.message.replace('Firebase: ', ''));
     } finally {
       setLoading(false);
     }
   };
 
-  const handleSendOtp = async (e) => {
+  const handleRegister = async (e) => {
     e.preventDefault();
-    if (!phone) {
-      setError('Please enter a valid phone number');
-      return;
+    if (password !== confirmPassword) {
+      return setError('Passwords do not match');
     }
-    
     setLoading(true);
     setError('');
-
     try {
-      const formattedPhone = phone.startsWith('+') ? phone : `+91${phone}`; // Defaults to +91 if no code provided
-      const appVerifier = window.recaptchaVerifier;
-      const confirmation = await loginWithPhone(formattedPhone, appVerifier);
-      setConfirmationResult(confirmation);
-      setOtpSent(true);
+      await unifiedRegister(email, phone, password);
+      setSuccessMsg('Registration successful! You are now logged in.');
+      setView('success');
+      setTimeout(onClose, 2000);
     } catch (err) {
-      console.error(err);
-      setError('Failed to send OTP. Please check the number and try again.');
-      
-      // Sometimes recaptcha needs to be re-initialized if it fails
-      if (window.recaptchaVerifier) {
-        window.recaptchaVerifier.clear();
-        window.recaptchaVerifier = null;
-        setupRecaptcha('recaptcha-container');
+      setError(err.message.replace('Firebase: ', ''));
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleForgotSubmit = async (e) => {
+    e.preventDefault();
+    setLoading(true);
+    setError('');
+    
+    // Check if identifier is phone or email
+    const isEmail = identifier.includes('@');
+    
+    try {
+      if (isEmail) {
+        await resetPasswordByEmail(identifier);
+        setSuccessMsg('Reset link sent to your email!');
+        setView('success');
+      } else {
+        // Phone Reset Path - Step 1: Send OTP
+        const formattedPhone = identifier.startsWith('+') ? identifier : `+91${identifier}`;
+        const appVerifier = window.recaptchaVerifier;
+        const confirmation = await loginWithPhone(formattedPhone, appVerifier);
+        setConfirmationResult(confirmation);
+        setView('otp-verify');
       }
+    } catch (err) {
+      setError(err.message.replace('Firebase: ', ''));
     } finally {
       setLoading(false);
     }
@@ -85,17 +102,31 @@ const AuthModal = ({ onClose }) => {
 
   const handleVerifyOtp = async (e) => {
     e.preventDefault();
-    if (!otp || !confirmationResult) return;
-    
     setLoading(true);
     setError('');
-
     try {
       await confirmationResult.confirm(otp);
-      onClose(); // Successfully verified and logged in
+      // Logged in via Phone! Now allow them to set a new password
+      setView('new-password');
     } catch (err) {
-      console.error(err);
-      setError('Invalid OTP code. Please try again.');
+      setError('Invalid OTP code.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleUpdatePassword = async (e) => {
+    e.preventDefault();
+    if (password !== confirmPassword) return setError('Passwords do not match');
+    setLoading(true);
+    setError('');
+    try {
+      await updateUserPassword(password);
+      setSuccessMsg('Password updated successfully!');
+      setView('success');
+      setTimeout(onClose, 2000);
+    } catch (err) {
+      setError(err.message);
     } finally {
       setLoading(false);
     }
@@ -104,42 +135,30 @@ const AuthModal = ({ onClose }) => {
   return (
     <div className="auth-modal-overlay">
       <div className="auth-modal">
-        {/* Close Button */}
         <button className="close-btn" onClick={onClose}>&times;</button>
         
-        <h2>Admin Authentication</h2>
-        <p className="auth-subtitle">Verify your identity to access the portal</p>
+        <h2>{view === 'register' ? 'Join the Portal' : 'Admin Portal'}</h2>
+        <p className="auth-subtitle">
+          {view === 'login' && 'Enter your email or mobile to continue'}
+          {view === 'register' && 'Create your unified admin account'}
+          {view === 'forgot' && 'Identify your account to reset password'}
+          {view === 'otp-verify' && 'Verify your mobile number'}
+          {view === 'new-password' && 'Set your new secure password'}
+        </p>
 
-        {/* Tab Selection */}
-        <div className="auth-tabs">
-          <button 
-            className={`tab-btn ${activeTab === 'email' ? 'active' : ''}`}
-            onClick={() => { setActiveTab('email'); setError(''); }}
-          >
-            Email Login
-          </button>
-          <button 
-            className={`tab-btn ${activeTab === 'phone' ? 'active' : ''}`}
-            onClick={() => { setActiveTab('phone'); setError(''); }}
-          >
-            Phone OTP
-          </button>
-        </div>
-
-        {/* Error Message */}
         {error && <div className="auth-error">{error}</div>}
+        {successMsg && <div className="auth-success">{successMsg}</div>}
 
-        {/* Email Tab Content */}
-        {activeTab === 'email' && (
-          <form className="auth-form" onSubmit={handleEmailSubmit}>
+        {/* LOGIN VIEW */}
+        {view === 'login' && (
+          <form className="auth-form" onSubmit={handleUnifiedLogin}>
             <div className="form-group">
-              <label>Email Address</label>
+              <label>Email or Mobile Number</label>
               <input 
-                type="email" 
-                value={email} 
-                onChange={(e) => setEmail(e.target.value)} 
+                value={identifier} 
+                onChange={(e) => setIdentifier(e.target.value)} 
                 required 
-                placeholder="admin@example.com"
+                placeholder="email@example.com or 9876543210"
               />
             </div>
             <div className="form-group">
@@ -152,73 +171,148 @@ const AuthModal = ({ onClose }) => {
                 placeholder="••••••••"
               />
             </div>
+            <div className="auth-utility-links">
+               <span onClick={() => setView('forgot')}>Forgot Password?</span>
+            </div>
             <button type="submit" className="auth-submit-btn" disabled={loading}>
-              {loading ? (
-                <span className="spinner"></span>
-              ) : (
-                isRegistering ? 'Register & Login' : 'Login'
-              )}
+              {loading ? <span className="spinner"></span> : 'Login'}
             </button>
             <div className="auth-toggle">
-              <span onClick={() => setIsRegistering(!isRegistering)}>
-                {isRegistering ? 'Already have an account? Login' : 'Need to register? Sign up here'}
-              </span>
+              <span onClick={() => setView('register')}>Need an account? Sign up</span>
             </div>
           </form>
         )}
 
-        {/* Phone Tab Content */}
-        {activeTab === 'phone' && (
-          <div className="auth-form">
-            {!otpSent ? (
-              <form onSubmit={handleSendOtp}>
-                <div className="form-group">
-                  <label>Mobile Number (India +91)</label>
-                  <div className="phone-input-group">
-                    <span className="country-code">+91</span>
-                    <input 
-                      type="tel" 
-                      value={phone} 
-                      onChange={(e) => setPhone(e.target.value.replace(/\D/g, ''))} 
-                      required 
-                      placeholder="9876543210"
-                      maxLength="10"
-                    />
-                  </div>
-                </div>
-                <button type="submit" className="auth-submit-btn" disabled={loading || phone.length < 10}>
-                  {loading ? <span className="spinner"></span> : 'Send OTP via SMS'}
-                </button>
-              </form>
-            ) : (
-              <form onSubmit={handleVerifyOtp}>
-                <div className="form-group">
-                  <label>Enter OTP Code</label>
-                  <input 
-                    type="text" 
-                    value={otp} 
-                    onChange={(e) => setOtp(e.target.value.replace(/\D/g, ''))} 
-                    required 
-                    placeholder="123456"
-                    maxLength="6"
-                    style={{ letterSpacing: '0.5em', textAlign: 'center', fontSize: '1.2rem' }}
-                  />
-                  <small className="form-hint">Code sent to +91 {phone}</small>
-                </div>
-                <button type="submit" className="auth-submit-btn" disabled={loading || otp.length < 6}>
-                  {loading ? <span className="spinner"></span> : 'Verify Code'}
-                </button>
-                <div className="auth-toggle">
-                  <span onClick={() => { setOtpSent(false); setOtp(''); setError(''); }}>
-                    Change Number or Resend
-                  </span>
-                </div>
-              </form>
-            )}
-          </div>
+        {/* REGISTER VIEW */}
+        {view === 'register' && (
+          <form className="auth-form" onSubmit={handleRegister}>
+            <div className="form-group">
+              <label>Email Address</label>
+              <input 
+                type="email" 
+                value={email} 
+                onChange={(e) => setEmail(e.target.value)} 
+                required 
+                placeholder="admin@example.com"
+              />
+            </div>
+            <div className="form-group">
+              <label>Mobile Number (+91)</label>
+              <input 
+                type="tel" 
+                value={phone} 
+                onChange={(e) => setPhone(e.target.value)} 
+                required 
+                placeholder="9876543210"
+              />
+            </div>
+            <div className="form-group">
+              <label>Set Password</label>
+              <input 
+                type="password" 
+                value={password} 
+                onChange={(e) => setPassword(e.target.value)} 
+                required 
+                placeholder="••••••••"
+              />
+            </div>
+            <div className="form-group">
+              <label>Confirm Password</label>
+              <input 
+                type="password" 
+                value={confirmPassword} 
+                onChange={(e) => setConfirmPassword(e.target.value)} 
+                required 
+                placeholder="••••••••"
+              />
+            </div>
+            <button type="submit" className="auth-submit-btn" disabled={loading}>
+              {loading ? <span className="spinner"></span> : 'Register & Access'}
+            </button>
+            <div className="auth-toggle">
+              <span onClick={() => setView('login')}>Already have an account? Login</span>
+            </div>
+          </form>
         )}
 
-        {/* Essential for Firebase Phone Auth Invisible Captcha */}
+        {/* FORGOT VIEW */}
+        {view === 'forgot' && (
+          <form className="auth-form" onSubmit={handleForgotSubmit}>
+            <div className="form-group">
+              <label>Enter Registered Email or Mobile</label>
+              <input 
+                value={identifier} 
+                onChange={(e) => setIdentifier(e.target.value)} 
+                required 
+                placeholder="email@example.com or 9876543210"
+              />
+            </div>
+            <button type="submit" className="auth-submit-btn" disabled={loading}>
+              {loading ? <span className="spinner"></span> : 'Send Reset Request'}
+            </button>
+            <div className="auth-toggle">
+              <span onClick={() => setView('login')}>Back to Login</span>
+            </div>
+          </form>
+        )}
+
+        {/* OTP VERIFY (Mobile Reset Path) */}
+        {view === 'otp-verify' && (
+          <form className="auth-form" onSubmit={handleVerifyOtp}>
+            <div className="form-group">
+              <label>Enter 6-Digit OTP</label>
+              <input 
+                type="text" 
+                value={otp} 
+                onChange={(e) => setOtp(e.target.value)} 
+                required 
+                placeholder="123456"
+                maxLength="6"
+                style={{ letterSpacing: '0.5em', textAlign: 'center', fontSize: '1.2rem' }}
+              />
+            </div>
+            <button type="submit" className="auth-submit-btn" disabled={loading}>
+              {loading ? <span className="spinner"></span> : 'Verify OTP'}
+            </button>
+          </form>
+        )}
+
+        {/* NEW PASSWORD (Mobile Reset Path) */}
+        {view === 'new-password' && (
+          <form className="auth-form" onSubmit={handleUpdatePassword}>
+            <div className="form-group">
+              <label>New Password</label>
+              <input 
+                type="password" 
+                value={password} 
+                onChange={(e) => setPassword(e.target.value)} 
+                required 
+                placeholder="••••••••"
+              />
+            </div>
+            <div className="form-group">
+              <label>Confirm New Password</label>
+              <input 
+                type="password" 
+                value={confirmPassword} 
+                onChange={(e) => setConfirmPassword(e.target.value)} 
+                required 
+                placeholder="••••••••"
+              />
+            </div>
+            <button type="submit" className="auth-submit-btn" disabled={loading}>
+              {loading ? <span className="spinner"></span> : 'Update Password'}
+            </button>
+          </form>
+        )}
+
+        {/* Success / Loading Transition Area */}
+        {view === 'success' && (
+           <div className="auth-success-state">
+              <div className="success-icon">✓</div>
+           </div>
+        )}
+
         <div id="recaptcha-container"></div>
       </div>
     </div>

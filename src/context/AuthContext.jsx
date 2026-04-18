@@ -5,9 +5,11 @@ import {
   createUserWithEmailAndPassword, 
   signOut, 
   RecaptchaVerifier, 
-  signInWithPhoneNumber 
+  signInWithPhoneNumber,
+  sendPasswordResetEmail,
+  updatePassword
 } from 'firebase/auth';
-import { doc, getDoc } from 'firebase/firestore';
+import { doc, getDoc, setDoc, collection, query, where, getDocs } from 'firebase/firestore';
 import { auth, db } from '../firebase';
 
 const AuthContext = createContext();
@@ -31,8 +33,13 @@ export const AuthProvider = ({ children }) => {
         ];
         
         const superEmails = ['pradeepparmar902@gmail.com'];
-        
-        if (superAdmins.includes(user.uid) || superEmails.includes(user.email?.toLowerCase())) {
+        const superPhones = ['+919876543210']; // 👈 Replace this with your actual phone number
+
+        if (
+          superAdmins.includes(user.uid) || 
+          superEmails.includes(user.email?.toLowerCase()) ||
+          superPhones.includes(user.phoneNumber)
+        ) {
           setIsAdmin(true);
           setLoading(false);
           return;
@@ -63,24 +70,49 @@ export const AuthProvider = ({ children }) => {
     return unsubscribe;
   }, []);
 
-  const loginWithEmail = (email, password) => signInWithEmailAndPassword(auth, email, password);
-  const registerWithEmail = (email, password) => createUserWithEmailAndPassword(auth, email, password);
-  const logout = () => signOut(auth);
-
-  const setupRecaptcha = (containerId) => {
-    if (!window.recaptchaVerifier) {
-      window.recaptchaVerifier = new RecaptchaVerifier(auth, containerId, {
-        size: 'invisible',
-        callback: (response) => {
-          // reCAPTCHA solved
-        }
-      });
+  const unifiedLogin = async (identifier, password) => {
+    let email = identifier;
+    
+    // Check if identifier is a phone number (simple regex for digits)
+    if (/^\+?\d+$/.test(identifier.replace(/\s/g, ''))) {
+      const formattedPhone = identifier.startsWith('+') ? identifier : `+91${identifier}`;
+      const mappingDoc = await getDoc(doc(db, 'user_mappings', formattedPhone));
+      if (!mappingDoc.exists()) {
+        throw new Error('No account found with this mobile number.');
+      }
+      email = mappingDoc.data().email;
     }
-    return window.recaptchaVerifier;
+
+    return signInWithEmailAndPassword(auth, email, password);
   };
 
-  const loginWithPhone = (phoneNumber, appVerifier) => {
-    return signInWithPhoneNumber(auth, phoneNumber, appVerifier);
+  const unifiedRegister = async (email, phone, password) => {
+    // 1. Check if phone already exists
+    const formattedPhone = phone.startsWith('+') ? phone : `+91${phone}`;
+    const mappingDoc = await getDoc(doc(db, 'user_mappings', formattedPhone));
+    if (mappingDoc.exists()) {
+      throw new Error('This mobile number is already registered.');
+    }
+
+    // 2. Create Auth User
+    const userCredential = await createUserWithEmailAndPassword(auth, email, password);
+    const user = userCredential.user;
+
+    // 3. Save mapping in Firestore
+    await setDoc(doc(db, 'user_mappings', formattedPhone), {
+      email: email,
+      uid: user.uid,
+      createdAt: new Date().toISOString()
+    });
+
+    return userCredential;
+  };
+
+  const resetPasswordByEmail = (email) => sendPasswordResetEmail(auth, email);
+
+  const updateUserPassword = (newPassword) => {
+    if (!auth.currentUser) throw new Error("No user logged in.");
+    return updatePassword(auth.currentUser, newPassword);
   };
 
   const value = {
@@ -90,7 +122,11 @@ export const AuthProvider = ({ children }) => {
     registerWithEmail,
     loginWithPhone,
     setupRecaptcha,
-    logout
+    logout,
+    unifiedLogin,
+    unifiedRegister,
+    resetPasswordByEmail,
+    updateUserPassword
   };
 
   return (
