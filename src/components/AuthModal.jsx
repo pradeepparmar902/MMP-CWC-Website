@@ -66,11 +66,16 @@ const AuthModal = ({ onClose }) => {
     try {
       // Step 1: Send OTP to verify Phone before creating account
       const formattedPhone = phone.startsWith('+') ? phone : `+91${phone}`;
+      console.log("📱 Attempting to SEND OTP to:", formattedPhone);
+      
       const appVerifier = window.recaptchaVerifier;
       const confirmation = await loginWithPhone(formattedPhone, appVerifier);
+      console.log("✅ OTP successfully triggered by Firebase!");
+      
       setConfirmationResult(confirmation);
       setView('otp-verify');
     } catch (err) {
+      console.error("❌ SMS Error:", err);
       setError(err.message.replace('Firebase: ', ''));
       setIsRegistering(false);
     } finally {
@@ -107,12 +112,17 @@ const AuthModal = ({ onClose }) => {
       } else {
         // Phone Reset Path - Step 1: Send OTP
         const formattedPhone = identifier.startsWith('+') ? identifier : `+91${identifier}`;
+        console.log("📱 Sending RESET OTP to:", formattedPhone);
+
         const appVerifier = window.recaptchaVerifier;
         const confirmation = await loginWithPhone(formattedPhone, appVerifier);
+        console.log("✅ RESET OTP successfully triggered!");
+
         setConfirmationResult(confirmation);
         setView('otp-verify');
       }
     } catch (err) {
+      console.error("❌ Reset SMS Error:", err);
       setError(err.message.replace('Firebase: ', ''));
     } finally {
       setLoading(false);
