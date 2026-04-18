@@ -260,7 +260,6 @@ const AuthModal = ({ onClose }) => {
                 placeholder="••••••••"
               />
             </div>
-            <div id="recaptcha-container" className="recaptcha-box" style={{ margin: '15px 0', display: 'flex', justifyContent: 'center' }}></div>
             <button type="submit" className="auth-submit-btn" disabled={loading}>
               {loading ? <span className="spinner"></span> : 'Register & Access'}
             </button>
@@ -282,7 +281,6 @@ const AuthModal = ({ onClose }) => {
                 placeholder="email@example.com or 9876543210"
               />
             </div>
-            <div id="recaptcha-container" style={{ margin: '15px 0', display: 'flex', justifyContent: 'center' }}></div>
             <button type="submit" className="auth-submit-btn" disabled={loading}>
               {loading ? <span className="spinner"></span> : 'Send Reset Request'}
             </button>
@@ -349,6 +347,14 @@ const AuthModal = ({ onClose }) => {
            </div>
         )}
 
+        <div 
+          id="recaptcha-container" 
+          style={{ 
+            marginTop: '20px', 
+            display: (view === 'register' || view === 'forgot' || view === 'otp-verify' || view === 'login') ? 'flex' : 'none', 
+            justifyContent: 'center' 
+          }}
+        ></div>
       </div>
     </div>
   );
