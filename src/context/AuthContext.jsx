@@ -94,13 +94,17 @@ export const AuthProvider = ({ children }) => {
       throw new Error('This mobile number is already registered.');
     }
 
-    // 2. Create Auth User
-    const userCredential = await createUserWithEmailAndPassword(auth, email, password);
+    // 2. Handle optional email (Generate virtual email if empty)
+    const finalEmail = email || `${formattedPhone.replace('+', '')}@mmp-cwc.admin`;
+
+    // 3. Create Auth User
+    const userCredential = await createUserWithEmailAndPassword(auth, finalEmail, password);
     const user = userCredential.user;
 
-    // 3. Save mapping in Firestore
+    // 4. Save mapping in Firestore
     await setDoc(doc(db, 'user_mappings', formattedPhone), {
-      email: email,
+      email: finalEmail,
+      realEmail: email || null,
       uid: user.uid,
       createdAt: new Date().toISOString()
     });

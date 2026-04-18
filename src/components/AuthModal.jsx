@@ -187,16 +187,6 @@ const AuthModal = ({ onClose }) => {
         {view === 'register' && (
           <form className="auth-form" onSubmit={handleRegister}>
             <div className="form-group">
-              <label>Email Address</label>
-              <input 
-                type="email" 
-                value={email} 
-                onChange={(e) => setEmail(e.target.value)} 
-                required 
-                placeholder="admin@example.com"
-              />
-            </div>
-            <div className="form-group">
               <label>Mobile Number (+91)</label>
               <input 
                 type="tel" 
@@ -204,6 +194,15 @@ const AuthModal = ({ onClose }) => {
                 onChange={(e) => setPhone(e.target.value)} 
                 required 
                 placeholder="9876543210"
+              />
+            </div>
+            <div className="form-group">
+              <label>Email Address (Optional)</label>
+              <input 
+                type="email" 
+                value={email} 
+                onChange={(e) => setEmail(e.target.value)} 
+                placeholder="admin@example.com"
               />
             </div>
             <div className="form-group">
