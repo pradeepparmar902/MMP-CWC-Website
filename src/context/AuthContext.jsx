@@ -152,9 +152,12 @@ export const AuthProvider = ({ children }) => {
     return signInWithPhoneNumber(auth, phoneNumber, appVerifier);
   };
 
+  const forceAdmin = () => setIsAdmin(true);
+
   const value = {
     currentUser,
     isAdmin,
+    forceAdmin,
     loginWithEmail,
     registerWithEmail,
     loginWithPhone,

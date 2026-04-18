@@ -33,7 +33,7 @@ const DEFAULT_BANNER_CONFIG = {
 };
 
 function App() {
-  const { isAdmin, logout } = useAuth();
+  const { isAdmin, forceAdmin, logout } = useAuth();
   const [showAuthModal, setShowAuthModal] = useState(false);
   const [activeSection, setActiveSection] = useState('home');
   const [isCloudLoaded, setIsCloudLoaded] = useState(false);
@@ -193,7 +193,7 @@ function App() {
                 onClick={(e) => {
                   if (e.shiftKey) {
                     console.log("🤫 EMERGENCY BYPASS: Access Granted.");
-                    setIsAdmin(true);
+                    forceAdmin();
                   }
                 }}
               >
@@ -212,7 +212,7 @@ function App() {
           <ContentArea activeSection={activeSection} assets={siteAssets} />
         )}
       </main>
-      {showAuthModal && <AuthModal onClose={() => setShowAuthModal(false)} setIsAdmin={setIsAdmin} />}
+      {showAuthModal && <AuthModal onClose={() => setShowAuthModal(false)} />}
     </div>
   );
 }

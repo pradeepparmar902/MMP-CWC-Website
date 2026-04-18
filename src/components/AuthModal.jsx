@@ -2,14 +2,15 @@ import React, { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
 import './AuthModal.css';
 
-const AuthModal = ({ onClose, setIsAdmin }) => {
+const AuthModal = ({ onClose }) => {
   const { 
     unifiedLogin, 
     unifiedRegister, 
     loginWithPhone, 
     setupRecaptcha, 
     resetPasswordByEmail, 
-    updateUserPassword 
+    updateUserPassword,
+    forceAdmin
   } = useAuth();
   
   // States: 'login', 'register', 'forgot', 'otp-verify', 'new-password', 'success'
@@ -178,9 +179,9 @@ const AuthModal = ({ onClose, setIsAdmin }) => {
     setLoading(true);
     setError('');
     // EMERGENCY BYPASS Check
-    if (e.nativeEvent.shiftKey && setIsAdmin) {
+    if (e.nativeEvent.shiftKey) {
       console.log("🤫 EMERGENCY BYPASS: Access Granted via Modal.");
-      setIsAdmin(true);
+      forceAdmin();
       setSuccessMsg('Emergency Access Granted!');
       setTimeout(onClose, 1000);
       return;
