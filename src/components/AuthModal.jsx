@@ -31,8 +31,13 @@ const AuthModal = ({ onClose }) => {
   const [isRegistering, setIsRegistering] = useState(false); // To track if OTP is for registration
 
   useEffect(() => {
-    setupRecaptcha('recaptcha-container');
+    // Small delay to ensure DOM is fully ready
+    const timer = setTimeout(() => {
+      setupRecaptcha('recaptcha-container');
+    }, 500);
+    
     return () => {
+      clearTimeout(timer);
       if (window.recaptchaVerifier) {
         window.recaptchaVerifier.clear();
         window.recaptchaVerifier = null;
@@ -355,6 +360,9 @@ const AuthModal = ({ onClose }) => {
             justifyContent: 'center' 
           }}
         ></div>
+        <div style={{ textAlign: 'center', marginTop: '10px', fontSize: '10px', color: '#9ca3af' }}>
+          Portal Version: v1.2
+        </div>
       </div>
     </div>
   );
