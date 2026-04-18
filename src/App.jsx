@@ -196,13 +196,9 @@ function App() {
               >
                 Login as Admin
               </button>
-              {showAuthModal && <AuthModal onClose={() => setShowAuthModal(false)} />}
-            </div>
-          )
-        ) : (
-          <ContentArea activeSection={activeSection} assets={siteAssets} />
         )}
       </main>
+      {showAuthModal && <AuthModal onClose={() => setShowAuthModal(false)} />}
     </div>
   );
 }
