@@ -37,19 +37,22 @@
   display: block;
 }
 
-@media (max-width: 768px) {
+@media (max-width: 600px) {
   .banner-canvas {
-    height: auto !important;
-    min-height: 200px;
+    height: 120px !important; /* Fixed smaller height for mobile */
   }
   
-  .canvas-element {
-    position: relative !important;
-    left: 0 !important;
-    top: 0 !important;
-    margin: 1rem auto;
-    width: auto !important;
-    max-width: 90%;
+  /* Hide side logos on mobile to save space */
+  .canvas-element:not(:nth-child(2)) {
+    display: none !important;
+  }
+
+  /* Center the title logo and scale it */
+  .canvas-element:nth-child(2) {
+    left: 50% !important;
+    transform: translateX(-50%) scale(0.6) !important;
+    top: 5% !important;
+    width: 100% !important;
   }
 }
 

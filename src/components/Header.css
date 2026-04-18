@@ -244,6 +244,35 @@
   }
 }
 
+@media (max-width: 600px) {
+  .header {
+    padding: 0.5rem 0;
+  }
+  
+  .logo-title {
+    font-size: 0.95rem;
+    margin: 0 0.5rem;
+    line-height: 1.2;
+  }
+
+  .user-identifier {
+    display: none; /* Hide phone/email on mobile to save space */
+  }
+
+  .status-badge {
+    font-size: 0.55rem;
+    padding: 0.15rem 0.4rem;
+  }
+
+  .header-right {
+    gap: 0.4rem;
+  }
+
+  .profile-btn {
+    padding: 0.4rem;
+  }
+}
+
 
 /* FOCUS MODE / COLLAPSED STATE */
 .header.collapsed {

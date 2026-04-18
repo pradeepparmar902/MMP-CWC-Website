@@ -123,11 +123,12 @@
 
 @media (max-width: 1024px) {
   .nav-bar {
-    flex-direction: column;
+    flex-wrap: wrap;
   }
   
   .nav-list {
     flex-wrap: wrap;
+    width: 100%;
   }
   
   .nav-item {
@@ -135,19 +136,29 @@
   }
 
   .nav-btn {
-    padding: 0.75rem 0.5rem;
-    font-size: 0.85rem;
+    padding: 0.6rem 0.25rem;
+    font-size: 0.75rem;
   }
 
   .search-container {
-    margin: 0.5rem;
-    width: calc(100% - 1rem);
+    margin: 0.25rem;
+    width: calc(100% - 0.5rem);
     min-width: auto;
+    height: 34px;
+  }
+  
+  .side-toggle {
+    width: 32px;
+    font-size: 12px;
   }
 }
 
 @media (max-width: 640px) {
   .nav-item {
-    flex: 1 0 50%;
+    flex: 1 0 33.333%;
+  }
+  
+  .side-toggle {
+    width: 30px;
   }
 }
