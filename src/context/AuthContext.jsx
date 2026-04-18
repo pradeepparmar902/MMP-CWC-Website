@@ -34,7 +34,7 @@ export const AuthProvider = ({ children }) => {
         ];
         
         const superEmails = ['pradeepparmar902@gmail.com'];
-        const superPhones = ['+919876543210', '+919819984437']; 
+        const superPhones = ['+919876543210', '+919819984437', '+910000000000']; 
 
         // Check if user is logged in via our virtual mobile email
         const isVirtualMobile = user.email?.endsWith('@mmp-cwc.admin');
