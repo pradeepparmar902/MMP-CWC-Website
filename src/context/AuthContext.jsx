@@ -115,6 +115,26 @@ export const AuthProvider = ({ children }) => {
     return updatePassword(auth.currentUser, newPassword);
   };
 
+  const loginWithEmail = (email, password) => signInWithEmailAndPassword(auth, email, password);
+  const registerWithEmail = (email, password) => createUserWithEmailAndPassword(auth, email, password);
+  const logout = () => signOut(auth);
+
+  const setupRecaptcha = (containerId) => {
+    if (!window.recaptchaVerifier) {
+      window.recaptchaVerifier = new RecaptchaVerifier(auth, containerId, {
+        size: 'invisible',
+        callback: (response) => {
+          // reCAPTCHA solved
+        }
+      });
+    }
+    return window.recaptchaVerifier;
+  };
+
+  const loginWithPhone = (phoneNumber, appVerifier) => {
+    return signInWithPhoneNumber(auth, phoneNumber, appVerifier);
+  };
+
   const value = {
     currentUser,
     isAdmin,
