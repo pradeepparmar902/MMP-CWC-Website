@@ -43,12 +43,12 @@
   }
   
   /* Hide side logos on mobile to save space */
-  .canvas-element:not(:nth-child(2)) {
+  .canvas-element:not(.center-logo) {
     display: none !important;
   }
 
   /* Center the title logo and scale it */
-  .canvas-element:nth-child(2) {
+  .center-logo {
     left: 50% !important;
     transform: translateX(-50%) scale(0.6) !important;
     top: 5% !important;

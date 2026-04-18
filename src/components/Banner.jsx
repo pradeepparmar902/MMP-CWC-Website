@@ -20,7 +20,7 @@ export default function Banner({ config, isSticky, isCollapsed }) {
           return (
             <div 
               key={el.id} 
-              className="canvas-element"
+              className={`canvas-element ${el.id === '2' ? 'center-logo' : ''}`}
               style={{
                 left: `${el.x}%`,
                 top: `${el.y}%`,
