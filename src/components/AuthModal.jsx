@@ -47,9 +47,15 @@ const AuthModal = ({ onClose }) => {
         if (docSnap.exists()) {
           const fields = docSnap.data().fields || [];
           setFormSchema(fields);
-          // Initialize profileData with empty values
+          // Initialize profileData with empty values or objects
           const initialData = {};
-          fields.forEach(f => initialData[f.id] = '');
+          fields.forEach(f => {
+            if (f.type === 'fullname') {
+              initialData[f.id] = { firstName: '', middleName: '', lastName: '' };
+            } else {
+              initialData[f.id] = '';
+            }
+          });
           setProfileData(initialData);
         }
       } catch (err) {
@@ -92,8 +98,15 @@ const AuthModal = ({ onClose }) => {
     e.preventDefault();
     // Validate Dynamic Fields
     for (const field of formSchema) {
-      if (field.required && !profileData[field.id]) {
-        return setError(`Please fill the mandatory field: ${field.label}`);
+      if (field.required) {
+        if (field.type === 'fullname') {
+          const { firstName, middleName, lastName } = profileData[field.id] || {};
+          if (!firstName || !middleName || !lastName) {
+            return setError(`Please fill all parts of the mandatory field: ${field.label} (First, Middle, and Surname)`);
+          }
+        } else if (!profileData[field.id]) {
+          return setError(`Please fill the mandatory field: ${field.label}`);
+        }
       }
     }
 
@@ -343,6 +356,39 @@ const AuthModal = ({ onClose }) => {
                       <option value="">Select option...</option>
                       {field.options?.map(opt => <option key={opt} value={opt}>{opt}</option>)}
                     </select>
+                  ) : field.type === 'fullname' ? (
+                    <div className="fullname-group" style={{display:'flex', flexDirection:'column', gap:'10px'}}>
+                      <input 
+                        type="text"
+                        value={profileData[field.id]?.firstName || ''}
+                        onChange={(e) => setProfileData({ 
+                          ...profileData, 
+                          [field.id]: { ...(profileData[field.id] || {}), firstName: e.target.value } 
+                        })}
+                        placeholder="First Name"
+                        required={field.required}
+                      />
+                      <input 
+                        type="text"
+                        value={profileData[field.id]?.middleName || ''}
+                        onChange={(e) => setProfileData({ 
+                          ...profileData, 
+                          [field.id]: { ...(profileData[field.id] || {}), middleName: e.target.value } 
+                        })}
+                        placeholder="Middle Name"
+                        required={field.required}
+                      />
+                      <input 
+                        type="text"
+                        value={profileData[field.id]?.lastName || ''}
+                        onChange={(e) => setProfileData({ 
+                          ...profileData, 
+                          [field.id]: { ...(profileData[field.id] || {}), lastName: e.target.value } 
+                        })}
+                        placeholder="Surname / Last Name"
+                        required={field.required}
+                      />
+                    </div>
                   ) : field.type === 'tel_in' ? (
                     <div className="tel-in-group" style={{display:'flex', gap:'5px', alignItems:'center'}}>
                       <span className="tel-prefix" style={{padding:'10px', background:'#f1f5f9', border:'1px solid #cbd5e1', borderRadius:'6px', fontSize:'14px', fontWeight:'700', color:'#475569'}}>+91</span>
