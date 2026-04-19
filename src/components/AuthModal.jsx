@@ -326,6 +326,29 @@ const AuthModal = ({ onClose }) => {
                       <option value="">Select option...</option>
                       {field.options?.map(opt => <option key={opt} value={opt}>{opt}</option>)}
                     </select>
+                  ) : field.type === 'tel_in' ? (
+                    <div className="tel-in-group" style={{display:'flex', gap:'5px', alignItems:'center'}}>
+                      <span className="tel-prefix" style={{padding:'10px', background:'#f1f5f9', border:'1px solid #cbd5e1', borderRadius:'6px', fontSize:'14px', fontWeight:'700', color:'#475569'}}>+91</span>
+                      <input 
+                        type="tel"
+                        value={profileData[field.id] || ''}
+                        onChange={(e) => {
+                          const val = e.target.value.replace(/\D/g, '').slice(0, 10);
+                          setProfileData({ ...profileData, [field.id]: val });
+                        }}
+                        required={field.required}
+                        placeholder="10-digit number"
+                        style={{flex: 1}}
+                      />
+                    </div>
+                  ) : field.type === 'number' ? (
+                    <input 
+                      type="number"
+                      value={profileData[field.id] || ''}
+                      onChange={(e) => setProfileData({ ...profileData, [field.id]: e.target.value })}
+                      required={field.required}
+                      placeholder={field.placeholder || 'Enter number'}
+                    />
                   ) : field.type === 'file' ? (
                     <input 
                       type="file" 

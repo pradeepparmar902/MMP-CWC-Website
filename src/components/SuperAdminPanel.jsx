@@ -485,7 +485,7 @@ export default function SuperAdminPanel({ config, setConfig, syncStatus, assets,
                                             {fieldSchema?.type === 'file' ? (
                                               <img src={val} alt="Identity Photo" className="profile-preview-img" />
                                             ) : (
-                                              <span>{val}</span>
+                                              <span>{fieldSchema?.type === 'tel_in' ? `+91 ${val}` : val}</span>
                                             )}
                                           </div>
                                         </div>
@@ -688,7 +688,9 @@ export default function SuperAdminPanel({ config, setConfig, syncStatus, assets,
                         >
                           <option value="text">Short Text</option>
                           <option value="date">Date Picker</option>
-                          <option value="tel">Phone Format</option>
+                          <option value="tel">Phone (Global)</option>
+                          <option value="tel_in">India Mobile (+91)</option>
+                          <option value="number">General Number</option>
                           <option value="select">Dropdown List</option>
                           <option value="file">Photo/File Upload</option>
                         </select>
