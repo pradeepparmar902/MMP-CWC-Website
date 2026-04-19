@@ -90,10 +90,6 @@ const AuthModal = ({ onClose }) => {
 
   const handleRegister = async (e) => {
     e.preventDefault();
-    if (password !== confirmPassword) {
-      return setError('Passwords do not match');
-    }
-
     // Validate Dynamic Fields
     for (const field of formSchema) {
       if (field.required && !profileData[field.id]) {
@@ -129,6 +125,25 @@ const AuthModal = ({ onClose }) => {
       setError(err.message.replace('Firebase: ', ''));
       setIsRegistering(false);
     } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleFinalizeWithPassword = async (e) => {
+    e.preventDefault();
+    if (password !== confirmPassword) {
+      return setError('Passwords do not match');
+    }
+    setLoading(true);
+    setError('');
+    
+    try {
+      await unifiedRegister(email, phone, password, profileData);
+      setSuccessMsg('✅ Registration successful! Your account is now pending approval by a Senior Admin.');
+      setView('success');
+      setTimeout(onClose, 4000);
+    } catch (err) {
+      setError(err.message.replace('Firebase: ', ''));
       setLoading(false);
     }
   };
@@ -202,9 +217,10 @@ const AuthModal = ({ onClose }) => {
         await confirmationResult.confirm(otp);
       }
       
+      
       if (isRegistering) {
-        // If we were registering, now create the actual account
-        await finalizeRegistration();
+        // Option B: Instead of finalizing, move to Password Setup
+        setView('register-password');
       } else {
         // Logged in via Phone (Reset Path)! Now allow them to set a new password
         setView('new-password');
@@ -251,8 +267,9 @@ const AuthModal = ({ onClose }) => {
         <p className="auth-subtitle">
           {view === 'login' && 'Enter your email or mobile to continue'}
           {view === 'register' && 'Create your unified account'}
+          {view === 'register-password' && 'Finally, set your secure password'}
           {view === 'forgot' && 'Identify your account to reset password'}
-          {view === 'otp-verify' && (isRegistering ? 'Verify your number to create account' : 'Verify your number to reset password')}
+          {view === 'otp-verify' && (isRegistering ? 'Verify your number to continue' : 'Verify your number to reset password')}
           {view === 'new-password' && 'Set your new secure password'}
         </p>
 
@@ -386,8 +403,21 @@ const AuthModal = ({ onClose }) => {
                 placeholder="user@example.com"
               />
             </div>
-            <div className="form-group">
-              <label>Set Password</label>
+            
+            <button type="submit" className="auth-submit-btn" disabled={loading}>
+              {loading ? <span className="spinner"></span> : 'Continue To Verification'}
+            </button>
+            <div className="auth-toggle">
+              <span onClick={() => setView('login')}>Already have an account? Login</span>
+            </div>
+          </form>
+        )}
+
+        {/* REGISTER PASSWORD VIEW (Option B Step 3) */}
+        {view === 'register-password' && (
+          <form className="auth-form" onSubmit={handleFinalizeWithPassword}>
+             <div className="form-group">
+              <label>Set Secure Password</label>
               <input 
                 type="password" 
                 value={password} 
@@ -407,11 +437,11 @@ const AuthModal = ({ onClose }) => {
               />
             </div>
             <button type="submit" className="auth-submit-btn" disabled={loading}>
-              {loading ? <span className="spinner"></span> : 'Register & Access'}
+              {loading ? <span className="spinner"></span> : 'Complete Registration'}
             </button>
-            <div className="auth-toggle">
-              <span onClick={() => setView('login')}>Already have an account? Login</span>
-            </div>
+            <p style={{fontSize:'12px', color:'#64748b', textAlign:'center', marginTop:'15px'}}>
+              By completing, you agree to our community standards.
+            </p>
           </form>
         )}
 
