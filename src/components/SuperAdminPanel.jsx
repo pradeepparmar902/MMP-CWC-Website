@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import * as XLSX from 'xlsx';
 import { useAuth } from '../context/AuthContext';
 import { 
   collection, 
@@ -30,6 +31,12 @@ export default function SuperAdminPanel({ config, setConfig, syncStatus, assets,
   const [manualRole, setManualRole] = useState('member');
   const [isAddingUser, setIsAddingUser] = useState(false);
 
+  // Form Builder State
+  const [formSchema, setFormSchema] = useState([]);
+  const [isSavingSchema, setIsSavingSchema] = useState(false);
+  const [editingSchema, setEditingSchema] = useState(false);
+  const [expandedUser, setExpandedUser] = useState(null);
+
   // Friendly role names
   const ROLE_MAP = {
     'super': '🛡️ Site Owner',
@@ -47,6 +54,24 @@ export default function SuperAdminPanel({ config, setConfig, syncStatus, assets,
       setApprovedUsers(users);
     });
     return unsubscribe;
+  }, []);
+
+  // 1. Fetch Registration Schema
+  useEffect(() => {
+    const fetchSchema = async () => {
+      const docSnap = await getDoc(doc(db, 'site_settings', 'registration_form'));
+      if (docSnap.exists()) {
+        setFormSchema(docSnap.data().fields || []);
+      } else {
+        // Initial defaults if none exist
+        setFormSchema([
+          { id: 'fullName', label: 'Full Name', type: 'text', required: true, placeholder: 'Enter your full name' },
+          { id: 'dob', label: 'Date of Birth', type: 'date', required: true },
+          { id: 'location', label: 'Current Location', type: 'text', required: false, placeholder: 'City/Area' }
+        ]);
+      }
+    };
+    fetchSchema();
   }, []);
 
   // 1. Real-time listener for pending users
@@ -208,6 +233,14 @@ export default function SuperAdminPanel({ config, setConfig, syncStatus, assets,
           >
             Website Control
           </button>
+          {isCwcSuper && (
+            <button 
+              className={`sap-tab ${activeTab === 'form_builder' ? 'active' : ''}`}
+              onClick={() => setActiveTab('form_builder')}
+            >
+              📋 Join Form 
+            </button>
+          )}
         </nav>
       </div>
 
@@ -341,91 +374,130 @@ export default function SuperAdminPanel({ config, setConfig, syncStatus, assets,
                     </thead>
                     <tbody>
                       {allUsers.map(user => (
-                        <tr key={user.uid}>
-                          <td className="page-label">{user.phone}</td>
-                          <td style={{color:'#64748b', fontSize:'13px'}}>{user.email || '—'}</td>
-                          <td>
-                            {user._source === 'approved' ? (
-                              <span className={`role-pill ${user.role}`}>
-                                {ROLE_MAP[user.role] || user.role}
-                              </span>
-                            ) : (
-                              <span className={`status-pill ${user.status === 'rejected' ? 'rejected' : 'pending'}`}>
-                                {user.status === 'rejected' ? '❌ Rejected' : '⏳ Pending'}
-                              </span>
-                            )}
-                          </td>
-                          <td>
-                            <div className="action-btns">
-                              {/* Grant/Promote to Admin */}
-                              {user.role !== 'admin' && (
-                                <button
-                                  className="approve-btn"
-                                  style={{background:'#4338ca', fontSize:'12px', padding:'6px 10px'}}
-                                  onClick={async () => {
-                                    if (!confirm(`Grant Admin access to ${user.phone}?`)) return;
-                                    try {
-                                      await setDoc(doc(db, 'admins', user.uid), {
-                                        uid: user.uid, phone: user.phone,
-                                        email: user.email || null,
-                                        virtualEmail: user.virtualEmail || null,
-                                        status: 'approved', role: 'admin',
-                                        approvedAt: new Date().toISOString()
-                                      });
-                                      if (user._source === 'pending') await deleteDoc(doc(db, 'pending_users', user.uid));
-                                      alert('✅ Admin access granted!');
-                                    } catch(e) { alert('❌ Failed'); }
-                                  }}
-                                >
-                                  🛡️ Set as Admin
-                                </button>
+                        <React.Fragment key={user.uid}>
+                          <tr className={expandedUser === user.uid ? 'row-expanded' : ''}>
+                            <td className="page-label">
+                              <button 
+                                className="expand-row-btn" 
+                                onClick={() => setExpandedUser(expandedUser === user.uid ? null : user.uid)}
+                              >
+                                {expandedUser === user.uid ? '▼' : '▶'} {user.phone}
+                              </button>
+                            </td>
+                            <td style={{color:'#64748b', fontSize:'13px'}}>{user.email || '—'}</td>
+                            <td>
+                              {user._source === 'approved' ? (
+                                <span className={`role-pill ${user.role}`}>
+                                  {ROLE_MAP[user.role] || user.role}
+                                </span>
+                              ) : (
+                                <span className={`status-pill ${user.status === 'rejected' ? 'rejected' : 'pending'}`}>
+                                  {user.status === 'rejected' ? '❌ Rejected' : '⏳ Pending'}
+                                </span>
                               )}
-                              {/* Grant/Demote to Member */}
-                              {user.role !== 'member' && (
-                                <button
-                                  className="approve-btn"
-                                  style={{background:'#3b82f6', fontSize:'12px', padding:'6px 10px'}}
-                                  onClick={async () => {
-                                    if (!confirm(`Set ${user.phone} as Normal Member?`)) return;
-                                    try {
-                                      await setDoc(doc(db, 'admins', user.uid), {
-                                        uid: user.uid, phone: user.phone,
-                                        email: user.email || null,
-                                        virtualEmail: user.virtualEmail || null,
-                                        status: 'approved', role: 'member',
-                                        approvedAt: new Date().toISOString()
-                                      });
-                                      if (user._source === 'pending') await deleteDoc(doc(db, 'pending_users', user.uid));
-                                      alert('✅ Set as Normal Member!');
-                                    } catch(e) { alert('❌ Failed'); }
-                                  }}
-                                >
-                                  👤 Set as Member
-                                </button>
-                              )}
-                              {/* Revoke */}
-                              {user._source === 'approved' && (
-                                <button
-                                  className="delete-btn-sap"
-                                  style={{color:'#ef4444', fontWeight:'700'}}
-                                  onClick={() => handleRevokeAccess(user)}
-                                >
-                                  Revoke
-                                </button>
-                              )}
-                              {/* Delete pending */}
-                              {user._source === 'pending' && (
-                                <button
-                                  className="delete-btn-sap"
-                                  style={{color:'#ef4444', fontWeight:'700'}}
-                                  onClick={() => handleDelete(user)}
-                                >
-                                  Delete
-                                </button>
-                              )}
-                            </div>
-                          </td>
-                        </tr>
+                            </td>
+                            <td>
+                              <div className="action-btns">
+                                {/* Grant/Promote to Admin */}
+                                {user.role !== 'admin' && (
+                                  <button
+                                    className="approve-btn"
+                                    style={{background:'#4338ca', fontSize:'12px', padding:'6px 10px'}}
+                                    onClick={async () => {
+                                      if (!confirm(`Grant Admin access to ${user.phone}?`)) return;
+                                      try {
+                                        await setDoc(doc(db, 'admins', user.uid), {
+                                          uid: user.uid, phone: user.phone,
+                                          email: user.email || null,
+                                          virtualEmail: user.virtualEmail || null,
+                                          status: 'approved', role: 'admin',
+                                          profile: user.profile || {},
+                                          approvedAt: new Date().toISOString()
+                                        });
+                                        if (user._source === 'pending') await deleteDoc(doc(db, 'pending_users', user.uid));
+                                        alert('✅ Admin access granted!');
+                                      } catch(e) { alert('❌ Failed'); }
+                                    }}
+                                  >
+                                    🛡️ Set as Admin
+                                  </button>
+                                )}
+                                {/* Grant/Demote to Member */}
+                                {user.role !== 'member' && (
+                                  <button
+                                    className="approve-btn"
+                                    style={{background:'#3b82f6', fontSize:'12px', padding:'6px 10px'}}
+                                    onClick={async () => {
+                                      if (!confirm(`Set ${user.phone} as Normal Member?`)) return;
+                                      try {
+                                        await setDoc(doc(db, 'admins', user.uid), {
+                                          uid: user.uid, phone: user.phone,
+                                          email: user.email || null,
+                                          virtualEmail: user.virtualEmail || null,
+                                          status: 'approved', role: 'member',
+                                          profile: user.profile || {},
+                                          approvedAt: new Date().toISOString()
+                                        });
+                                        if (user._source === 'pending') await deleteDoc(doc(db, 'pending_users', user.uid));
+                                        alert('✅ Set as Normal Member!');
+                                      } catch(e) { alert('❌ Failed'); }
+                                    }}
+                                  >
+                                    👤 Set as Member
+                                  </button>
+                                )}
+                                {/* Revoke */}
+                                {user._source === 'approved' && (
+                                  <button
+                                    className="delete-btn-sap"
+                                    style={{color:'#ef4444', fontWeight:'700'}}
+                                    onClick={() => handleRevokeAccess(user)}
+                                  >
+                                    Revoke
+                                  </button>
+                                )}
+                                {/* Delete pending */}
+                                {user._source === 'pending' && (
+                                  <button
+                                    className="delete-btn-sap"
+                                    style={{color:'#ef4444', fontWeight:'700'}}
+                                    onClick={() => handleDelete(user)}
+                                  >
+                                    Delete
+                                  </button>
+                                )}
+                              </div>
+                            </td>
+                          </tr>
+                          {expandedUser === user.uid && (
+                            <tr className="detail-row">
+                              <td colSpan="4">
+                                <div className="user-profile-details">
+                                  <h4>Dynamic Profile Details</h4>
+                                  <div className="profile-grid">
+                                    {Object.entries(user.profile || {}).map(([key, val]) => {
+                                      const fieldSchema = formSchema.find(f => f.id === key);
+                                      if (!val) return null;
+                                      return (
+                                        <div key={key} className="profile-item">
+                                          <label>{fieldSchema?.label || key}:</label>
+                                          <div className="profile-value">
+                                            {fieldSchema?.type === 'file' ? (
+                                              <img src={val} alt="Identity Photo" className="profile-preview-img" />
+                                            ) : (
+                                              <span>{val}</span>
+                                            )}
+                                          </div>
+                                        </div>
+                                      );
+                                    })}
+                                    {(!user.profile || Object.keys(user.profile).length === 0) && <p className="no-profile-msg">No extra profile data provided.</p>}
+                                  </div>
+                                </div>
+                              </td>
+                            </tr>
+                          )}
+                        </React.Fragment>
                       ))}
                     </tbody>
                   </table>
@@ -463,32 +535,69 @@ export default function SuperAdminPanel({ config, setConfig, syncStatus, assets,
                   </thead>
                   <tbody>
                     {pendingUsers.map(user => (
-                      <tr key={user.uid}>
-                        <td className="user-phone">{user.phone}</td>
-                        <td className="user-date">
-                          {new Date(user.registeredAt).toLocaleDateString()} 
-                          <span className="user-time">{new Date(user.registeredAt).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</span>
-                        </td>
-                        <td>
-                          <span className={`status-pill ${user.status}`}>
-                            {user.status}
-                          </span>
-                        </td>
-                        <td>
-                          <div className="action-btns" style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
-                            {user.status !== 'approved' && (
-                              <>
-                                <button className="approve-btn" style={{ background: '#3b82f6' }} onClick={() => handleApprove(user, 'member')}>Approve as Member</button>
-                                <button className="approve-btn" style={{ background: '#10b981' }} onClick={() => handleApprove(user, 'admin')}>Approve as Admin</button>
-                              </>
-                            )}
-                            {user.status === 'pending' && (
-                              <button className="reject-btn" onClick={() => handleReject(user)}>Reject</button>
-                            )}
-                            <button className="delete-btn-sap" onClick={() => handleDelete(user)}>Delete</button>
-                          </div>
-                        </td>
-                      </tr>
+                      <React.Fragment key={user.uid}>
+                        <tr className={expandedUser === user.uid ? 'row-expanded' : ''}>
+                          <td className="user-phone">
+                            <button 
+                              className="expand-row-btn" 
+                              onClick={() => setExpandedUser(expandedUser === user.uid ? null : user.uid)}
+                            >
+                              {expandedUser === user.uid ? '▼' : '▶'} {user.phone}
+                            </button>
+                          </td>
+                          <td className="user-date">
+                            {new Date(user.registeredAt).toLocaleDateString()} 
+                            <span className="user-time">{new Date(user.registeredAt).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</span>
+                          </td>
+                          <td>
+                            <span className={`status-pill ${user.status}`}>
+                              {user.status}
+                            </span>
+                          </td>
+                          <td>
+                            <div className="action-btns" style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+                              {user.status !== 'approved' && (
+                                <>
+                                  <button className="approve-btn" style={{ background: '#3b82f6' }} onClick={() => handleApprove(user, 'member')}>Approve as Member</button>
+                                  <button className="approve-btn" style={{ background: '#10b981' }} onClick={() => handleApprove(user, 'admin')}>Approve as Admin</button>
+                                </>
+                              )}
+                              {user.status === 'pending' && (
+                                <button className="reject-btn" onClick={() => handleReject(user)}>Reject</button>
+                              )}
+                              <button className="delete-btn-sap" onClick={() => handleDelete(user)}>Delete</button>
+                            </div>
+                          </td>
+                        </tr>
+                        {expandedUser === user.uid && (
+                          <tr className="detail-row">
+                            <td colSpan="4">
+                              <div className="user-profile-details">
+                                <h4>Dynamic Profile Details</h4>
+                                <div className="profile-grid">
+                                  {Object.entries(user.profile || {}).map(([key, val]) => {
+                                    const fieldSchema = formSchema.find(f => f.id === key);
+                                    if (!val) return null;
+                                    return (
+                                      <div key={key} className="profile-item">
+                                        <label>{fieldSchema?.label || key}:</label>
+                                        <div className="profile-value">
+                                          {fieldSchema?.type === 'file' ? (
+                                            <img src={val} alt="Identity Photo" className="profile-preview-img" />
+                                          ) : (
+                                            <span>{val}</span>
+                                          )}
+                                        </div>
+                                      </div>
+                                    );
+                                  })}
+                                  {(!user.profile || Object.keys(user.profile).length === 0) && <p className="no-profile-msg">No extra profile data provided.</p>}
+                                </div>
+                              </div>
+                            </td>
+                          </tr>
+                        )}
+                      </React.Fragment>
                     ))}
                   </tbody>
                 </table>
@@ -506,6 +615,151 @@ export default function SuperAdminPanel({ config, setConfig, syncStatus, assets,
                 assets={assets}
                 setAssets={setAssets}
              />
+          </div>
+        )}
+
+        {(activeTab === 'form_builder' && isCwcSuper) && (
+          <div className="form-builder-view">
+            <div className="view-header">
+              <div style={{display:'flex', justifyContent:'space-between', alignItems:'center'}}>
+                <div>
+                  <h2>Registration Form Builder</h2>
+                  <p>Define which fields users must fill during registration. Changes reflect instantly on the signup modal.</p>
+                </div>
+                <button 
+                  className="save-schema-btn" 
+                  disabled={isSavingSchema}
+                  onClick={async () => {
+                    setIsSavingSchema(true);
+                    try {
+                      await setDoc(doc(db, 'site_settings', 'registration_form'), { fields: formSchema });
+                      alert('✅ Registration form updated successfully!');
+                    } catch(e) { alert('❌ Failed to save'); }
+                    setIsSavingSchema(false);
+                  }}
+                >
+                  {isSavingSchema ? 'Saving...' : '💾 Save Form Layout'}
+                </button>
+              </div>
+            </div>
+
+            <div className="schema-builder-container">
+              <div className="schema-tools">
+                <button className="add-field-btn" onClick={() => {
+                  const id = `field_${Date.now()}`;
+                  setFormSchema([...formSchema, { id, label: 'New Field', type: 'text', required: false }]);
+                }}>
+                  ➕ Add New Field
+                </button>
+              </div>
+
+              <div className="fields-grid">
+                {formSchema.map((field, index) => (
+                  <div key={field.id} className="field-card">
+                    <div className="field-card-header">
+                      <span className="field-index">Field #{index + 1}</span>
+                      <button className="remove-field" onClick={() => setFormSchema(formSchema.filter(f => f.id !== field.id))}>✕</button>
+                    </div>
+                    
+                    <div className="field-inputs">
+                      <div className="f-input-group">
+                        <label>Display Label</label>
+                        <input 
+                          type="text" 
+                          value={field.label} 
+                          onChange={(e) => {
+                            const newSchema = [...formSchema];
+                            newSchema[index].label = e.target.value;
+                            setFormSchema(newSchema);
+                          }}
+                        />
+                      </div>
+
+                      <div className="f-input-group">
+                        <label>Field Type</label>
+                        <select 
+                          value={field.type} 
+                          onChange={(e) => {
+                            const newSchema = [...formSchema];
+                            newSchema[index].type = e.target.value;
+                            if (e.target.value === 'select') newSchema[index].options = ['Option 1'];
+                            setFormSchema(newSchema);
+                          }}
+                        >
+                          <option value="text">Short Text</option>
+                          <option value="date">Date Picker</option>
+                          <option value="tel">Phone Format</option>
+                          <option value="select">Dropdown List</option>
+                          <option value="file">Photo/File Upload</option>
+                        </select>
+                      </div>
+
+                      <div className="f-checkbox-group">
+                        <label>
+                          <input 
+                            type="checkbox" 
+                            checked={field.required} 
+                            onChange={(e) => {
+                              const newSchema = [...formSchema];
+                              newSchema[index].required = e.target.checked;
+                              setFormSchema(newSchema);
+                            }}
+                          />
+                          Mandatory Field
+                        </label>
+                      </div>
+                    </div>
+
+                    {field.type === 'select' && (
+                      <div className="field-options-manager">
+                        <label>Dropdown Options ({field.options?.length || 0})</label>
+                        <div className="bulk-upload-row">
+                          <input 
+                            type="file" 
+                            accept=".xlsx, .xls, .csv" 
+                            id={`excel-upload-${field.id}`}
+                            style={{display:'none'}}
+                            onChange={(e) => {
+                              const file = e.target.files[0];
+                              const reader = new FileReader();
+                              reader.onload = (evt) => {
+                                const bstr = evt.target.result;
+                                const wb = XLSX.read(bstr, { type: 'binary' });
+                                const wsname = wb.SheetNames[0];
+                                const ws = wb.Sheets[wsname];
+                                const data = XLSX.utils.sheet_to_json(ws, { header: 1 });
+                                const options = data.flat().filter(val => val !== null && val !== undefined && val !== '').map(String);
+                                
+                                const newSchema = [...formSchema];
+                                newSchema[index].options = options;
+                                setFormSchema(newSchema);
+                                alert(`✅ Imported ${options.length} options from Excel!`);
+                              };
+                              reader.readAsBinaryString(file);
+                            }}
+                          />
+                          <button 
+                            className="excel-import-btn"
+                            onClick={() => document.getElementById(`excel-upload-${field.id}`).click()}
+                          >
+                            📈 Import from Excel
+                          </button>
+                        </div>
+                        <textarea 
+                          placeholder="Or type options separated by commas..."
+                          value={field.options?.join(', ') || ''}
+                          onChange={(e) => {
+                            const newSchema = [...formSchema];
+                            newSchema[index].options = e.target.value.split(',').map(s => s.trim()).filter(s => s !== '');
+                            setFormSchema(newSchema);
+                          }}
+                        />
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
           </div>
         )}
       </div>

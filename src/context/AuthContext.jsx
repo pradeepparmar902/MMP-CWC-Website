@@ -108,7 +108,7 @@ export const AuthProvider = ({ children }) => {
     return signInWithEmailAndPassword(auth, email, password);
   };
 
-  const unifiedRegister = async (email, phone, password) => {
+  const unifiedRegister = async (email, phone, password, profileData = {}) => {
     // 1. Check if phone already exists
     const formattedPhone = phone.startsWith('+') ? phone : `+91${phone}`;
     const mappingDoc = await getDoc(doc(db, 'user_mappings', formattedPhone));
@@ -131,14 +131,15 @@ export const AuthProvider = ({ children }) => {
       createdAt: new Date().toISOString()
     });
 
-    // 5. Add to pending_users queue
+    // 5. Add to pending_users queue with dynamic profile
     await setDoc(doc(db, 'pending_users', user.uid), {
       uid: user.uid,
       phone: formattedPhone,
       email: email || null,
       virtualEmail: finalEmail,
       status: 'pending',
-      registeredAt: new Date().toISOString()
+      registeredAt: new Date().toISOString(),
+      profile: profileData // Dynamic fields from the registration form builder
     });
 
     return userCredential;

@@ -1,5 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
+import { doc, getDoc } from 'firebase/firestore';
+import { db } from '../firebase';
 import './AuthModal.css';
 
 const AuthModal = ({ onClose }) => {
@@ -31,8 +33,34 @@ const AuthModal = ({ onClose }) => {
   const [confirmationResult, setConfirmationResult] = useState(null);
   const [isRegistering, setIsRegistering] = useState(false); // To track if OTP is for registration
 
+  // Dynamic Form Schema & Data
+  const [formSchema, setFormSchema] = useState([]);
+  const [profileData, setProfileData] = useState({});
+  const [isSchemaLoading, setIsSchemaLoading] = useState(false);
+
   useEffect(() => {
-    // Small delay to ensure DOM is fully ready
+    // 1. Fetch Dynamic Form Schema
+    const fetchSchema = async () => {
+      setIsSchemaLoading(true);
+      try {
+        const docSnap = await getDoc(doc(db, 'site_settings', 'registration_form'));
+        if (docSnap.exists()) {
+          const fields = docSnap.data().fields || [];
+          setFormSchema(fields);
+          // Initialize profileData with empty values
+          const initialData = {};
+          fields.forEach(f => initialData[f.id] = '');
+          setProfileData(initialData);
+        }
+      } catch (err) {
+        console.error("Error fetching form schema:", err);
+      } finally {
+        setIsSchemaLoading(false);
+      }
+    };
+    fetchSchema();
+
+    // 2. Setup Recaptcha
     const timer = setTimeout(() => {
       setupRecaptcha('recaptcha-container');
     }, 500);
@@ -65,6 +93,14 @@ const AuthModal = ({ onClose }) => {
     if (password !== confirmPassword) {
       return setError('Passwords do not match');
     }
+
+    // Validate Dynamic Fields
+    for (const field of formSchema) {
+      if (field.required && !profileData[field.id]) {
+        return setError(`Please fill the mandatory field: ${field.label}`);
+      }
+    }
+
     setLoading(true);
     setError('');
     setIsRegistering(true);
@@ -99,7 +135,7 @@ const AuthModal = ({ onClose }) => {
 
   const finalizeRegistration = async () => {
     try {
-      await unifiedRegister(email, phone, password);
+      await unifiedRegister(email, phone, password, profileData);
       setSuccessMsg('✅ Registration successful! Your account is now pending approval by a Senior Admin.');
       setView('success');
       setTimeout(onClose, 4000);
@@ -270,8 +306,56 @@ const AuthModal = ({ onClose }) => {
                 placeholder="9876543210"
               />
             </div>
+
+            {/* DYNAMIC PROFILE FIELDS */}
+            {isSchemaLoading ? (
+               <div style={{textAlign:'center', padding:'10px', color:'#94a3b8', fontSize:'12px'}}>Loading registration details...</div>
+            ) : (
+              formSchema.map((field) => (
+                <div className="form-group" key={field.id}>
+                  <label>
+                    {field.label} {field.required && <span style={{color:'#ef4444'}}>*</span>}
+                  </label>
+                  
+                  {field.type === 'select' ? (
+                    <select
+                      value={profileData[field.id] || ''}
+                      onChange={(e) => setProfileData({ ...profileData, [field.id]: e.target.value })}
+                      required={field.required}
+                    >
+                      <option value="">Select option...</option>
+                      {field.options?.map(opt => <option key={opt} value={opt}>{opt}</option>)}
+                    </select>
+                  ) : field.type === 'file' ? (
+                    <input 
+                      type="file" 
+                      accept="image/*"
+                      onChange={(e) => {
+                        const file = e.target.files[0];
+                        if (!file) return;
+                        const reader = new FileReader();
+                        reader.onloadend = () => {
+                          setProfileData({ ...profileData, [field.id]: reader.result });
+                        };
+                        reader.readAsDataURL(file);
+                      }}
+                      required={field.required}
+                    />
+                  ) : (
+                    <input 
+                      type={field.type}
+                      value={profileData[field.id] || ''}
+                      onChange={(e) => setProfileData({ ...profileData, [field.id]: e.target.value })}
+                      required={field.required}
+                      placeholder={field.placeholder || ''}
+                    />
+                  )}
+                </div>
+              ))
+            )}
+
             <div className="form-group">
-              <label>Email Address (Optional)</label>
+              <label>Email Address {formSchema.find(f => f.id === 'email')?.required ? <span style={{color:'#ef4444'}}>*</span> : '(Optional)'}</label>
               <input 
                 type="email" 
                 value={email} 
