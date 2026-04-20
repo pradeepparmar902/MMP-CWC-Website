@@ -42,6 +42,12 @@ function App() {
   const [syncStatus, setSyncStatus] = useState('synced');
   const [siteAssets, setSiteAssets] = useState([]);
   const [isHeaderCollapsed, setIsHeaderCollapsed] = useState(false);
+  const [authInitialView, setAuthInitialView] = useState('login');
+  const [language, setLanguage] = useState(() => localStorage.getItem('mmp_language') || 'gu');
+
+  useEffect(() => {
+    localStorage.setItem('mmp_language', language);
+  }, [language]);
   const [bannerConfig, setBannerConfig] = useState(() => {
     const saved = localStorage.getItem('mmp_banner_config');
     if (!saved) return DEFAULT_BANNER_CONFIG;
@@ -166,11 +172,16 @@ function App() {
     <div className={`app-container ${isHeaderCollapsed ? 'header-collapsed' : ''}`} style={{ backgroundColor: bannerConfig.bodyBgColor || '#f9fafb', minHeight: '100vh' }}>
       <Header 
         config={bannerConfig} 
-        onLoginClick={() => setShowAuthModal(true)} 
+        onLoginClick={(view) => {
+          setShowAuthModal(true);
+          setAuthInitialView(view || 'login');
+        }} 
         isCollapsed={isHeaderCollapsed} 
         navItems={bannerConfig.navItems || []}
         activeSection={activeSection}
         setActiveSection={setActiveSection}
+        language={language}
+        setLanguage={setLanguage}
       />
       <main>
         <Banner config={bannerConfig} isSticky={activeSection === 'admin'} isCollapsed={isHeaderCollapsed} />
@@ -251,11 +262,16 @@ function App() {
             }
 
             // 5. Default Case: Show ContentArea (Public tab or Approved Member)
-            return <ContentArea activeSection={activeSection} assets={siteAssets} />;
+            return <ContentArea activeSection={activeSection} assets={siteAssets} language={language} />;
           })()
         )}
       </main>
-      {showAuthModal && <AuthModal onClose={() => setShowAuthModal(false)} />}
+      {showAuthModal && (
+        <AuthModal 
+          onClose={() => setShowAuthModal(false)} 
+          initialView={authInitialView}
+        />
+      )}
     </div>
   );
 }

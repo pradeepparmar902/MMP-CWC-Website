@@ -16,12 +16,26 @@
 .auth-modal {
   background: white;
   width: 90%;
-  max-width: 420px;
+  max-width: 480px; /* Slightly wider for complex forms */
+  max-height: 90vh; /* Ensure it doesn't exceed screen height */
+  overflow-y: auto; /* Enable scrolling for long forms */
   border-radius: 16px;
   padding: 32px;
   box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
   position: relative;
   animation: slideUp 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+  /* Custom scrollbar for better look */
+  scrollbar-width: thin;
+  scrollbar-color: #cbd5e1 transparent;
+}
+
+.auth-modal::-webkit-scrollbar {
+  width: 6px;
+}
+
+.auth-modal::-webkit-scrollbar-thumb {
+  background-color: #cbd5e1;
+  border-radius: 10px;
 }
 
 .close-btn {
@@ -251,4 +265,65 @@
 @keyframes slideUp {
   from { opacity: 0; transform: translateY(20px); }
   to { opacity: 1; transform: translateY(0); }
+}
+
+/* Profile Management Styles */
+.profile-info-card {
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  padding: 20px;
+  margin-bottom: 24px;
+}
+
+.profile-info-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px 0;
+}
+
+.profile-info-row:not(:last-child) {
+  border-bottom: 1px solid #f1f5f9;
+}
+
+.info-label {
+  font-size: 13px;
+  color: #64748b;
+  font-weight: 500;
+}
+
+.info-value {
+  font-size: 15px;
+  color: #1e293b;
+  font-weight: 700;
+  font-family: 'JetBrains Mono', monospace;
+}
+
+.profile-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.auth-submit-btn.secondary {
+  background-color: white;
+  color: #2563eb;
+  border: 2px solid #2563eb;
+}
+
+.auth-submit-btn.secondary:hover {
+  background-color: #f0f7ff;
+}
+
+.logout-item {
+  color: #ef4444 !important;
+  font-weight: 600;
+  border: 1px solid #fee2e2 !important;
+  border-radius: 8px;
+  background: #fef2f2;
+}
+
+.logout-item:hover {
+  background: #fee2e2;
 }

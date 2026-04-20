@@ -1,4 +1,5 @@
 import { getDirectUrl, getOpenUrl } from '../utils/assetUtils';
+import SamajJogSandesh from './SamajJogSandesh';
 import './ContentArea.css';
 
 const SECTION_MAP = {
@@ -10,7 +11,7 @@ const SECTION_MAP = {
   home: 'General',
 };
 
-export default function ContentArea({ activeSection, assets = [] }) {
+export default function ContentArea({ activeSection, assets = [], language }) {
   // Format the title nicely
   const title = activeSection === 'meghpush' ? 'MeghPush (News)' : 
                 activeSection === 'election' ? 'Election Card' : 
@@ -23,10 +24,12 @@ export default function ContentArea({ activeSection, assets = [] }) {
     : [];
 
   return (
-    <section className="content-area container fade-in" key={activeSection}>
+    <section className={`content-area ${activeSection !== 'samaj' ? 'container' : 'panorama-view'} fade-in`} key={activeSection}>
       <h3 className="section-title">{title}</h3>
 
-      {sectionAssets.length > 0 ? (
+      {activeSection === 'samaj' ? (
+        <SamajJogSandesh lang={language} />
+      ) : sectionAssets.length > 0 ? (
         <div className="content-assets-grid">
           {sectionAssets.map(asset => (
             <a

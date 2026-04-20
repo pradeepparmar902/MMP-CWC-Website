@@ -20,6 +20,29 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
+  width: 100%;
+}
+
+.header-left,
+.header-right {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex: 1; /* These take up the available side space */
+}
+
+.header-left {
+  justify-content: flex-start;
+}
+
+.header-right {
+  justify-content: flex-end;
+}
+
+.header-center {
+  flex: 0 1 auto; /* The title only takes what it needs */
+  display: flex;
+  justify-content: center;
 }
 
 .hamburger-btn {
@@ -41,8 +64,14 @@
   font-weight: 700;
   color: var(--clr-primary);
   text-align: center;
-  flex: 1;
-  margin: 0 1rem;
+  margin: 0;
+  white-space: nowrap;
+}
+
+.header-extra-info {
+  font-size: 0.7rem;
+  font-weight: 500;
+  color: #64748b;
 }
 
 .profile-btn {
@@ -163,10 +192,36 @@
   color: white;
 }
 
-.header-right {
+/* (Old header-right styles removed as they are now handled by the flex-zone) */
+
+/* 🔘 UNIVERSAL LANGUAGE TOGGLE */
+.header-language-toggle {
   display: flex;
-  align-items: center;
-  gap: 0.75rem;
+  background: #f1f5f9;
+  padding: 3px;
+  border-radius: 10px;
+  border: 1px solid #e2e8f0;
+  margin: 0 4px;
+}
+
+.header-language-toggle button {
+  padding: 4px 10px;
+  border-radius: 7px;
+  font-size: 11px;
+  font-weight: 700;
+  transition: all 0.2s;
+  color: #64748b;
+  cursor: pointer;
+}
+
+.header-language-toggle button.active {
+  background: white;
+  color: #7c3aed;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+}
+
+.header-language-toggle button:hover:not(.active) {
+  color: #4f46e5;
 }
 
 .status-badge {

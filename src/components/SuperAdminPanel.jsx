@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import * as XLSX from 'xlsx';
 import { useAuth } from '../context/AuthContext';
 import { 
@@ -14,6 +14,7 @@ import {
 } from 'firebase/firestore';
 import { db } from '../firebase';
 import AdminPanel from './AdminPanel';
+import { compressImage } from '../utils/imageUtils';
 import './SuperAdminPanel.css';
 
 export default function SuperAdminPanel({ config, setConfig, syncStatus, assets, setAssets }) {
@@ -34,7 +35,11 @@ export default function SuperAdminPanel({ config, setConfig, syncStatus, assets,
   // Form Builder State
   const [formSchema, setFormSchema] = useState([]);
   const [isSavingSchema, setIsSavingSchema] = useState(false);
+  const [showPreview, setShowPreview] = useState(false);
   const [editingSchema, setEditingSchema] = useState(false);
+  const [draggedItemIndex, setDraggedItemIndex] = useState(null);
+  const [previewData, setPreviewData] = useState({});
+  const [previewErrors, setPreviewErrors] = useState([]);
   const [expandedUser, setExpandedUser] = useState(null);
 
   // Friendly role names
@@ -50,7 +55,10 @@ export default function SuperAdminPanel({ config, setConfig, syncStatus, assets,
   useEffect(() => {
     const q = query(collection(db, 'admins'), orderBy('approvedAt', 'desc'));
     const unsubscribe = onSnapshot(q, (snapshot) => {
-      const users = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
+      const users = snapshot.docs.map(d => {
+        const data = d.data();
+        return { id: d.id, uid: d.id, ...data };
+      });
       setApprovedUsers(users);
     });
     return unsubscribe;
@@ -78,7 +86,10 @@ export default function SuperAdminPanel({ config, setConfig, syncStatus, assets,
   useEffect(() => {
     const q = query(collection(db, 'pending_users'), orderBy('registeredAt', 'desc'));
     const unsubscribe = onSnapshot(q, (snapshot) => {
-      const users = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      const users = snapshot.docs.map(doc => {
+        const data = doc.data();
+        return { id: doc.id, uid: doc.id, ...data };
+      });
       setPendingUsers(users);
       setStats(prev => ({ ...prev, pending: users.length }));
       setLoading(false);
@@ -110,6 +121,7 @@ export default function SuperAdminPanel({ config, setConfig, syncStatus, assets,
         virtualEmail: user.virtualEmail,
         status: 'approved',
         role: role,
+        profile: user.profile || {}, // PRESERVE ALL REGISTRATION DATA
         approvedAt: new Date().toISOString()
       });
 
@@ -137,6 +149,68 @@ export default function SuperAdminPanel({ config, setConfig, syncStatus, assets,
       alert('❌ User rejected.');
     } catch (error) {
       console.error("Error rejecting user:", error);
+    }
+  };
+
+  const moveField = (index, delta) => {
+    const newSchema = [...formSchema];
+    const targetIndex = index + delta;
+    if (targetIndex < 0 || targetIndex >= newSchema.length) return;
+    
+    const temp = newSchema[index];
+    newSchema[index] = newSchema[targetIndex];
+    newSchema[targetIndex] = temp;
+    setFormSchema(newSchema);
+  };
+
+  const handleDragStart = (index) => {
+    setDraggedItemIndex(index);
+  };
+
+  const handleDragOver = (e) => {
+    e.preventDefault(); // Necessary to allow dropping
+  };
+
+  const handleDrop = (index) => {
+    if (draggedItemIndex === null || draggedItemIndex === index) return;
+    
+    const newSchema = [...formSchema];
+    const itemToMove = newSchema.splice(draggedItemIndex, 1)[0];
+    newSchema.splice(index, 0, itemToMove);
+    
+    setFormSchema(newSchema);
+    setDraggedItemIndex(null);
+  };
+
+  // Universal Smart Renderer for dynamic table cells
+  const renderDynamicCell = (field, profile) => {
+    const val = profile ? profile[field.id] : null;
+    if (!val && field.type !== 'file') return <span className="cell-empty">—</span>;
+
+    switch (field.type) {
+      case 'file':
+        return val ? (
+          <div className="mini-profile">
+             <img src={val} className="mini-avatar" alt="" />
+          </div>
+        ) : (
+          <div className="mini-avatar-placeholder">👤</div>
+        );
+      
+      case 'fullname':
+        if (typeof val === 'object') {
+          return <span className="mini-name">{( `${val.firstName || ''} ${val.middleName || ''} ${val.lastName || ''}`.trim() ) || 'No Name'}</span>;
+        }
+        return <span className="mini-name">{val || 'No Name'}</span>;
+
+      case 'address':
+        return <div className="cell-address-preview" title={val}>{val}</div>;
+
+      case 'tel_in':
+        return <span className="cell-tel">+91 {val}</span>;
+
+      default:
+        return <span>{typeof val === 'object' ? JSON.stringify(val) : val}</span>;
     }
   };
 
@@ -168,34 +242,49 @@ export default function SuperAdminPanel({ config, setConfig, syncStatus, assets,
 
   const handleManualAdd = async (e) => {
     e.preventDefault();
-    if (!manualPhone.trim()) return;
+    const sanitized = manualPhone.trim();
+    if (!sanitized) return;
     
     setIsAddingUser(true);
     try {
-      // Find a unique ID (we use a hash of the phone if it's manual)
-      const userId = `manual_${manualPhone.replace(/\D/g, '')}`;
+      // 1. Sanitize for ID (digits only)
+      const numericPart = sanitized.replace(/\D/g, '');
+      const userId = `manual_${numericPart}`;
       
+      // 2. DUPLICATE CHECK: Prevent hang by verifying if user exists in local list first
+      const exists = [...approvedUsers, ...pendingUsers].some(u => 
+        u.uid === userId || 
+        (u.phone && u.phone.replace(/\D/g, '').endsWith(numericPart.slice(-10)))
+      );
+
+      if (exists) {
+        alert(`⚠️ User with phone ${sanitized} already exists in the system.`);
+        setIsAddingUser(false);
+        return;
+      }
+
+      // 3. SECURE SAVE
       await setDoc(doc(db, 'admins', userId), {
         uid: userId,
-        phone: manualPhone.trim(),
+        phone: sanitized,
         role: manualRole,
         status: 'approved',
         approvedAt: new Date().toISOString(),
         isManual: true
       });
       
-      alert(`✅ User ${manualPhone} added successfully!`);
+      alert(`✅ User ${sanitized} added successfully!`);
       setManualPhone('');
     } catch (error) {
       console.error("Error adding user:", error);
-      alert('❌ Failed to add user');
+      alert(`❌ Failed to add user: ${error.message}`);
     } finally {
       setIsAddingUser(false);
     }
   };
 
   return (
-    <div className="super-admin-panel container">
+    <div className="super-admin-panel sap-container-wide">
       <div className="sap-header">
         <div className="sap-title-row">
           <h1>Senior Admin Portal</h1>
@@ -366,9 +455,12 @@ export default function SuperAdminPanel({ config, setConfig, syncStatus, assets,
                   <table className="access-table">
                     <thead>
                       <tr>
+                        <th>Expand</th>
+                        {formSchema.map(field => (
+                          <th key={field.id}>{field.label.replace('Emal', 'Email')}</th>
+                        ))}
                         <th>Phone</th>
-                        <th>Email</th>
-                        <th>Current Status</th>
+                        <th>Status</th>
                         <th>Actions</th>
                       </tr>
                     </thead>
@@ -376,15 +468,24 @@ export default function SuperAdminPanel({ config, setConfig, syncStatus, assets,
                       {allUsers.map(user => (
                         <React.Fragment key={user.uid}>
                           <tr className={expandedUser === user.uid ? 'row-expanded' : ''}>
-                            <td className="page-label">
-                              <button 
-                                className="expand-row-btn" 
-                                onClick={() => setExpandedUser(expandedUser === user.uid ? null : user.uid)}
-                              >
-                                {expandedUser === user.uid ? '▼' : '▶'} {user.phone}
-                              </button>
+                             <td className="page-label">
+                               <button 
+                                 className="expand-row-btn" 
+                                 onClick={() => setExpandedUser(expandedUser === user.uid ? null : user.uid)}
+                               >
+                                 {expandedUser === user.uid ? '▼' : '▶'}
+                               </button>
+                             </td>
+                             
+                             {formSchema.map(field => (
+                               <td key={field.id} className="dynamic-cell">
+                                 {renderDynamicCell(field, user.profile)}
+                               </td>
+                             ))}
+
+                            <td className="user-date" style={{fontSize:'12px', color:'#64748b'}}>
+                               {user.phone}
                             </td>
-                            <td style={{color:'#64748b', fontSize:'13px'}}>{user.email || '—'}</td>
                             <td>
                               {user._source === 'approved' ? (
                                 <span className={`role-pill ${user.role}`}>
@@ -485,7 +586,9 @@ export default function SuperAdminPanel({ config, setConfig, syncStatus, assets,
                                             {fieldSchema?.type === 'file' ? (
                                               <img src={val} alt="Identity Photo" className="profile-preview-img" />
                                             ) : fieldSchema?.type === 'fullname' ? (
-                                              <span>{val.firstName} {val.middleName} {val.lastName}</span>
+                                              <span>{val?.firstName || ''} {val?.middleName || ''} {val?.lastName || ''}</span>
+                                            ) : fieldSchema?.type === 'address' ? (
+                                              <div style={{whiteSpace: 'pre-line', color: '#334155', fontStyle: 'italic'}}>{val}</div>
                                             ) : (
                                               <span>{fieldSchema?.type === 'tel_in' ? `+91 ${val}` : val}</span>
                                             )}
@@ -529,9 +632,12 @@ export default function SuperAdminPanel({ config, setConfig, syncStatus, assets,
                 <table className="approvals-table">
                   <thead>
                     <tr>
-                      <th>Phone Number</th>
-                      <th>Registered Date</th>
-                      <th>Status</th>
+                      <th>Details</th>
+                      {formSchema.map(field => (
+                         <th key={field.id}>{field.label.replace('Emal', 'Email')}</th>
+                      ))}
+                      <th>Base Phone</th>
+                      <th>Reg. Date</th>
                       <th>Actions</th>
                     </tr>
                   </thead>
@@ -539,17 +645,31 @@ export default function SuperAdminPanel({ config, setConfig, syncStatus, assets,
                     {pendingUsers.map(user => (
                       <React.Fragment key={user.uid}>
                         <tr className={expandedUser === user.uid ? 'row-expanded' : ''}>
-                          <td className="user-phone">
+                          <td>
                             <button 
                               className="expand-row-btn" 
                               onClick={() => setExpandedUser(expandedUser === user.uid ? null : user.uid)}
                             >
-                              {expandedUser === user.uid ? '▼' : '▶'} {user.phone}
+                              {expandedUser === user.uid ? '▼' : '▶'}
                             </button>
                           </td>
+
+                          {formSchema.map(field => (
+                             <td key={field.id} className="dynamic-cell">
+                               {renderDynamicCell(field, user.profile)}
+                             </td>
+                          ))}
+
+                          <td className="user-phone">
+                             {user.phone}
+                          </td>
                           <td className="user-date">
-                            {new Date(user.registeredAt).toLocaleDateString()} 
-                            <span className="user-time">{new Date(user.registeredAt).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</span>
+                            {(() => {
+                              try {
+                                const d = user.registeredAt?.toDate ? user.registeredAt.toDate() : new Date(user.registeredAt);
+                                return isNaN(d) ? 'Recent' : `${d.toLocaleDateString()}`;
+                              } catch(e) { return 'Recent'; }
+                            })()}
                           </td>
                           <td>
                             <span className={`status-pill ${user.status}`}>
@@ -577,22 +697,26 @@ export default function SuperAdminPanel({ config, setConfig, syncStatus, assets,
                               <div className="user-profile-details">
                                 <h4>Dynamic Profile Details</h4>
                                 <div className="profile-grid">
-                                  {Object.entries(user.profile || {}).map(([key, val]) => {
-                                    const fieldSchema = formSchema.find(f => f.id === key);
-                                    if (!val) return null;
-                                    return (
-                                      <div key={key} className="profile-item">
-                                        <label>{fieldSchema?.label || key}:</label>
-                                        <div className="profile-value">
-                                          {fieldSchema?.type === 'file' ? (
-                                            <img src={val} alt="Identity Photo" className="profile-preview-img" />
-                                          ) : (
-                                            <span>{val}</span>
-                                          )}
+                                    {Object.entries(user.profile || {}).map(([key, val]) => {
+                                      const fieldSchema = formSchema.find(f => f.id === key);
+                                      if (!val) return null;
+                                      return (
+                                        <div key={key} className="profile-item">
+                                          <label>{fieldSchema?.label || key}:</label>
+                                          <div className="profile-value">
+                                            {fieldSchema?.type === 'file' ? (
+                                              <img src={val} alt="Identity Photo" className="profile-preview-img" />
+                                            ) : fieldSchema?.type === 'fullname' ? (
+                                              <span>{val?.firstName || ''} {val?.middleName || ''} {val?.lastName || ''}</span>
+                                            ) : fieldSchema?.type === 'address' ? (
+                                              <div style={{whiteSpace: 'pre-line', color: '#334155', fontStyle: 'italic'}}>{val}</div>
+                                            ) : (
+                                              <span>{fieldSchema?.type === 'tel_in' ? `+91 ${val}` : (typeof val === 'object' ? JSON.stringify(val) : val)}</span>
+                                            )}
+                                          </div>
                                         </div>
-                                      </div>
-                                    );
-                                  })}
+                                      );
+                                    })}
                                   {(!user.profile || Object.keys(user.profile).length === 0) && <p className="no-profile-msg">No extra profile data provided.</p>}
                                 </div>
                               </div>
@@ -628,20 +752,28 @@ export default function SuperAdminPanel({ config, setConfig, syncStatus, assets,
                   <h2>Registration Form Builder</h2>
                   <p>Define which fields users must fill during registration. Changes reflect instantly on the signup modal.</p>
                 </div>
-                <button 
-                  className="save-schema-btn" 
-                  disabled={isSavingSchema}
-                  onClick={async () => {
-                    setIsSavingSchema(true);
-                    try {
-                      await setDoc(doc(db, 'site_settings', 'registration_form'), { fields: formSchema });
-                      alert('✅ Registration form updated successfully!');
-                    } catch(e) { alert('❌ Failed to save'); }
-                    setIsSavingSchema(false);
-                  }}
-                >
-                  {isSavingSchema ? 'Saving...' : '💾 Save Form Layout'}
-                </button>
+                <div style={{display:'flex', gap:'10px'}}>
+                  <button 
+                    className="preview-form-btn"
+                    onClick={() => setShowPreview(true)}
+                  >
+                    👁️ View Form Preview
+                  </button>
+                  <button 
+                    className="save-schema-btn" 
+                    disabled={isSavingSchema}
+                    onClick={async () => {
+                      setIsSavingSchema(true);
+                      try {
+                        await setDoc(doc(db, 'site_settings', 'registration_form'), { fields: formSchema });
+                        alert('✅ Registration form updated successfully!');
+                      } catch(e) { alert('❌ Failed to save'); }
+                      setIsSavingSchema(false);
+                    }}
+                  >
+                    {isSavingSchema ? 'Saving...' : '💾 Save Form Layout'}
+                  </button>
+                </div>
               </div>
             </div>
 
@@ -657,9 +789,37 @@ export default function SuperAdminPanel({ config, setConfig, syncStatus, assets,
 
               <div className="fields-grid">
                 {formSchema.map((field, index) => (
-                  <div key={field.id} className="field-card">
+                  <div 
+                    key={field.id} 
+                    className={`field-card ${draggedItemIndex === index ? 'dragging' : ''}`}
+                    draggable
+                    onDragStart={() => handleDragStart(index)}
+                    onDragOver={handleDragOver}
+                    onDrop={() => handleDrop(index)}
+                  >
                     <div className="field-card-header">
-                      <span className="field-index">Field #{index + 1}</span>
+                      <div style={{display:'flex', alignItems:'center', gap:'10px'}}>
+                        <span className="drag-handle" title="Drag to reorder">⠿</span>
+                        <span className="field-index">Field #{index + 1}</span>
+                        <div className="reorder-btns">
+                          <button 
+                            className="reorder-btn" 
+                            disabled={index === 0}
+                            onClick={() => moveField(index, -1)}
+                            title="Move Up"
+                          >
+                            🔼
+                          </button>
+                          <button 
+                            className="reorder-btn" 
+                            disabled={index === formSchema.length - 1}
+                            onClick={() => moveField(index, 1)}
+                            title="Move Down"
+                          >
+                            🔽
+                          </button>
+                        </div>
+                      </div>
                       <button className="remove-field" onClick={() => setFormSchema(formSchema.filter(f => f.id !== field.id))}>✕</button>
                     </div>
                     
@@ -689,6 +849,8 @@ export default function SuperAdminPanel({ config, setConfig, syncStatus, assets,
                           }}
                         >
                           <option value="text">Short Text</option>
+                          <option value="email">Email Address</option>
+                          <option value="address">Address (Multi-line)</option>
                           <option value="fullname">Structured Name (First/Mid/Last)</option>
                           <option value="date">Date Picker</option>
                           <option value="tel">Phone (Global)</option>
@@ -751,11 +913,11 @@ export default function SuperAdminPanel({ config, setConfig, syncStatus, assets,
                           </button>
                         </div>
                         <textarea 
-                          placeholder="Or type options separated by commas..."
-                          value={field.options?.join(', ') || ''}
+                          placeholder="Enter choices (one per line)..."
+                          value={field.options?.join('\n') || ''}
                           onChange={(e) => {
                             const newSchema = [...formSchema];
-                            newSchema[index].options = e.target.value.split(',').map(s => s.trim()).filter(s => s !== '');
+                            newSchema[index].options = e.target.value.split('\n').filter(s => s.trim() !== '');
                             setFormSchema(newSchema);
                           }}
                         />
@@ -767,7 +929,193 @@ export default function SuperAdminPanel({ config, setConfig, syncStatus, assets,
             </div>
           </div>
         )}
+
+        {/* PREVIEW MODAL */}
+        {showPreview && (
+          <div className="builder-preview-overlay">
+            <div className="builder-preview-modal">
+              <div className="preview-header">
+                <h3>Registration Form Preview</h3>
+                <button className="close-preview" onClick={() => {
+                  setShowPreview(false);
+                  setPreviewData({});
+                  setPreviewErrors([]);
+                }}>&times;</button>
+              </div>
+              <div className="preview-content">
+                <p className="preview-tip">🚀 This is an interactive preview. You can test inputs!</p>
+                <div className="auth-form">
+                  <div className={`form-group ${previewErrors.includes('primary_phone') ? 'error' : ''}`}>
+                    <label>Mobile Number <span style={{color:'#ef4444'}}>*</span></label>
+                    <input 
+                      type="tel" 
+                      placeholder="9876543210" 
+                      value={previewData.primary_phone || ''}
+                      onChange={(e) => {
+                        setPreviewData({...previewData, primary_phone: e.target.value});
+                        setPreviewErrors(prev => prev.filter(id => id !== 'primary_phone'));
+                      }}
+                    />
+                  </div>
+
+                  {/* TOP CENTER PHOTO FIELDS */}
+                  {formSchema?.filter(f => f.type === 'file').map(field => (
+                    <div key={field.id} className={`top-center-photo-container ${previewErrors.includes(field.id) ? 'error' : ''}`}>
+                      <label className="top-photo-label">{field.label} {field.required && <span style={{color:'#ef4444'}}>*</span>}</label>
+                      <input 
+                        type="file" 
+                        accept="image/*"
+                        id={`preview-file-${field.id}`}
+                        style={{display:'none'}}
+                        onChange={(e) => {
+                          const file = e.target.files[0];
+                          if (file) {
+                             const reader = new FileReader();
+                             reader.onloadend = async () => {
+                               const compressed = await compressImage(reader.result);
+                               setPreviewData({...previewData, [field.id]: compressed});
+                               setPreviewErrors(prev => prev.filter(id => id !== field.id));
+                             };
+                             reader.readAsDataURL(file);
+                          }
+                        }}
+                      />
+                      {!previewData[field.id] ? (
+                        <div className="mock-file-input top-center-uploader" onClick={() => document.getElementById(`preview-file-${field.id}`).click()}>
+                          <span>📷 Click to Upload Photo</span>
+                        </div>
+                      ) : (
+                        <div className="preview-image-centered-container">
+                          <img src={previewData[field.id]} alt="Preview" className="preview-uploaded-img" />
+                          <button className="change-preview-img-btn" onClick={() => document.getElementById(`preview-file-${field.id}`).click()}>Change Photo</button>
+                        </div>
+                      )}
+                    </div>
+                  ))}
+
+                  {/* OTHER DYNAMIC FIELDS */}
+                  {formSchema?.filter(f => f.type !== 'file').map(field => (
+                    <div className={`form-group ${previewErrors.includes(field.id) ? 'error' : ''}`} key={field.id}>
+                      <label>
+                        {field.label} {field.required && <span style={{color:'#ef4444'}}>*</span>}
+                      </label>
+                      {field.type === 'select' ? (
+                        <select 
+                          value={previewData[field.id] || ''} 
+                          onChange={(e) => {
+                            setPreviewData({...previewData, [field.id]: e.target.value});
+                            setPreviewErrors(prev => prev.filter(id => id !== field.id));
+                          }}
+                        >
+                          <option value="">Select option...</option>
+                          {field.options?.map(opt => <option key={opt}>{opt}</option>)}
+                        </select>
+                      ) : field.type === 'fullname' ? (
+                        <div style={{display:'flex', flexDirection:'column', gap:'8px'}}>
+                           <input 
+                            type="text" 
+                            placeholder="First Name" 
+                            value={previewData[field.id]?.firstName || ''}
+                            onChange={(e) => {
+                               setPreviewData({...previewData, [field.id]: {...(previewData[field.id] || {}), firstName: e.target.value}});
+                               setPreviewErrors(prev => prev.filter(id => id !== field.id));
+                            }}
+                           />
+                           <input 
+                            type="text" 
+                            placeholder="Middle Name" 
+                            value={previewData[field.id]?.middleName || ''}
+                            onChange={(e) => {
+                               setPreviewData({...previewData, [field.id]: {...(previewData[field.id] || {}), middleName: e.target.value}});
+                               setPreviewErrors(prev => prev.filter(id => id !== field.id));
+                            }}
+                           />
+                           <input 
+                            type="text" 
+                            placeholder="Surname" 
+                            value={previewData[field.id]?.lastName || ''}
+                            onChange={(e) => {
+                               setPreviewData({...previewData, [field.id]: {...(previewData[field.id] || {}), lastName: e.target.value}});
+                               setPreviewErrors(prev => prev.filter(id => id !== field.id));
+                            }}
+                           />
+                        </div>
+                      ) : field.type === 'address' ? (
+                        <textarea 
+                          placeholder="Type address..." 
+                          style={{height:'80px', width:'100%', padding:'10px', borderRadius:'6px', border:'1px solid #cbd5e1'}}
+                          value={previewData[field.id] || ''}
+                          onChange={(e) => {
+                            setPreviewData({...previewData, [field.id]: e.target.value});
+                            setPreviewErrors(prev => prev.filter(id => id !== field.id));
+                          }}
+                        />
+                      ) : field.type === 'tel_in' ? (
+                        <div style={{display:'flex', gap:'5px'}}>
+                          <span style={{padding:'10px', background:'#f1f5f9', border:'1px solid #cbd5e1', borderRadius:'6px', fontWeight:'700'}}>+91</span>
+                          <input 
+                            type="tel" 
+                            placeholder="10-digit number" 
+                            style={{flex:1}} 
+                            value={previewData[field.id] || ''}
+                            onChange={(e) => {
+                              setPreviewData({...previewData, [field.id]: e.target.value.replace(/\D/g, '').slice(0, 10)});
+                              setPreviewErrors(prev => prev.filter(id => id !== field.id));
+                            }}
+                          />
+                        </div>
+                      ) : (
+                        <input 
+                          type={field.type === 'email' ? 'email' : (field.type || 'text')} 
+                          placeholder={`Enter ${field.label}`} 
+                          value={previewData[field.id] || ''}
+                          onChange={(e) => {
+                            setPreviewData({...previewData, [field.id]: e.target.value});
+                            setPreviewErrors(prev => prev.filter(id => id !== field.id));
+                          }}
+                        />
+                      )}
+                    </div>
+                  ))}
+
+                  <button className="auth-submit-btn" onClick={() => {
+                    const errors = [];
+                    // Check primary mobile
+                    if (!previewData.primary_phone) errors.push('primary_phone');
+                    
+                    formSchema.forEach(f => {
+                      if (f.required) {
+                        const val = previewData[f.id];
+                        if (!val) {
+                          errors.push(f.id);
+                        } else if (f.type === 'fullname') {
+                          if (!val.firstName || !val.lastName) errors.push(f.id);
+                        }
+                      }
+                    });
+
+                    if (errors.length > 0) {
+                      setPreviewErrors(errors);
+                      // Get labels of missing fields to help the user identify them
+                      const missingLabels = [];
+                      if (errors.includes('primary_phone')) missingLabels.push('Primary Mobile Number');
+                      formSchema.forEach(f => {
+                        if (errors.includes(f.id)) missingLabels.push(f.label);
+                      });
+                      alert(`⚠️ Missing Required Fields:\n- ${missingLabels.join('\n- ')}`);
+                    } else {
+                      alert('✅ Form Valid! Testing successful. Closing preview...');
+                      setShowPreview(false);
+                      setPreviewData({});
+                      setPreviewErrors([]);
+                    }
+                  }}>Complete Registration (Preview)</button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );
-}
+};
