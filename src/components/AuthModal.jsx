@@ -10,6 +10,7 @@ const AuthModal = ({ onClose, initialView = 'login' }) => {
     unifiedLogin, 
     unifiedRegister, 
     loginWithPhone, 
+    checkPhoneRegistered,
     setupRecaptcha, 
     changeMobileNumber,
     resetPasswordByEmail, 
@@ -120,8 +121,16 @@ const AuthModal = ({ onClose, initialView = 'login' }) => {
     setError('');
 
     try {
-      // Step 1: Send OTP to verify Phone before creating account
       const formattedPhone = phone.startsWith('+') ? phone : `+91${phone}`;
+      
+      // Step 1: Pre-flight check - ensure number isn't already registered
+      const isRegistered = await checkPhoneRegistered(formattedPhone);
+      if (isRegistered) {
+        setLoading(false);
+        return setError("This mobile number is already registered.");
+      }
+
+      // Step 2: Send OTP to verify Phone before creating account
       console.log("📱 Attempting to SEND OTP to:", formattedPhone);
       
       const appVerifier = window.recaptchaVerifier;

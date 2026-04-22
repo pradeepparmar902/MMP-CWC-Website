@@ -239,6 +239,12 @@ export const AuthProvider = ({ children }) => {
     return signInWithPhoneNumber(auth, phoneNumber, appVerifier);
   };
 
+  const checkPhoneRegistered = async (phone) => {
+    const formattedPhone = phone.startsWith('+') ? phone : `+91${phone}`;
+    const mappingDoc = await getDoc(doc(db, 'user_mappings', formattedPhone));
+    return mappingDoc.exists();
+  };
+
   const forceAdmin = () => {
     setIsAdmin(true);
     setIsSuperAdmin(true);
@@ -255,6 +261,7 @@ export const AuthProvider = ({ children }) => {
     loginWithEmail,
     registerWithEmail,
     loginWithPhone,
+    checkPhoneRegistered,
     setupRecaptcha,
     logout,
     unifiedLogin,
