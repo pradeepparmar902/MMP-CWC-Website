@@ -574,7 +574,7 @@
 
 /* 🌀 SHIMMER LOADING */
 .loading-hero {
-  background: #f1f5f9 ! from;
+  background: #f1f5f9 !important;
   position: relative;
   overflow: hidden;
 }
