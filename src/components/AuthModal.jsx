@@ -53,16 +53,19 @@ const AuthModal = ({ onClose, initialView = 'login' }) => {
         if (docSnap.exists()) {
           const fields = docSnap.data().fields || [];
           setFormSchema(fields);
-          // Initialize profileData with empty values or objects
-          const initialData = {};
-          fields.forEach(f => {
-            if (f.type === 'fullname') {
-              initialData[f.id] = { firstName: '', middleName: '', lastName: '' };
-            } else {
-              initialData[f.id] = '';
-            }
-          });
-          setProfileData(initialData);
+          
+          // Initialize profileData only if it's currently empty to avoid wiping data on re-mounts
+          if (Object.keys(profileData).length === 0) {
+            const initialData = {};
+            fields.forEach(f => {
+              if (f.type === 'fullname') {
+                initialData[f.id] = { firstName: '', middleName: '', lastName: '' };
+              } else {
+                initialData[f.id] = '';
+              }
+            });
+            setProfileData(initialData);
+          }
         }
       } catch (err) {
         console.error("Error fetching form schema:", err);
@@ -106,12 +109,15 @@ const AuthModal = ({ onClose, initialView = 'login' }) => {
     // Validate Dynamic Fields
     for (const field of formSchema) {
       if (field.required) {
+        const val = profileData[field.id];
         if (field.type === 'fullname') {
-          const { firstName, middleName, lastName } = profileData[field.id] || {};
-          if (!firstName || !middleName || !lastName) {
-            return setError(`Please fill all parts of the mandatory field: ${field.label} (First, Middle, and Surname)`);
+          const { firstName, lastName } = val || {};
+          if (!firstName?.trim() || !lastName?.trim()) {
+            return setError(`Please fill all mandatory parts of: ${field.label} (First Name and Surname at minimum)`);
           }
-        } else if (!profileData[field.id]) {
+        } else if (field.type === 'file') {
+          if (!val) return setError(`Please upload the mandatory: ${field.label}`);
+        } else if (!val || (typeof val === 'string' && !val.trim())) {
           return setError(`Please fill the mandatory field: ${field.label}`);
         }
       }
@@ -178,6 +184,7 @@ const AuthModal = ({ onClose, initialView = 'login' }) => {
     setError('');
     
     try {
+      console.log("🚀 FINALIZING REGISTRATION:", { email, phone, profile: profileData });
       await unifiedRegister(email, phone, password, profileData);
       setSuccessMsg('✅ Registration successful! Your account is now pending approval by a Senior Admin.');
       setView('success');

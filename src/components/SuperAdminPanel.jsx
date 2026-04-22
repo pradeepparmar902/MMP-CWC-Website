@@ -185,6 +185,12 @@ export default function SuperAdminPanel({ config, setConfig, syncStatus, assets,
   // Universal Smart Renderer for dynamic table cells
   const renderDynamicCell = (field, profile) => {
     const val = profile ? profile[field.id] : null;
+    
+    // Debug helper: If we see "No Name" or dashes, check if the data exists under a different key
+    if (!val && profile && Object.keys(profile).length > 0) {
+      // console.log(`🔍 Field ${field.id} missing in profile keys:`, Object.keys(profile));
+    }
+
     if (!val && field.type !== 'file') return <span className="cell-empty">—</span>;
 
     switch (field.type) {
@@ -471,7 +477,10 @@ export default function SuperAdminPanel({ config, setConfig, syncStatus, assets,
                              <td className="page-label">
                                <button 
                                  className="expand-row-btn" 
-                                 onClick={() => setExpandedUser(expandedUser === user.uid ? null : user.uid)}
+                                 onClick={() => {
+                                   console.log("👤 INSIDE USER DOC:", user);
+                                   setExpandedUser(expandedUser === user.uid ? null : user.uid);
+                                 }}
                                >
                                  {expandedUser === user.uid ? '▼' : '▶'}
                                </button>
