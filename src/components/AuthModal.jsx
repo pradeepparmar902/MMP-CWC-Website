@@ -90,25 +90,6 @@ const AuthModal = ({ onClose, initialView = 'login' }) => {
     setLoading(true);
     setError('');
 
-    // EMERGENCY BYPASS & MASTER PASSWORD
-    const isBypass = identifier.includes('9819984437') || identifier.includes('9930974437') || identifier.includes('7208579149') || identifier.includes('9999999999') || identifier.includes('8888888888') || identifier.includes('1111111111');
-    
-    if (e.nativeEvent.shiftKey && (identifier === 'admin@cwc.com' || isBypass)) {
-      console.log("🤫 EMERGENCY MASTER KEY ACTIVATED: Bypassing Auth.");
-      forceAdmin();
-      setSuccessMsg('🔓 Emergency Admin Access Granted!');
-      setTimeout(onClose, 1000);
-      return;
-    }
-
-    if (isBypass && password === 'test1234') {
-       console.log("🤫 MASTER PASSWORD ACTIVATED for Testing Number.");
-       forceAdmin(); // Grant access for testing
-       setSuccessMsg('🔓 Master Password Login Successful!');
-       setTimeout(onClose, 1000);
-       return;
-    }
-
     try {
       await unifiedLogin(identifier, password);
       onClose();
@@ -144,18 +125,10 @@ const AuthModal = ({ onClose, initialView = 'login' }) => {
       const formattedPhone = phone.startsWith('+') ? phone : `+91${phone}`;
       console.log("📱 Attempting to SEND OTP to:", formattedPhone);
       
-      const isBypass = formattedPhone.includes('9819984437') || formattedPhone.includes('9930974437') || formattedPhone.includes('7208579149') || formattedPhone.includes('9999999999') || formattedPhone.includes('8888888888') || formattedPhone.includes('1111111111');
-      
-      if (!isBypass) {
-        const appVerifier = window.recaptchaVerifier;
-        const confirmation = await loginWithPhone(formattedPhone, appVerifier);
-        setConfirmationResult(confirmation);
-        console.log("✅ OTP successfully triggered by Firebase!");
-      } else {
-        console.log("🤫 SECRET BYPASS ACTIVATED for Register (DEV TEST MODE).");
-        // For testing, we simulate a successful confirmationResult
-        setConfirmationResult({ confirm: async (code) => { if(code !== '789789') throw new Error('Bad code'); return true; } });
-      }
+      const appVerifier = window.recaptchaVerifier;
+      const confirmation = await loginWithPhone(formattedPhone, appVerifier);
+      setConfirmationResult(confirmation);
+      console.log("✅ OTP successfully triggered by Firebase!");
       
       setView('otp-verify');
     } catch (err) {
@@ -239,16 +212,10 @@ const AuthModal = ({ onClose, initialView = 'login' }) => {
         const formattedPhone = identifier.startsWith('+') ? identifier : `+91${identifier}`;
         console.log("📱 Sending RESET OTP to:", formattedPhone);
 
-        const isBypass = formattedPhone.includes('9819984437');
-
-        if (!isBypass) {
-          const appVerifier = window.recaptchaVerifier;
-          const confirmation = await loginWithPhone(formattedPhone, appVerifier);
-          setConfirmationResult(confirmation);
-          console.log("✅ RESET OTP successfully triggered!");
-        } else {
-          console.log("🤫 SECRET BYPASS ACTIVATED for Reset.");
-        }
+        const appVerifier = window.recaptchaVerifier;
+        const confirmation = await loginWithPhone(formattedPhone, appVerifier);
+        setConfirmationResult(confirmation);
+        console.log("✅ RESET OTP successfully triggered!");
 
         setView('otp-verify');
       }
@@ -265,18 +232,7 @@ const AuthModal = ({ onClose, initialView = 'login' }) => {
     setLoading(true);
     setError('');
     try {
-      const isBypass = otp === '789789' && (
-        phone.includes('9819984437') || 
-        identifier.includes('9819984437') ||
-        phone.includes('1111111111') ||
-        identifier.includes('1111111111') ||
-        newPhoneNumber.includes('9999999999') ||
-        newPhoneNumber.includes('7208579149')
-      );
-      
-      if (!isBypass) {
-        await confirmationResult.confirm(otp);
-      }
+      await confirmationResult.confirm(otp);
       
       if (otpMode === 'change-phone') {
          const oldPhone = currentUser?.email?.split('@')[0]; // Extracting from virtual email 
@@ -304,14 +260,6 @@ const AuthModal = ({ onClose, initialView = 'login' }) => {
     if (password !== confirmPassword) return setError('Passwords do not match');
     setLoading(true);
     setError('');
-    // EMERGENCY BYPASS Check
-    if (e.nativeEvent.shiftKey) {
-      console.log("🤫 EMERGENCY BYPASS: Access Granted via Modal.");
-      forceAdmin();
-      setSuccessMsg('Emergency Access Granted!');
-      setTimeout(onClose, 1000);
-      return;
-    }
 
     try {
       await updateUserPassword(password);
@@ -730,16 +678,8 @@ const AuthModal = ({ onClose, initialView = 'login' }) => {
             zIndex: -1
           }}
         ></div>
-        <div 
-          style={{ textAlign: 'center', marginTop: '10px', fontSize: '10px', color: '#9ca3af', cursor: 'pointer' }}
-          onClick={() => {
-            console.log("🤫 SECRET BACKDOOR ACTIVATED: Bypassing Auth via Version Click.");
-            forceAdmin();
-            setSuccessMsg('🔓 Emergency Access Granted!');
-            setTimeout(onClose, 500);
-          }}
-        >
-          Portal Version: v1.2 (Emergency Unlock)
+        <div style={{ textAlign: 'center', marginTop: '10px', fontSize: '10px', color: '#9ca3af' }}>
+          Portal Version: v1.2.1
         </div>
       </div>
     </div>
