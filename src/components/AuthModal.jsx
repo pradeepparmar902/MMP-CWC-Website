@@ -118,7 +118,6 @@ const AuthModal = ({ onClose, initialView = 'login' }) => {
 
     setLoading(true);
     setError('');
-    setIsRegistering(true);
 
     try {
       // Step 1: Send OTP to verify Phone before creating account
@@ -134,7 +133,6 @@ const AuthModal = ({ onClose, initialView = 'login' }) => {
     } catch (err) {
       console.error("❌ SMS Error:", err);
       setError(err.message.replace('Firebase: ', ''));
-      setIsRegistering(false);
     } finally {
       setLoading(false);
     }
@@ -190,7 +188,6 @@ const AuthModal = ({ onClose, initialView = 'login' }) => {
     } catch (err) {
       setError(err.message.replace('Firebase: ', ''));
       setView('register');
-      setIsRegistering(false);
     }
   };
 
