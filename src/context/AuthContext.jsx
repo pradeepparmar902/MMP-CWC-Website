@@ -144,29 +144,36 @@ export const AuthProvider = ({ children }) => {
     const finalEmail = email || `${formattedPhone.replace('+', '')}@mmp-cwc.admin`;
 
     // 3. Create Auth User
-    const userCredential = await createUserWithEmailAndPassword(auth, finalEmail, password);
-    const user = userCredential.user;
+    try {
+      const userCredential = await createUserWithEmailAndPassword(auth, finalEmail, password);
+      const user = userCredential.user;
 
-    // 4. Save mapping in Firestore user_mappings
-    await setDoc(doc(db, 'user_mappings', formattedPhone), {
-      email: finalEmail,
-      realEmail: email || null,
-      uid: user.uid,
-      createdAt: new Date().toISOString()
-    });
+      // 4. Save mapping in Firestore user_mappings
+      await setDoc(doc(db, 'user_mappings', formattedPhone), {
+        email: finalEmail,
+        realEmail: email || null,
+        uid: user.uid,
+        createdAt: new Date().toISOString()
+      });
 
-    // 5. Add to pending_users queue with dynamic profile
-    await setDoc(doc(db, 'pending_users', user.uid), {
-      uid: user.uid,
-      phone: formattedPhone,
-      email: email || null,
-      virtualEmail: finalEmail,
-      status: 'pending',
-      registeredAt: new Date().toISOString(),
-      profile: profileData // Dynamic fields from the registration form builder
-    });
+      // 5. Add to pending_users queue with dynamic profile
+      await setDoc(doc(db, 'pending_users', user.uid), {
+        uid: user.uid,
+        phone: formattedPhone,
+        email: email || null,
+        virtualEmail: finalEmail,
+        status: 'pending',
+        registeredAt: new Date().toISOString(),
+        profile: profileData // Dynamic fields from the registration form builder
+      });
 
-    return userCredential;
+      return userCredential;
+    } catch (error) {
+      if (error.code === 'auth/email-already-in-use') {
+        throw new Error('This mobile number is already in our security system. It may have been registered during a previous test. Please try logging in or ask an admin to delete your old account.');
+      }
+      throw error;
+    }
   };
 
   const resetPasswordByEmail = (email) => sendPasswordResetEmail(auth, email);
