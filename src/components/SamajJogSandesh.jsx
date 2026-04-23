@@ -111,6 +111,7 @@ export default function SamajJogSandesh({ lang }) {
     contentEn: '', contentGu: '',
     authorityEn: '', authorityGu: '',
     bannerUrl: '',
+    videoUrl: '',
     tagsEn: ['General'],
     tagsGu: ['સામાન્ય'],
     hasAttachment: false
@@ -213,6 +214,7 @@ export default function SamajJogSandesh({ lang }) {
       authorityEn: item.authorityEn || '',
       authorityGu: item.authorityGu || '',
       bannerUrl: item.bannerUrl || '',
+      videoUrl: item.videoUrl || '',
       tagsEn: item.tagsEn || ['General'],
       tagsGu: item.tagsGu || ['સામાન્ય'],
       hasAttachment: item.hasAttachment || false
@@ -229,6 +231,7 @@ export default function SamajJogSandesh({ lang }) {
       contentEn: '', contentGu: '',
       authorityEn: '', authorityGu: '',
       bannerUrl: '',
+      videoUrl: '',
       tagsEn: ['General'], tagsGu: ['સામાન્ય'],
       hasAttachment: false
     });
@@ -454,6 +457,7 @@ export default function SamajJogSandesh({ lang }) {
                   <label>Announcement Type</label>
                   <select value={formData.type} onChange={e => setFormData({...formData, type: e.target.value})}>
                     <option value="poster">🖼️ Poster Announcement</option>
+                    <option value="video">🎥 Video Content (MP4/YouTube)</option>
                     <option value="letter">📜 Official Letter</option>
                     <option value="text">📝 General Text Message</option>
                   </select>
@@ -466,14 +470,35 @@ export default function SamajJogSandesh({ lang }) {
                   </select>
                 </div>
                 <div className="form-group">
-                  <label>Poster Image (Optional)</label>
-                  <input type="file" accept="image/*" onChange={async (e) => {
+                  <label>Media Source (Poster/Video URL)</label>
+                  <input 
+                    type="text" 
+                    placeholder="YouTube URL or Image Link" 
+                    value={formData.bannerUrl || formData.videoUrl} 
+                    onChange={e => {
+                      const val = e.target.value;
+                      if (val.includes('youtube.com') || val.includes('youtu.be')) {
+                        setFormData({...formData, videoUrl: val, type: 'video'});
+                      } else {
+                        setFormData({...formData, bannerUrl: val});
+                      }
+                    }} 
+                  />
+                </div>
+                <div className="form-group">
+                  <label>Upload Media (Image or MP4)</label>
+                  <input type="file" accept="image/*,video/mp4" onChange={async (e) => {
                     const file = e.target.files[0];
                     if (file) {
                       const reader = new FileReader();
                       reader.onloadend = async () => {
-                        const compressed = await compressImage(reader.result);
-                        setFormData({...formData, bannerUrl: compressed});
+                        const result = reader.result;
+                        if (file.type.startsWith('video/')) {
+                          setFormData({...formData, videoUrl: result, type: 'video'});
+                        } else {
+                          const compressed = await compressImage(result);
+                          setFormData({...formData, bannerUrl: compressed});
+                        }
                       };
                       reader.readAsDataURL(file);
                     }
