@@ -122,7 +122,7 @@ export default function SamajJogSandesh({ lang }) {
     const q = query(collection(db, 'samaj_jog_sandesh'), orderBy('createdAt', 'desc'));
     const unsubscribe = onSnapshot(q, (snapshot) => {
       const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-      setMessages(data.length > 0 ? data : DUMMY_MESSAGES); // Fallback to dummy if empty
+      setMessages(data.length > 0 ? data : DUMMY_MESSAGES);
       setLoading(false);
     });
     return unsubscribe;
@@ -130,8 +130,6 @@ export default function SamajJogSandesh({ lang }) {
 
   const handlePost = async (e) => {
     e.preventDefault();
-    
-    // VALIDATION: Ensure at least one version of Title and Content exists
     const hasTitle = formData.titleEn.trim() || formData.titleGu.trim();
     const hasContent = formData.contentEn.trim() || formData.contentGu.trim();
     const hasAuthority = formData.authorityEn.trim() || formData.authorityGu.trim();
@@ -169,24 +167,19 @@ export default function SamajJogSandesh({ lang }) {
 
   const handleSuggestDraft = async (sourceLang) => {
     if (isTranslating) return;
-    
     const targetLang = sourceLang === 'en' ? 'gu' : 'en';
     const fields = ['title', 'subtitle', 'content', 'authority'];
-    
     setIsTranslating(true);
     try {
       const updates = { ...formData };
-      
       for (const field of fields) {
         const sourceKey = field + (sourceLang === 'en' ? 'En' : 'Gu');
         const targetKey = field + (targetLang === 'gu' ? 'Gu' : 'En');
-        
         if (formData[sourceKey] && formData[sourceKey].trim()) {
            const suggestion = await fetchTranslation(formData[sourceKey], targetLang);
            if (suggestion) updates[targetKey] = suggestion;
         }
       }
-      
       setFormData(updates);
     } catch (err) {
       console.error("Translation logic error:", err);
@@ -237,11 +230,10 @@ export default function SamajJogSandesh({ lang }) {
     });
   };
 
-  // 🪄 SMART MIXING: Real messages + Dummy samples to keep the grid full
   const activeMessages = [
     ...messages,
     ...DUMMY_MESSAGES.map(dm => ({ ...dm, isSample: true }))
-  ].slice(0, 9); // Keep a nice grid of 9 total
+  ].slice(0, 9);
 
   const featured = messages.find(m => m.priority === 'high') || 
                    messages[0] || 
@@ -299,53 +291,111 @@ export default function SamajJogSandesh({ lang }) {
         </div>
       )}
 
-      {/* 📋 TIMELINE FEED */}
-      <div className={`samaj-feed ${lang === 'gu' ? 'lang-gu' : ''}`}>
-        <div className="feed-header">
-          <h2>{lang === 'gu' ? 'તાજેતરના અપડેટ્સ' : 'Recent Updates'}</h2>
-          
-          <div className="header-actions">
-            {canManage && (
-              <button className="admin-add-btn" onClick={() => setShowModal(true)}>
-                ➕ {lang === 'gu' ? 'નવો સંદેશ મૂકો' : 'Post New Announcement'}
+      {/* 📋 MAIN LAYOUT: SIDEBAR + FEED */}
+      <div className="samaj-main-layout">
+        <aside className="samaj-sidebar">
+          <div className="sidebar-section">
+            <h4>{lang === 'gu' ? 'શ્રેણીઓ' : 'Categories'}</h4>
+            <div className="sidebar-filters">
+              <button className="filter-pill active">
+                <span className="icon">🏛️</span> {lang === 'gu' ? 'બધા' : 'All Updates'}
               </button>
-            )}
-            <div className="feed-controls">
-              <span className="active">{lang === 'gu' ? 'બધા' : 'All'}</span>
-              <span>{lang === 'gu' ? 'પત્રો' : 'Letters'}</span>
-              <span>{lang === 'gu' ? 'પોસ્ટર્સ' : 'Posters'}</span>
+              <button className="filter-pill">
+                <span className="icon">📸</span> {lang === 'gu' ? 'પોસ્ટર્સ' : 'Posters'}
+              </button>
+              <button className="filter-pill">
+                <span className="icon">📜</span> {lang === 'gu' ? 'પત્રો' : 'Letters'}
+              </button>
+              <button className="filter-pill">
+                <span className="icon">🎥</span> {lang === 'gu' ? 'વીડિયો' : 'Videos'}
+              </button>
             </div>
           </div>
-        </div>
 
-        <div className="feed-grid">
-          {feed.map(item => (
-            <div key={item.id} className={`sandesh-card ${item.type} ${item.isSample ? 'sample-card' : ''}`}>
-              {item.isSample && <div className="sample-label">SAMPLE</div>}
-              
-              {canManage && !item.isSample && (
-                <div className="admin-card-controls">
-                  <button 
-                    className="admin-edit-pill" 
-                    onClick={(e) => { e.stopPropagation(); handleEdit(item); }}
-                  >
-                    ✏️
-                  </button>
-                  <button 
-                    className="admin-delete-pill" 
-                    onClick={(e) => { e.stopPropagation(); handleDelete(item.id); }}
-                  >
-                    🗑️
-                  </button>
-                </div>
+          <div className="sidebar-section">
+            <h4>{lang === 'gu' ? 'વિભાગ ફિલ્ટર' : 'Vibhag Filters'}</h4>
+            <div className="sidebar-vibhags">
+              <span>{lang === 'gu' ? 'બધા વિભાગ' : 'All Districts'}</span>
+              <span>Central</span>
+              <span>Western</span>
+              <span>Harbour</span>
+            </div>
+          </div>
+
+          <div className="sidebar-promo">
+            <div className="promo-card">
+              <h5>{lang === 'gu' ? 'મદદ જોઈએ છે?' : 'Need Help?'}</h5>
+              <p>{lang === 'gu' ? 'તકનીકી સહાય માટે સંપર્ક કરો' : 'Contact for tech support'}</p>
+              <button onClick={() => window.open('https://wa.me/917208579149', '_blank')}>Contact Admin</button>
+            </div>
+          </div>
+        </aside>
+
+        <div className={`samaj-feed ${lang === 'gu' ? 'lang-gu' : ''}`}>
+          <div className="feed-header">
+            <h2>{lang === 'gu' ? 'તાજેતરના અપડેટ્સ' : 'Recent Updates'}</h2>
+            
+            <div className="header-actions">
+              {canManage && (
+                <button className="admin-add-btn" onClick={() => setShowModal(true)}>
+                  ➕ {lang === 'gu' ? 'નવો સંદેશ મૂકો' : 'Post New Announcement'}
+                </button>
               )}
-               {item.type === 'poster' && (
-                 <div className="card-image">
-                    <img src={item.bannerUrl} alt={item.title} />
-                    <div className="type-badge">🖼️ POSTER</div>
-                 </div>
-               )}
-                              <div className="card-body">
+            </div>
+          </div>
+
+          <div className="feed-grid">
+            {feed.map(item => (
+              <div key={item.id} className={`sandesh-card ${item.type} ${item.isSample ? 'sample-card' : ''}`}>
+                {item.isSample && <div className="sample-label">SAMPLE</div>}
+                
+                {canManage && !item.isSample && (
+                  <div className="admin-card-controls">
+                    <button 
+                      className="admin-edit-pill" 
+                      onClick={(e) => { e.stopPropagation(); handleEdit(item); }}
+                    >
+                      ✏️
+                    </button>
+                    <button 
+                      className="admin-delete-pill" 
+                      onClick={(e) => { e.stopPropagation(); handleDelete(item.id); }}
+                    >
+                      🗑️
+                    </button>
+                  </div>
+                )}
+
+                <div className="card-media">
+                  {item.type === 'video' ? (
+                    <div className="video-container">
+                      {item.videoUrl?.includes('youtube.com') || item.videoUrl?.includes('youtu.be') ? (
+                        <iframe 
+                          src={`https://www.youtube.com/embed/${item.videoUrl.split('v=')[1] || item.videoUrl.split('/').pop()}`}
+                          title="YouTube video player"
+                          frameBorder="0"
+                          allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                          allowFullScreen
+                        ></iframe>
+                      ) : (
+                        <video src={item.videoUrl} controls poster={item.bannerUrl} />
+                      )}
+                      <div className="type-badge">🎥 VIDEO</div>
+                    </div>
+                  ) : item.bannerUrl ? (
+                    <div className="card-image">
+                       <img src={item.bannerUrl} alt={getT(item, 'title')} />
+                       <div className="type-badge">{item.type === 'letter' ? '📜 LETTER' : '🖼️ POSTER'}</div>
+                    </div>
+                  ) : (
+                    <div className="card-text-icon">
+                       <span className="media-placeholder-icon">{item.type === 'letter' ? '📜' : '📝'}</span>
+                       <div className="type-badge">{item.type === 'letter' ? 'LETTER' : 'TEXT'}</div>
+                    </div>
+                  )}
+                </div>
+
+                <div className="card-body">
                   <div className="card-top">
                     <span className="card-tag">{getT(item, 'tags')[0]}</span>
                     <span className="card-date">{getT(item, 'date')}</span>
@@ -371,9 +421,10 @@ export default function SamajJogSandesh({ lang }) {
                         </button>
                      </div>
                   </div>
-               </div>
-            </div>
-          ))}
+                </div>
+              </div>
+            ))}
+          </div>
         </div>
       </div>
 
@@ -388,27 +439,16 @@ export default function SamajJogSandesh({ lang }) {
             
             <form onSubmit={handlePost}>
               <div className="modal-magic-actions">
-                <button 
-                  type="button" 
-                  className="magic-pill-btn" 
-                  onClick={() => handleSuggestDraft('en')}
-                  disabled={isTranslating}
-                >
+                <button type="button" className="magic-pill-btn" onClick={() => handleSuggestDraft('en')} disabled={isTranslating}>
                   🪄 Suggest Gujarati (Draft ➡️)
                 </button>
-                <button 
-                  type="button" 
-                  className="magic-pill-btn" 
-                  onClick={() => handleSuggestDraft('gu')}
-                  disabled={isTranslating}
-                >
+                <button type="button" className="magic-pill-btn" onClick={() => handleSuggestDraft('gu')} disabled={isTranslating}>
                   🪄 Suggest English (Draft ⬅️)
                 </button>
               </div>
 
               <div className="modal-content-wrapper">
                 <div className="modal-grid">
-                  {/* 🇬🇧 ENGLISH SECTION */}
                   <div className={`form-column ${isTranslating ? 'translating' : ''}`}>
                     <h4>English Content</h4>
                     <div className="form-group">
@@ -429,7 +469,6 @@ export default function SamajJogSandesh({ lang }) {
                     </div>
                   </div>
 
-                  {/* 🇮🇳 GUJARATI SECTION */}
                   <div className={`form-column gujarati-column ${isTranslating ? 'translating' : ''}`}>
                     <h4>ગુજરાતી સામગ્રી (Gujarati)</h4>
                     <div className="form-group">
