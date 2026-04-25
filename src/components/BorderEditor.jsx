@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import ColorPicker from './ColorPicker';
 import './BorderEditor.css';
 
 const BORDER_STYLES = [
@@ -173,11 +174,11 @@ export default function BorderEditor({ formData, onChange }) {
           {/* Color */}
           <div className="be-field be-color-field">
             <label className="be-label">Border Color</label>
-            <input
-              type="color"
-              value={formData.borderColor || '#e2e8f0'}
-              onChange={e => set('borderColor', e.target.value)}
-              className="be-color-swatch"
+            <ColorPicker
+              value={formData.borderColor || ''}
+              onChange={val => set('borderColor', val)}
+              defaultColor="#e2e8f0"
+              allowNoFill={true}
             />
             <input
               type="text"
@@ -291,11 +292,11 @@ export default function BorderEditor({ formData, onChange }) {
 
               <div className="be-field be-color-field">
                 <label className="be-label">Shadow Color</label>
-                <input
-                  type="color"
-                  value={/^#/.test(formData.shadowColor || '') ? formData.shadowColor : '#000000'}
-                  onChange={e => set('shadowColor', e.target.value)}
-                  className="be-color-swatch"
+                <ColorPicker
+                  value={/^#/.test(formData.shadowColor || '') ? formData.shadowColor : ''}
+                  onChange={val => set('shadowColor', val)}
+                  defaultColor="#000000"
+                  allowNoFill={true}
                 />
                 <input
                   type="text"
@@ -332,11 +333,11 @@ export default function BorderEditor({ formData, onChange }) {
               ].map(gc => (
                 <div key={gc.key} className="be-field be-color-field">
                   <label className="be-label">{gc.label}</label>
-                  <input
-                    type="color"
-                    value={formData[gc.key] || (gc.key === 'gradientColor1' ? '#7c3aed' : '#3b82f6')}
-                    onChange={e => set(gc.key, e.target.value)}
-                    className="be-color-swatch"
+                  <ColorPicker
+                    value={formData[gc.key] || ''}
+                    onChange={val => set(gc.key, val)}
+                    defaultColor={gc.key === 'gradientColor1' ? '#7c3aed' : '#3b82f6'}
+                    allowNoFill={false}
                   />
                   <input
                     type="text"

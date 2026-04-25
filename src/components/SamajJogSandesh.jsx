@@ -15,6 +15,7 @@ import {
 import { compressImage } from '../utils/imageUtils';
 import { fetchTranslation } from '../utils/translationUtils';
 import BorderEditor from './BorderEditor';
+import ColorPicker from './ColorPicker';
 import './SamajJogSandesh.css';
 
 const DUMMY_MESSAGES = [
@@ -1083,26 +1084,29 @@ export default function SamajJogSandesh({ lang }) {
                    <div className="color-grid">
                      <div className="color-pick-item">
                        <label>Background</label>
-                       <input
-                         type="color"
-                         value={formData.bgColor || '#ffffff'}
-                         onChange={e => setFormData({...formData, bgColor: e.target.value})}
+                       <ColorPicker
+                         value={formData.bgColor || ''}
+                         onChange={val => setFormData({...formData, bgColor: val})}
+                         defaultColor="#ffffff"
+                         allowNoFill={true}
                        />
                      </div>
                      <div className="color-pick-item">
                        <label>Text</label>
-                       <input
-                         type="color"
-                         value={formData.textColor || '#1e3a8a'}
-                         onChange={e => setFormData({...formData, textColor: e.target.value})}
+                       <ColorPicker
+                         value={formData.textColor || ''}
+                         onChange={val => setFormData({...formData, textColor: val})}
+                         defaultColor="#1e3a8a"
+                         allowNoFill={false}
                        />
                      </div>
                      <div className="color-pick-item">
                        <label>Highlighter</label>
-                       <input
-                         type="color"
-                         value={formData.accentColor || '#fbbf24'}
-                         onChange={e => setFormData({...formData, accentColor: e.target.value})}
+                       <ColorPicker
+                         value={formData.accentColor || ''}
+                         onChange={val => setFormData({...formData, accentColor: val})}
+                         defaultColor="#fbbf24"
+                         allowNoFill={false}
                        />
                      </div>
                    </div>
