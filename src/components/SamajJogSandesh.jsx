@@ -285,6 +285,36 @@ export default function SamajJogSandesh({ lang }) {
   };
 
   // 📦 Archive a post (hides from public, reversible)
+  // --- ATOMIC SLOT MANAGEMENT ---
+  const handleSlotSwap = async (item, targetSlot) => {
+    if (!canManage) return;
+    try {
+      // 1. Identify which field to clear based on target slot
+      let fieldToClear = '';
+      if (targetSlot === 'hero') fieldToClear = 'isHero';
+      if (targetSlot === 'side1') fieldToClear = 'isHighlight1';
+      if (targetSlot === 'side2') fieldToClear = 'isHighlight2';
+
+      // 2. Find all posts that currently have this slot active and clear them
+      const postsToClear = messages.filter(m => m[fieldToClear] === true && m.id !== item.id);
+      
+      const batchPromises = postsToClear.map(m => 
+        updateDoc(doc(db, "samaj_jog_sandesh", m.id), { [fieldToClear]: false })
+      );
+
+      // 3. Set the new slot on the target item
+      const newVal = !item[fieldToClear]; // Toggle
+      batchPromises.push(
+        updateDoc(doc(db, "samaj_jog_sandesh", item.id), { [fieldToClear]: newVal })
+      );
+
+      await Promise.all(batchPromises);
+      // Local state will update via useEffect listener
+    } catch (err) {
+      console.error("Error swapping slot:", err);
+    }
+  };
+
   const handleArchive = async (id) => {
     try {
       await updateDoc(doc(db, 'samaj_jog_sandesh', id), { isArchived: true });
@@ -492,11 +522,12 @@ export default function SamajJogSandesh({ lang }) {
   
   // 🔥 HERO FIREWALL: Only consider posts that are NOT pinned to any Side Slot (Top or Bottom)
   const heroCandidates = activeMessages.filter(m => 
-    !m.isHighlight && !m.isHighlight1 && !m.isHighlight2 && !m.isQuickLink
+    !m.isHighlight1 && !m.isHighlight2 && !m.isQuickLink
   );
 
-  // Find featured post: Real High Priority > Sample Posts > Latest Normal Post
-  const featured = heroCandidates.find(m => m.priority === 'high' && !m.isSample) || 
+  // Find featured post: EXPLICIT HERO > High Priority > Sample Posts > Latest Normal Post
+  const featured = activeMessages.find(m => m.isHero) ||
+                   heroCandidates.find(m => m.priority === 'high' && !m.isSample) || 
                    heroCandidates.find(m => m.isSample) || 
                    heroCandidates[0] ||
                    activeMessages.find(m => m.isSample) ||
@@ -504,12 +535,10 @@ export default function SamajJogSandesh({ lang }) {
 
 
   // 1. Find the latest Highlight for Slot 1 (Top)
-  const highlight1Post = activeMessages.find(m => m.isHighlight1 || m.isHighlight) || null;
+  const highlight1Post = activeMessages.find(m => m.isHighlight1) || null;
 
   // 2. Find the latest Highlight for Slot 2 (Bottom) - STRICTLY EXCLUDES whatever is in Slot 1
-  const highlight2Post = activeMessages.find(m => 
-    (m.isHighlight2 || m.isQuickLink) && m.id !== highlight1Post?.id
-  ) || null;
+  const highlight2Post = activeMessages.find(m => m.isHighlight2) || null;
   
   // 3. Feed: Everything else (Strictly excludes Top Slot, Bottom Slot, and Hero Banner)
   const feed = activeMessages.filter(m => 
@@ -539,7 +568,7 @@ export default function SamajJogSandesh({ lang }) {
   return (
     <div className="samaj-jog-sandesh-root">
       <div className="sandesh-layout-wrapper">
-        <div className="hero-bento-grid">
+        <div className={`hero-bento-grid ${!featured ? 'no-hero' : ''}`}>
           {/* 1. TOP LEFT: HIGHLIGHT 1 (Top Slot) */}
           <aside 
             className="bento-item side top-left"
@@ -838,6 +867,52 @@ export default function SamajJogSandesh({ lang }) {
                   <div className="card-date">
                      {getT(item, 'date')} • {getT(item, 'authority')}
                   </div>
+
+                  {/* 🛡️ Admin Slot Management - CLEAN & PROFESSIONAL */}
+                  {canManage && (
+                    <div className="card-admin-management-row" style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      margin: '10px 0',
+                      padding: '8px 0',
+                      borderTop: '1px solid #f1f5f9',
+                      borderBottom: '1px solid #f1f5f9'
+                    }}>
+                      <div className="active-slot-badges" style={{display: 'flex', gap: '5px'}}>
+                        {item.isHero && <span style={{background: '#7c3aed', color: 'white', padding: '3px 8px', borderRadius: '4px', fontSize: '9px', fontWeight: 'bold', boxShadow: '0 2px 5px rgba(124, 58, 237, 0.3)'}}>🌟 HERO</span>}
+                        {item.isHighlight && <span style={{background: '#f59e0b', color: 'white', padding: '3px 8px', borderRadius: '4px', fontSize: '9px', fontWeight: 'bold'}}>📍 SIDE TOP</span>}
+                        {item.isHighlight2 && <span style={{background: '#3b82f6', color: 'white', padding: '3px 8px', borderRadius: '4px', fontSize: '9px', fontWeight: 'bold'}}>📍 SIDE BOTTOM</span>}
+                        {!item.isHero && !item.isHighlight && !item.isHighlight2 && (
+                          <span style={{color: '#94a3b8', fontSize: '9px', fontStyle: 'italic'}}>No Active Slot</span>
+                        )}
+                      </div>
+
+                      <div className="slot-quick-actions" style={{display: 'flex', gap: '4px'}}>
+                         <button 
+                            onClick={(e) => { e.stopPropagation(); handleSlotSwap(item, 'hero'); }}
+                            style={{padding: '4px 6px', fontSize: '9px', borderRadius: '4px', background: item.isHero ? '#eee' : '#fff', border: '1px solid #ddd', cursor: 'pointer'}}
+                            title="Set as Main Hero"
+                         >
+                            👑 Hero
+                         </button>
+                         <button 
+                            onClick={(e) => { e.stopPropagation(); handleSlotSwap(item, 'side1'); }}
+                            style={{padding: '4px 6px', fontSize: '9px', borderRadius: '4px', background: item.isHighlight ? '#eee' : '#fff', border: '1px solid #ddd', cursor: 'pointer'}}
+                            title="Set as Side Top"
+                         >
+                            👆 Side1
+                         </button>
+                         <button 
+                            onClick={(e) => { e.stopPropagation(); handleSlotSwap(item, 'side2'); }}
+                            style={{padding: '4px 6px', fontSize: '9px', borderRadius: '4px', background: item.isHighlight2 ? '#eee' : '#fff', border: '1px solid #ddd', cursor: 'pointer'}}
+                            title="Set as Side Bottom"
+                         >
+                            👇 Side2
+                         </button>
+                      </div>
+                    </div>
+                  )}
 
                   <p className={`card-text ${expandedId === item.id ? 'expanded' : ''}`}>
                     {getT(item, 'content')}

@@ -19,6 +19,27 @@
     ".   mid right"
     "tl  mid right"
     "bl  mid right";
+  transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.hero-bento-grid.no-hero {
+  grid-template-rows: 60px 0px 0px;
+  height: 60px; /* Minimal height to preserve top overlap */
+  margin-bottom: 10px;
+}
+
+.hero-bento-grid.no-hero .bento-item.middle {
+  opacity: 0;
+  pointer-events: none;
+  transform: scale(0.95);
+}
+
+/* Ensure side containers and ticker don't collapse when grid height is 0 */
+.hero-bento-grid.no-hero .bento-item.side,
+.hero-bento-grid.no-hero .ticker-panel {
+  height: 460px;
+  position: relative;
+  z-index: 10;
 }
 
 /* 📰 LIVE TICKER PANEL (Right) */
