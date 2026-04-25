@@ -15,7 +15,7 @@
   font-size: 1.5rem;
   font-weight: 700;
   color: var(--clr-primary);
-  margin-bottom: 1.5rem;
+  margin-bottom: 5px; /* Squashed to minimum to move hero up */
   width: 100%;
   text-align: left;
   border-bottom: 2px solid var(--clr-gray-200);

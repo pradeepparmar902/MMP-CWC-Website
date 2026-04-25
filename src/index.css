@@ -56,3 +56,17 @@ button {
     transform: translateY(0);
   }
 }
+
+/* 🔒 MODAL SAFETY & BANNER SUPPRESSION */
+body.modal-open {
+  overflow: hidden !important;
+}
+
+body.modal-open .banner-canvas,
+body.modal-open .banner-sticky,
+body.modal-open .global-banner-wrap {
+  display: none !important;
+  opacity: 0 !important;
+  pointer-events: none !important;
+}
+

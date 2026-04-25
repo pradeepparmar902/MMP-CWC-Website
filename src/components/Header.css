@@ -4,7 +4,7 @@
   position: sticky;
   top: 0;
   z-index: 101; /* Above banner elements */
-  padding: 0.75rem 0;
+  padding: 0.4rem 0; /* Slimmer header to lift everything below */
   transition: all 0.3s ease;
 }
 

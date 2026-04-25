@@ -1,5 +1,5 @@
 .navigation {
-  margin-bottom: 1rem;
+  margin-bottom: 0px !important; /* Zero gap below nav bar */
   background-color: #1e293b; /* Set to dark for the side buttons */
   display: flex;
   align-items: stretch;
