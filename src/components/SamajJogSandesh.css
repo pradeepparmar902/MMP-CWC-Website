@@ -399,7 +399,8 @@
   background: white;
   border: 1px solid #e2e8f0;  /* default — overridden by inline buildCardStyle */
   border-radius: 12px;        /* default — overridden by inline buildCardStyle */
-  overflow: visible;
+  overflow: hidden;           /* prevent children from sticking out of rounded corners */
+  padding: 6px;               /* slight padding to frame the content inside the border */
   transition: box-shadow 0.2s, transform 0.2s;
   display: flex;
   flex-direction: column;
@@ -417,6 +418,7 @@
   justify-content: center;
   padding: 15px;
   position: relative;
+  border-radius: 6px; /* soft inner curve to match the outer padding */
 }
 
 .card-image {
