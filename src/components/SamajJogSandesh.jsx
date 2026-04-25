@@ -437,35 +437,45 @@ export default function SamajJogSandesh({ lang }) {
   const buildCardStyle = (item) => {
     if (!item) return {};
     const s = { color: item.textColor || undefined };
-    // Border radius
+
+    // Border radius (per-corner overrides, else global)
     const r  = item.borderRadius || '12';
     const tl = item.borderRadiusTL !== '' && item.borderRadiusTL != null ? `${item.borderRadiusTL}px` : `${r}px`;
     const tr = item.borderRadiusTR !== '' && item.borderRadiusTR != null ? `${item.borderRadiusTR}px` : `${r}px`;
     const br = item.borderRadiusBR !== '' && item.borderRadiusBR != null ? `${item.borderRadiusBR}px` : `${r}px`;
     const bl = item.borderRadiusBL !== '' && item.borderRadiusBL != null ? `${item.borderRadiusBL}px` : `${r}px`;
     s.borderRadius = `${tl} ${tr} ${br} ${bl}`;
-    // Gradient border
+
+    // ── Border logic ────────────────────────────────────────────────
     if (item.gradientBorder && Number(item.borderWidth) > 0) {
-      const bg  = item.bgColor || 'transparent';
+      // 1. Gradient border (uses padding-box / border-box trick)
+      const bg  = item.bgColor || 'white';
       const ang = item.gradientAngle  || '135';
       const c1  = item.gradientColor1 || '#7c3aed';
       const c2  = item.gradientColor2 || '#3b82f6';
       s.background = `linear-gradient(${bg}, ${bg}) padding-box, linear-gradient(${ang}deg, ${c1}, ${c2}) border-box`;
       s.border = `${item.borderWidth}px solid transparent`;
-    } else {
+      if (item.bgColor) {} // bg already handled above
+    } else if (item.borderStyle === 'none') {
+      // 2. User explicitly chose "None" style → remove border
+      s.border = 'none';
       if (item.bgColor) s.backgroundColor = item.bgColor;
-      if (item.borderColor && item.borderStyle !== 'none' && Number(item.borderWidth || 1) > 0) {
-        s.borderColor = item.borderColor;
-        s.borderWidth = `${item.borderWidth || 1}px`;
-        s.borderStyle = item.borderStyle || 'solid';
-      } else {
-        s.border = 'none';
-      }
+    } else if (item.borderColor && item.borderStyle && Number(item.borderWidth || 1) > 0) {
+      // 3. User configured a custom solid/dashed/dotted/etc border
+      s.borderColor = item.borderColor;
+      s.borderWidth = `${item.borderWidth || 1}px`;
+      s.borderStyle = item.borderStyle || 'solid';
+      if (item.bgColor) s.backgroundColor = item.bgColor;
+    } else {
+      // 4. No custom border configured — let CSS class default apply
+      if (item.bgColor) s.backgroundColor = item.bgColor;
     }
-    // Shadow
+
+    // Shadow / Glow
     if (item.shadowEnabled) {
       s.boxShadow = `${item.shadowX || 0}px ${item.shadowY || 4}px ${item.shadowBlur || 12}px ${item.shadowSpread || 0}px ${item.shadowColor || 'rgba(0,0,0,0.1)'}`;
     }
+
     return s;
   };
 
@@ -766,6 +776,7 @@ export default function SamajJogSandesh({ lang }) {
                 key={item.id}
                 id={`card-${item.id}`}
                 className={`sandesh-card ${item.type} ${item.isSample ? 'sample-card' : ''} ${selectedIds.has(item.id) ? 'card-selected' : ''} ${item.isArchived ? 'card-archived' : ''}`}
+                style={buildCardStyle(item)}
                 onClick={bulkMode && !item.isSample ? () => toggleSelect(item.id) : undefined}
               >
                 {/* Bulk Checkbox */}
