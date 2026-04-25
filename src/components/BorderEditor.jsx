@@ -93,7 +93,7 @@ export default function BorderEditor({ formData, onChange }) {
         <div className="be-presets-label">⚡ Quick Presets</div>
         <div className="be-presets-row">
           {PRESETS.map(p => (
-            <button key={p.name} className="be-preset-btn" onClick={() => applyPreset(p)}>
+            <button type="button" key={p.name} className="be-preset-btn" onClick={() => applyPreset(p)}>
               {p.name}
             </button>
           ))}
@@ -109,6 +109,7 @@ export default function BorderEditor({ formData, onChange }) {
           { id: 'gradient', icon: '🌈', label: 'Gradient' },
         ].map(t => (
           <button
+            type="button"
             key={t.id}
             className={`be-tab ${tab === t.id ? 'active' : ''}`}
             onClick={() => setTab(t.id)}
@@ -128,6 +129,7 @@ export default function BorderEditor({ formData, onChange }) {
             <div className="be-style-grid">
               {BORDER_STYLES.map(bs => (
                 <button
+                  type="button"
                   key={bs.value}
                   className={`be-style-btn ${formData.borderStyle === bs.value ? 'active' : ''}`}
                   onClick={() => set('borderStyle', bs.value)}
@@ -197,6 +199,7 @@ export default function BorderEditor({ formData, onChange }) {
             <div className="be-radius-presets">
               {RADIUS_PRESETS.map(rp => (
                 <button
+                  type="button"
                   key={rp.name}
                   className={`be-radius-preset-btn ${formData.borderRadius === rp.value ? 'active' : ''}`}
                   onClick={() => set('borderRadius', rp.value)}
