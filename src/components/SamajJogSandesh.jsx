@@ -14,6 +14,7 @@ import {
 } from 'firebase/firestore';
 import { compressImage } from '../utils/imageUtils';
 import { fetchTranslation } from '../utils/translationUtils';
+import BorderEditor from './BorderEditor';
 import './SamajJogSandesh.css';
 
 const DUMMY_MESSAGES = [
@@ -126,9 +127,27 @@ export default function SamajJogSandesh({ lang }) {
     isHighlight2: false,
     // 🎨 Styling Canvas Fields
     bgColor: '',
-    borderColor: '',
     textColor: '',
-    accentColor: ''
+    accentColor: '',
+    // 🖊 Border Editor Fields
+    borderColor: '',
+    borderStyle: 'solid',
+    borderWidth: '1',
+    borderRadius: '12',
+    borderRadiusTL: '',
+    borderRadiusTR: '',
+    borderRadiusBL: '',
+    borderRadiusBR: '',
+    shadowEnabled: false,
+    shadowX: '0',
+    shadowY: '4',
+    shadowBlur: '12',
+    shadowSpread: '0',
+    shadowColor: 'rgba(0,0,0,0.1)',
+    gradientBorder: false,
+    gradientColor1: '#7c3aed',
+    gradientColor2: '#3b82f6',
+    gradientAngle: '135'
   });
 
   // 1. REAL-TIME DATA FETCH
@@ -352,9 +371,26 @@ export default function SamajJogSandesh({ lang }) {
       isHighlight1: item.isHighlight1 || false,
       isHighlight2: item.isHighlight2 || false,
       bgColor: item.bgColor || '',
-      borderColor: item.borderColor || '',
       textColor: item.textColor || '',
-      accentColor: item.accentColor || ''
+      accentColor: item.accentColor || '',
+      borderColor: item.borderColor || '',
+      borderStyle: item.borderStyle || 'solid',
+      borderWidth: item.borderWidth || '1',
+      borderRadius: item.borderRadius || '12',
+      borderRadiusTL: item.borderRadiusTL || '',
+      borderRadiusTR: item.borderRadiusTR || '',
+      borderRadiusBL: item.borderRadiusBL || '',
+      borderRadiusBR: item.borderRadiusBR || '',
+      shadowEnabled: item.shadowEnabled || false,
+      shadowX: item.shadowX || '0',
+      shadowY: item.shadowY || '4',
+      shadowBlur: item.shadowBlur || '12',
+      shadowSpread: item.shadowSpread || '0',
+      shadowColor: item.shadowColor || 'rgba(0,0,0,0.1)',
+      gradientBorder: item.gradientBorder || false,
+      gradientColor1: item.gradientColor1 || '#7c3aed',
+      gradientColor2: item.gradientColor2 || '#3b82f6',
+      gradientAngle: item.gradientAngle || '135'
     });
     setShowModal(true);
   };
@@ -374,19 +410,72 @@ export default function SamajJogSandesh({ lang }) {
       isHighlight1: false,
       isHighlight2: false,
       bgColor: '',
-      borderColor: '',
       textColor: '',
-      accentColor: ''
+      accentColor: '',
+      borderColor: '',
+      borderStyle: 'solid',
+      borderWidth: '1',
+      borderRadius: '12',
+      borderRadiusTL: '',
+      borderRadiusTR: '',
+      borderRadiusBL: '',
+      borderRadiusBR: '',
+      shadowEnabled: false,
+      shadowX: '0',
+      shadowY: '4',
+      shadowBlur: '12',
+      shadowSpread: '0',
+      shadowColor: 'rgba(0,0,0,0.1)',
+      gradientBorder: false,
+      gradientColor1: '#7c3aed',
+      gradientColor2: '#3b82f6',
+      gradientAngle: '135'
     });
   };
 
-  // 2. DATA PROCESSING (Gathers both Live and Sample data)
-  const allAvailable = [
-    ...(messages || []),
-    ...DUMMY_MESSAGES.map(dm => ({ ...dm, isSample: true }))
-  ];
+  /* ── buildCardStyle: compute inline styles from any item's border fields ── */
+  const buildCardStyle = (item) => {
+    if (!item) return {};
+    const s = { color: item.textColor || undefined };
+    // Border radius
+    const r  = item.borderRadius || '12';
+    const tl = item.borderRadiusTL !== '' && item.borderRadiusTL != null ? `${item.borderRadiusTL}px` : `${r}px`;
+    const tr = item.borderRadiusTR !== '' && item.borderRadiusTR != null ? `${item.borderRadiusTR}px` : `${r}px`;
+    const br = item.borderRadiusBR !== '' && item.borderRadiusBR != null ? `${item.borderRadiusBR}px` : `${r}px`;
+    const bl = item.borderRadiusBL !== '' && item.borderRadiusBL != null ? `${item.borderRadiusBL}px` : `${r}px`;
+    s.borderRadius = `${tl} ${tr} ${br} ${bl}`;
+    // Gradient border
+    if (item.gradientBorder && Number(item.borderWidth) > 0) {
+      const bg  = item.bgColor || 'transparent';
+      const ang = item.gradientAngle  || '135';
+      const c1  = item.gradientColor1 || '#7c3aed';
+      const c2  = item.gradientColor2 || '#3b82f6';
+      s.background = `linear-gradient(${bg}, ${bg}) padding-box, linear-gradient(${ang}deg, ${c1}, ${c2}) border-box`;
+      s.border = `${item.borderWidth}px solid transparent`;
+    } else {
+      if (item.bgColor) s.backgroundColor = item.bgColor;
+      if (item.borderColor && item.borderStyle !== 'none' && Number(item.borderWidth || 1) > 0) {
+        s.borderColor = item.borderColor;
+        s.borderWidth = `${item.borderWidth || 1}px`;
+        s.borderStyle = item.borderStyle || 'solid';
+      } else {
+        s.border = 'none';
+      }
+    }
+    // Shadow
+    if (item.shadowEnabled) {
+      s.boxShadow = `${item.shadowX || 0}px ${item.shadowY || 4}px ${item.shadowBlur || 12}px ${item.shadowSpread || 0}px ${item.shadowColor || 'rgba(0,0,0,0.1)'}`;
+    }
+    return s;
+  };
+
+  // 2. DATA PROCESSING
+  // NOTE: messages already contains DUMMY_MESSAGES as fallback when DB is empty
+  // (set in the Firebase onSnapshot listener above). No need to append them again.
+  const allAvailable = messages || [];
   
   const activeMessages = allAvailable.filter(m => !m?.isArchived);
+
   // Archived posts (real posts only, no samples)
   const archivedMessages = messages.filter(m => m?.isArchived);
   
@@ -444,13 +533,7 @@ export default function SamajJogSandesh({ lang }) {
           <aside 
             className="bento-item side top-left"
             onClick={() => highlight1Post && setMaximizedId(highlight1Post.id)}
-            style={{
-              backgroundColor: highlight1Post?.bgColor,
-              borderColor: highlight1Post?.borderColor,
-              borderWidth: highlight1Post?.borderColor ? '2px' : '0',
-              borderStyle: 'solid',
-              color: highlight1Post?.textColor
-            }}
+            style={buildCardStyle(highlight1Post || {})}
           >
             <div className="side-bucket-content">
               {canManage && (
@@ -488,13 +571,7 @@ export default function SamajJogSandesh({ lang }) {
           <aside 
             className="bento-item side bottom-left"
             onClick={() => highlight2Post && setMaximizedId(highlight2Post.id)}
-            style={{
-              backgroundColor: highlight2Post?.bgColor,
-              borderColor: highlight2Post?.borderColor,
-              borderWidth: highlight2Post?.borderColor ? '2px' : '0',
-              borderStyle: 'solid',
-              color: highlight2Post?.textColor
-            }}
+            style={buildCardStyle(highlight2Post || {})}
           >
             <div className="side-bucket-content">
               {canManage && (
@@ -533,13 +610,7 @@ export default function SamajJogSandesh({ lang }) {
             <main 
               className="bento-item middle center-feature" 
               id={`card-${featured.id}`}
-              style={{
-                backgroundColor: featured.bgColor,
-                borderColor: featured.borderColor,
-                borderWidth: featured.borderColor ? '3px' : '0',
-                borderStyle: 'solid',
-                color: featured.textColor
-              }}
+              style={buildCardStyle(featured)}
             >
               <div className="hero-inner">
                 <div className="hero-text">
@@ -993,47 +1064,58 @@ export default function SamajJogSandesh({ lang }) {
                    </div>
                  </div>
  
-                 {/* 🎨 COLOR CANVAS TOOLKIT */}
+                 {/* 🎨 COLOR + BORDER CANVAS TOOLKIT */}
                  <div className="canvas-toolkit">
                    <h4 className="toolkit-title">🎨 Design Canvas</h4>
+
+                   {/* Basic color pickers row */}
                    <div className="color-grid">
                      <div className="color-pick-item">
                        <label>Background</label>
-                       <input 
-                         type="color" 
-                         value={formData.bgColor || '#ffffff'} 
-                         onChange={e => setFormData({...formData, bgColor: e.target.value})} 
-                       />
-                     </div>
-                     <div className="color-pick-item">
-                       <label>Border</label>
-                       <input 
-                         type="color" 
-                         value={formData.borderColor || '#e2e8f0'} 
-                         onChange={e => setFormData({...formData, borderColor: e.target.value})} 
+                       <input
+                         type="color"
+                         value={formData.bgColor || '#ffffff'}
+                         onChange={e => setFormData({...formData, bgColor: e.target.value})}
                        />
                      </div>
                      <div className="color-pick-item">
                        <label>Text</label>
-                       <input 
-                         type="color" 
-                         value={formData.textColor || '#1e3a8a'} 
-                         onChange={e => setFormData({...formData, textColor: e.target.value})} 
+                       <input
+                         type="color"
+                         value={formData.textColor || '#1e3a8a'}
+                         onChange={e => setFormData({...formData, textColor: e.target.value})}
                        />
                      </div>
                      <div className="color-pick-item">
                        <label>Highlighter</label>
-                       <input 
-                         type="color" 
-                         value={formData.accentColor || '#fbbf24'} 
-                         onChange={e => setFormData({...formData, accentColor: e.target.value})} 
+                       <input
+                         type="color"
+                         value={formData.accentColor || '#fbbf24'}
+                         onChange={e => setFormData({...formData, accentColor: e.target.value})}
                        />
                      </div>
                    </div>
-                   <button 
+
+                   {/* 🖊 Full Border Editor */}
+                   <div style={{marginTop: '14px'}}>
+                     <div className="be-section-heading">🖊 Border &amp; Frame</div>
+                     <BorderEditor
+                       formData={formData}
+                       onChange={(key, val) => setFormData(prev => ({ ...prev, [key]: val }))}
+                     />
+                   </div>
+
+                   <button
                      type="button"
-                     className="reset-canvas-btn" 
-                     onClick={() => setFormData({...formData, bgColor: '', borderColor: '', textColor: '', accentColor: ''})}
+                     className="reset-canvas-btn"
+                     onClick={() => setFormData(prev => ({
+                       ...prev,
+                       bgColor: '', textColor: '', accentColor: '',
+                       borderColor: '', borderStyle: 'solid', borderWidth: '1',
+                       borderRadius: '12', borderRadiusTL: '', borderRadiusTR: '', borderRadiusBL: '', borderRadiusBR: '',
+                       shadowEnabled: false, shadowX: '0', shadowY: '4', shadowBlur: '12', shadowSpread: '0', shadowColor: 'rgba(0,0,0,0.1)',
+                       gradientBorder: false, gradientColor1: '#7c3aed', gradientColor2: '#3b82f6', gradientAngle: '135'
+                     }))}
                    >
                      🧹 Clear Design
                    </button>

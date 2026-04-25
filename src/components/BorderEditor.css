@@ -1,0 +1,341 @@
+/* ============================================================
+   🖊 BORDER EDITOR — Scoped Component Styles
+   ============================================================ */
+
+.be-root {
+  background: #f8fafc;
+  border-radius: 14px;
+  border: 1px solid #e2e8f0;
+  overflow: hidden;
+  font-family: 'Inter', sans-serif;
+}
+
+/* ── LIVE PREVIEW ────────────────────────────────────────── */
+.be-preview-strip {
+  background: white;
+  padding: 16px;
+  border-bottom: 1px solid #f1f5f9;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.be-preview-box {
+  width: 180px;
+  height: 70px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: white;
+  transition: all 0.25s ease;
+}
+
+.be-preview-text {
+  font-size: 11px;
+  font-weight: 700;
+  color: #94a3b8;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  pointer-events: none;
+}
+
+/* ── PRESETS ─────────────────────────────────────────────── */
+.be-presets-wrap {
+  padding: 12px 14px 0;
+}
+
+.be-presets-label {
+  font-size: 10px;
+  font-weight: 800;
+  color: #94a3b8;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-bottom: 8px;
+}
+
+.be-presets-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid #f1f5f9;
+}
+
+.be-preset-btn {
+  padding: 5px 12px;
+  border-radius: 8px;
+  font-size: 11px;
+  font-weight: 700;
+  border: 1.5px solid #e2e8f0;
+  background: white;
+  color: #475569;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.be-preset-btn:hover {
+  background: #1e293b;
+  color: white;
+  border-color: #1e293b;
+  transform: translateY(-1px);
+}
+
+/* ── TABS ────────────────────────────────────────────────── */
+.be-tabs {
+  display: flex;
+  border-bottom: 1px solid #f1f5f9;
+  background: white;
+}
+
+.be-tab {
+  flex: 1;
+  padding: 9px 4px;
+  font-size: 10px;
+  font-weight: 700;
+  border: none;
+  background: transparent;
+  color: #94a3b8;
+  cursor: pointer;
+  transition: all 0.15s;
+  border-bottom: 2px solid transparent;
+  text-align: center;
+}
+
+.be-tab:hover { color: #475569; background: #f8fafc; }
+
+.be-tab.active {
+  color: #7c3aed;
+  border-bottom-color: #7c3aed;
+  background: white;
+}
+
+/* ── PANEL ───────────────────────────────────────────────── */
+.be-panel {
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+/* ── FIELDS ──────────────────────────────────────────────── */
+.be-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.be-label {
+  font-size: 11px;
+  font-weight: 700;
+  color: #64748b;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+}
+
+.be-label strong {
+  color: #1e293b;
+  font-weight: 800;
+}
+
+/* ── BORDER STYLE GRID ───────────────────────────────────── */
+.be-style-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 6px;
+}
+
+.be-style-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 5px;
+  padding: 8px 4px;
+  border: 1.5px solid #e2e8f0;
+  border-radius: 8px;
+  background: white;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.be-style-btn:hover { border-color: #7c3aed; background: #faf5ff; }
+.be-style-btn.active { border-color: #7c3aed; background: #ede9fe; }
+
+.be-style-preview {
+  display: block;
+  width: 32px;
+  height: 14px;
+}
+
+.be-style-name {
+  font-size: 9px;
+  font-weight: 700;
+  color: #64748b;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+}
+
+/* ── SLIDER ──────────────────────────────────────────────── */
+.be-slider-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.be-slider {
+  flex: 1;
+  height: 6px;
+  border-radius: 99px;
+  appearance: none;
+  background: linear-gradient(to right, #7c3aed, #e2e8f0);
+  cursor: pointer;
+  outline: none;
+  border: none;
+}
+
+.be-slider::-webkit-slider-thumb {
+  appearance: none;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: white;
+  border: 2px solid #7c3aed;
+  box-shadow: 0 2px 6px rgba(124,58,237,0.25);
+  cursor: grab;
+  transition: all 0.15s;
+}
+
+.be-slider::-webkit-slider-thumb:active { cursor: grabbing; transform: scale(1.15); }
+
+.be-number-input {
+  width: 52px;
+  padding: 6px;
+  border: 1px solid #e2e8f0;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 700;
+  color: #1e293b;
+  text-align: center;
+}
+
+/* ── COLOR ───────────────────────────────────────────────── */
+.be-color-field {
+  flex-direction: row;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.be-color-field .be-label {
+  flex: 0 0 auto;
+  min-width: 70px;
+}
+
+.be-color-swatch {
+  width: 36px;
+  height: 36px;
+  border: 2px solid #e2e8f0;
+  border-radius: 8px;
+  cursor: pointer;
+  padding: 2px;
+  background: white;
+}
+
+.be-color-hex {
+  flex: 1;
+  padding: 7px 10px;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  font-size: 12px;
+  font-family: 'JetBrains Mono', monospace;
+  color: #334155;
+  min-width: 90px;
+}
+
+/* ── RADIUS PRESETS ──────────────────────────────────────── */
+.be-radius-presets {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.be-radius-preset-btn {
+  padding: 5px 12px;
+  border-radius: 8px;
+  font-size: 11px;
+  font-weight: 700;
+  border: 1.5px solid #e2e8f0;
+  background: white;
+  color: #475569;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.be-radius-preset-btn:hover { border-color: #7c3aed; color: #7c3aed; }
+.be-radius-preset-btn.active { background: #7c3aed; color: white; border-color: #7c3aed; }
+
+/* ── CORNERS GRID ────────────────────────────────────────── */
+.be-corners-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.be-corner-item {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.be-corner-label {
+  font-size: 10px;
+  font-weight: 700;
+  color: #94a3b8;
+}
+
+.be-corner-input {
+  width: 100%;
+  padding: 7px 8px;
+  border: 1px solid #e2e8f0;
+  border-radius: 7px;
+  font-size: 12px;
+  font-weight: 700;
+  color: #1e293b;
+  text-align: center;
+  transition: border-color 0.15s;
+}
+
+.be-corner-input:focus { outline: none; border-color: #7c3aed; }
+
+/* ── TOGGLE ──────────────────────────────────────────────── */
+.be-toggle-label {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 700;
+  color: #334155;
+}
+
+.be-toggle-label input[type="checkbox"] {
+  width: 18px;
+  height: 18px;
+  accent-color: #7c3aed;
+  cursor: pointer;
+}
+
+/* ── GRADIENT PREVIEW ────────────────────────────────────── */
+.be-gradient-preview {
+  height: 12px;
+  border-radius: 99px;
+  transition: background 0.3s;
+}
+
+/* ── HINT ────────────────────────────────────────────────── */
+.be-hint {
+  font-size: 12px;
+  color: #94a3b8;
+  text-align: center;
+  padding: 16px;
+  font-style: italic;
+}

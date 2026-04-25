@@ -1735,3 +1735,16 @@
   border-radius: 16px;
   border: 2px dashed #e2e8f0;
 }
+
+/* Label above the BorderEditor inside canvas-toolkit */
+.be-section-heading {
+  font-size: 11px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: #7c3aed;
+  margin-bottom: 8px;
+  padding-bottom: 6px;
+  border-bottom: 1px dashed #ede9fe;
+}
+
