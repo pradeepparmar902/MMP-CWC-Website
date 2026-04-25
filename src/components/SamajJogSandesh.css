@@ -790,9 +790,8 @@
   background: #f8fafc;
 }
 
-}
- 
  /* ✍️ RICH TEXT EDITOR (CANVAS) FIELDS */
+
  .field-with-canvas {
    margin-bottom: 24px;
    background: white;
@@ -1102,14 +1101,6 @@
   cursor: wait;
 }
 
-/* 📋 RESTORED GRID */
-.modal-grid {
-  display: grid !important;
-  grid-template-columns: 1fr 1fr !important;
-  gap: 32px;
-  padding: 32px;
-  background: #f8fafc;
-}
 
 /* 🌀 TRANSLATING STATE */
 .form-column.translating {
@@ -1574,3 +1565,173 @@
   border-color: #1e3a8a;
 }
 
+
+/* ============================================================
+   📦 POST MANAGEMENT FEATURE STYLES
+   Archive, Bulk Select, Clone, Delete Request
+   ============================================================ */
+
+.header-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.archive-view-btn,
+.bulk-mode-btn {
+  padding: 8px 16px;
+  border-radius: 10px;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.2s;
+  border: 1.5px solid #e2e8f0;
+  background: white;
+  color: #475569;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  position: relative;
+}
+
+.archive-view-btn:hover { background: #f1f5f9; color: #1e293b; }
+.archive-view-btn.active { background: #1e293b; color: #fbbf24; border-color: #1e293b; }
+.bulk-mode-btn:hover { background: #eff6ff; color: #3b82f6; border-color: #93c5fd; }
+.bulk-mode-btn.active { background: #3b82f6; color: white; border-color: #3b82f6; }
+
+.archive-notif {
+  background: #ef4444;
+  color: white;
+  border-radius: 99px;
+  font-size: 10px;
+  font-weight: 800;
+  padding: 1px 6px;
+  min-width: 18px;
+  text-align: center;
+}
+
+.archive-count-badge {
+  background: #1e293b;
+  color: #fbbf24;
+  border-radius: 8px;
+  padding: 2px 8px;
+  font-size: 13px;
+  font-weight: 700;
+  margin-left: 10px;
+}
+
+.clone-action-btn { background: #eff6ff !important; color: #3b82f6 !important; border-color: #bfdbfe !important; }
+.clone-action-btn:hover { background: #3b82f6 !important; color: white !important; }
+.archive-action-btn { background: #fef9c3 !important; color: #92400e !important; border-color: #fde68a !important; }
+.archive-action-btn:hover { background: #f59e0b !important; color: white !important; }
+.restore-action-btn { background: #d1fae5 !important; color: #065f46 !important; border-color: #6ee7b7 !important; }
+.restore-action-btn:hover { background: #10b981 !important; color: white !important; }
+.delete-action-btn { background: #fee2e2 !important; color: #ef4444 !important; border-color: #fecaca !important; }
+.delete-action-btn:hover { background: #ef4444 !important; color: white !important; }
+
+.archived-badge {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  background: rgba(30, 41, 59, 0.85);
+  color: #fbbf24;
+  font-size: 11px;
+  font-weight: 800;
+  padding: 5px 12px;
+  text-align: center;
+  z-index: 10;
+  letter-spacing: 0.5px;
+  backdrop-filter: blur(4px);
+}
+
+.card-archived {
+  opacity: 0.75;
+  filter: grayscale(30%);
+  border: 1.5px dashed #94a3b8 !important;
+  position: relative;
+}
+.card-archived:hover { opacity: 1; filter: grayscale(0%); }
+
+.bulk-mode-active .sandesh-card { cursor: pointer; transition: all 0.2s; }
+.bulk-mode-active .sandesh-card:hover { transform: scale(1.01); box-shadow: 0 4px 12px rgba(59,130,246,0.15); }
+
+.card-selected {
+  border: 2px solid #3b82f6 !important;
+  box-shadow: 0 0 0 4px rgba(59,130,246,0.15) !important;
+  background: #eff6ff !important;
+}
+
+.bulk-checkbox-wrap {
+  position: absolute;
+  top: 10px;
+  left: 10px;
+  z-index: 20;
+  background: white;
+  border-radius: 6px;
+  padding: 2px;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+}
+
+.bulk-checkbox {
+  width: 20px;
+  height: 20px;
+  cursor: pointer;
+  accent-color: #3b82f6;
+}
+
+.bulk-action-bar {
+  position: sticky;
+  bottom: 20px;
+  background: #1e293b;
+  color: white;
+  padding: 14px 24px;
+  border-radius: 16px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  box-shadow: 0 10px 40px rgba(0,0,0,0.3);
+  z-index: 500;
+  margin-top: 20px;
+  animation: slideUpBar 0.3s ease-out;
+}
+
+@keyframes slideUpBar {
+  from { transform: translateY(20px); opacity: 0; }
+  to   { transform: translateY(0);    opacity: 1; }
+}
+
+.bulk-count { font-weight: 800; font-size: 14px; color: #fbbf24; margin-right: auto; }
+
+.bulk-action-bar button {
+  padding: 8px 18px;
+  border-radius: 10px;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.2s;
+  border: none;
+}
+
+.bulk-select-all-btn { background: #334155; color: #94a3b8; }
+.bulk-select-all-btn:hover { background: #475569; color: white; }
+.bulk-archive-btn { background: #fef3c7; color: #92400e; }
+.bulk-archive-btn:hover { background: #f59e0b; color: white; }
+.bulk-delete-btn { background: #fee2e2; color: #ef4444; }
+.bulk-delete-btn:hover { background: #ef4444; color: white; }
+.bulk-cancel-btn { background: #475569; color: #94a3b8; }
+.bulk-cancel-btn:hover { background: #64748b; color: white; }
+
+.empty-archive-state {
+  grid-column: 1 / -1;
+  text-align: center;
+  padding: 60px 20px;
+  font-size: 16px;
+  color: #94a3b8;
+  font-weight: 600;
+  background: #f8fafc;
+  border-radius: 16px;
+  border: 2px dashed #e2e8f0;
+}

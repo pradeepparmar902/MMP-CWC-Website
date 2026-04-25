@@ -7,6 +7,8 @@ import {
   doc, 
   setDoc, 
   deleteDoc, 
+  updateDoc,
+  addDoc,
   getDoc,
   query,
   where,
@@ -41,6 +43,8 @@ export default function SuperAdminPanel({ config, setConfig, syncStatus, assets,
   const [previewData, setPreviewData] = useState({});
   const [previewErrors, setPreviewErrors] = useState([]);
   const [expandedUser, setExpandedUser] = useState(null);
+  // 🗑️ Delete Requests State
+  const [deleteRequests, setDeleteRequests] = useState([]);
 
   // Friendly role names
   const ROLE_MAP = {
@@ -107,6 +111,19 @@ export default function SuperAdminPanel({ config, setConfig, syncStatus, assets,
     };
     fetchStats();
   }, [pendingUsers]);
+
+  // Real-time listener for delete requests
+  useEffect(() => {
+    const q = query(
+      collection(db, 'samaj_delete_requests'),
+      where('status', '==', 'pending'),
+      orderBy('requestedAt', 'desc')
+    );
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      setDeleteRequests(snapshot.docs.map(d => ({ id: d.id, ...d.data() })));
+    }, () => {}); // Silently ignore if collection doesn't exist yet
+    return unsubscribe;
+  }, []);
 
   const handleApprove = async (user, role) => {
     try {
@@ -334,6 +351,14 @@ export default function SuperAdminPanel({ config, setConfig, syncStatus, assets,
               onClick={() => setActiveTab('form_builder')}
             >
               📋 Join Form 
+            </button>
+          )}
+          {isCwcSuper && (
+            <button 
+              className={`sap-tab ${activeTab === 'delete_requests' ? 'active' : ''}`}
+              onClick={() => setActiveTab('delete_requests')}
+            >
+              🗑️ Delete Requests {deleteRequests.length > 0 && <span className="notif-dot" style={{background:'#ef4444'}}>{deleteRequests.length}</span>}
             </button>
           )}
         </nav>
@@ -750,6 +775,77 @@ export default function SuperAdminPanel({ config, setConfig, syncStatus, assets,
                 assets={assets}
                 setAssets={setAssets}
              />
+          </div>
+        )}
+
+        {(activeTab === 'delete_requests' && isCwcSuper) && (
+          <div className="delete-requests-view">
+            <div className="view-header">
+              <h2>🗑️ Delete Requests</h2>
+              <p>These posts were flagged for deletion by Samaj Admins but are older than 24 hours. Review and decide.</p>
+            </div>
+
+            {deleteRequests.length === 0 ? (
+              <div className="empty-state">
+                <div className="empty-icon">✅</div>
+                <h3>No pending delete requests</h3>
+                <p>All clear! No posts are awaiting deletion approval.</p>
+              </div>
+            ) : (
+              <div className="dr-list">
+                {deleteRequests.map(req => {
+                  const post = req.postData || {};
+                  const reqDate = req.requestedAt?.toDate ? req.requestedAt.toDate() : new Date();
+                  const postDate = post.createdAt?.seconds ? new Date(post.createdAt.seconds * 1000) : null;
+                  const ageHours = postDate ? Math.floor((Date.now() - postDate.getTime()) / (1000 * 60 * 60)) : '?';
+
+                  return (
+                    <div key={req.id} className="dr-card">
+                      <div className="dr-card-header">
+                        <div className="dr-meta">
+                          <span className="dr-type-pill">{post.type?.toUpperCase() || 'POST'}</span>
+                          <span className="dr-age">📅 {ageHours}h old</span>
+                          <span className="dr-requested">Requested: {reqDate.toLocaleDateString()}</span>
+                        </div>
+                        <div className="dr-actions">
+                          <button
+                            className="dr-approve-btn"
+                            onClick={async () => {
+                              if (!window.confirm('Permanently delete this post?')) return;
+                              try {
+                                await deleteDoc(doc(db, 'samaj_jog_sandesh', req.postId));
+                                await deleteDoc(doc(db, 'samaj_delete_requests', req.id));
+                              } catch(e) { alert('Error: ' + e.message); }
+                            }}
+                          >
+                            ✅ Approve Delete
+                          </button>
+                          <button
+                            className="dr-reject-btn"
+                            onClick={async () => {
+                              try {
+                                await updateDoc(doc(db, 'samaj_delete_requests', req.id), { status: 'rejected' });
+                              } catch(e) { alert('Error: ' + e.message); }
+                            }}
+                          >
+                            ❌ Reject
+                          </button>
+                        </div>
+                      </div>
+                      <div className="dr-card-body">
+                        <h4 className="dr-title">{post.titleEn || post.titleGu || 'Untitled Post'}</h4>
+                        {post.subtitleEn && <p className="dr-subtitle">{post.subtitleEn}</p>}
+                        <p className="dr-content">{(post.contentEn || post.contentGu || '').substring(0, 150)}...</p>
+                        <div className="dr-footer">
+                          <span>By: {post.authorityEn || '—'}</span>
+                          <span>Requested by UID: {req.requestedBy?.substring(0, 12)}...</span>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
           </div>
         )}
 

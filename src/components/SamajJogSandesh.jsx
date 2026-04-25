@@ -91,7 +91,7 @@ const DUMMY_MESSAGES = [
 ];
 
 export default function SamajJogSandesh({ lang }) {
-  const { isSamajAdmin, isSuperAdmin } = useAuth();
+  const { isSamajAdmin, isSuperAdmin, currentUser } = useAuth();
   const canManage = isSamajAdmin || isSuperAdmin;
 
 
@@ -106,6 +106,10 @@ export default function SamajJogSandesh({ lang }) {
   const [isSaving, setIsSaving] = useState(false);
   const [isTranslating, setIsTranslating] = useState(false);
   const [editingId, setEditingId] = useState(null);
+  // 📦 Archive & Bulk Mode State
+  const [bulkMode, setBulkMode] = useState(false);
+  const [selectedIds, setSelectedIds] = useState(new Set());
+  const [showArchived, setShowArchived] = useState(false);
   const [formData, setFormData] = useState({
     type: 'poster',
     priority: 'normal',
@@ -226,9 +230,105 @@ export default function SamajJogSandesh({ lang }) {
   };
 
   const handleDelete = async (id) => {
-    if (window.confirm('Delete this announcement?')) {
-      await deleteDoc(doc(db, 'samaj_jog_sandesh', id));
+    const post = messages.find(m => m.id === id);
+    if (!post) return;
+
+    const createdMs = post.createdAt?.toDate
+      ? post.createdAt.toDate().getTime()
+      : post.createdAt?.seconds * 1000 || 0;
+    const isOlderThan24h = createdMs > 0 && (Date.now() - createdMs) > 24 * 60 * 60 * 1000;
+
+    if (isOlderThan24h && !isSuperAdmin) {
+      // Samaj Admin: post is old — escalate to Super Admin
+      if (!window.confirm('This post is older than 24 hours.\n\nA DELETE REQUEST will be sent to Super Admin for review.\n\nProceed?')) return;
+      try {
+        await addDoc(collection(db, 'samaj_delete_requests'), {
+          postId: id,
+          postData: post,
+          requestedBy: currentUser?.uid || 'unknown',
+          requestedAt: serverTimestamp(),
+          status: 'pending'
+        });
+        alert('📬 Delete request sent to Super Admin for review.');
+      } catch (err) {
+        alert('Error sending request: ' + err.message);
+      }
+    } else {
+      // Super Admin (any age) OR any admin (< 24h): direct delete
+      if (!window.confirm('Permanently delete this announcement?')) return;
+      try {
+        await deleteDoc(doc(db, 'samaj_jog_sandesh', id));
+      } catch (err) {
+        alert('Error deleting: ' + err.message);
+      }
     }
+  };
+
+  // 📦 Archive a post (hides from public, reversible)
+  const handleArchive = async (id) => {
+    try {
+      await updateDoc(doc(db, 'samaj_jog_sandesh', id), { isArchived: true });
+    } catch (err) { alert('Error archiving: ' + err.message); }
+  };
+
+  // ♻️ Restore an archived post back to live
+  const handleRestore = async (id) => {
+    try {
+      await updateDoc(doc(db, 'samaj_jog_sandesh', id), { isArchived: false });
+    } catch (err) { alert('Error restoring: ' + err.message); }
+  };
+
+  // 📋 Clone/Duplicate a post
+  const handleClone = async (item) => {
+    const { id, createdAt, updatedAt, ...rest } = item;
+    try {
+      await addDoc(collection(db, 'samaj_jog_sandesh'), {
+        ...rest,
+        titleEn: `📋 Copy: ${rest.titleEn || ''}`,
+        titleGu: `📋 નકલ: ${rest.titleGu || ''}`,
+        isHighlight: false,
+        isHighlight1: false,
+        isHighlight2: false,
+        isQuickLink: false,
+        isArchived: false,
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp()
+      });
+      alert('✅ Post cloned successfully!');
+    } catch (err) { alert('Error cloning: ' + err.message); }
+  };
+
+  // ☑ Bulk selection toggle
+  const toggleSelect = (id) => {
+    setSelectedIds(prev => {
+      const next = new Set(prev);
+      next.has(id) ? next.delete(id) : next.add(id);
+      return next;
+    });
+  };
+
+  // 📦 Bulk archive selected
+  const handleBulkArchive = async () => {
+    if (!window.confirm(`Archive ${selectedIds.size} selected posts?`)) return;
+    try {
+      for (const id of selectedIds) {
+        await updateDoc(doc(db, 'samaj_jog_sandesh', id), { isArchived: true });
+      }
+    } catch (err) { alert('Error: ' + err.message); }
+    setSelectedIds(new Set());
+    setBulkMode(false);
+  };
+
+  // 🗑️ Bulk delete selected
+  const handleBulkDelete = async () => {
+    if (!window.confirm(`Permanently delete ${selectedIds.size} selected posts? This cannot be undone.`)) return;
+    try {
+      for (const id of selectedIds) {
+        await deleteDoc(doc(db, 'samaj_jog_sandesh', id));
+      }
+    } catch (err) { alert('Error: ' + err.message); }
+    setSelectedIds(new Set());
+    setBulkMode(false);
   };
 
   const handleEdit = (item) => {
@@ -287,6 +387,8 @@ export default function SamajJogSandesh({ lang }) {
   ];
   
   const activeMessages = allAvailable.filter(m => !m?.isArchived);
+  // Archived posts (real posts only, no samples)
+  const archivedMessages = messages.filter(m => m?.isArchived);
   
   // 🔥 HERO FIREWALL: Only consider posts that are NOT pinned to any Side Slot (Top or Bottom)
   const heroCandidates = activeMessages.filter(m => 
@@ -315,6 +417,9 @@ export default function SamajJogSandesh({ lang }) {
     m.id !== highlight2Post?.id && 
     m.id !== featured?.id
   ).slice(0, 15);
+
+  // 4. Current display list (live or archived view)
+  const displayFeed = showArchived ? archivedMessages : feed;
 
   const getT = (item, field) => {
     const preferredKey = field + (lang === 'gu' ? 'Gu' : 'En');
@@ -548,20 +653,68 @@ export default function SamajJogSandesh({ lang }) {
 
         <div className={`samaj-feed ${lang === 'gu' ? 'lang-gu' : ''}`}>
           <div className="feed-header">
-            <h2>{lang === 'gu' ? 'તાજેતરના અપડેટ્સ' : 'Recent Updates'}</h2>
+            <h2>
+              {showArchived ? (lang === 'gu' ? '📦 આર્કાઇવ' : '📦 Archived Posts') : (lang === 'gu' ? 'તાજેતરના અપડેટ્સ' : 'Recent Updates')}
+              {showArchived && <span className="archive-count-badge">{archivedMessages.length}</span>}
+            </h2>
             
             <div className="header-actions">
               {canManage && (
-                <button className="admin-add-btn" onClick={() => setShowModal(true)}>
-                  ➕ {lang === 'gu' ? 'નવો સંદેશ મૂકો' : 'Post New Announcement'}
-                </button>
+                <>
+                  <button
+                    className={`archive-view-btn ${showArchived ? 'active' : ''}`}
+                    onClick={() => { setShowArchived(!showArchived); setBulkMode(false); setSelectedIds(new Set()); }}
+                  >
+                    {showArchived ? '📢 Live Posts' : '📦 Archived'}
+                    {!showArchived && archivedMessages.length > 0 && <span className="archive-notif">{archivedMessages.length}</span>}
+                  </button>
+                  <button
+                    className={`bulk-mode-btn ${bulkMode ? 'active' : ''}`}
+                    onClick={() => { setBulkMode(!bulkMode); setSelectedIds(new Set()); }}
+                  >
+                    {bulkMode ? '✕ Cancel' : '☑ Bulk Select'}
+                  </button>
+                  {!showArchived && (
+                    <button className="admin-add-btn" onClick={() => setShowModal(true)}>
+                      ➕ {lang === 'gu' ? 'નવો સંદેશ મૂકો' : 'Post New Announcement'}
+                    </button>
+                  )}
+                </>
               )}
             </div>
           </div>
 
-          <div className="feed-grid">
-            {feed.map(item => (
-              <div key={item.id} id={`card-${item.id}`} className={`sandesh-card ${item.type} ${item.isSample ? 'sample-card' : ''}`}>
+          <div className={`feed-grid ${bulkMode ? 'bulk-mode-active' : ''}`}>
+            {displayFeed.length === 0 && (
+              <div className="empty-archive-state">
+                {showArchived ? '📦 No archived posts yet.' : '📭 No posts available.'}
+              </div>
+            )}
+            {displayFeed.map(item => (
+              <div
+                key={item.id}
+                id={`card-${item.id}`}
+                className={`sandesh-card ${item.type} ${item.isSample ? 'sample-card' : ''} ${selectedIds.has(item.id) ? 'card-selected' : ''} ${item.isArchived ? 'card-archived' : ''}`}
+                onClick={bulkMode && !item.isSample ? () => toggleSelect(item.id) : undefined}
+              >
+                {/* Bulk Checkbox */}
+                {bulkMode && !item.isSample && (
+                  <div className="bulk-checkbox-wrap">
+                    <input
+                      type="checkbox"
+                      className="bulk-checkbox"
+                      checked={selectedIds.has(item.id)}
+                      onChange={() => toggleSelect(item.id)}
+                      onClick={e => e.stopPropagation()}
+                    />
+                  </div>
+                )}
+
+                {/* Archive badge for archived view */}
+                {item.isArchived && canManage && (
+                  <div className="archived-badge">📦 Archived</div>
+                )}
+
                 {/* Media Section */}
                 <div className="card-media">
                   {item.priority === 'high' && <div className="priority-pill">{lang === 'gu' ? 'મહત્વપૂર્ણ' : 'OFFER'}</div>}
@@ -591,7 +744,7 @@ export default function SamajJogSandesh({ lang }) {
                     </div>
                   )}
 
-                  <button className="card-quick-action" onClick={() => setExpandedId(expandedId === item.id ? null : item.id)}>+</button>
+                  {!bulkMode && <button className="card-quick-action" onClick={() => setExpandedId(expandedId === item.id ? null : item.id)}>+</button>}
                 </div>
 
                 <div className="card-body">
@@ -599,7 +752,6 @@ export default function SamajJogSandesh({ lang }) {
                   
                   <h3 className="card-title" title={item[`title${lang === 'gu' ? 'Gu' : 'En'}`] || item[`title${lang === 'gu' ? 'En' : 'Gu'}`] || ''}>{getT(item, 'title')}</h3>
 
-                  
                   <div className="card-date">
                      {getT(item, 'date')} • {getT(item, 'authority')}
                   </div>
@@ -609,23 +761,30 @@ export default function SamajJogSandesh({ lang }) {
                   </p>
 
                   <div className="card-footer-actions">
-                    <button 
-                      className="full-reader-btn"
-                      onClick={() => setMaximizedId(item.id)}
-                    >
-                      🔍 {lang === 'gu' ? 'વાંચો' : 'Read'}
-                    </button>
-                    <span 
-                      className="read-more-link"
-                      onClick={() => setExpandedId(expandedId === item.id ? null : item.id)}
-                    >
-                      {expandedId === item.id ? (lang === 'gu' ? 'ઓછામાં જુઓ' : 'Close Details') : (lang === 'gu' ? 'સંપૂર્ણ સંદેશ વાંચો' : `Read Details`)}
-                    </span>
+                    {!bulkMode && (
+                      <button className="full-reader-btn" onClick={() => setMaximizedId(item.id)}>
+                        🔍 {lang === 'gu' ? 'વાંચો' : 'Read'}
+                      </button>
+                    )}
+                    {!bulkMode && (
+                      <span className="read-more-link" onClick={() => setExpandedId(expandedId === item.id ? null : item.id)}>
+                        {expandedId === item.id ? (lang === 'gu' ? 'ઓછામાં જુઓ' : 'Close Details') : (lang === 'gu' ? 'સંપૂર્ણ સંદેશ વાંચો' : 'Read Details')}
+                      </span>
+                    )}
 
-                    {canManage && (
+                    {canManage && !bulkMode && (
                       <div className="admin-actions-inline">
-                        <button onClick={() => handleEdit(item)}>✏️</button>
-                        {!item.isSample && <button onClick={() => handleDelete(item.id)}>🗑️</button>}
+                        {!item.isArchived && <button onClick={() => handleEdit(item)} title="Edit">✏️</button>}
+                        {!item.isSample && <button onClick={() => handleClone(item)} title="Clone post" className="clone-action-btn">📋</button>}
+                        {!item.isSample && !item.isArchived && (
+                          <button onClick={() => handleArchive(item.id)} title="Archive" className="archive-action-btn">📦</button>
+                        )}
+                        {!item.isSample && item.isArchived && (
+                          <button onClick={() => handleRestore(item.id)} title="Restore" className="restore-action-btn">♻️</button>
+                        )}
+                        {!item.isSample && (
+                          <button onClick={() => handleDelete(item.id)} title="Delete" className="delete-action-btn">🗑️</button>
+                        )}
                       </div>
                     )}
                   </div>
@@ -633,6 +792,20 @@ export default function SamajJogSandesh({ lang }) {
               </div>
             ))}
           </div>
+
+          {/* 🧲 FLOATING BULK ACTION BAR */}
+          {bulkMode && selectedIds.size > 0 && (
+            <div className="bulk-action-bar">
+              <span className="bulk-count">{selectedIds.size} {lang === 'gu' ? 'પોસ્ટ પસંદ' : 'posts selected'}</span>
+              <button className="bulk-select-all-btn" onClick={() => {
+                const allIds = displayFeed.filter(i => !i.isSample).map(i => i.id);
+                setSelectedIds(new Set(allIds));
+              }}>✅ Select All</button>
+              {!showArchived && <button className="bulk-archive-btn" onClick={handleBulkArchive}>📦 {lang === 'gu' ? 'આર્કાઇવ' : 'Archive All'}</button>}
+              <button className="bulk-delete-btn" onClick={handleBulkDelete}>🗑️ {lang === 'gu' ? 'ડિલીટ' : 'Delete All'}</button>
+              <button className="bulk-cancel-btn" onClick={() => { setBulkMode(false); setSelectedIds(new Set()); }}>✕ Cancel</button>
+            </div>
+          )}
         </div>
       </div>
 
