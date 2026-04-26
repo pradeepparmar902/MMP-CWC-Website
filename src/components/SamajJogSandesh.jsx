@@ -110,6 +110,9 @@ export default function SamajJogSandesh({ lang }) {
   const [isSaving, setIsSaving] = useState(false);
   const [isTranslating, setIsTranslating] = useState(false);
   const [editingId, setEditingId] = useState(null);
+  
+  // Hero Drag & Drop State
+  const [draggedHeroBlock, setDraggedHeroBlock] = useState(null);
   // 📦 Archive & Bulk Mode State
   const [bulkMode, setBulkMode] = useState(false);
   const [selectedIds, setSelectedIds] = useState(new Set());
@@ -764,46 +767,105 @@ export default function SamajJogSandesh({ lang }) {
               style={buildCardStyle(featured, 'hero')}
             >
               <div className="hero-inner">
-                <div className="hero-text">
-                  <div className="hero-badge">
-                    {featured.isSample && <span className="sample-pill">SAMPLE</span>}
-                    {lang === 'gu' ? '📢 લેટેસ્ટ જાહેરાત' : '📢 LATEST ANNOUNCEMENT'}
-                  </div>
-                  
-                  {canManage && (
-                    <div className="admin-hero-controls">
-                      <button className="admin-edit-hero" onClick={() => handleEdit(featured)}>✏️</button>
-                      <button className="admin-edit-hero" style={{marginLeft: '8px'}} onClick={(e) => { e.stopPropagation(); handleStyle(featured, 'hero'); }}>🎨</button>
-                      {!featured.isSample && (
-                        <button 
-                          className="admin-delete-hero" 
-                          title="Unpin from Hero (keeps the post)"
-                          style={{background: 'rgba(251,191,36,0.2)', color: '#f59e0b'}}
-                          onClick={async (e) => {
-                            e.stopPropagation();
-                            await updateDoc(doc(db, 'samaj_jog_sandesh', featured.id), { 
-                              isHero: false, isHighlight1: false, isHighlight2: false, isQuickLink: false 
-                            });
-                          }}
-                        >✕</button>
-                      )}
-                    </div>
-                  )}
+                {(featured.heroLayoutOrder || ['text', 'visual']).map((blockName, index) => {
+                  if (blockName === 'text') {
+                    return (
+                      <div 
+                        key="text"
+                        className={`hero-text ${draggedHeroBlock === 'text' ? 'dragging' : ''}`}
+                        draggable={canManage}
+                        onDragStart={(e) => {
+                          if (canManage) setDraggedHeroBlock('text');
+                        }}
+                        onDragOver={(e) => {
+                          e.preventDefault();
+                        }}
+                        onDrop={async (e) => {
+                          e.preventDefault();
+                          if (draggedHeroBlock && draggedHeroBlock !== 'text') {
+                            const newOrder = ['text', draggedHeroBlock]; // Swapped
+                            setDraggedHeroBlock(null);
+                            await updateDoc(doc(db, 'samaj_jog_sandesh', featured.id), { heroLayoutOrder: newOrder });
+                          }
+                        }}
+                      >
+                        <div className="hero-badge">
+                          {featured.isSample && <span className="sample-pill">SAMPLE</span>}
+                          {lang === 'gu' ? '📢 લેટેસ્ટ જાહેરાત' : '📢 LATEST ANNOUNCEMENT'}
+                        </div>
+                        
+                        {canManage && (
+                          <div className="admin-hero-controls">
+                            <button className="admin-edit-hero" onClick={() => handleEdit(featured)}>✏️</button>
+                            <button className="admin-edit-hero" style={{marginLeft: '8px'}} onClick={(e) => { e.stopPropagation(); handleStyle(featured, 'hero'); }}>🎨</button>
+                            <div 
+                              className="admin-edit-hero" 
+                              style={{marginLeft: '8px', cursor: 'grab', background: '#e2e8f0', color: '#475569'}}
+                              title="Drag to reposition text and poster"
+                            >
+                              ✥
+                            </div>
+                            {!featured.isSample && (
+                              <button 
+                                className="admin-delete-hero" 
+                                title="Unpin from Hero (keeps the post)"
+                                style={{background: 'rgba(251,191,36,0.2)', color: '#f59e0b', marginLeft: '8px'}}
+                                onClick={async (e) => {
+                                  e.stopPropagation();
+                                  await updateDoc(doc(db, 'samaj_jog_sandesh', featured.id), { 
+                                    isHero: false, isHighlight1: false, isHighlight2: false, isQuickLink: false 
+                                  });
+                                }}
+                              >✕</button>
+                            )}
+                          </div>
+                        )}
 
-                  <span className="hero-authority">{getT(featured, 'authority')}</span>
-                  <h1>{getT(featured, 'title')}</h1>
-                  <p className="hero-p-desc">{getT(featured, 'content')}</p>
-                  
-                  <div className="hero-footer-row">
-                    <span className="hero-date">📅 {getT(featured, 'date')}</span>
-                    <button className="hero-btn-cta">{lang === 'gu' ? 'સંપૂર્ણ વાંચો →' : 'Read Full →'}</button>
-                  </div>
-                </div>
+                        <span className="hero-authority">{getT(featured, 'authority')}</span>
+                        <h1>{getT(featured, 'title')}</h1>
+                        <p className="hero-p-desc">{getT(featured, 'content')}</p>
+                        
+                        <div className="hero-footer-row">
+                          <span className="hero-date">📅 {getT(featured, 'date')}</span>
+                          <button className="hero-btn-cta">{lang === 'gu' ? 'સંપૂર્ણ વાંચો →' : 'Read Full →'}</button>
+                        </div>
+                      </div>
+                    );
+                  }
 
-                <div className="hero-visual">
-                  {featured.bannerUrl ? <img src={featured.bannerUrl} alt="Hero" /> : <div className="hero-visual-fallback">🖼️</div>}
-                  <div className="visual-overlay"></div>
-                </div>
+                  if (blockName === 'visual') {
+                    return (
+                      <div 
+                        key="visual"
+                        className={`hero-visual ${draggedHeroBlock === 'visual' ? 'dragging' : ''}`}
+                        draggable={canManage}
+                        onDragStart={(e) => {
+                          if (canManage) setDraggedHeroBlock('visual');
+                        }}
+                        onDragOver={(e) => {
+                          e.preventDefault();
+                        }}
+                        onDrop={async (e) => {
+                          e.preventDefault();
+                          if (draggedHeroBlock && draggedHeroBlock !== 'visual') {
+                            const newOrder = ['visual', draggedHeroBlock]; // Swapped
+                            setDraggedHeroBlock(null);
+                            await updateDoc(doc(db, 'samaj_jog_sandesh', featured.id), { heroLayoutOrder: newOrder });
+                          }
+                        }}
+                      >
+                        {featured.bannerUrl ? <img src={featured.bannerUrl} alt="Hero" /> : <div className="hero-visual-fallback">🖼️</div>}
+                        <div className="visual-overlay"></div>
+                        {canManage && (
+                           <div className="visual-drag-indicator" style={{position:'absolute', bottom:'10px', right:'10px', background:'rgba(0,0,0,0.5)', color:'white', padding:'4px 8px', borderRadius:'12px', fontSize:'12px', cursor:'grab'}}>
+                             ✥ Drag
+                           </div>
+                        )}
+                      </div>
+                    );
+                  }
+                  return null;
+                })}
               </div>
             </main>
           )}

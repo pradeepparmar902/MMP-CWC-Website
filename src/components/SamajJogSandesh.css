@@ -1840,3 +1840,5 @@
   border-bottom: 1px dashed #ede9fe;
 }
 
+
+.dragging { opacity: 0.5; border: 2px dashed #7c3aed !important; }
