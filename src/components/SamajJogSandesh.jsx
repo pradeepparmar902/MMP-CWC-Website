@@ -105,6 +105,7 @@ export default function SamajJogSandesh({ lang }) {
   
   // Admin Editing State
   const [showModal, setShowModal] = useState(false);
+  const [styleOnlyMode, setStyleOnlyMode] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [isTranslating, setIsTranslating] = useState(false);
   const [editingId, setEditingId] = useState(null);
@@ -381,7 +382,13 @@ export default function SamajJogSandesh({ lang }) {
     setBulkMode(false);
   };
 
+  const handleStyle = (item) => {
+    handleEdit(item);
+    setStyleOnlyMode(true);
+  };
+
   const handleEdit = (item) => {
+    setStyleOnlyMode(false);
     setEditingId(item.id);
     setFormData({
       type: item.type || 'poster',
@@ -427,6 +434,7 @@ export default function SamajJogSandesh({ lang }) {
   };
 
   const resetForm = () => {
+    setStyleOnlyMode(false);
     setEditingId(null);
     setFormData({
       type: 'poster', priority: 'normal',
@@ -477,29 +485,37 @@ export default function SamajJogSandesh({ lang }) {
     const bl = item.borderRadiusBL !== '' && item.borderRadiusBL != null ? `${item.borderRadiusBL}px` : `${r}px`;
     s.borderRadius = `${tl} ${tr} ${br} ${bl}`;
 
-    // ── Border logic ────────────────────────────────────────────────
+    // ── Background & Border logic ────────────────────────────────────────────────
+    let baseBg = item.bgColor || 'white';
+    if (item.gradientBg) {
+      baseBg = `linear-gradient(${item.gradientBgAngle || '135'}deg, ${item.gradientBgColor1 || '#7c3aed'}, ${item.gradientBgColor2 || '#4f46e5'})`;
+    } else if (item.bgColor) {
+      baseBg = item.bgColor;
+    }
+
     if (item.gradientBorder && Number(item.borderWidth) > 0) {
       // 1. Gradient border (uses padding-box / border-box trick)
-      const bg  = item.bgColor || 'white';
       const ang = item.gradientAngle  || '135';
       const c1  = item.gradientColor1 || '#7c3aed';
       const c2  = item.gradientColor2 || '#3b82f6';
-      s.background = `linear-gradient(${bg}, ${bg}) padding-box, linear-gradient(${ang}deg, ${c1}, ${c2}) border-box`;
+      
+      // Wrap solid colors in linear-gradient for the padding-box trick
+      const paddingBoxBg = item.gradientBg ? baseBg : `linear-gradient(${baseBg}, ${baseBg})`;
+      s.background = `${paddingBoxBg} padding-box, linear-gradient(${ang}deg, ${c1}, ${c2}) border-box`;
       s.border = `${item.borderWidth}px solid transparent`;
-      if (item.bgColor) {} // bg already handled above
-    } else if (item.borderStyle === 'none') {
-      // 2. User explicitly chose "None" style → remove border
-      s.border = 'none';
-      if (item.bgColor) s.backgroundColor = item.bgColor;
-    } else if (item.borderColor && item.borderStyle && Number(item.borderWidth || 1) > 0) {
-      // 3. User configured a custom solid/dashed/dotted/etc border
-      s.borderColor = item.borderColor;
-      s.borderWidth = `${item.borderWidth || 1}px`;
-      s.borderStyle = item.borderStyle || 'solid';
-      if (item.bgColor) s.backgroundColor = item.bgColor;
     } else {
-      // 4. No custom border configured — let CSS class default apply
-      if (item.bgColor) s.backgroundColor = item.bgColor;
+      if (item.borderStyle === 'none') {
+        s.border = 'none';
+      } else if (item.borderColor && item.borderStyle && Number(item.borderWidth || 1) > 0) {
+        s.borderColor = item.borderColor;
+        s.borderWidth = `${item.borderWidth || 1}px`;
+        s.borderStyle = item.borderStyle || 'solid';
+      }
+      
+      // Override CSS class background gradients if any custom bg is set
+      if (item.gradientBg || item.bgColor) {
+        s.background = baseBg;
+      }
     }
 
     // Shadow / Glow
@@ -587,6 +603,17 @@ export default function SamajJogSandesh({ lang }) {
                   >
                     ✏️
                   </button>
+                  {highlight1Post && (
+                    <button 
+                      className="admin-edit-pill" 
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleStyle(highlight1Post);
+                      }}
+                    >
+                      🎨
+                    </button>
+                  )}
                 </div>
               )}
               {highlight1Post ? (
@@ -625,6 +652,17 @@ export default function SamajJogSandesh({ lang }) {
                   >
                     ✏️
                   </button>
+                  {highlight2Post && (
+                    <button 
+                      className="admin-edit-pill" 
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleStyle(highlight2Post);
+                      }}
+                    >
+                      🎨
+                    </button>
+                  )}
                 </div>
               )}
               {highlight2Post ? (
@@ -662,6 +700,7 @@ export default function SamajJogSandesh({ lang }) {
                   {canManage && (
                     <div className="admin-hero-controls">
                       <button className="admin-edit-hero" onClick={() => handleEdit(featured)}>✏️</button>
+                      <button className="admin-edit-hero" style={{marginLeft: '8px'}} onClick={(e) => { e.stopPropagation(); handleStyle(featured); }}>🎨</button>
                       {!featured.isSample && <button className="admin-delete-hero" onClick={() => handleDelete(featured.id)}>🗑️</button>}
                     </div>
                   )}
@@ -1065,6 +1104,7 @@ export default function SamajJogSandesh({ lang }) {
               </div>
 
                <div className="modal-settings">
+                  {!styleOnlyMode && (
                  <div className="settings-left">
                    <div className="form-group">
                      <label>Announcement Type</label>
@@ -1151,8 +1191,9 @@ export default function SamajJogSandesh({ lang }) {
                    </div>
                  </div>
  
-                 {/* 🎨 COLOR + BORDER CANVAS TOOLKIT */}
-                  <div className="canvas-toolkit">
+                 )}
+                  {/* 🎨 COLOR + BORDER CANVAS TOOLKIT */}
+                  <div className="canvas-toolkit" style={styleOnlyMode ? {width: "100%", margin: 0} : {}}>
                     <h4 className="toolkit-title">🎨 Design Canvas</h4>
 
                     {/* Basic color pickers row */}
