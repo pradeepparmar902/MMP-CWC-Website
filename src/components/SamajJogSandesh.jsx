@@ -424,8 +424,8 @@ export default function SamajJogSandesh({ lang }) {
     setStyleOnlyMode(true);
     setFormattingContext(context);
     
-    // If editing hero context, load from item.heroStyle if it exists
-    const source = (context === 'hero' && item.heroStyle) ? { ...item, ...item.heroStyle } : item;
+    // If editing hero context, load ONLY from item.heroStyle to prevent inheriting feed card styles
+    const source = context === 'hero' ? (item.heroStyle || {}) : item;
 
     setFormData(prev => ({
       ...prev,
@@ -551,7 +551,9 @@ export default function SamajJogSandesh({ lang }) {
   /* ── buildCardStyle: compute inline styles from any item's border fields ── */
   const buildCardStyle = (item, context = 'feed') => {
     if (!item) return {};
-    const source = (context === 'hero' && item.heroStyle) ? { ...item, ...item.heroStyle } : item;
+    // If context is hero, ONLY use heroStyle. If it doesn't exist, return empty object (uses CSS defaults).
+    if (context === 'hero' && !item.heroStyle) return {};
+    const source = context === 'hero' ? item.heroStyle : item;
 
     const s = { color: source.textColor || undefined };
 
