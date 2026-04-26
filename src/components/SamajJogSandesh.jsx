@@ -705,7 +705,19 @@ export default function SamajJogSandesh({ lang }) {
                     <div className="admin-hero-controls">
                       <button className="admin-edit-hero" onClick={() => handleEdit(featured)}>✏️</button>
                       <button className="admin-edit-hero" style={{marginLeft: '8px'}} onClick={(e) => { e.stopPropagation(); handleStyle(featured); }}>🎨</button>
-                      {!featured.isSample && <button className="admin-delete-hero" onClick={() => handleDelete(featured.id)}>🗑️</button>}
+                      {!featured.isSample && (
+                        <button 
+                          className="admin-delete-hero" 
+                          title="Unpin from Hero (keeps the post)"
+                          style={{background: 'rgba(251,191,36,0.2)', color: '#f59e0b'}}
+                          onClick={async (e) => {
+                            e.stopPropagation();
+                            await updateDoc(doc(db, 'samaj_jog_sandesh', featured.id), { 
+                              isHero: false, isHighlight1: false, isHighlight2: false, isQuickLink: false 
+                            });
+                          }}
+                        >✕</button>
+                      )}
                     </div>
                   )}
 
