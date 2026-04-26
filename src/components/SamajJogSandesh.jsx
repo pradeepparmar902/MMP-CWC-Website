@@ -810,12 +810,12 @@ export default function SamajJogSandesh({ lang }) {
                         
                         {canManage && (
                           <div className="admin-hero-controls">
-                            <button className="admin-edit-hero" onClick={() => handleEdit(featured)}>✏️</button>
-                            <button className="admin-edit-hero" style={{marginLeft: '8px'}} onClick={(e) => { e.stopPropagation(); handleStyle(featured, 'hero'); }}>🎨</button>
+                            <button className="admin-edit-hero" onClick={() => handleEdit(featured)} title="Edit Content">✏️</button>
+                            <button className="admin-edit-hero" style={{marginLeft: '8px'}} onClick={(e) => { e.stopPropagation(); handleStyle(featured, 'hero'); }} title="Formatting Style">🎨</button>
                             <button 
                               className="admin-edit-hero" 
                               style={{marginLeft: '8px', background: '#e2e8f0', color: '#475569'}}
-                              title="Click to Swap or Drag to reposition"
+                              title="Click to Swap"
                               onClick={async (e) => {
                                 e.stopPropagation();
                                 const currentOrder = featured.heroLayoutOrder || ['text', 'visual'];
@@ -825,10 +825,17 @@ export default function SamajJogSandesh({ lang }) {
                             >
                               ⇄
                             </button>
+                            <div 
+                              className="admin-edit-hero hero-drag-handle" 
+                              style={{marginLeft: '8px', cursor: 'move', background: '#f1f5f9', color: '#64748b', display:'flex', alignItems:'center', justifyContent:'center', border:'2px solid #cbd5e1'}}
+                              title="Drag this handle to reposition"
+                            >
+                              ✥
+                            </div>
                             {!featured.isSample && (
                               <button 
                                 className="admin-delete-hero" 
-                                title="Unpin from Hero (keeps the post)"
+                                title="Unpin from Hero"
                                 style={{background: 'rgba(251,191,36,0.2)', color: '#f59e0b', marginLeft: '8px'}}
                                 onClick={async (e) => {
                                   e.stopPropagation();
@@ -888,6 +895,11 @@ export default function SamajJogSandesh({ lang }) {
                       >
                         {featured.bannerUrl ? <img src={featured.bannerUrl} alt="Hero" /> : <div className="hero-visual-fallback">🖼️</div>}
                         <div className="visual-overlay"></div>
+                        {canManage && (
+                           <div className="hero-drag-handle" style={{position:'absolute', bottom:'15px', right:'15px', background:'white', color:'#7c3aed', width:'40px', height:'40px', borderRadius:'50%', display:'flex', alignItems:'center', justifyContent:'center', boxShadow:'0 4px 12px rgba(0,0,0,0.2)', border:'2px solid #7c3aed', cursor:'move', zIndex:10}}>
+                             ✥
+                           </div>
+                        )}
                       </div>
                     );
                   }
