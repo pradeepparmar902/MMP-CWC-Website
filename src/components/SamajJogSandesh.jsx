@@ -428,7 +428,12 @@ export default function SamajJogSandesh({ lang }) {
       gradientBorder: item.gradientBorder || false,
       gradientColor1: item.gradientColor1 || '#7c3aed',
       gradientColor2: item.gradientColor2 || '#3b82f6',
-      gradientAngle: item.gradientAngle || '135'
+      gradientAngle: item.gradientAngle || '135',
+      isHero: item.isHero || false,
+      gradientBg: item.gradientBg || false,
+      gradientBgColor1: item.gradientBgColor1 || '',
+      gradientBgColor2: item.gradientBgColor2 || '',
+      gradientBgAngle: item.gradientBgAngle || '135'
     });
     setShowModal(true);
   };
@@ -486,8 +491,9 @@ export default function SamajJogSandesh({ lang }) {
     s.borderRadius = `${tl} ${tr} ${br} ${bl}`;
 
     // ── Background & Border logic ────────────────────────────────────────────────
-    let baseBg = item.bgColor || 'white';
-    if (item.gradientBg) {
+    const hasGradientColors = item.gradientBg && (item.gradientBgColor1 || item.gradientBgColor2);
+    let baseBg = null;
+    if (hasGradientColors) {
       baseBg = `linear-gradient(${item.gradientBgAngle || '135'}deg, ${item.gradientBgColor1 || '#7c3aed'}, ${item.gradientBgColor2 || '#4f46e5'})`;
     } else if (item.bgColor) {
       baseBg = item.bgColor;
@@ -498,10 +504,9 @@ export default function SamajJogSandesh({ lang }) {
       const ang = item.gradientAngle  || '135';
       const c1  = item.gradientColor1 || '#7c3aed';
       const c2  = item.gradientColor2 || '#3b82f6';
-      
-      // Wrap solid colors in linear-gradient for the padding-box trick
-      const paddingBoxBg = item.gradientBg ? baseBg : `linear-gradient(${baseBg}, ${baseBg})`;
-      s.background = `${paddingBoxBg} padding-box, linear-gradient(${ang}deg, ${c1}, ${c2}) border-box`;
+      const paddingBoxBg = baseBg ? baseBg : 'white';
+      const paddingBoxBgWrapped = hasGradientColors ? paddingBoxBg : `linear-gradient(${paddingBoxBg}, ${paddingBoxBg})`;
+      s.background = `${paddingBoxBgWrapped} padding-box, linear-gradient(${ang}deg, ${c1}, ${c2}) border-box`;
       s.border = `${item.borderWidth}px solid transparent`;
     } else {
       if (item.borderStyle === 'none') {
@@ -511,9 +516,8 @@ export default function SamajJogSandesh({ lang }) {
         s.borderWidth = `${item.borderWidth || 1}px`;
         s.borderStyle = item.borderStyle || 'solid';
       }
-      
-      // Override CSS class background gradients if any custom bg is set
-      if (item.gradientBg || item.bgColor) {
+      // Only override CSS background if a custom bg is actually set
+      if (baseBg) {
         s.background = baseBg;
       }
     }
