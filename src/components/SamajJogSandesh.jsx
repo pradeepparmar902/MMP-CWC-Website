@@ -114,6 +114,7 @@ export default function SamajJogSandesh({ lang }) {
   // Hero Drag & Drop State
   const [draggedHeroBlock, setDraggedHeroBlock] = useState(null);
   const [dragOverBlock, setDragOverBlock] = useState(null);
+  const [localHeroOrder, setLocalHeroOrder] = useState(null);
   const draggedBlockRef = useRef(null);
   
   const HERO_BLOCKS = ['visual', 'badge', 'authority', 'title', 'body', 'footer'];
@@ -771,8 +772,8 @@ export default function SamajJogSandesh({ lang }) {
               style={buildCardStyle(featured, 'hero')}
             >
               <div className="hero-inner granular">
-                {(featured.heroLayoutOrder && Array.isArray(featured.heroLayoutOrder) && featured.heroLayoutOrder.length > 2 
-                  ? featured.heroLayoutOrder 
+                {(localHeroOrder || featured.heroLayoutOrder && Array.isArray(featured.heroLayoutOrder) && featured.heroLayoutOrder.length > 2 
+                  ? (localHeroOrder || featured.heroLayoutOrder) 
                   : HERO_BLOCKS
                 ).map((blockKey) => {
                   const isDragging = draggedHeroBlock === blockKey;
@@ -784,56 +785,47 @@ export default function SamajJogSandesh({ lang }) {
                       if (canManage) {
                         setDraggedHeroBlock(blockKey);
                         draggedBlockRef.current = blockKey;
+                        const initialOrder = featured.heroLayoutOrder && Array.isArray(featured.heroLayoutOrder) && featured.heroLayoutOrder.length > 2 
+                          ? [...featured.heroLayoutOrder] 
+                          : [...HERO_BLOCKS];
+                        setLocalHeroOrder(initialOrder);
                         e.dataTransfer.effectAllowed = 'move';
                         e.dataTransfer.setData('text/plain', blockKey);
                         e.dataTransfer.setData('blockKey', blockKey);
                       }
                     },
-                    onDragEnd: () => {
+                    onDragEnd: async () => {
+                      if (localHeroOrder) {
+                        await updateDoc(doc(db, 'samaj_jog_sandesh', featured.id), { heroLayoutOrder: localHeroOrder });
+                      }
                       setDraggedHeroBlock(null);
                       draggedBlockRef.current = null;
                       setDragOverBlock(null);
+                      setLocalHeroOrder(null);
                     },
                     onDragOver: (e) => {
                       e.preventDefault();
                       e.dataTransfer.dropEffect = 'move';
-                      if (draggedHeroBlock && draggedHeroBlock !== blockKey && dragOverBlock !== blockKey) {
-                        setDragOverBlock(blockKey);
+                      if (draggedHeroBlock && draggedHeroBlock !== blockKey) {
+                        const currentOrder = [...(localHeroOrder || HERO_BLOCKS)];
+                        const sIdx = currentOrder.indexOf(draggedHeroBlock);
+                        const tIdx = currentOrder.indexOf(blockKey);
+                        if (sIdx !== -1 && tIdx !== -1 && sIdx !== tIdx) {
+                          currentOrder.splice(sIdx, 1);
+                          currentOrder.splice(tIdx, 0, draggedHeroBlock);
+                          setLocalHeroOrder(currentOrder);
+                        }
                       }
                     },
                     onDragEnter: (e) => {
                       e.preventDefault();
-                      if (draggedHeroBlock && draggedHeroBlock !== blockKey) {
-                        setDragOverBlock(blockKey);
-                      }
                     },
                     onDragLeave: (e) => {
-                      // Only clear if we are leaving the element, not moving into a child
-                      if (e.currentTarget === e.target) {
-                        setDragOverBlock(null);
-                      }
                     },
-                    onDrop: async (e) => {
+                    onDrop: (e) => {
                       e.preventDefault();
-                      const sourceKey = e.dataTransfer.getData('blockKey') || draggedBlockRef.current;
-                      setDragOverBlock(null);
-                      setDraggedHeroBlock(null);
-                      draggedBlockRef.current = null;
-                      
-                      if (sourceKey && sourceKey !== blockKey) {
-                        const currentOrder = featured.heroLayoutOrder && Array.isArray(featured.heroLayoutOrder) && featured.heroLayoutOrder.length > 2 
-                          ? [...featured.heroLayoutOrder] 
-                          : [...HERO_BLOCKS];
-                        
-                        const sIdx = currentOrder.indexOf(sourceKey);
-                        const tIdx = currentOrder.indexOf(blockKey);
-                        
-                        if (sIdx !== -1 && tIdx !== -1) {
-                          currentOrder.splice(sIdx, 1);
-                          currentOrder.splice(tIdx, 0, sourceKey);
-                          await updateDoc(doc(db, 'samaj_jog_sandesh', featured.id), { heroLayoutOrder: currentOrder });
-                        }
-                      }
+                      // Logic is handled in onDragOver for real-time feel
+                      // and onDragEnd for final persistence
                     },
                     className: `hero-block block-${blockKey} ${isDragging ? 'dragging' : ''} ${isDragOver ? 'drag-over' : ''}`
                   };
