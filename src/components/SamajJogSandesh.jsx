@@ -545,14 +545,8 @@ export default function SamajJogSandesh({ lang }) {
     !m.isHighlight1 && !m.isHighlight2 && !m.isQuickLink
   );
 
-  // Find featured post: EXPLICIT HERO > High Priority > Sample Posts > Latest Normal Post
-  const featured = activeMessages.find(m => m.isHero) ||
-                   heroCandidates.find(m => m.priority === 'high' && !m.isSample) || 
-                   heroCandidates.find(m => m.isSample) || 
-                   heroCandidates[0] ||
-                   activeMessages.find(m => m.isSample) ||
-                   activeMessages[0];
-
+  // Find featured post: ONLY explicitly pinned Hero posts (no automatic fallback)
+  const featured = activeMessages.find(m => m.isHero) || null;
 
   // 1. Find the latest Highlight for Slot 1 (Top)
   const highlight1Post = activeMessages.find(m => m.isHighlight1) || null;
@@ -735,6 +729,30 @@ export default function SamajJogSandesh({ lang }) {
                   {featured.bannerUrl ? <img src={featured.bannerUrl} alt="Hero" /> : <div className="hero-visual-fallback">🖼️</div>}
                   <div className="visual-overlay"></div>
                 </div>
+              </div>
+            </main>
+          )}
+
+          {/* Hero empty state when no post is pinned */}
+          {!featured && (
+            <main className="bento-item middle center-feature" id="hero-empty">
+              <div style={{display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',height:'100%',gap:'14px',padding:'24px'}}>
+                {canManage ? (
+                  <>
+                    <div style={{fontSize:'40px'}}>📢</div>
+                    <div style={{color:'white',fontWeight:'bold',fontSize:'18px'}}>Hero Slot Empty</div>
+                    <div style={{color:'rgba(255,255,255,0.75)',fontSize:'13px',textAlign:'center',maxWidth:'220px'}}>
+                      {lang === 'gu' ? 'કોઈ પ્રકાશન Hero સ્લોટ પર પિન નથી' : 'No announcement pinned to Hero slot. Use the pencil icon on any post to pin it here.'}
+                    </div>
+                    <button className="add-highlight-btn" style={{marginTop:'8px'}} onClick={() => setShowModal(true)}>
+                      ➕ {lang === 'gu' ? 'ઉમેરો' : 'Add Post'}
+                    </button>
+                  </>
+                ) : (
+                  <div style={{color:'rgba(255,255,255,0.5)',fontSize:'14px'}}>
+                    {lang === 'gu' ? 'ટૂંક સમયમાં...' : 'Coming soon...'}
+                  </div>
+                )}
               </div>
             </main>
           )}
