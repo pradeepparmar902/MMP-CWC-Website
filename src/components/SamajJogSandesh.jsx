@@ -555,10 +555,10 @@ export default function SamajJogSandesh({ lang }) {
   const highlight2Post = activeMessages.find(m => m.isHighlight2) || null;
   
   // 3. Feed: Everything else (Strictly excludes Top Slot, Bottom Slot, and Hero Banner)
-  const feed = activeMessages.filter(m => 
-    m.id !== highlight1Post?.id && 
-    m.id !== highlight2Post?.id && 
-    m.id !== featured?.id
+  // Feed: All posts except Side Slot posts (Hero post ALSO shows in feed)
+  const feed = activeMessages.filter(m =>
+    m.id !== highlight1Post?.id &&
+    m.id !== highlight2Post?.id
   ).slice(0, 15);
 
   // 4. Current display list (live or archived view)
