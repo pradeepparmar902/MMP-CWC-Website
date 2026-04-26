@@ -114,6 +114,8 @@ export default function SamajJogSandesh({ lang }) {
   // Hero Drag & Drop State
   const [draggedHeroBlock, setDraggedHeroBlock] = useState(null);
   const [dragOverBlock, setDragOverBlock] = useState(null);
+  
+  const HERO_BLOCKS = ['visual', 'badge', 'authority', 'title', 'body', 'footer'];
   // 📦 Archive & Bulk Mode State
   const [bulkMode, setBulkMode] = useState(false);
   const [selectedIds, setSelectedIds] = useState(new Set());
@@ -767,143 +769,124 @@ export default function SamajJogSandesh({ lang }) {
               id={`card-${featured.id}`}
               style={buildCardStyle(featured, 'hero')}
             >
-              <div className="hero-inner">
-                {(featured.heroLayoutOrder || ['text', 'visual']).map((blockName) => {
-                  if (blockName === 'text') {
+              <div className="hero-inner granular">
+                {(featured.heroLayoutOrder && Array.isArray(featured.heroLayoutOrder) && featured.heroLayoutOrder.length > 2 
+                  ? featured.heroLayoutOrder 
+                  : HERO_BLOCKS
+                ).map((blockKey) => {
+                  const isDragging = draggedHeroBlock === blockKey;
+                  const isDragOver = dragOverBlock === blockKey;
+                  
+                  const commonProps = {
+                    draggable: canManage,
+                    onDragStart: (e) => {
+                      if (canManage) {
+                        setDraggedHeroBlock(blockKey);
+                        e.dataTransfer.setData('blockKey', blockKey);
+                      }
+                    },
+                    onDragEnd: () => {
+                      setDraggedHeroBlock(null);
+                      setDragOverBlock(null);
+                    },
+                    onDragOver: (e) => {
+                      e.preventDefault();
+                      if (draggedHeroBlock && draggedHeroBlock !== blockKey) {
+                        setDragOverBlock(blockKey);
+                      }
+                    },
+                    onDragLeave: () => setDragOverBlock(null),
+                    onDrop: async (e) => {
+                      e.preventDefault();
+                      const sourceKey = draggedHeroBlock;
+                      setDragOverBlock(null);
+                      if (sourceKey && sourceKey !== blockKey) {
+                        const currentOrder = featured.heroLayoutOrder && featured.heroLayoutOrder.length > 2 ? [...featured.heroLayoutOrder] : [...HERO_BLOCKS];
+                        const sIdx = currentOrder.indexOf(sourceKey);
+                        const tIdx = currentOrder.indexOf(blockKey);
+                        currentOrder.splice(sIdx, 1);
+                        currentOrder.splice(tIdx, 0, sourceKey);
+                        setDraggedHeroBlock(null);
+                        await updateDoc(doc(db, 'samaj_jog_sandesh', featured.id), { heroLayoutOrder: currentOrder });
+                      }
+                    },
+                    className: `hero-block block-${blockKey} ${isDragging ? 'dragging' : ''} ${isDragOver ? 'drag-over' : ''}`
+                  };
+
+                  if (blockKey === 'visual') {
                     return (
-                      <div 
-                        key="text"
-                        className={`hero-text ${draggedHeroBlock === 'text' ? 'dragging' : ''} ${dragOverBlock === 'text' ? 'drag-over' : ''}`}
-                        draggable={canManage}
-                        onDragStart={(e) => {
-                          if (canManage) {
-                            setDraggedHeroBlock('text');
-                            e.dataTransfer.setData('text/plain', 'text');
-                          }
-                        }}
-                        onDragEnd={() => {
-                          setDraggedHeroBlock(null);
-                          setDragOverBlock(null);
-                        }}
-                        onDragOver={(e) => {
-                          e.preventDefault();
-                          if (draggedHeroBlock && draggedHeroBlock !== 'text') {
-                            setDragOverBlock('text');
-                          }
-                        }}
-                        onDragLeave={() => setDragOverBlock(null)}
-                        onDrop={async (e) => {
-                          e.preventDefault();
-                          setDragOverBlock(null);
-                          if (draggedHeroBlock && draggedHeroBlock !== 'text') {
-                            const newOrder = ['text', draggedHeroBlock]; // Swapped
-                            setDraggedHeroBlock(null);
-                            await updateDoc(doc(db, 'samaj_jog_sandesh', featured.id), { heroLayoutOrder: newOrder });
-                          }
-                        }}
-                      >
+                      <div key="visual" {...commonProps}>
+                        {featured.bannerUrl ? <img src={featured.bannerUrl} alt="Hero" /> : <div className="hero-visual-fallback">🖼️</div>}
+                        <div className="visual-overlay"></div>
+                      </div>
+                    );
+                  }
+
+                  if (blockKey === 'badge') {
+                    return (
+                      <div key="badge" {...commonProps}>
                         <div className="hero-badge">
                           {featured.isSample && <span className="sample-pill">SAMPLE</span>}
                           {lang === 'gu' ? '📢 લેટેસ્ટ જાહેરાત' : '📢 LATEST ANNOUNCEMENT'}
-                        </div>
-                        
-                        {canManage && (
-                          <div className="admin-hero-controls">
-                            <button className="admin-edit-hero" onClick={() => handleEdit(featured)} title="Edit Content">✏️</button>
-                            <button className="admin-edit-hero" style={{marginLeft: '8px'}} onClick={(e) => { e.stopPropagation(); handleStyle(featured, 'hero'); }} title="Formatting Style">🎨</button>
-                            <button 
-                              className="admin-edit-hero" 
-                              style={{marginLeft: '8px', background: '#e2e8f0', color: '#475569'}}
-                              title="Click to Swap"
-                              onClick={async (e) => {
-                                e.stopPropagation();
-                                const currentOrder = featured.heroLayoutOrder || ['text', 'visual'];
-                                const newOrder = currentOrder[0] === 'text' ? ['visual', 'text'] : ['text', 'visual'];
-                                await updateDoc(doc(db, 'samaj_jog_sandesh', featured.id), { heroLayoutOrder: newOrder });
-                              }}
-                            >
-                              ⇄
-                            </button>
-                            <div 
-                              className="admin-edit-hero hero-drag-handle" 
-                              style={{marginLeft: '8px', cursor: 'move', background: '#f1f5f9', color: '#64748b', display:'flex', alignItems:'center', justifyContent:'center', border:'2px solid #cbd5e1'}}
-                              title="Drag this handle to reposition"
-                            >
-                              ✥
-                            </div>
-                            {!featured.isSample && (
-                              <button 
-                                className="admin-delete-hero" 
-                                title="Unpin from Hero"
-                                style={{background: 'rgba(251,191,36,0.2)', color: '#f59e0b', marginLeft: '8px'}}
-                                onClick={async (e) => {
-                                  e.stopPropagation();
-                                  await updateDoc(doc(db, 'samaj_jog_sandesh', featured.id), { 
-                                    isHero: false, isHighlight1: false, isHighlight2: false, isQuickLink: false 
-                                  });
-                                }}
-                              >✕</button>
-                            )}
-                          </div>
-                        )}
-
-                        <span className="hero-authority">{getT(featured, 'authority')}</span>
-                        <h1>{getT(featured, 'title')}</h1>
-                        <p className="hero-p-desc">{getT(featured, 'content')}</p>
-                        
-                        <div className="hero-footer-row">
-                          <span className="hero-date">📅 {getT(featured, 'date')}</span>
-                          <button className="hero-btn-cta">{lang === 'gu' ? 'સંપૂર્ણ વાંચો →' : 'Read Full →'}</button>
                         </div>
                       </div>
                     );
                   }
 
-                  if (blockName === 'visual') {
+                  if (blockKey === 'authority') {
+                    return <span key="authority" {...commonProps} style={{...commonProps.style, display:'block'}} className={`${commonProps.className} hero-authority`}>{getT(featured, 'authority')}</span>;
+                  }
+
+                  if (blockKey === 'title') {
+                    return <h1 key="title" {...commonProps}>{getT(featured, 'title')}</h1>;
+                  }
+
+                  if (blockKey === 'body') {
+                    return <p key="body" {...commonProps} className={`${commonProps.className} hero-p-desc`}>{getT(featured, 'content')}</p>;
+                  }
+
+                  if (blockKey === 'footer') {
                     return (
-                      <div 
-                        key="visual"
-                        className={`hero-visual ${draggedHeroBlock === 'visual' ? 'dragging' : ''} ${dragOverBlock === 'visual' ? 'drag-over' : ''}`}
-                        draggable={canManage}
-                        onDragStart={(e) => {
-                          if (canManage) {
-                            setDraggedHeroBlock('visual');
-                            e.dataTransfer.setData('text/plain', 'visual');
-                          }
-                        }}
-                        onDragEnd={() => {
-                          setDraggedHeroBlock(null);
-                          setDragOverBlock(null);
-                        }}
-                        onDragOver={(e) => {
-                          e.preventDefault();
-                          if (draggedHeroBlock && draggedHeroBlock !== 'visual') {
-                            setDragOverBlock('visual');
-                          }
-                        }}
-                        onDragLeave={() => setDragOverBlock(null)}
-                        onDrop={async (e) => {
-                          e.preventDefault();
-                          setDragOverBlock(null);
-                          if (draggedHeroBlock && draggedHeroBlock !== 'visual') {
-                            const newOrder = ['visual', draggedHeroBlock]; // Swapped
-                            setDraggedHeroBlock(null);
-                            await updateDoc(doc(db, 'samaj_jog_sandesh', featured.id), { heroLayoutOrder: newOrder });
-                          }
-                        }}
-                      >
-                        {featured.bannerUrl ? <img src={featured.bannerUrl} alt="Hero" /> : <div className="hero-visual-fallback">🖼️</div>}
-                        <div className="visual-overlay"></div>
-                        {canManage && (
-                           <div className="hero-drag-handle" style={{position:'absolute', bottom:'15px', right:'15px', background:'white', color:'#7c3aed', width:'40px', height:'40px', borderRadius:'50%', display:'flex', alignItems:'center', justifyContent:'center', boxShadow:'0 4px 12px rgba(0,0,0,0.2)', border:'2px solid #7c3aed', cursor:'move', zIndex:10}}>
-                             ✥
-                           </div>
-                        )}
+                      <div key="footer" {...commonProps} className={`${commonProps.className} hero-footer-row`}>
+                        <span className="hero-date">📅 {getT(featured, 'date')}</span>
+                        <button className="hero-btn-cta">{lang === 'gu' ? 'સંપૂર્ણ વાંચો →' : 'Read Full →'}</button>
                       </div>
                     );
                   }
                   return null;
                 })}
+
+                {/* Fixed Admin Controls in Corner */}
+                {canManage && (
+                  <div className="admin-hero-controls floating">
+                    <button className="admin-edit-hero" onClick={() => handleEdit(featured)} title="Edit Content">✏️</button>
+                    <button className="admin-edit-hero" style={{marginLeft: '8px'}} onClick={(e) => { e.stopPropagation(); handleStyle(featured, 'hero'); }} title="Formatting Style">🎨</button>
+                    <button 
+                      className="admin-edit-hero" 
+                      style={{marginLeft: '8px', background: '#e2e8f0', color: '#475569'}}
+                      title="Reset Layout"
+                      onClick={async (e) => {
+                        e.stopPropagation();
+                        await updateDoc(doc(db, 'samaj_jog_sandesh', featured.id), { heroLayoutOrder: HERO_BLOCKS });
+                      }}
+                    >
+                      🔄
+                    </button>
+                    {!featured.isSample && (
+                      <button 
+                        className="admin-delete-hero" 
+                        title="Unpin from Hero"
+                        style={{background: 'rgba(251,191,36,0.2)', color: '#f59e0b', marginLeft: '8px'}}
+                        onClick={async (e) => {
+                          e.stopPropagation();
+                          await updateDoc(doc(db, 'samaj_jog_sandesh', featured.id), { 
+                            isHero: false, isHighlight1: false, isHighlight2: false, isQuickLink: false 
+                          });
+                        }}
+                      >✕</button>
+                    )}
+                  </div>
+                )}
               </div>
             </main>
           )}
