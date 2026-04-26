@@ -110,6 +110,10 @@ export default function SamajJogSandesh({ lang }) {
   const [isSaving, setIsSaving] = useState(false);
   const [isTranslating, setIsTranslating] = useState(false);
   const [editingId, setEditingId] = useState(null);
+  
+  // Hero Drag & Drop State
+  const [draggedHeroBlock, setDraggedHeroBlock] = useState(null);
+  const [dragOverBlock, setDragOverBlock] = useState(null);
   // 📦 Archive & Bulk Mode State
   const [bulkMode, setBulkMode] = useState(false);
   const [selectedIds, setSelectedIds] = useState(new Set());
@@ -764,46 +768,142 @@ export default function SamajJogSandesh({ lang }) {
               style={buildCardStyle(featured, 'hero')}
             >
               <div className="hero-inner">
-                <div className="hero-text">
-                  <div className="hero-badge">
-                    {featured.isSample && <span className="sample-pill">SAMPLE</span>}
-                    {lang === 'gu' ? '📢 લેટેસ્ટ જાહેરાત' : '📢 LATEST ANNOUNCEMENT'}
-                  </div>
-                  
-                  {canManage && (
-                    <div className="admin-hero-controls">
-                      <button className="admin-edit-hero" onClick={() => handleEdit(featured)}>✏️</button>
-                      <button className="admin-edit-hero" style={{marginLeft: '8px'}} onClick={(e) => { e.stopPropagation(); handleStyle(featured, 'hero'); }}>🎨</button>
-                      {!featured.isSample && (
-                        <button 
-                          className="admin-delete-hero" 
-                          title="Unpin from Hero (keeps the post)"
-                          style={{background: 'rgba(251,191,36,0.2)', color: '#f59e0b'}}
-                          onClick={async (e) => {
-                            e.stopPropagation();
-                            await updateDoc(doc(db, 'samaj_jog_sandesh', featured.id), { 
-                              isHero: false, isHighlight1: false, isHighlight2: false, isQuickLink: false 
-                            });
-                          }}
-                        >✕</button>
-                      )}
-                    </div>
-                  )}
+                {(featured.heroLayoutOrder || ['text', 'visual']).map((blockName) => {
+                  if (blockName === 'text') {
+                    return (
+                      <div 
+                        key="text"
+                        className={`hero-text ${draggedHeroBlock === 'text' ? 'dragging' : ''} ${dragOverBlock === 'text' ? 'drag-over' : ''}`}
+                        draggable={canManage}
+                        onDragStart={(e) => {
+                          if (canManage) {
+                            setDraggedHeroBlock('text');
+                            e.dataTransfer.setData('text/plain', 'text');
+                          }
+                        }}
+                        onDragEnd={() => {
+                          setDraggedHeroBlock(null);
+                          setDragOverBlock(null);
+                        }}
+                        onDragOver={(e) => {
+                          e.preventDefault();
+                          if (draggedHeroBlock && draggedHeroBlock !== 'text') {
+                            setDragOverBlock('text');
+                          }
+                        }}
+                        onDragLeave={() => setDragOverBlock(null)}
+                        onDrop={async (e) => {
+                          e.preventDefault();
+                          setDragOverBlock(null);
+                          if (draggedHeroBlock && draggedHeroBlock !== 'text') {
+                            const newOrder = ['text', draggedHeroBlock]; // Swapped
+                            setDraggedHeroBlock(null);
+                            await updateDoc(doc(db, 'samaj_jog_sandesh', featured.id), { heroLayoutOrder: newOrder });
+                          }
+                        }}
+                      >
+                        <div className="hero-badge">
+                          {featured.isSample && <span className="sample-pill">SAMPLE</span>}
+                          {lang === 'gu' ? '📢 લેટેસ્ટ જાહેરાત' : '📢 LATEST ANNOUNCEMENT'}
+                        </div>
+                        
+                        {canManage && (
+                          <div className="admin-hero-controls">
+                            <button className="admin-edit-hero" onClick={() => handleEdit(featured)} title="Edit Content">✏️</button>
+                            <button className="admin-edit-hero" style={{marginLeft: '8px'}} onClick={(e) => { e.stopPropagation(); handleStyle(featured, 'hero'); }} title="Formatting Style">🎨</button>
+                            <button 
+                              className="admin-edit-hero" 
+                              style={{marginLeft: '8px', background: '#e2e8f0', color: '#475569'}}
+                              title="Click to Swap"
+                              onClick={async (e) => {
+                                e.stopPropagation();
+                                const currentOrder = featured.heroLayoutOrder || ['text', 'visual'];
+                                const newOrder = currentOrder[0] === 'text' ? ['visual', 'text'] : ['text', 'visual'];
+                                await updateDoc(doc(db, 'samaj_jog_sandesh', featured.id), { heroLayoutOrder: newOrder });
+                              }}
+                            >
+                              ⇄
+                            </button>
+                            <div 
+                              className="admin-edit-hero hero-drag-handle" 
+                              style={{marginLeft: '8px', cursor: 'move', background: '#f1f5f9', color: '#64748b', display:'flex', alignItems:'center', justifyContent:'center', border:'2px solid #cbd5e1'}}
+                              title="Drag this handle to reposition"
+                            >
+                              ✥
+                            </div>
+                            {!featured.isSample && (
+                              <button 
+                                className="admin-delete-hero" 
+                                title="Unpin from Hero"
+                                style={{background: 'rgba(251,191,36,0.2)', color: '#f59e0b', marginLeft: '8px'}}
+                                onClick={async (e) => {
+                                  e.stopPropagation();
+                                  await updateDoc(doc(db, 'samaj_jog_sandesh', featured.id), { 
+                                    isHero: false, isHighlight1: false, isHighlight2: false, isQuickLink: false 
+                                  });
+                                }}
+                              >✕</button>
+                            )}
+                          </div>
+                        )}
 
-                  <span className="hero-authority">{getT(featured, 'authority')}</span>
-                  <h1>{getT(featured, 'title')}</h1>
-                  <p className="hero-p-desc">{getT(featured, 'content')}</p>
-                  
-                  <div className="hero-footer-row">
-                    <span className="hero-date">📅 {getT(featured, 'date')}</span>
-                    <button className="hero-btn-cta">{lang === 'gu' ? 'સંપૂર્ણ વાંચો →' : 'Read Full →'}</button>
-                  </div>
-                </div>
+                        <span className="hero-authority">{getT(featured, 'authority')}</span>
+                        <h1>{getT(featured, 'title')}</h1>
+                        <p className="hero-p-desc">{getT(featured, 'content')}</p>
+                        
+                        <div className="hero-footer-row">
+                          <span className="hero-date">📅 {getT(featured, 'date')}</span>
+                          <button className="hero-btn-cta">{lang === 'gu' ? 'સંપૂર્ણ વાંચો →' : 'Read Full →'}</button>
+                        </div>
+                      </div>
+                    );
+                  }
 
-                <div className="hero-visual">
-                  {featured.bannerUrl ? <img src={featured.bannerUrl} alt="Hero" /> : <div className="hero-visual-fallback">🖼️</div>}
-                  <div className="visual-overlay"></div>
-                </div>
+                  if (blockName === 'visual') {
+                    return (
+                      <div 
+                        key="visual"
+                        className={`hero-visual ${draggedHeroBlock === 'visual' ? 'dragging' : ''} ${dragOverBlock === 'visual' ? 'drag-over' : ''}`}
+                        draggable={canManage}
+                        onDragStart={(e) => {
+                          if (canManage) {
+                            setDraggedHeroBlock('visual');
+                            e.dataTransfer.setData('text/plain', 'visual');
+                          }
+                        }}
+                        onDragEnd={() => {
+                          setDraggedHeroBlock(null);
+                          setDragOverBlock(null);
+                        }}
+                        onDragOver={(e) => {
+                          e.preventDefault();
+                          if (draggedHeroBlock && draggedHeroBlock !== 'visual') {
+                            setDragOverBlock('visual');
+                          }
+                        }}
+                        onDragLeave={() => setDragOverBlock(null)}
+                        onDrop={async (e) => {
+                          e.preventDefault();
+                          setDragOverBlock(null);
+                          if (draggedHeroBlock && draggedHeroBlock !== 'visual') {
+                            const newOrder = ['visual', draggedHeroBlock]; // Swapped
+                            setDraggedHeroBlock(null);
+                            await updateDoc(doc(db, 'samaj_jog_sandesh', featured.id), { heroLayoutOrder: newOrder });
+                          }
+                        }}
+                      >
+                        {featured.bannerUrl ? <img src={featured.bannerUrl} alt="Hero" /> : <div className="hero-visual-fallback">🖼️</div>}
+                        <div className="visual-overlay"></div>
+                        {canManage && (
+                           <div className="hero-drag-handle" style={{position:'absolute', bottom:'15px', right:'15px', background:'white', color:'#7c3aed', width:'40px', height:'40px', borderRadius:'50%', display:'flex', alignItems:'center', justifyContent:'center', boxShadow:'0 4px 12px rgba(0,0,0,0.2)', border:'2px solid #7c3aed', cursor:'move', zIndex:10}}>
+                             ✥
+                           </div>
+                        )}
+                      </div>
+                    );
+                  }
+                  return null;
+                })}
               </div>
             </main>
           )}
