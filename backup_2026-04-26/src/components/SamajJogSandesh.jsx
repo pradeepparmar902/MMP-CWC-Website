@@ -23,6 +23,8 @@ const DUMMY_MESSAGES = [
     id: 'msg_1',
     type: 'poster',
     priority: 'high',
+    labelEn: 'NOTICE',
+    labelGu: 'સૂચના',
     titleEn: '📢 Mega Health Camp 2026',
     titleGu: '📢 મેગા હેલ્થ કેમ્પ 2026',
     subtitleEn: 'Main Committee Announcement',
@@ -41,6 +43,8 @@ const DUMMY_MESSAGES = [
     id: 'msg_2',
     type: 'letter',
     priority: 'normal',
+    labelEn: 'OFFICIAL',
+    labelGu: 'સત્તાવાર',
     titleEn: '📜 Official Election Notification',
     titleGu: '📜 સત્તાવાર ચૂંટણી સૂચના',
     subtitleEn: 'Likhit Sandesh (Written Message)',
@@ -59,6 +63,8 @@ const DUMMY_MESSAGES = [
     id: 'msg_3',
     type: 'text',
     priority: 'normal',
+    labelEn: 'ACHIEVEMENT',
+    labelGu: 'સિદ્ધિ',
     titleEn: '✨ Congratulations to Students',
     titleGu: '✨ વિદ્યાર્થીઓને અભિનંદન',
     subtitleEn: 'Recognition Alert',
@@ -76,6 +82,8 @@ const DUMMY_MESSAGES = [
     id: 'msg_4',
     type: 'poster',
     priority: 'normal',
+    labelEn: 'SPORTS',
+    labelGu: 'રમતગમત',
     titleEn: '🏏 Community Cricket League',
     titleGu: '🏏 કોમ્યુનિટી ક્રિકેટ લીગ',
     subtitleEn: 'Sports Event Flyer',
@@ -115,6 +123,8 @@ export default function SamajJogSandesh({ lang }) {
   const [formData, setFormData] = useState({
     type: 'poster',
     priority: 'normal',
+    labelEn: '', labelGu: '',
+    labelBgColor: '', labelTextColor: '',
     titleEn: '', titleGu: '',
     subtitleEn: '', subtitleGu: '',
     contentEn: '', contentGu: '',
@@ -151,6 +161,10 @@ export default function SamajJogSandesh({ lang }) {
     gradientAngle: '135'
   });
 
+  const COMMON_EMOJIS = ['📢', '✨', '📅', '📍', '🎉', '📜', '⚖️', '🏟️', '🏢', '🤝', '🎓', '🏥', '🚨', '✅', '⚠️', '🙏', '🕉️', '🚩', '☪️', '✝️'];
+
+  const [activeEmojiField, setActiveEmojiField] = useState(null); // Track which field's emoji picker is open
+
   // 1. REAL-TIME DATA FETCH
   useEffect(() => {
     const q = query(collection(db, 'samaj_jog_sandesh'), orderBy('createdAt', 'desc'));
@@ -180,6 +194,65 @@ export default function SamajJogSandesh({ lang }) {
     setFormData(prev => ({ ...prev, [field]: el.innerHTML }));
   };
 
+  const insertEmoji = (field, emoji) => {
+    const el = document.getElementById(`editor-${field}`);
+    if (!el) return;
+    el.focus();
+    
+    // Insert at cursor position
+    document.execCommand('insertText', false, emoji);
+    
+    // Sync
+    setFormData(prev => ({ ...prev, [field]: el.innerHTML }));
+    setActiveEmojiField(null); // Close picker
+  };
+
+  const handleSlotSwap = async (item, slot) => {
+    try {
+      const updates = [];
+      
+      // 1. Unset current winners for this slot
+      if (slot === 'hero') {
+        allAvailable.filter(m => m.isHero && m.id !== item.id).forEach(m => {
+          updates.push(updateDoc(doc(db, 'samaj_jog_sandesh', m.id), { isHero: false }));
+        });
+        updates.push(updateDoc(doc(db, 'samaj_jog_sandesh', item.id), { 
+          isHero: true, 
+          isHighlight1: false, isHighlight: false, 
+          isHighlight2: false, isQuickLink: false 
+        }));
+      } else if (slot === 'side1') {
+        allAvailable.filter(m => (m.isHighlight1 || m.isHighlight) && m.id !== item.id).forEach(m => {
+          updates.push(updateDoc(doc(db, 'samaj_jog_sandesh', m.id), { isHighlight1: false, isHighlight: false }));
+        });
+        updates.push(updateDoc(doc(db, 'samaj_jog_sandesh', item.id), { 
+          isHero: false,
+          isHighlight1: true, isHighlight: true,
+          isHighlight2: false, isQuickLink: false
+        }));
+      } else if (slot === 'side2') {
+        allAvailable.filter(m => (m.isHighlight2 || m.isQuickLink) && m.id !== item.id).forEach(m => {
+          updates.push(updateDoc(doc(db, 'samaj_jog_sandesh', m.id), { isHighlight2: false, isQuickLink: false }));
+        });
+        updates.push(updateDoc(doc(db, 'samaj_jog_sandesh', item.id), { 
+          isHero: false,
+          isHighlight1: false, isHighlight: false,
+          isHighlight2: true, isQuickLink: true
+        }));
+      }
+
+      await Promise.all(updates);
+    } catch (error) {
+      console.error("Error swapping slots:", error);
+    }
+  };
+
+  const insertEmojiToInput = (field, emoji) => {
+    const val = formData[field] || '';
+    setFormData(prev => ({ ...prev, [field]: val + emoji }));
+    setActiveEmojiField(null);
+  };
+
   // 2. MODAL BODY LOCK & BANNER SUPPRESSION
   useEffect(() => {
     if (showModal || maximizedId) {
@@ -192,9 +265,17 @@ export default function SamajJogSandesh({ lang }) {
 
   const handlePost = async (e) => {
     e.preventDefault();
-    const hasTitle = formData.titleEn.trim() || formData.titleGu.trim();
-    const hasContent = formData.contentEn.trim() || formData.contentGu.trim();
-    const hasAuthority = formData.authorityEn.trim() || formData.authorityGu.trim();
+
+    // 🔄 FINAL SYNC: Capture all Rich Text content before saving
+    const syncedData = { ...formData };
+    ['titleEn', 'titleGu', 'subtitleEn', 'subtitleGu', 'contentEn', 'contentGu'].forEach(id => {
+      const el = document.getElementById(`editor-${id}`);
+      if (el) syncedData[id] = el.innerHTML;
+    });
+
+    const hasTitle = syncedData.titleEn.trim() || syncedData.titleGu.trim();
+    const hasContent = syncedData.contentEn.trim() || syncedData.contentGu.trim();
+    const hasAuthority = syncedData.authorityEn.trim() || syncedData.authorityGu.trim();
 
     if (!hasTitle || !hasContent || !hasAuthority) {
       alert(lang === 'gu' ? 'કૃપા કરીને રજૂ કરવા માટે ઓછામાં ઓછા એક ભાષામાં શીર્ષક અને સામગ્રી ભરો.' : 'Please provide at least one language version (English or Gujarati) for the Title, Content, and Authority.');
@@ -204,19 +285,47 @@ export default function SamajJogSandesh({ lang }) {
     setIsSaving(true);
     try {
       const payload = {
-        ...formData,
+        ...syncedData,
         dateEn: new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' }),
         dateGu: new Date().toLocaleDateString('gu-IN', { day: 'numeric', month: 'long', year: 'numeric' }),
         updatedAt: serverTimestamp()
       };
 
       if (editingId) {
+        // Enforce single-slot rule: If this is becoming Hero/Slot, unset others
+        if (payload.isHero) {
+          const others = allAvailable.filter(m => m.isHero && m.id !== editingId);
+          for (const other of others) {
+            await updateDoc(doc(db, 'samaj_jog_sandesh', other.id), { isHero: false });
+          }
+        }
+        if (payload.isHighlight1 || payload.isHighlight) {
+          const others = allAvailable.filter(m => (m.isHighlight1 || m.isHighlight) && m.id !== editingId);
+          for (const other of others) {
+            await updateDoc(doc(db, 'samaj_jog_sandesh', other.id), { isHighlight1: false, isHighlight: false });
+          }
+        }
+        if (payload.isHighlight2 || payload.isQuickLink) {
+          const others = allAvailable.filter(m => (m.isHighlight2 || m.isQuickLink) && m.id !== editingId);
+          for (const other of others) {
+            await updateDoc(doc(db, 'samaj_jog_sandesh', other.id), { isHighlight2: false, isQuickLink: false });
+          }
+        }
         await updateDoc(doc(db, 'samaj_jog_sandesh', editingId), payload);
       } else {
-        await addDoc(collection(db, 'samaj_jog_sandesh'), {
+        const docRef = await addDoc(collection(db, 'samaj_jog_sandesh'), {
           ...payload,
           createdAt: serverTimestamp()
         });
+        
+        // If new post is Hero/Slot, unset others
+        if (payload.isHero) {
+          const others = allAvailable.filter(m => m.isHero && m.id !== docRef.id);
+          for (const other of others) {
+            await updateDoc(doc(db, 'samaj_jog_sandesh', other.id), { isHero: false });
+          }
+        }
+        // ... same for slots 1 and 2
       }
       
       setShowModal(false);
@@ -230,15 +339,23 @@ export default function SamajJogSandesh({ lang }) {
   const handleSuggestDraft = async (sourceLang) => {
     if (isTranslating) return;
     const targetLang = sourceLang === 'en' ? 'gu' : 'en';
-    const fields = ['title', 'subtitle', 'content', 'authority'];
+    const fields = ['label', 'title', 'subtitle', 'content', 'authority'];
     setIsTranslating(true);
+
+    // 🔄 SYNC EDITORS BEFORE TRANSLATING
+    const syncedData = { ...formData };
+    ['titleEn', 'titleGu', 'subtitleEn', 'subtitleGu', 'contentEn', 'contentGu'].forEach(id => {
+      const el = document.getElementById(`editor-${id}`);
+      if (el) syncedData[id] = el.innerHTML;
+    });
+
     try {
-      const updates = { ...formData };
+      const updates = { ...syncedData };
       for (const field of fields) {
         const sourceKey = field + (sourceLang === 'en' ? 'En' : 'Gu');
         const targetKey = field + (targetLang === 'gu' ? 'Gu' : 'En');
-        if (formData[sourceKey] && formData[sourceKey].trim()) {
-           const suggestion = await fetchTranslation(formData[sourceKey], targetLang);
+        if (syncedData[sourceKey] && syncedData[sourceKey].trim()) {
+           const suggestion = await fetchTranslation(syncedData[sourceKey], targetLang);
            if (suggestion) updates[targetKey] = suggestion;
         }
       }
@@ -285,36 +402,6 @@ export default function SamajJogSandesh({ lang }) {
   };
 
   // 📦 Archive a post (hides from public, reversible)
-  // --- ATOMIC SLOT MANAGEMENT ---
-  const handleSlotSwap = async (item, targetSlot) => {
-    if (!canManage) return;
-    try {
-      // 1. Identify which field to clear based on target slot
-      let fieldToClear = '';
-      if (targetSlot === 'hero') fieldToClear = 'isHero';
-      if (targetSlot === 'side1') fieldToClear = 'isHighlight1';
-      if (targetSlot === 'side2') fieldToClear = 'isHighlight2';
-
-      // 2. Find all posts that currently have this slot active and clear them
-      const postsToClear = messages.filter(m => m[fieldToClear] === true && m.id !== item.id);
-      
-      const batchPromises = postsToClear.map(m => 
-        updateDoc(doc(db, "samaj_jog_sandesh", m.id), { [fieldToClear]: false })
-      );
-
-      // 3. Set the new slot on the target item
-      const newVal = !item[fieldToClear]; // Toggle
-      batchPromises.push(
-        updateDoc(doc(db, "samaj_jog_sandesh", item.id), { [fieldToClear]: newVal })
-      );
-
-      await Promise.all(batchPromises);
-      // Local state will update via useEffect listener
-    } catch (err) {
-      console.error("Error swapping slot:", err);
-    }
-  };
-
   const handleArchive = async (id) => {
     try {
       await updateDoc(doc(db, 'samaj_jog_sandesh', id), { isArchived: true });
@@ -386,6 +473,10 @@ export default function SamajJogSandesh({ lang }) {
     setFormData({
       type: item.type || 'poster',
       priority: item.priority || 'normal',
+      labelEn: item.labelEn || '',
+      labelGu: item.labelGu || '',
+      labelBgColor: item.labelBgColor || '',
+      labelTextColor: item.labelTextColor || '',
       titleEn: item.titleEn || '',
       titleGu: item.titleGu || '',
       subtitleEn: item.subtitleEn || '',
@@ -399,6 +490,7 @@ export default function SamajJogSandesh({ lang }) {
       tagsEn: item.tagsEn || ['General'],
       tagsGu: item.tagsGu || ['સામાન્ય'],
       hasAttachment: item.hasAttachment || false,
+      isHero: item.isHero || false,
       isHighlight1: item.isHighlight1 || false,
       isHighlight2: item.isHighlight2 || false,
       bgColor: item.bgColor || '',
@@ -430,6 +522,8 @@ export default function SamajJogSandesh({ lang }) {
     setEditingId(null);
     setFormData({
       type: 'poster', priority: 'normal',
+      labelEn: '', labelGu: '',
+      labelBgColor: '', labelTextColor: '',
       titleEn: '', titleGu: '',
       subtitleEn: '', subtitleGu: '',
       contentEn: '', contentGu: '',
@@ -438,6 +532,7 @@ export default function SamajJogSandesh({ lang }) {
       videoUrl: '',
       tagsEn: ['General'], tagsGu: ['સામાન્ય'],
       hasAttachment: false,
+      isHero: false,
       isHighlight1: false,
       isHighlight2: false,
       bgColor: '',
@@ -520,32 +615,25 @@ export default function SamajJogSandesh({ lang }) {
   // Archived posts (real posts only, no samples)
   const archivedMessages = messages.filter(m => m?.isArchived);
   
-  // 🔥 HERO FIREWALL: Only consider posts that are NOT pinned to any Side Slot (Top or Bottom)
-  const heroCandidates = activeMessages.filter(m => 
-    !m.isHighlight1 && !m.isHighlight2 && !m.isQuickLink
-  );
-
-  // Find featured post: EXPLICIT HERO > High Priority > Sample Posts > Latest Normal Post
-  const featured = activeMessages.find(m => m.isHero) ||
-                   heroCandidates.find(m => m.priority === 'high' && !m.isSample) || 
-                   heroCandidates.find(m => m.isSample) || 
-                   heroCandidates[0] ||
-                   activeMessages.find(m => m.isSample) ||
+  // 🔥 SELECTION LOGIC: Prioritize explicit manual links above all else
+  
+  // 1. Find Hero: Explicit Hero Link > High Priority > Latest
+  const featured = activeMessages.find(m => m.isHero && !m.isSample) ||
+                   activeMessages.find(m => m.isHero) ||
+                   activeMessages.find(m => m.priority === 'high' && !m.isSample) || 
+                   activeMessages.find(m => m.isSample) || 
                    activeMessages[0];
 
+  // 2. Find Side Top: Explicit Link (excluding Hero)
+  const highlight1Post = activeMessages.find(m => (m.isHighlight1 || m.isHighlight) && m.id !== featured?.id) || null;
 
-  // 1. Find the latest Highlight for Slot 1 (Top)
-  const highlight1Post = activeMessages.find(m => m.isHighlight1) || null;
-
-  // 2. Find the latest Highlight for Slot 2 (Bottom) - STRICTLY EXCLUDES whatever is in Slot 1
-  const highlight2Post = activeMessages.find(m => m.isHighlight2) || null;
+  // 3. Find Side Bottom: Explicit Link (excluding Hero and Side Top)
+  const highlight2Post = activeMessages.find(m => 
+    (m.isHighlight2 || m.isQuickLink) && m.id !== featured?.id && m.id !== highlight1Post?.id
+  ) || null;
   
-  // 3. Feed: Everything else (Strictly excludes Top Slot, Bottom Slot, and Hero Banner)
-  const feed = activeMessages.filter(m => 
-    m.id !== highlight1Post?.id && 
-    m.id !== highlight2Post?.id && 
-    m.id !== featured?.id
-  ).slice(0, 15);
+  // 4. Feed: All active posts (Show everything so Hero/Slots are manageable in grid)
+  const feed = activeMessages.slice(0, 30);
 
   // 4. Current display list (live or archived view)
   const displayFeed = showArchived ? archivedMessages : feed;
@@ -568,7 +656,7 @@ export default function SamajJogSandesh({ lang }) {
   return (
     <div className="samaj-jog-sandesh-root">
       <div className="sandesh-layout-wrapper">
-        <div className={`hero-bento-grid ${!featured ? 'no-hero' : ''}`}>
+        <div className="hero-bento-grid">
           {/* 1. TOP LEFT: HIGHLIGHT 1 (Top Slot) */}
           <aside 
             className="bento-item side top-left"
@@ -578,6 +666,7 @@ export default function SamajJogSandesh({ lang }) {
             <div className="side-bucket-content">
               {canManage && (
                 <div className="admin-bucket-controls">
+                  <span className="slot-identity-label" style={{background: '#f59e0b', color: 'white', padding: '6px 15px', fontSize: '11px', fontWeight: 'bold', border: '1px solid #d97706', boxShadow: '0 4px 12px rgba(245, 158, 11, 0.4)'}}>📍 SIDE TOP ACTIVE</span>
                   <button 
                     className="admin-edit-pill" 
                     onClick={(e) => {
@@ -591,6 +680,19 @@ export default function SamajJogSandesh({ lang }) {
               )}
               {highlight1Post ? (
                 <>
+                  {/* Category Label Badge (Top Left) */}
+                  {(highlight1Post.labelEn || highlight1Post.labelGu) && (
+                    <div 
+                      className="card-top-label-badge"
+                      style={{ 
+                        backgroundColor: highlight1Post.labelBgColor || '#fde68a',
+                        color: highlight1Post.labelTextColor || '#92400e',
+                        borderColor: highlight1Post.labelBgColor ? 'transparent' : '#f59e0b'
+                      }}
+                    >
+                      {highlight1Post[`label${lang === 'gu' ? 'Gu' : 'En'}`] || highlight1Post[`label${lang === 'gu' ? 'En' : 'Gu'}`] || ''}
+                    </div>
+                  )}
                   <div className="highlight-badge-pill" style={{backgroundColor: highlight1Post.accentColor}}>{lang === 'gu' ? 'નવી હાઇલાઇટ' : 'LATEST HIGHLIGHT'}</div>
                   <h3 className="card-html-title">{getT(highlight1Post, 'title')}</h3>
                   <div className="card-html-desc">{getT(highlight1Post, 'subtitle')}</div>
@@ -616,6 +718,7 @@ export default function SamajJogSandesh({ lang }) {
             <div className="side-bucket-content">
               {canManage && (
                 <div className="admin-bucket-controls">
+                  <span className="slot-identity-label" style={{background: '#3b82f6', color: 'white', padding: '6px 15px', fontSize: '11px', fontWeight: 'bold', border: '1px solid #2563eb', boxShadow: '0 4px 12px rgba(59, 130, 246, 0.4)'}}>📍 SIDE BOTTOM ACTIVE</span>
                   <button 
                     className="admin-edit-pill" 
                     onClick={(e) => {
@@ -629,6 +732,19 @@ export default function SamajJogSandesh({ lang }) {
               )}
               {highlight2Post ? (
                 <>
+                  {/* Category Label Badge (Top Left) */}
+                  {(highlight2Post.labelEn || highlight2Post.labelGu) && (
+                    <div 
+                      className="card-top-label-badge"
+                      style={{ 
+                        backgroundColor: highlight2Post.labelBgColor || '#fde68a',
+                        color: highlight2Post.labelTextColor || '#92400e',
+                        borderColor: highlight2Post.labelBgColor ? 'transparent' : '#f59e0b'
+                      }}
+                    >
+                      {highlight2Post[`label${lang === 'gu' ? 'Gu' : 'En'}`] || highlight2Post[`label${lang === 'gu' ? 'En' : 'Gu'}`] || ''}
+                    </div>
+                  )}
                   <div className="highlight-badge-pill blue" style={{backgroundColor: highlight2Post.accentColor}}>{lang === 'gu' ? 'મુખ્ય સમાચાર' : 'TOP UPDATE'}</div>
                   <h3 className="card-html-title">{getT(highlight2Post, 'title')}</h3>
                   <div className="card-html-desc">{getT(highlight2Post, 'subtitle')}</div>
@@ -658,9 +774,26 @@ export default function SamajJogSandesh({ lang }) {
                     {featured.isSample && <span className="sample-pill">SAMPLE</span>}
                     {lang === 'gu' ? '📢 લેટેસ્ટ જાહેરાત' : '📢 LATEST ANNOUNCEMENT'}
                   </div>
+
+                  {/* Category Label Badge (Top Left of Text Area) */}
+                  {(featured.labelEn || featured.labelGu) && (
+                    <div 
+                      className="card-top-label-badge"
+                      style={{ 
+                        backgroundColor: featured.labelBgColor || '#fde68a',
+                        color: featured.labelTextColor || '#92400e',
+                        borderColor: featured.labelBgColor ? 'transparent' : '#f59e0b',
+                        position: 'static',
+                        marginBottom: '15px'
+                      }}
+                    >
+                      {featured[`label${lang === 'gu' ? 'Gu' : 'En'}`] || featured[`label${lang === 'gu' ? 'En' : 'Gu'}`] || ''}
+                    </div>
+                  )}
                   
                   {canManage && (
-                    <div className="admin-hero-controls">
+                    <div className="admin-hero-controls" style={{display: 'flex', alignItems: 'center', gap: '10px'}}>
+                      <span className="slot-identity-label" style={{background: '#7c3aed', color: 'white', padding: '6px 15px', fontSize: '11px', fontWeight: 'bold', border: '1px solid #6d28d9', boxShadow: '0 4px 12px rgba(124, 58, 237, 0.4)'}}>🌟 HERO ACTIVE</span>
                       <button className="admin-edit-hero" onClick={() => handleEdit(featured)}>✏️</button>
                       {!featured.isSample && <button className="admin-delete-hero" onClick={() => handleDelete(featured.id)}>🗑️</button>}
                     </div>
@@ -668,7 +801,7 @@ export default function SamajJogSandesh({ lang }) {
 
                   <span className="hero-authority">{getT(featured, 'authority')}</span>
                   <h1>{getT(featured, 'title')}</h1>
-                  <p className="hero-p-desc">{getT(featured, 'content')}</p>
+                  <div className="hero-p-desc">{getT(featured, 'content')}</div>
                   
                   <div className="hero-footer-row">
                     <span className="hero-date">📅 {getT(featured, 'date')}</span>
@@ -777,7 +910,6 @@ export default function SamajJogSandesh({ lang }) {
                     onClick={() => { setShowArchived(!showArchived); setBulkMode(false); setSelectedIds(new Set()); }}
                   >
                     {showArchived ? '📢 Live Posts' : '📦 Archived'}
-                    {!showArchived && archivedMessages.length > 0 && <span className="archive-notif">{archivedMessages.length}</span>}
                   </button>
                   <button
                     className={`bulk-mode-btn ${bulkMode ? 'active' : ''}`}
@@ -822,49 +954,106 @@ export default function SamajJogSandesh({ lang }) {
                   </div>
                 )}
 
-                {/* Archive badge for archived view */}
                 {item.isArchived && canManage && (
                   <div className="archived-badge">📦 Archived</div>
                 )}
 
-                {/* Media Section */}
-                <div className="card-media">
-                  {item.priority === 'high' && <div className="priority-pill">{lang === 'gu' ? 'મહત્વપૂર્ણ' : 'OFFER'}</div>}
-                  <div className="type-pill">{item.type.toUpperCase()}</div>
-                  
-                  {item.type === 'video' ? (
-                    <div className="video-container">
-                      {item.videoUrl?.includes('youtube.com') || item.videoUrl?.includes('youtu.be') ? (
-                        <iframe 
-                          src={`https://www.youtube.com/embed/${item.videoUrl.split('v=')[1] || item.videoUrl.split('/').pop()}`}
-                          title="YouTube video player"
-                          frameBorder="0"
-                          allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-                          allowFullScreen
-                        ></iframe>
-                      ) : (
-                        <video src={item.videoUrl} controls poster={item.bannerUrl} />
-                      )}
-                    </div>
-                  ) : item.bannerUrl ? (
-                    <div className="card-image">
-                        <img src={item.bannerUrl} alt={item[`title${lang === 'gu' ? 'Gu' : 'En'}`] || item[`title${lang === 'gu' ? 'En' : 'Gu'}`] || ''} />
-                    </div>
-                  ) : (
-                    <div className="card-text-icon">
-                       <span className="media-placeholder-icon">{item.type === 'letter' ? '📜' : '📝'}</span>
-                    </div>
-                  )}
+                {item.isArchived && canManage && (
+                  <div className="archived-badge">📦 Archived</div>
+                )}
 
-                  {!bulkMode && <button className="card-quick-action" onClick={() => setExpandedId(expandedId === item.id ? null : item.id)}>+</button>}
-                </div>
+                {/* Media Section (Hidden for TEXT type in Grid) */}
+                {item.type !== 'text' && (
+                  <div className={`card-media ${item.type}-media`}>
+                    {/* Category Label Badge (Top Left) */}
+                    {(item.labelEn || item.labelGu) && (
+                      <div 
+                        className="card-top-label-badge"
+                        style={{ 
+                          backgroundColor: item.labelBgColor || '#fde68a',
+                          color: item.labelTextColor || '#92400e',
+                          borderColor: item.labelBgColor ? 'transparent' : '#f59e0b'
+                        }}
+                      >
+                        {item[`label${lang === 'gu' ? 'Gu' : 'En'}`] || item[`label${lang === 'gu' ? 'En' : 'Gu'}`] || ''}
+                      </div>
+                    )}
+
+                    {item.priority === 'high' && <div className="priority-pill">{lang === 'gu' ? 'મહત્વપૂર્ણ' : 'OFFER'}</div>}
+                    <div className="type-pill">{item.type.toUpperCase()}</div>
+                    
+                    {item.type === 'video' ? (
+                      <div className="video-container">
+                        {item.videoUrl?.includes('youtube.com') || item.videoUrl?.includes('youtu.be') ? (
+                          <iframe 
+                            src={`https://www.youtube.com/embed/${item.videoUrl.split('v=')[1] || item.videoUrl.split('/').pop()}`}
+                            title="YouTube video player"
+                            frameBorder="0"
+                            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                            allowFullScreen
+                          ></iframe>
+                        ) : (
+                          <video src={item.videoUrl} controls poster={item.bannerUrl} />
+                        )}
+                      </div>
+                    ) : item.type === 'letter' && item.bannerUrl?.startsWith('data:application/pdf') ? (
+                      <div className="letter-preview-box">
+                        <div className="pdf-placeholder-container">
+                           <div className="pdf-icon">📄</div>
+                           <div className="pdf-name">Document.pdf</div>
+                           <button className="pdf-view-btn" onClick={(e) => {
+                             e.stopPropagation();
+                             const win = window.open();
+                             win.document.write(`<iframe src="${item.bannerUrl}" frameborder="0" style="border:0; top:0px; left:0px; bottom:0px; right:0px; width:100%; height:100%;" allowfullscreen></iframe>`);
+                           }}>📕 View PDF</button>
+                        </div>
+                        <div className="letter-document-frame">
+                          <iframe src={item.bannerUrl + "#toolbar=0&navpanes=0&scrollbar=0"} title="PDF Preview" />
+                        </div>
+                      </div>
+                    ) : item.bannerUrl ? (
+                      <div className="card-image">
+                          <img src={item.bannerUrl} alt={item[`title${lang === 'gu' ? 'Gu' : 'En'}`] || item[`title${lang === 'gu' ? 'En' : 'Gu'}`] || ''} />
+                      </div>
+                    ) : (
+                      <div className="card-text-icon">
+                         <span className="media-placeholder-icon">{item.type === 'letter' ? '📜' : '📝'}</span>
+                      </div>
+                    )}
+
+                    {!bulkMode && <button className="card-quick-action" onClick={() => setExpandedId(expandedId === item.id ? null : item.id)}>+</button>}
+                  </div>
+                )}
+
+                {/* Minimalism for Text-only cards in grid: Still show label and type pills at the top */}
+                {item.type === 'text' && (
+                  <div className="card-text-header" style={{padding: '12px 12px 0 12px', display: 'flex', justifyContent: 'space-between', alignItems: 'center'}}>
+                     {(item.labelEn || item.labelGu) && (
+                      <div 
+                        className="card-top-label-badge"
+                        style={{ 
+                          position: 'static',
+                          backgroundColor: item.labelBgColor || '#fde68a',
+                          color: item.labelTextColor || '#92400e',
+                          borderColor: item.labelBgColor ? 'transparent' : '#f59e0b',
+                          fontSize: '9px',
+                          padding: '3px 8px'
+                        }}
+                      >
+                        {item[`label${lang === 'gu' ? 'Gu' : 'En'}`] || item[`label${lang === 'gu' ? 'En' : 'Gu'}`] || ''}
+                      </div>
+                    )}
+                    <div className="type-pill-static" style={{fontSize: '9px', opacity: 0.6, fontWeight: 800}}>{item.type.toUpperCase()}</div>
+                  </div>
+                )}
+
 
                 <div className="card-body">
                   <div className="deal-label">{item.priority === 'high' ? (lang === 'gu' ? 'મર્યાદિત સમયની જાહેરાત' : 'Limited time deal') : ''}</div>
                   
                   <h3 className="card-title" title={item[`title${lang === 'gu' ? 'Gu' : 'En'}`] || item[`title${lang === 'gu' ? 'En' : 'Gu'}`] || ''}>{getT(item, 'title')}</h3>
 
-                  <div className="card-date">
+                  <div className="card-info">
                      {getT(item, 'date')} • {getT(item, 'authority')}
                   </div>
 
@@ -881,9 +1070,9 @@ export default function SamajJogSandesh({ lang }) {
                     }}>
                       <div className="active-slot-badges" style={{display: 'flex', gap: '5px'}}>
                         {item.isHero && <span style={{background: '#7c3aed', color: 'white', padding: '3px 8px', borderRadius: '4px', fontSize: '9px', fontWeight: 'bold', boxShadow: '0 2px 5px rgba(124, 58, 237, 0.3)'}}>🌟 HERO</span>}
-                        {item.isHighlight && <span style={{background: '#f59e0b', color: 'white', padding: '3px 8px', borderRadius: '4px', fontSize: '9px', fontWeight: 'bold'}}>📍 SIDE TOP</span>}
-                        {item.isHighlight2 && <span style={{background: '#3b82f6', color: 'white', padding: '3px 8px', borderRadius: '4px', fontSize: '9px', fontWeight: 'bold'}}>📍 SIDE BOTTOM</span>}
-                        {!item.isHero && !item.isHighlight && !item.isHighlight2 && (
+                        {(item.isHighlight || item.isHighlight1) && <span style={{background: '#f59e0b', color: 'white', padding: '3px 8px', borderRadius: '4px', fontSize: '9px', fontWeight: 'bold'}}>📍 SIDE TOP</span>}
+                        {(item.isHighlight2 || item.isQuickLink) && <span style={{background: '#3b82f6', color: 'white', padding: '3px 8px', borderRadius: '4px', fontSize: '9px', fontWeight: 'bold'}}>📍 SIDE BOTTOM</span>}
+                        {!item.isHero && !item.isHighlight && !item.isHighlight1 && !item.isHighlight2 && !item.isQuickLink && (
                           <span style={{color: '#94a3b8', fontSize: '9px', fontStyle: 'italic'}}>No Active Slot</span>
                         )}
                       </div>
@@ -898,14 +1087,14 @@ export default function SamajJogSandesh({ lang }) {
                          </button>
                          <button 
                             onClick={(e) => { e.stopPropagation(); handleSlotSwap(item, 'side1'); }}
-                            style={{padding: '4px 6px', fontSize: '9px', borderRadius: '4px', background: item.isHighlight ? '#eee' : '#fff', border: '1px solid #ddd', cursor: 'pointer'}}
+                            style={{padding: '4px 6px', fontSize: '9px', borderRadius: '4px', background: (item.isHighlight || item.isHighlight1) ? '#eee' : '#fff', border: '1px solid #ddd', cursor: 'pointer'}}
                             title="Set as Side Top"
                          >
                             👆 Side1
                          </button>
                          <button 
                             onClick={(e) => { e.stopPropagation(); handleSlotSwap(item, 'side2'); }}
-                            style={{padding: '4px 6px', fontSize: '9px', borderRadius: '4px', background: item.isHighlight2 ? '#eee' : '#fff', border: '1px solid #ddd', cursor: 'pointer'}}
+                            style={{padding: '4px 6px', fontSize: '9px', borderRadius: '4px', background: (item.isHighlight2 || item.isQuickLink) ? '#eee' : '#fff', border: '1px solid #ddd', cursor: 'pointer'}}
                             title="Set as Side Bottom"
                          >
                             👇 Side2
@@ -990,12 +1179,55 @@ export default function SamajJogSandesh({ lang }) {
                 <div className="modal-grid">
                   <div className={`form-column ${isTranslating ? 'translating' : ''}`}>
                     <h4>English Content</h4>
+                    <div className="form-group">
+                      <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center'}}>
+                        <label>Category Label (English) [Appears at Top]</label>
+                        <div className="emoji-picker-container">
+                          <button type="button" className="tool-emoji" onClick={() => setActiveEmojiField(activeEmojiField === 'labelEn' ? null : 'labelEn')}>🙂</button>
+                          {activeEmojiField === 'labelEn' && (
+                            <div className="emoji-picker-popup">
+                              {COMMON_EMOJIS.map(em => <span key={em} onClick={() => insertEmojiToInput('labelEn', em)}>{em}</span>)}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                      <input type="text" placeholder="e.g., NOTICE, EVENT" value={formData.labelEn} onChange={e => setFormData({...formData, labelEn: e.target.value})} />
+                      
+                      <div className="label-color-mini-grid" style={{display: 'flex', gap: '10px', marginTop: '8px'}}>
+                        <div style={{flex: 1}}>
+                          <label style={{fontSize: '10px', opacity: 0.7}}>Background</label>
+                          <ColorPicker
+                            value={formData.labelBgColor || ''}
+                            onChange={val => setFormData({...formData, labelBgColor: val})}
+                            defaultColor="#fde68a"
+                            allowNoFill={false}
+                          />
+                        </div>
+                        <div style={{flex: 1}}>
+                          <label style={{fontSize: '10px', opacity: 0.7}}>Text Color</label>
+                          <ColorPicker
+                            value={formData.labelTextColor || ''}
+                            onChange={val => setFormData({...formData, labelTextColor: val})}
+                            defaultColor="#92400e"
+                            allowNoFill={false}
+                          />
+                        </div>
+                      </div>
+                    </div>
                     <div className="field-with-canvas">
                       <label>Title (English)</label>
                       <div className="canvas-toolbar">
                         <button type="button" onMouseDown={(e) => e.preventDefault()} onClick={() => applyStyle('titleEn', 'bold')}><b>B</b> Bold</button>
                         <button type="button" onMouseDown={(e) => e.preventDefault()} onClick={() => applyStyle('titleEn', 'foreColor', formData.textColor)} className="tool-pen">🎨 Pen</button>
                         <button type="button" onMouseDown={(e) => e.preventDefault()} onClick={() => applyStyle('titleEn', 'backColor', formData.accentColor)} className="tool-brush">🖌️ Highlight</button>
+                        <div className="emoji-picker-container">
+                          <button type="button" className="tool-emoji" onClick={() => setActiveEmojiField(activeEmojiField === 'titleEn' ? null : 'titleEn')}>🙂</button>
+                          {activeEmojiField === 'titleEn' && (
+                            <div className="emoji-picker-popup">
+                              {COMMON_EMOJIS.map(em => <span key={em} onClick={() => insertEmoji('titleEn', em)}>{em}</span>)}
+                            </div>
+                          )}
+                        </div>
                       </div>
                       <div id="editor-titleEn" className="canvas-painter" contentEditable onBlur={(e) => setFormData({...formData, titleEn: e.target.innerHTML})} dangerouslySetInnerHTML={{ __html: formData.titleEn }} />
                     </div>
@@ -1005,6 +1237,14 @@ export default function SamajJogSandesh({ lang }) {
                       <div className="canvas-toolbar">
                         <button type="button" onMouseDown={(e) => e.preventDefault()} onClick={() => applyStyle('subtitleEn', 'foreColor', formData.textColor)} className="tool-pen">🎨 Pen</button>
                         <button type="button" onMouseDown={(e) => e.preventDefault()} onClick={() => applyStyle('subtitleEn', 'backColor', formData.accentColor)} className="tool-brush">🖌️ Highlight</button>
+                        <div className="emoji-picker-container">
+                          <button type="button" className="tool-emoji" onClick={() => setActiveEmojiField(activeEmojiField === 'subtitleEn' ? null : 'subtitleEn')}>🙂</button>
+                          {activeEmojiField === 'subtitleEn' && (
+                            <div className="emoji-picker-popup">
+                              {COMMON_EMOJIS.map(em => <span key={em} onClick={() => insertEmoji('subtitleEn', em)}>{em}</span>)}
+                            </div>
+                          )}
+                        </div>
                       </div>
                       <div id="editor-subtitleEn" className="canvas-painter" contentEditable onBlur={(e) => setFormData({...formData, subtitleEn: e.target.innerHTML})} dangerouslySetInnerHTML={{ __html: formData.subtitleEn }} />
                     </div>
@@ -1015,24 +1255,65 @@ export default function SamajJogSandesh({ lang }) {
                         <button type="button" onMouseDown={(e) => e.preventDefault()} onClick={() => applyStyle('contentEn', 'bold')}><b>B</b> Bold</button>
                         <button type="button" onMouseDown={(e) => e.preventDefault()} onClick={() => applyStyle('contentEn', 'foreColor', formData.textColor)} className="tool-pen">🎨 Pen</button>
                         <button type="button" onMouseDown={(e) => e.preventDefault()} onClick={() => applyStyle('contentEn', 'backColor', formData.accentColor)} className="tool-brush">🖌️ Highlight</button>
+                        <div className="emoji-picker-container">
+                          <button type="button" className="tool-emoji" onClick={() => setActiveEmojiField(activeEmojiField === 'contentEn' ? null : 'contentEn')}>🙂</button>
+                          {activeEmojiField === 'contentEn' && (
+                            <div className="emoji-picker-popup">
+                              {COMMON_EMOJIS.map(em => <span key={em} onClick={() => insertEmoji('contentEn', em)}>{em}</span>)}
+                            </div>
+                          )}
+                        </div>
                       </div>
                       <div id="editor-contentEn" className="canvas-painter content-body" contentEditable onBlur={(e) => setFormData({...formData, contentEn: e.target.innerHTML})} dangerouslySetInnerHTML={{ __html: formData.contentEn }} />
                     </div>
  
                     <div className="form-group">
-                      <label>Issuing Authority (English)</label>
+                      <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center'}}>
+                        <label>Issuing Authority (English)</label>
+                        <div className="emoji-picker-container">
+                          <button type="button" className="tool-emoji" onClick={() => setActiveEmojiField(activeEmojiField === 'authorityEn' ? null : 'authorityEn')}>🙂</button>
+                          {activeEmojiField === 'authorityEn' && (
+                            <div className="emoji-picker-popup">
+                              {COMMON_EMOJIS.map(em => <span key={em} onClick={() => insertEmojiToInput('authorityEn', em)}>{em}</span>)}
+                            </div>
+                          )}
+                        </div>
+                      </div>
                       <input type="text" placeholder="e.g., CWC Main Committee" value={formData.authorityEn} onChange={e => setFormData({...formData, authorityEn: e.target.value})} />
                     </div>
                   </div>
 
                   <div className={`form-column gujarati-column ${isTranslating ? 'translating' : ''}`}>
                     <h4>ગુજરાતી સામગ્રી (Gujarati)</h4>
+                    <div className="form-group">
+                      <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center'}}>
+                        <label>Category Label (Gujarati) [Top Badge]</label>
+                        <div className="emoji-picker-container">
+                          <button type="button" className="tool-emoji" onClick={() => setActiveEmojiField(activeEmojiField === 'labelGu' ? null : 'labelGu')}>🙂</button>
+                          {activeEmojiField === 'labelGu' && (
+                            <div className="emoji-picker-popup">
+                              {COMMON_EMOJIS.map(em => <span key={em} onClick={() => insertEmojiToInput('labelGu', em)}>{em}</span>)}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                      <input type="text" placeholder="દા.ત. સૂચના, કાર્યક્રમ" value={formData.labelGu} onChange={e => setFormData({...formData, labelGu: e.target.value})} />
+                      <div style={{height: '62px'}} /> {/* Spacer to match English side */}
+                    </div>
                     <div className="field-with-canvas">
                       <label>શીર્ષક (Gujarati)</label>
                       <div className="canvas-toolbar">
                         <button type="button" onMouseDown={(e) => e.preventDefault()} onClick={() => applyStyle('titleGu', 'bold')}><b>B</b> Bold</button>
                         <button type="button" onMouseDown={(e) => e.preventDefault()} onClick={() => applyStyle('titleGu', 'foreColor', formData.textColor)} className="tool-pen">🎨 Pen</button>
                         <button type="button" onMouseDown={(e) => e.preventDefault()} onClick={() => applyStyle('titleGu', 'backColor', formData.accentColor)} className="tool-brush">🖌️ Highlight</button>
+                        <div className="emoji-picker-container">
+                          <button type="button" className="tool-emoji" onClick={() => setActiveEmojiField(activeEmojiField === 'titleGu' ? null : 'titleGu')}>🙂</button>
+                          {activeEmojiField === 'titleGu' && (
+                            <div className="emoji-picker-popup">
+                              {COMMON_EMOJIS.map(em => <span key={em} onClick={() => insertEmoji('titleGu', em)}>{em}</span>)}
+                            </div>
+                          )}
+                        </div>
                       </div>
                       <div id="editor-titleGu" className="canvas-painter gu-font" contentEditable onBlur={(e) => setFormData({...formData, titleGu: e.target.innerHTML})} dangerouslySetInnerHTML={{ __html: formData.titleGu }} />
                     </div>
@@ -1042,6 +1323,14 @@ export default function SamajJogSandesh({ lang }) {
                       <div className="canvas-toolbar">
                         <button type="button" onMouseDown={(e) => e.preventDefault()} onClick={() => applyStyle('subtitleGu', 'foreColor', formData.textColor)} className="tool-pen">🎨 Pen</button>
                         <button type="button" onMouseDown={(e) => e.preventDefault()} onClick={() => applyStyle('subtitleGu', 'backColor', formData.accentColor)} className="tool-brush">🖌️ Highlight</button>
+                        <div className="emoji-picker-container">
+                          <button type="button" className="tool-emoji" onClick={() => setActiveEmojiField(activeEmojiField === 'subtitleGu' ? null : 'subtitleGu')}>🙂</button>
+                          {activeEmojiField === 'subtitleGu' && (
+                            <div className="emoji-picker-popup">
+                              {COMMON_EMOJIS.map(em => <span key={em} onClick={() => insertEmoji('subtitleGu', em)}>{em}</span>)}
+                            </div>
+                          )}
+                        </div>
                       </div>
                       <div id="editor-subtitleGu" className="canvas-painter gu-font" contentEditable onBlur={(e) => setFormData({...formData, subtitleGu: e.target.innerHTML})} dangerouslySetInnerHTML={{ __html: formData.subtitleGu }} />
                     </div>
@@ -1052,12 +1341,30 @@ export default function SamajJogSandesh({ lang }) {
                         <button type="button" onMouseDown={(e) => e.preventDefault()} onClick={() => applyStyle('contentGu', 'bold')}><b>B</b> Bold</button>
                         <button type="button" onMouseDown={(e) => e.preventDefault()} onClick={() => applyStyle('contentGu', 'foreColor', formData.textColor)} className="tool-pen">🎨 Pen</button>
                         <button type="button" onMouseDown={(e) => e.preventDefault()} onClick={() => applyStyle('contentGu', 'backColor', formData.accentColor)} className="tool-brush">🖌️ Highlight</button>
+                        <div className="emoji-picker-container">
+                          <button type="button" className="tool-emoji" onClick={() => setActiveEmojiField(activeEmojiField === 'contentGu' ? null : 'contentGu')}>🙂</button>
+                          {activeEmojiField === 'contentGu' && (
+                            <div className="emoji-picker-popup">
+                              {COMMON_EMOJIS.map(em => <span key={em} onClick={() => insertEmoji('contentGu', em)}>{em}</span>)}
+                            </div>
+                          )}
+                        </div>
                       </div>
                       <div id="editor-contentGu" className="canvas-painter content-body gu-font" contentEditable onBlur={(e) => setFormData({...formData, contentGu: e.target.innerHTML})} dangerouslySetInnerHTML={{ __html: formData.contentGu }} />
                     </div>
  
                     <div className="form-group">
-                      <label>સત્તાવાર સહી (Gujarati)</label>
+                      <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center'}}>
+                        <label>સત્તાવાર સહી (Gujarati)</label>
+                        <div className="emoji-picker-container">
+                          <button type="button" className="tool-emoji" onClick={() => setActiveEmojiField(activeEmojiField === 'authorityGu' ? null : 'authorityGu')}>🙂</button>
+                          {activeEmojiField === 'authorityGu' && (
+                            <div className="emoji-picker-popup">
+                              {COMMON_EMOJIS.map(em => <span key={em} onClick={() => insertEmojiToInput('authorityGu', em)}>{em}</span>)}
+                            </div>
+                          )}
+                        </div>
+                      </div>
                       <input type="text" placeholder="દા.ત., મુખ્ય સમિતિ CWC" value={formData.authorityGu} onChange={e => setFormData({...formData, authorityGu: e.target.value})} />
                     </div>
                   </div>
@@ -1115,140 +1422,138 @@ export default function SamajJogSandesh({ lang }) {
                      }} />
                    </div>
  
-                   <div className="form-group highlight-toggle">
-                     <div className="slot-indicator">
-                       {(formData.isHighlight || formData.isHighlight1) && <span className="slot-pill highlight">📍 Pinned to TOP</span>}
-                       {(formData.isHighlight2 || formData.isQuickLink) && <span className="slot-pill quick">📍 Pinned to BOTTOM</span>}
-                     </div>
-                     <label className="checkbox-label">
-                       <input 
-                         type="checkbox" 
-                         checked={formData.isHighlight1 || formData.isHighlight} 
-                         onChange={e => setFormData({
-                           ...formData, 
-                           isHighlight1: e.target.checked, 
-                           isHighlight: e.target.checked,
-                           isHighlight2: false,
-                           isQuickLink: false
-                         })} 
-                       />
-                       ⭐ Slot 1 (Top)
-                     </label>
-                     <label className="checkbox-label" style={{marginTop: '8px'}}>
-                       <input 
-                         type="checkbox" 
-                         checked={formData.isHighlight2 || formData.isQuickLink} 
-                         onChange={e => setFormData({
-                           ...formData, 
-                           isHighlight2: e.target.checked, 
-                           isQuickLink: e.target.checked,
-                           isHighlight1: false,
-                           isHighlight: false
-                         })} 
-                       />
-                       🔗 Slot 2 (Bottom)
-                     </label>
-                   </div>
+                    <div className="form-group highlight-toggle">
+                      <div className="slot-indicator">
+                        {formData.isHero && <span className="slot-pill highlight" style={{background: '#7c3aed', color: 'white'}}>🌟 Linked to HERO</span>}
+                        {(formData.isHighlight || formData.isHighlight1) && <span className="slot-pill highlight">📍 Pinned to SIDE (Top)</span>}
+                        {(formData.isHighlight2 || formData.isQuickLink) && <span className="slot-pill quick">📍 Pinned to SIDE (Bottom)</span>}
+                      </div>
+
+                      {/* ⚠️ Slot Conflict Warnings */}
+                      {formData.isHero && allAvailable.find(m => m.isHero && m.id !== editingId) && (
+                        <div style={{background: '#fff3cd', color: '#856404', padding: '10px', borderRadius: '8px', fontSize: '11px', marginBottom: '12px', border: '1px solid #ffeeba', fontWeight: 'bold'}}>
+                          ⚠️ Hero Replacement: Another post is already the Hero. Saving will automatically replace it.
+                        </div>
+                      )}
+                      {(formData.isHighlight || formData.isHighlight1) && allAvailable.find(m => (m.isHighlight || m.isHighlight1) && m.id !== editingId) && (
+                        <div style={{background: '#fff3cd', color: '#856404', padding: '10px', borderRadius: '8px', fontSize: '11px', marginBottom: '12px', border: '1px solid #ffeeba', fontWeight: 'bold'}}>
+                          ⚠️ Side Top Replacement: This slot is occupied. Saving will replace it.
+                        </div>
+                      )}
+                      {(formData.isHighlight2 || formData.isQuickLink) && allAvailable.find(m => (m.isHighlight2 || m.isQuickLink) && m.id !== editingId) && (
+                        <div style={{background: '#fff3cd', color: '#856404', padding: '10px', borderRadius: '8px', fontSize: '11px', marginBottom: '12px', border: '1px solid #ffeeba', fontWeight: 'bold'}}>
+                          ⚠️ Side Bottom Replacement: This slot is occupied. Saving will replace it.
+                        </div>
+                      )}
+
+                      <label className="checkbox-label">
+                        <input 
+                          type="checkbox" 
+                          checked={formData.isHero} 
+                          onChange={e => setFormData({
+                            ...formData, 
+                            isHero: e.target.checked,
+                            isHighlight1: false, isHighlight: false,
+                            isHighlight2: false, isQuickLink: false
+                          })} 
+                        />
+                        🔥 Link with Hero Section
+                      </label>
+
+                      <label className="checkbox-label" style={{marginTop: '8px'}}>
+                        <input 
+                          type="checkbox" 
+                          checked={formData.isHighlight1 || formData.isHighlight} 
+                          onChange={e => setFormData({
+                            ...formData, 
+                            isHighlight1: e.target.checked, 
+                            isHighlight: e.target.checked,
+                            isHero: false,
+                            isHighlight2: false,
+                            isQuickLink: false
+                          })} 
+                        />
+                        ⭐ Slot 1 (Side Top)
+                      </label>
+                      <label className="checkbox-label" style={{marginTop: '8px'}}>
+                        <input 
+                          type="checkbox" 
+                          checked={formData.isHighlight2 || formData.isQuickLink} 
+                          onChange={e => setFormData({
+                            ...formData, 
+                            isHighlight2: e.target.checked, 
+                            isQuickLink: e.target.checked,
+                            isHero: false,
+                            isHighlight1: false,
+                            isHighlight: false
+                          })} 
+                        />
+                        🔗 Slot 2 (Side Bottom)
+                      </label>
+                    </div>
                  </div>
  
                  {/* 🎨 COLOR + BORDER CANVAS TOOLKIT */}
-                  <div className="canvas-toolkit">
-                    <h4 className="toolkit-title">🎨 Design Canvas</h4>
+                 <div className="canvas-toolkit">
+                   <h4 className="toolkit-title">🎨 Design Canvas</h4>
 
-                    {/* Basic color pickers row */}
-                    <div className="color-grid">
-                      <div className="color-pick-item">
-                        <label>Background</label>
-                        <ColorPicker
-                          value={formData.bgColor || ''}
-                          onChange={val => setFormData({...formData, bgColor: val})}
-                          defaultColor="#ffffff"
-                          allowNoFill={true}
-                        />
-                      </div>
-                      <div className="color-pick-item">
-                        <label>Text</label>
-                        <ColorPicker
-                          value={formData.textColor || ''}
-                          onChange={val => setFormData({...formData, textColor: val})}
-                          defaultColor="#1e3a8a"
-                          allowNoFill={false}
-                        />
-                      </div>
-                      <div className="color-pick-item">
-                        <label>Highlighter</label>
-                        <ColorPicker
-                          value={formData.accentColor || ''}
-                          onChange={val => setFormData({...formData, accentColor: val})}
-                          defaultColor="#fbbf24"
-                          allowNoFill={false}
-                        />
-                      </div>
-                    </div>
+                   {/* Basic color pickers row */}
+                   <div className="color-grid">
+                     <div className="color-pick-item">
+                       <label>Background</label>
+                       <ColorPicker
+                         value={formData.bgColor || ''}
+                         onChange={val => setFormData({...formData, bgColor: val})}
+                         defaultColor="#ffffff"
+                         allowNoFill={true}
+                       />
+                     </div>
+                     <div className="color-pick-item">
+                       <label>Text</label>
+                       <ColorPicker
+                         value={formData.textColor || ''}
+                         onChange={val => setFormData({...formData, textColor: val})}
+                         defaultColor="#1e3a8a"
+                         allowNoFill={false}
+                       />
+                     </div>
+                     <div className="color-pick-item">
+                       <label>Highlighter</label>
+                       <ColorPicker
+                         value={formData.accentColor || ''}
+                         onChange={val => setFormData({...formData, accentColor: val})}
+                         defaultColor="#fbbf24"
+                         allowNoFill={false}
+                       />
+                     </div>
+                   </div>
 
-                    {/* 🌈 Background Gradient Section */}
-                    <div className="bg-gradient-controls" style={{marginTop: '14px', padding: '12px', background: '#f8fafc', borderRadius: '10px', border: '1px solid #e2e8f0'}}>
-                      <label className="checkbox-label" style={{marginBottom: '10px', fontWeight: 'bold'}}>
-                        <input 
-                          type="checkbox" 
-                          checked={formData.gradientBg} 
-                          onChange={e => setFormData({...formData, gradientBg: e.target.checked})} 
-                        />
-                        🌈 Enable Background Gradient
-                      </label>
-                      
-                      {formData.gradientBg && (
-                        <div className="gradient-config-row" style={{display: 'flex', gap: '10px', alignItems: 'center'}}>
-                          <ColorPicker
-                            value={formData.gradientBgColor1}
-                            onChange={val => setFormData({...formData, gradientBgColor1: val})}
-                            defaultColor="#7c3aed"
-                          />
-                          <ColorPicker
-                            value={formData.gradientBgColor2}
-                            onChange={val => setFormData({...formData, gradientBgColor2: val})}
-                            defaultColor="#4f46e5"
-                          />
-                          <div style={{flex: 1}}>
-                            <label style={{fontSize: '10px', display: 'block'}}>Angle: {formData.gradientBgAngle}°</label>
-                            <input 
-                              type="range" min="0" max="360" 
-                              value={formData.gradientBgAngle} 
-                              onChange={e => setFormData({...formData, gradientBgAngle: e.target.value})}
-                              style={{width: '100%'}}
-                            />
-                          </div>
-                        </div>
-                      )}
-                    </div>
+                   {/* 🖊 Full Border Editor */}
+                   <div style={{marginTop: '14px'}}>
+                     <div className="be-section-heading">🖊 Border &amp; Frame</div>
+                     <BorderEditor
+                       formData={formData}
+                       onChange={(key, val) => setFormData(prev => ({ ...prev, [key]: val }))}
+                     />
+                   </div>
 
-                    {/* 🖊 Full Border Editor */}
-                    <div style={{marginTop: '14px'}}>
-                      <div className="be-section-heading">🖊 Border &amp; Frame</div>
-                      <BorderEditor
-                        formData={formData}
-                        onChange={(key, val) => setFormData(prev => ({ ...prev, [key]: val }))}
-                      />
-                    </div>
+                   <button
+                     type="button"
+                     className="reset-canvas-btn"
+                     onClick={() => setFormData(prev => ({
+                       ...prev,
+                       bgColor: '', textColor: '', accentColor: '',
+                       borderColor: '', borderStyle: 'solid', borderWidth: '1',
+                       borderRadius: '12', borderRadiusTL: '', borderRadiusTR: '', borderRadiusBL: '', borderRadiusBR: '',
+                       shadowEnabled: false, shadowX: '0', shadowY: '4', shadowBlur: '12', shadowSpread: '0', shadowColor: 'rgba(0,0,0,0.1)',
+                       gradientBorder: false, gradientColor1: '#7c3aed', gradientColor2: '#3b82f6', gradientAngle: '135'
+                     }))}
+                   >
+                     🧹 Clear Design
+                   </button>
+                 </div>
+               </div>
 
-                    <button
-                      type="button"
-                      className="reset-canvas-btn"
-                      onClick={() => setFormData(prev => ({
-                        ...prev,
-                        bgColor: '', textColor: '', accentColor: '',
-                        gradientBg: false, gradientBgColor1: '#7c3aed', gradientBgColor2: '#4f46e5', gradientBgAngle: '135',
-                        borderColor: '', borderStyle: 'solid', borderWidth: '1',
-                        borderRadius: '12', borderRadiusTL: '', borderRadiusTR: '', borderRadiusBL: '', borderRadiusBR: '',
-                        shadowEnabled: false, shadowX: '0', shadowY: '4', shadowBlur: '12', shadowSpread: '0', shadowColor: 'rgba(0,0,0,0.1)',
-                        gradientBorder: false, gradientColor1: '#7c3aed', gradientColor2: '#3b82f6', gradientAngle: '135'
-                      }))}
-                    >
-                      🧹 Clear Design
-                    </button>
-                  </div>
-                </div>
-                
               <div className="modal-actions">
                 <button type="button" className="cancel-btn" onClick={() => setShowModal(false)}>Cancel</button>
                 <button type="submit" className="publish-btn" disabled={isSaving}>

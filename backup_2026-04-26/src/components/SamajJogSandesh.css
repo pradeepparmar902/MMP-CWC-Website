@@ -4,64 +4,39 @@
   margin: 0 auto;
   padding: 0 0 20px !important; /* Zero top padding */
   animation: fadeIn 0.5s ease-out;
-  /* 🚀 ULTRA-DENSITY: Mimics the '80% Zoom' feel for maximum content visibility */
-  zoom: 0.85;
 }
 
-/* 🍱 RECALIBRATED BENTO: COMPACT VIEW */
+/* ðŸ± RECALIBRATED BENTO: SHIFTED FOR TITLE SAFETY */
 .hero-bento-grid {
   display: grid;
   grid-template-columns: 280px 1fr 340px;
-  grid-template-rows: 40px 1fr 1fr; /* Slimmer safe zone */
-  height: 320px; /* SHRUNK from 460px to pull feed up */
+  grid-template-rows: 60px 1fr 1fr; /* Row 1 is a safe zone (empty top-left) */
+  height: 460px; /* Increased height for ticker panel */
   gap: 15px;
-  margin-top: -40px !important; /* Reduced overlap for better padding */
-  margin-bottom: 20px;
+  margin-top: -65px !important;
+  margin-bottom: 40px;
   grid-template-areas: 
     ".   mid right"
     "tl  mid right"
     "bl  mid right";
-  transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
-.hero-bento-grid.no-hero {
-  grid-template-rows: 60px 0px 0px;
-  height: 60px; /* Minimal height to preserve top overlap */
-  margin-bottom: 10px;
-}
-
-.hero-bento-grid.no-hero .bento-item.middle {
-  opacity: 0;
-  pointer-events: none;
-  transform: scale(0.95);
-}
-
-/* Ensure side containers and ticker don't collapse when grid height is 0 */
-.hero-bento-grid.no-hero .bento-item.side,
-.hero-bento-grid.no-hero .ticker-panel {
-  height: 460px;
-  position: relative;
-  z-index: 10;
-}
-
-/* 📰 LIVE TICKER PANEL (Right) */
+/* ðŸ“° LIVE TICKER PANEL (Right) */
 .ticker-panel {
   grid-area: right;
   display: flex;
   flex-direction: column;
   padding: 0 !important;
   background: white;
-  height: 320px; /* Matched to grid */
-  border-radius: 12px;
-  overflow: hidden;
+  height: 100%;
 }
 
 .ticker-header {
   background: #fff7ed;
   border-bottom: 2px solid #fed7aa;
-  padding: 6px 15px; /* Ultra-slim */
+  padding: 8px 20px; /* Slimmer header to lift content up */
   font-weight: 800;
-  font-size: 12px;
+  font-size: 14px;
   color: #c2410c;
   display: flex;
   align-items: center;
@@ -144,7 +119,7 @@
   overflow: hidden;
 }
 
-/* 🏔️ DOUBLE-HEIGHT CENTER BUCKET */
+/* ðŸ”ï¸ DOUBLE-HEIGHT CENTER BUCKET */
 .bento-item.middle {
   grid-area: mid;
   height: 100%;
@@ -162,7 +137,7 @@
 .bento-item.top-right { grid-area: tr; }
 .bento-item.bottom-right { grid-area: br; }
 
-/* 🏺 Side Buckets Content */
+/* ðŸº Side Buckets Content */
 .bento-item.side {
   display: flex;
   flex-direction: column;
@@ -212,49 +187,28 @@
   font-size: 12px;
 }
 
-/* 🚀 MIDDLE CONTENT OVERHAUL */
+/* ðŸš€ MIDDLE CONTENT OVERHAUL */
 .center-feature .hero-inner {
   display: grid;
   grid-template-columns: 1.1fr 0.9fr;
   gap: 30px;
   width: 100%;
-  height: 100%; /* Fill container */
-  align-items: center;
-}
-
-.hero-visual {
-  height: 100%;
-  width: 100%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  overflow: hidden;
-  border-radius: 12px;
-  background: rgba(0,0,0,0.02); /* Subtle placeholder background */
-}
-
-.hero-visual img {
-  max-width: 100%;
-  max-height: 280px; /* Leave room for padding */
-  object-fit: contain; /* 🛡️ KEY FIX: Ensure the whole image is visible */
-  border-radius: 8px;
-  box-shadow: 0 10px 25px rgba(0,0,0,0.1);
 }
 
 .center-feature h1 {
-  font-size: 1.6rem; /* Further reduced title to prevent text push */
+  font-size: 1.8rem; /* Further reduced title */
   font-weight: 800;
-  margin: 8px 0;
+  margin: 10px 0;
   line-height: 1.1;
 }
 
 .center-feature .hero-p-desc {
-  font-size: 13px;
-  line-height: 1.4;
-  -webkit-line-clamp: 3; /* Show less text to save space for image */
+  font-size: 15px;
+  line-height: 1.7;
+  -webkit-line-clamp: 5;
 }
 
-/* 📱 RESPONSIVE BENTO */
+/* ðŸ“± RESPONSIVE BENTO */
 @media (max-width: 1150px) {
   .hero-bento-grid {
     grid-template-areas: 
@@ -284,7 +238,7 @@
   }
 }
 
-/* 📋 MAIN LAYOUT: SIDEBAR + FEED */
+/* ðŸ“‹ MAIN LAYOUT: SIDEBAR + FEED */
 .samaj-main-layout {
   display: grid;
   grid-template-columns: 280px 1fr;
@@ -292,7 +246,7 @@
   align-items: start;
 }
 
-/* 🏺 SIDEBAR (AMAZON STYLE) */
+/* ðŸº SIDEBAR (AMAZON STYLE) */
 .samaj-sidebar {
   background: white;
   border-radius: 20px;
@@ -404,14 +358,14 @@
   cursor: pointer;
 }
 
-/* 📋 FEED AREA */
+/* ðŸ“‹ FEED AREA */
 .feed-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
   gap: 30px;
 }
 
-/* 🎥 VIDEO STYLES */
+/* ðŸŽ¥ VIDEO STYLES */
 .video-container {
   position: relative;
   width: 100%;
@@ -440,11 +394,11 @@
   opacity: 0.2;
 }
 
-/* 🛍️ AMAZON-STYLE CARD OVERHAUL */
+/* ðŸ›ï¸ AMAZON-STYLE CARD OVERHAUL */
 .sandesh-card {
   background: white;
-  border: 1px solid #e2e8f0;  /* default — overridden by inline buildCardStyle */
-  border-radius: 12px;        /* default — overridden by inline buildCardStyle */
+  border: 1px solid #e2e8f0;  /* default â€” overridden by inline buildCardStyle */
+  border-radius: 12px;        /* default â€” overridden by inline buildCardStyle */
   overflow: hidden;           /* prevent children from sticking out of rounded corners */
   padding: 6px;               /* slight padding to frame the content inside the border */
   transition: box-shadow 0.2s, transform 0.2s;
@@ -467,23 +421,6 @@
   border-radius: 6px; /* soft inner curve to match the outer padding */
 }
 
-.side-bucket-content {
-  padding: 15px; /* Shrunk from 25px */
-  height: 100%;
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
-  position: relative;
-}
-
-.card-html-title {
-  font-size: 1.1rem; /* Shrunk from 1.4rem */
-  font-weight: 800;
-  margin: 5px 0;
-  color: #1e293b;
-  line-height: 1.2;
-}
-
 .card-image {
   width: 100%;
   height: 100%;
@@ -500,7 +437,7 @@
   object-fit: contain;
 }
 
-/* 🏷️ Amazon Deal Badges */
+/* ðŸ·ï¸ Amazon Deal Badges */
 .priority-pill {
   position: absolute;
   top: 10px;
@@ -528,7 +465,7 @@
   z-index: 5;
 }
 
-/* 🔘 Floating Action Button */
+/* ðŸ”˜ Floating Action Button */
 .card-quick-action {
   position: absolute;
   bottom: 15px;
@@ -555,7 +492,7 @@
   background: #f7ca00;
 }
 
-/* 📝 Card Info */
+/* ðŸ“ Card Info */
 .card-body {
   padding: 12px 15px 15px;
   flex: 1;
@@ -645,7 +582,7 @@
   background: #e7e9e9;
 }
 
-/* 📱 RESPONSIVE overhaul */
+/* ðŸ“± RESPONSIVE overhaul */
 @media (max-width: 1100px) {
   .samaj-main-layout {
     grid-template-columns: 1fr;
@@ -707,7 +644,7 @@
   }
 }
 
-/* 🔠 GUJARATI TYPOGRAPHY */
+/* ðŸ”  GUJARATI TYPOGRAPHY */
 .lang-gu {
   font-family: 'Hind Vadodara', sans-serif;
 }
@@ -724,7 +661,7 @@
   font-weight: 400;
 }
 
-/* 🛡️ ADMIN UI STYLES */
+/* ðŸ›¡ï¸ ADMIN UI STYLES */
 .admin-add-btn {
   background: linear-gradient(135deg, #1e293b 0%, #334155 100%);
   color: #fbbf24;
@@ -788,7 +725,7 @@
   color: white;
 }
 
-/* 📝 EDITOR MODAL */
+/* ðŸ“ EDITOR MODAL */
 .sandesh-modal-overlay {
   position: fixed;
   top: 0;
@@ -855,7 +792,7 @@
   background: #f8fafc;
 }
 
- /* ✍️ RICH TEXT EDITOR (CANVAS) FIELDS */
+ /* âœï¸ RICH TEXT EDITOR (CANVAS) FIELDS */
 
  .field-with-canvas {
    margin-bottom: 24px;
@@ -937,7 +874,7 @@
    margin-bottom: 20px;
  }
 
-/* 🎨 COLOR CANVAS TOOLKIT OVERHAUL */
+/* ðŸŽ¨ COLOR CANVAS TOOLKIT OVERHAUL */
  .canvas-toolkit {
    background: white;
    padding: 24px;
@@ -1096,7 +1033,7 @@
   transform: none;
 }
 
-/* 🌀 SHIMMER LOADING */
+/* ðŸŒ€ SHIMMER LOADING */
 .loading-hero {
   background: #f1f5f9 !important;
   position: relative;
@@ -1128,7 +1065,7 @@
   }
 }
 
-/* 🔝 MAGIC TOP ACTIONS */
+/* ðŸ” MAGIC TOP ACTIONS */
 .modal-magic-actions {
   padding: 16px 32px;
   background: #f8fafc;
@@ -1167,7 +1104,7 @@
 }
 
 
-/* 🌀 TRANSLATING STATE */
+/* ðŸŒ€ TRANSLATING STATE */
 .form-column.translating {
   animation: pulseTranslate 1.5s infinite;
   pointer-events: none;
@@ -1189,7 +1126,7 @@
   }
 }
 
-/* 🏷️ SAMPLE BADGES & PILLS */
+/* ðŸ·ï¸ SAMPLE BADGES & PILLS */
 .sample-pill {
   background: #fbbf24;
   color: #1e293b;
@@ -1229,7 +1166,7 @@
   border-style: solid;
 }
 
-/* 🗑️ ADMIN DELETE PILL */
+/* ðŸ—‘ï¸ ADMIN DELETE PILL */
 .admin-delete-pill {
   position: absolute;
   top: 12px;
@@ -1256,7 +1193,7 @@
   box-shadow: 0 4px 12px rgba(239, 68, 68, 0.3);
 }
 
-/* 🛠️ ADMIN CONTROL CLUSTERS */
+/* ðŸ› ï¸ ADMIN CONTROL CLUSTERS */
 .admin-hero-controls, .admin-card-controls {
   position: absolute;
   top: 12px;
@@ -1266,7 +1203,7 @@
   z-index: 10;
 }
 
-/* ✏️ EDIT BUTTONS */
+/* âœï¸ EDIT BUTTONS */
 .admin-edit-hero, .admin-edit-pill {
   width: 36px;
   height: 36px;
@@ -1316,7 +1253,7 @@
 }
 
 
-/* 🌟 DYNAMIC BENTO HIGHLIGHT BUCKET */
+/* ðŸŒŸ DYNAMIC BENTO HIGHLIGHT BUCKET */
 .bento-item.top-left.highlight-active {
   background: linear-gradient(135deg, #fffbeb 0%, #fef3c7 100%);
   border: 1px solid #fde68a;
@@ -1404,7 +1341,7 @@
 
 
 
-/* 📖 FULL-SCREEN READER MODE */
+/* ðŸ“– FULL-SCREEN READER MODE */
 .reader-overlay {
   position: fixed;
   top: 0;
@@ -1603,7 +1540,7 @@
   color: white;
 }
 
-/* 💊 DYNAMIC QUICK ACTION PILLS */
+/* ðŸ’Š DYNAMIC QUICK ACTION PILLS */
 .q-pill {
   transition: all 0.3s ease;
   cursor: pointer;
@@ -1632,7 +1569,7 @@
 
 
 /* ============================================================
-   📦 POST MANAGEMENT FEATURE STYLES
+   ðŸ“¦ POST MANAGEMENT FEATURE STYLES
    Archive, Bulk Select, Clone, Delete Request
    ============================================================ */
 
@@ -1813,3 +1750,74 @@
   border-bottom: 1px dashed #ede9fe;
 }
 
+
+
+/* ðŸ·ï¸ TOP CATEGORY LABEL BADGE */
+.card-top-label-badge {
+  position: absolute;
+  top: 10px;
+  left: 10px;
+  background: #fde68a;
+  color: #92400e;
+  padding: 4px 12px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 900;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.25);
+  z-index: 1000 !important;
+  border: 1px solid rgba(0,0,0,0.1);
+  display: inline-flex !important;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+  white-space: nowrap;
+}
+
+/* ðŸ“œ FINAL OVERRIDES FOR LETTER HEIGHT */
+.card-media.letter-media { height: 350px !important; min-height: 350px !important; }
+.sandesh-card.letter { height: 500px !important; display: flex !important; flex-direction: column !important; }
+.sandesh-card.letter .card-body { padding: 8px 12px !important; flex: 1 !important; overflow: hidden !important; }
+.letter-media .letter-document-frame { width: 260px !important; height: 320px !important; }
+
+
+
+
+
+.sandesh-card.text .card-text { -webkit-line-clamp: 12 !important; }
+
+/* 🙂 Emoji Picker Styles */
+.emoji-picker-container { position: relative; display: inline-block; }
+.emoji-picker-popup { position: absolute; top: 100%; left: 0; background: white; border: 1px solid #ddd; border-radius: 8px; padding: 10px; display: grid; grid-template-columns: repeat(5, 1fr); gap: 8px; z-index: 1000; box-shadow: 0 10px 25px rgba(0,0,0,0.1); width: 180px; }
+.emoji-picker-popup span { cursor: pointer; font-size: 20px; transition: transform 0.1s; display: flex; align-items: center; justify-content: center; }
+.emoji-picker-popup span:hover { transform: scale(1.3); }
+
+/* 🛡️ Grid Card Status Badges */
+.card-status-badges { 
+  position: absolute; 
+  top: 45px; /* Position below the Category Label */
+  left: 10px; 
+  display: flex; 
+  flex-direction: column; 
+  gap: 6px; 
+  z-index: 2000 !important; /* Ensure it stays above EVERYTHING */
+  pointer-events: none; 
+}
+.status-badge-mini { 
+  padding: 4px 10px; 
+  border-radius: 6px; 
+  font-size: 10px; 
+  font-weight: 900; 
+  text-transform: uppercase; 
+  color: white; 
+  box-shadow: 0 4px 8px rgba(0,0,0,0.3); 
+  letter-spacing: 1px;
+}
+.status-badge-mini.hero { background: #7c3aed; border: 1px solid rgba(255,255,255,0.3); }
+.status-badge-mini.slot1 { background: #f59e0b; border: 1px solid rgba(255,255,255,0.3); }
+.status-badge-mini.slot2 { background: #3b82f6; border: 1px solid rgba(255,255,255,0.3); }
+
+/* 📍 Bento Slot Identity Labels */
+.admin-bucket-controls { display: flex; align-items: center; gap: 8px; }
+.slot-identity-label { background: rgba(0,0,0,0.7); color: white; padding: 2px 8px; border-radius: 99px; font-size: 9px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.5px; backdrop-filter: blur(4px); border: 1px solid rgba(255,255,255,0.2); }

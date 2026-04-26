@@ -1,0 +1,72 @@
+:root {
+  --clr-primary: #1E3A8A;
+  --clr-secondary: #F97316;
+  --clr-bg: #F9FAFB;
+  --clr-text: #111827;
+  --clr-white: #FFFFFF;
+  --clr-shadow: rgba(0, 0, 0, 0.1);
+  --clr-border: #E5E7EB;
+  
+  --font-main: 'Inter', system-ui, -apple-system, blinkmacsystemfont, 'Segoe UI', roboto, helvetica, arial, sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  font-family: var(--font-main);
+  background-color: var(--clr-bg);
+  color: var(--clr-text);
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+
+button {
+  cursor: pointer;
+  border: none;
+  background: none;
+  font-family: inherit;
+}
+
+.container {
+  width: 100%;
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 0 1rem;
+}
+
+.fade-in {
+  animation: fadeIn 0.4s ease-in-out forwards;
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(5px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* 🔒 MODAL SAFETY & BANNER SUPPRESSION */
+body.modal-open {
+  overflow: hidden !important;
+}
+
+body.modal-open .banner-canvas,
+body.modal-open .banner-sticky,
+body.modal-open .global-banner-wrap {
+  display: none !important;
+  opacity: 0 !important;
+  pointer-events: none !important;
+}
+
