@@ -1789,6 +1789,33 @@
 .bulk-cancel-btn { background: #475569; color: #94a3b8; }
 .bulk-cancel-btn:hover { background: #64748b; color: white; }
 
+.admin-hero-controls {
+  position: absolute !important;
+  top: 15px !important;
+  right: 15px !important;
+  display: flex !important;
+  gap: 12px !important;
+  z-index: 2147483647 !important; /* Max Z-index */
+  visibility: visible !important;
+  opacity: 1 !important;
+}
+
+.admin-hero-controls button {
+  background: white !important;
+  color: black !important;
+  border-radius: 50% !important;
+  width: 44px !important;
+  height: 44px !important;
+  font-size: 20px !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  box-shadow: 0 8px 16px rgba(0,0,0,0.5) !important;
+  cursor: pointer !important;
+  border: 2px solid #7c3aed !important;
+  pointer-events: auto !important;
+}
+
 .empty-archive-state {
   grid-column: 1 / -1;
   text-align: center;
