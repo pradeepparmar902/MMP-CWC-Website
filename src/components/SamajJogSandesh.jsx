@@ -782,6 +782,8 @@ export default function SamajJogSandesh({ lang }) {
                     onDragStart: (e) => {
                       if (canManage) {
                         setDraggedHeroBlock(blockKey);
+                        e.dataTransfer.effectAllowed = 'move';
+                        e.dataTransfer.setData('text/plain', blockKey); // Standard fallback
                         e.dataTransfer.setData('blockKey', blockKey);
                       }
                     },
@@ -791,23 +793,42 @@ export default function SamajJogSandesh({ lang }) {
                     },
                     onDragOver: (e) => {
                       e.preventDefault();
+                      e.dataTransfer.dropEffect = 'move';
+                      if (draggedHeroBlock && draggedHeroBlock !== blockKey && dragOverBlock !== blockKey) {
+                        setDragOverBlock(blockKey);
+                      }
+                    },
+                    onDragEnter: (e) => {
+                      e.preventDefault();
                       if (draggedHeroBlock && draggedHeroBlock !== blockKey) {
                         setDragOverBlock(blockKey);
                       }
                     },
-                    onDragLeave: () => setDragOverBlock(null),
+                    onDragLeave: (e) => {
+                      // Only clear if we are leaving the element, not moving into a child
+                      if (e.currentTarget === e.target) {
+                        setDragOverBlock(null);
+                      }
+                    },
                     onDrop: async (e) => {
                       e.preventDefault();
-                      const sourceKey = draggedHeroBlock;
+                      const sourceKey = e.dataTransfer.getData('blockKey') || draggedHeroBlock;
                       setDragOverBlock(null);
+                      setDraggedHeroBlock(null);
+                      
                       if (sourceKey && sourceKey !== blockKey) {
-                        const currentOrder = featured.heroLayoutOrder && featured.heroLayoutOrder.length > 2 ? [...featured.heroLayoutOrder] : [...HERO_BLOCKS];
+                        const currentOrder = featured.heroLayoutOrder && Array.isArray(featured.heroLayoutOrder) && featured.heroLayoutOrder.length > 2 
+                          ? [...featured.heroLayoutOrder] 
+                          : [...HERO_BLOCKS];
+                        
                         const sIdx = currentOrder.indexOf(sourceKey);
                         const tIdx = currentOrder.indexOf(blockKey);
-                        currentOrder.splice(sIdx, 1);
-                        currentOrder.splice(tIdx, 0, sourceKey);
-                        setDraggedHeroBlock(null);
-                        await updateDoc(doc(db, 'samaj_jog_sandesh', featured.id), { heroLayoutOrder: currentOrder });
+                        
+                        if (sIdx !== -1 && tIdx !== -1) {
+                          currentOrder.splice(sIdx, 1);
+                          currentOrder.splice(tIdx, 0, sourceKey);
+                          await updateDoc(doc(db, 'samaj_jog_sandesh', featured.id), { heroLayoutOrder: currentOrder });
+                        }
                       }
                     },
                     className: `hero-block block-${blockKey} ${isDragging ? 'dragging' : ''} ${isDragOver ? 'drag-over' : ''}`
