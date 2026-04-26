@@ -1842,3 +1842,5 @@
 
 
 .dragging { opacity: 0.5; border: 2px dashed #7c3aed !important; }
+
+.drag-over { border: 2px dashed #7c3aed !important; background: rgba(124, 58, 237, 0.05) !important; }

@@ -111,6 +111,10 @@ export default function SamajJogSandesh({ lang }) {
   const [isTranslating, setIsTranslating] = useState(false);
   const [editingId, setEditingId] = useState(null);
   
+  // Hero Drag & Drop State
+  const [draggedHeroBlock, setDraggedHeroBlock] = useState(null);
+  const [dragOverBlock, setDragOverBlock] = useState(null);
+  
   // 📦 Archive & Bulk Mode State
   const [bulkMode, setBulkMode] = useState(false);
   const [selectedIds, setSelectedIds] = useState(new Set());
@@ -770,7 +774,34 @@ export default function SamajJogSandesh({ lang }) {
                     return (
                       <div 
                         key="text"
-                        className="hero-text"
+                        className={`hero-text ${draggedHeroBlock === 'text' ? 'dragging' : ''} ${dragOverBlock === 'text' ? 'drag-over' : ''}`}
+                        draggable={canManage}
+                        onDragStart={(e) => {
+                          if (canManage) {
+                            setDraggedHeroBlock('text');
+                            e.dataTransfer.setData('text/plain', 'text');
+                          }
+                        }}
+                        onDragEnd={() => {
+                          setDraggedHeroBlock(null);
+                          setDragOverBlock(null);
+                        }}
+                        onDragOver={(e) => {
+                          e.preventDefault();
+                          if (draggedHeroBlock && draggedHeroBlock !== 'text') {
+                            setDragOverBlock('text');
+                          }
+                        }}
+                        onDragLeave={() => setDragOverBlock(null)}
+                        onDrop={async (e) => {
+                          e.preventDefault();
+                          setDragOverBlock(null);
+                          if (draggedHeroBlock && draggedHeroBlock !== 'text') {
+                            const newOrder = ['text', draggedHeroBlock]; // Swapped
+                            setDraggedHeroBlock(null);
+                            await updateDoc(doc(db, 'samaj_jog_sandesh', featured.id), { heroLayoutOrder: newOrder });
+                          }
+                        }}
                       >
                         <div className="hero-badge">
                           {featured.isSample && <span className="sample-pill">SAMPLE</span>}
@@ -784,7 +815,7 @@ export default function SamajJogSandesh({ lang }) {
                             <button 
                               className="admin-edit-hero" 
                               style={{marginLeft: '8px', background: '#e2e8f0', color: '#475569'}}
-                              title="Swap Text and Poster Position"
+                              title="Click to Swap or Drag to reposition"
                               onClick={async (e) => {
                                 e.stopPropagation();
                                 const currentOrder = featured.heroLayoutOrder || ['text', 'visual'];
@@ -826,7 +857,34 @@ export default function SamajJogSandesh({ lang }) {
                     return (
                       <div 
                         key="visual"
-                        className="hero-visual"
+                        className={`hero-visual ${draggedHeroBlock === 'visual' ? 'dragging' : ''} ${dragOverBlock === 'visual' ? 'drag-over' : ''}`}
+                        draggable={canManage}
+                        onDragStart={(e) => {
+                          if (canManage) {
+                            setDraggedHeroBlock('visual');
+                            e.dataTransfer.setData('text/plain', 'visual');
+                          }
+                        }}
+                        onDragEnd={() => {
+                          setDraggedHeroBlock(null);
+                          setDragOverBlock(null);
+                        }}
+                        onDragOver={(e) => {
+                          e.preventDefault();
+                          if (draggedHeroBlock && draggedHeroBlock !== 'visual') {
+                            setDragOverBlock('visual');
+                          }
+                        }}
+                        onDragLeave={() => setDragOverBlock(null)}
+                        onDrop={async (e) => {
+                          e.preventDefault();
+                          setDragOverBlock(null);
+                          if (draggedHeroBlock && draggedHeroBlock !== 'visual') {
+                            const newOrder = ['visual', draggedHeroBlock]; // Swapped
+                            setDraggedHeroBlock(null);
+                            await updateDoc(doc(db, 'samaj_jog_sandesh', featured.id), { heroLayoutOrder: newOrder });
+                          }
+                        }}
                       >
                         {featured.bannerUrl ? <img src={featured.bannerUrl} alt="Hero" /> : <div className="hero-visual-fallback">🖼️</div>}
                         <div className="visual-overlay"></div>
