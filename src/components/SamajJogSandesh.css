@@ -1858,8 +1858,22 @@
   max-width: 100%;
   position: relative;
   transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
-  cursor: move;
+  cursor: grab;
   border: 1px solid transparent;
+  user-select: none;
+}
+
+.hero-block:active {
+  cursor: grabbing;
+}
+
+/* 🛡️ CRITICAL FIX: Ensure the block itself receives the drop, not its internal text/images */
+.hero-block * {
+  pointer-events: none;
+}
+/* Re-enable for buttons in normal state */
+.hero-block .hero-btn-cta, .hero-block .admin-edit-hero {
+  pointer-events: auto;
 }
 
 .hero-block:hover {
@@ -1868,13 +1882,31 @@
 }
 
 .hero-block.dragging {
-  opacity: 0.4;
-  transform: scale(0.98);
+  opacity: 0.3;
+  transform: scale(0.95);
+  filter: grayscale(1);
 }
 
 .hero-block.drag-over {
-  border-top: 4px solid #fbbf24 !important;
-  padding-top: 10px;
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  transform: translateY(-5px);
+  box-shadow: 0 10px 20px rgba(0,0,0,0.2);
+}
+
+.hero-block.drag-over::before {
+  content: 'DROP HERE';
+  position: absolute;
+  top: -25px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: #fbbf24;
+  color: #000;
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: 10px;
+  font-weight: 900;
+  white-space: nowrap;
 }
 
 .block-visual {

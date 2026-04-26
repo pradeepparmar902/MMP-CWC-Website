@@ -114,6 +114,7 @@ export default function SamajJogSandesh({ lang }) {
   // Hero Drag & Drop State
   const [draggedHeroBlock, setDraggedHeroBlock] = useState(null);
   const [dragOverBlock, setDragOverBlock] = useState(null);
+  const draggedBlockRef = useRef(null);
   
   const HERO_BLOCKS = ['visual', 'badge', 'authority', 'title', 'body', 'footer'];
   // 📦 Archive & Bulk Mode State
@@ -782,13 +783,15 @@ export default function SamajJogSandesh({ lang }) {
                     onDragStart: (e) => {
                       if (canManage) {
                         setDraggedHeroBlock(blockKey);
+                        draggedBlockRef.current = blockKey;
                         e.dataTransfer.effectAllowed = 'move';
-                        e.dataTransfer.setData('text/plain', blockKey); // Standard fallback
+                        e.dataTransfer.setData('text/plain', blockKey);
                         e.dataTransfer.setData('blockKey', blockKey);
                       }
                     },
                     onDragEnd: () => {
                       setDraggedHeroBlock(null);
+                      draggedBlockRef.current = null;
                       setDragOverBlock(null);
                     },
                     onDragOver: (e) => {
@@ -812,9 +815,10 @@ export default function SamajJogSandesh({ lang }) {
                     },
                     onDrop: async (e) => {
                       e.preventDefault();
-                      const sourceKey = e.dataTransfer.getData('blockKey') || draggedHeroBlock;
+                      const sourceKey = e.dataTransfer.getData('blockKey') || draggedBlockRef.current;
                       setDragOverBlock(null);
                       setDraggedHeroBlock(null);
+                      draggedBlockRef.current = null;
                       
                       if (sourceKey && sourceKey !== blockKey) {
                         const currentOrder = featured.heroLayoutOrder && Array.isArray(featured.heroLayoutOrder) && featured.heroLayoutOrder.length > 2 
