@@ -106,6 +106,7 @@ export default function SamajJogSandesh({ lang }) {
   // Admin Editing State
   const [showModal, setShowModal] = useState(false);
   const [styleOnlyMode, setStyleOnlyMode] = useState(false);
+  const [formattingContext, setFormattingContext] = useState('feed');
   const [isSaving, setIsSaving] = useState(false);
   const [isTranslating, setIsTranslating] = useState(false);
   const [editingId, setEditingId] = useState(null);
@@ -204,18 +205,54 @@ export default function SamajJogSandesh({ lang }) {
 
     setIsSaving(true);
     try {
-      const payload = {
+      // Extract style-related fields if we are in Hero context
+      let styleFields = {};
+      if (formattingContext === 'hero') {
+        styleFields = {
+          bgColor: formData.bgColor,
+          textColor: formData.textColor,
+          accentColor: formData.accentColor,
+          borderColor: formData.borderColor,
+          borderStyle: formData.borderStyle,
+          borderWidth: formData.borderWidth,
+          borderRadius: formData.borderRadius,
+          borderRadiusTL: formData.borderRadiusTL,
+          borderRadiusTR: formData.borderRadiusTR,
+          borderRadiusBL: formData.borderRadiusBL,
+          borderRadiusBR: formData.borderRadiusBR,
+          shadowEnabled: formData.shadowEnabled,
+          shadowX: formData.shadowX,
+          shadowY: formData.shadowY,
+          shadowBlur: formData.shadowBlur,
+          shadowSpread: formData.shadowSpread,
+          shadowColor: formData.shadowColor,
+          gradientBorder: formData.gradientBorder,
+          gradientColor1: formData.gradientColor1,
+          gradientColor2: formData.gradientColor2,
+          gradientAngle: formData.gradientAngle,
+          gradientBg: formData.gradientBg,
+          gradientBgColor1: formData.gradientBgColor1,
+          gradientBgColor2: formData.gradientBgColor2,
+          gradientBgAngle: formData.gradientBgAngle
+        };
+      }
+
+      const basePayload = {
         ...formData,
         dateEn: new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' }),
         dateGu: new Date().toLocaleDateString('gu-IN', { day: 'numeric', month: 'long', year: 'numeric' }),
         updatedAt: serverTimestamp()
       };
 
+      const payload = formattingContext === 'hero' 
+        ? { heroStyle: styleFields } // ONLY save the heroStyle object if we are editing hero formatting
+        : basePayload;
+
       if (editingId) {
         await updateDoc(doc(db, 'samaj_jog_sandesh', editingId), payload);
       } else {
         await addDoc(collection(db, 'samaj_jog_sandesh'), {
-          ...payload,
+          ...basePayload,
           createdAt: serverTimestamp()
         });
       }
@@ -382,13 +419,47 @@ export default function SamajJogSandesh({ lang }) {
     setBulkMode(false);
   };
 
-  const handleStyle = (item) => {
+  const handleStyle = (item, context = 'feed') => {
     handleEdit(item);
     setStyleOnlyMode(true);
+    setFormattingContext(context);
+    
+    // If editing hero context, load from item.heroStyle if it exists
+    const source = (context === 'hero' && item.heroStyle) ? { ...item, ...item.heroStyle } : item;
+
+    setFormData(prev => ({
+      ...prev,
+      bgColor: source.bgColor || '',
+      textColor: source.textColor || '',
+      accentColor: source.accentColor || '',
+      borderColor: source.borderColor || '',
+      borderStyle: source.borderStyle || 'solid',
+      borderWidth: source.borderWidth || '1',
+      borderRadius: source.borderRadius || '12',
+      borderRadiusTL: source.borderRadiusTL || '',
+      borderRadiusTR: source.borderRadiusTR || '',
+      borderRadiusBL: source.borderRadiusBL || '',
+      borderRadiusBR: source.borderRadiusBR || '',
+      shadowEnabled: source.shadowEnabled || false,
+      shadowX: source.shadowX || '0',
+      shadowY: source.shadowY || '4',
+      shadowBlur: source.shadowBlur || '12',
+      shadowSpread: source.shadowSpread || '0',
+      shadowColor: source.shadowColor || 'rgba(0,0,0,0.1)',
+      gradientBorder: source.gradientBorder || false,
+      gradientColor1: source.gradientColor1 || '#7c3aed',
+      gradientColor2: source.gradientColor2 || '#3b82f6',
+      gradientAngle: source.gradientAngle || '135',
+      gradientBg: source.gradientBg || false,
+      gradientBgColor1: source.gradientBgColor1 || '',
+      gradientBgColor2: source.gradientBgColor2 || '',
+      gradientBgAngle: source.gradientBgAngle || '135'
+    }));
   };
 
   const handleEdit = (item) => {
     setStyleOnlyMode(false);
+    setFormattingContext('feed'); // Reset context
     setEditingId(item.id);
     setFormData({
       type: item.type || 'poster',
@@ -478,43 +549,45 @@ export default function SamajJogSandesh({ lang }) {
   };
 
   /* ── buildCardStyle: compute inline styles from any item's border fields ── */
-  const buildCardStyle = (item) => {
+  const buildCardStyle = (item, context = 'feed') => {
     if (!item) return {};
-    const s = { color: item.textColor || undefined };
+    const source = (context === 'hero' && item.heroStyle) ? { ...item, ...item.heroStyle } : item;
+
+    const s = { color: source.textColor || undefined };
 
     // Border radius (per-corner overrides, else global)
-    const r  = item.borderRadius || '12';
-    const tl = item.borderRadiusTL !== '' && item.borderRadiusTL != null ? `${item.borderRadiusTL}px` : `${r}px`;
-    const tr = item.borderRadiusTR !== '' && item.borderRadiusTR != null ? `${item.borderRadiusTR}px` : `${r}px`;
-    const br = item.borderRadiusBR !== '' && item.borderRadiusBR != null ? `${item.borderRadiusBR}px` : `${r}px`;
-    const bl = item.borderRadiusBL !== '' && item.borderRadiusBL != null ? `${item.borderRadiusBL}px` : `${r}px`;
+    const r  = source.borderRadius || '12';
+    const tl = source.borderRadiusTL !== '' && source.borderRadiusTL != null ? `${source.borderRadiusTL}px` : `${r}px`;
+    const tr = source.borderRadiusTR !== '' && source.borderRadiusTR != null ? `${source.borderRadiusTR}px` : `${r}px`;
+    const br = source.borderRadiusBR !== '' && source.borderRadiusBR != null ? `${source.borderRadiusBR}px` : `${r}px`;
+    const bl = source.borderRadiusBL !== '' && source.borderRadiusBL != null ? `${source.borderRadiusBL}px` : `${r}px`;
     s.borderRadius = `${tl} ${tr} ${br} ${bl}`;
 
     // ── Background & Border logic ────────────────────────────────────────────────
-    const hasGradientColors = item.gradientBg && (item.gradientBgColor1 || item.gradientBgColor2);
+    const hasGradientColors = source.gradientBg && (source.gradientBgColor1 || source.gradientBgColor2);
     let baseBg = null;
     if (hasGradientColors) {
-      baseBg = `linear-gradient(${item.gradientBgAngle || '135'}deg, ${item.gradientBgColor1 || '#7c3aed'}, ${item.gradientBgColor2 || '#4f46e5'})`;
-    } else if (item.bgColor) {
-      baseBg = item.bgColor;
+      baseBg = `linear-gradient(${source.gradientBgAngle || '135'}deg, ${source.gradientBgColor1 || '#7c3aed'}, ${source.gradientBgColor2 || '#4f46e5'})`;
+    } else if (source.bgColor) {
+      baseBg = source.bgColor;
     }
 
-    if (item.gradientBorder && Number(item.borderWidth) > 0) {
+    if (source.gradientBorder && Number(source.borderWidth) > 0) {
       // 1. Gradient border (uses padding-box / border-box trick)
-      const ang = item.gradientAngle  || '135';
-      const c1  = item.gradientColor1 || '#7c3aed';
-      const c2  = item.gradientColor2 || '#3b82f6';
+      const ang = source.gradientAngle  || '135';
+      const c1  = source.gradientColor1 || '#7c3aed';
+      const c2  = source.gradientColor2 || '#3b82f6';
       const paddingBoxBg = baseBg ? baseBg : 'white';
       const paddingBoxBgWrapped = hasGradientColors ? paddingBoxBg : `linear-gradient(${paddingBoxBg}, ${paddingBoxBg})`;
       s.background = `${paddingBoxBgWrapped} padding-box, linear-gradient(${ang}deg, ${c1}, ${c2}) border-box`;
-      s.border = `${item.borderWidth}px solid transparent`;
+      s.border = `${source.borderWidth}px solid transparent`;
     } else {
-      if (item.borderStyle === 'none') {
+      if (source.borderStyle === 'none') {
         s.border = 'none';
-      } else if (item.borderColor && item.borderStyle && Number(item.borderWidth || 1) > 0) {
-        s.borderColor = item.borderColor;
-        s.borderWidth = `${item.borderWidth || 1}px`;
-        s.borderStyle = item.borderStyle || 'solid';
+      } else if (source.borderColor && source.borderStyle && Number(source.borderWidth || 1) > 0) {
+        s.borderColor = source.borderColor;
+        s.borderWidth = `${source.borderWidth || 1}px`;
+        s.borderStyle = source.borderStyle || 'solid';
       }
       // Only override CSS background if a custom bg is actually set
       if (baseBg) {
@@ -523,8 +596,8 @@ export default function SamajJogSandesh({ lang }) {
     }
 
     // Shadow / Glow
-    if (item.shadowEnabled) {
-      s.boxShadow = `${item.shadowX || 0}px ${item.shadowY || 4}px ${item.shadowBlur || 12}px ${item.shadowSpread || 0}px ${item.shadowColor || 'rgba(0,0,0,0.1)'}`;
+    if (source.shadowEnabled) {
+      s.boxShadow = `${source.shadowX || 0}px ${source.shadowY || 4}px ${source.shadowBlur || 12}px ${source.shadowSpread || 0}px ${source.shadowColor || 'rgba(0,0,0,0.1)'}`;
     }
 
     return s;
@@ -686,7 +759,7 @@ export default function SamajJogSandesh({ lang }) {
             <main 
               className="bento-item middle center-feature" 
               id={`card-${featured.id}`}
-              style={buildCardStyle(featured)}
+              style={buildCardStyle(featured, 'hero')}
             >
               <div className="hero-inner">
                 <div className="hero-text">
@@ -698,7 +771,7 @@ export default function SamajJogSandesh({ lang }) {
                   {canManage && (
                     <div className="admin-hero-controls">
                       <button className="admin-edit-hero" onClick={() => handleEdit(featured)}>✏️</button>
-                      <button className="admin-edit-hero" style={{marginLeft: '8px'}} onClick={(e) => { e.stopPropagation(); handleStyle(featured); }}>🎨</button>
+                      <button className="admin-edit-hero" style={{marginLeft: '8px'}} onClick={(e) => { e.stopPropagation(); handleStyle(featured, 'hero'); }}>🎨</button>
                       {!featured.isSample && (
                         <button 
                           className="admin-delete-hero" 
