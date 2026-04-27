@@ -111,13 +111,8 @@ export default function SamajJogSandesh({ lang }) {
   const [isTranslating, setIsTranslating] = useState(false);
   const [editingId, setEditingId] = useState(null);
   
-  // Hero Drag & Drop State
-  const [draggedHeroBlock, setDraggedHeroBlock] = useState(null);
-  const [dragOverBlock, setDragOverBlock] = useState(null);
-  const [localHeroOrder, setLocalHeroOrder] = useState(null);
-  const draggedBlockRef = useRef(null);
-  
   const GRANULAR_HERO_BLOCKS = ['visual', 'badge', 'authority', 'title', 'body', 'footer'];
+  
   // 📦 Archive & Bulk Mode State
   const [bulkMode, setBulkMode] = useState(false);
   const [selectedIds, setSelectedIds] = useState(new Set());
@@ -161,19 +156,15 @@ export default function SamajJogSandesh({ lang }) {
     gradientAngle: '135',
     // 🍱 Hero Multi-Column Layout Fields
     heroLayout: '1-col', // '1-col', '2-col', '3-col'
-    heroColRatio: 'wide-center', 
     col2TitleEn: '', col2TitleGu: '',
     col2ContentEn: '', col2ContentGu: '',
     col2BannerUrl: '',
     col3TitleEn: '', col3TitleGu: '',
     col3ContentEn: '', col3ContentGu: '',
-    col3BannerUrl: '',
-    // 🖼️ Hero Image Manipulation
-    heroImgZoom: 1.0,
-    heroImgShiftY: 0,
-    heroImgShiftX: 0,
-    heroImgFit: 'cover'
+    col3BannerUrl: ''
   });
+  
+  const [activeColumnTab, setActiveColumnTab] = useState('col1');
 
   // 1. REAL-TIME DATA FETCH
   useEffect(() => {
@@ -290,7 +281,7 @@ export default function SamajJogSandesh({ lang }) {
   const handleSuggestDraft = async (sourceLang) => {
     if (isTranslating) return;
     const targetLang = sourceLang === 'en' ? 'gu' : 'en';
-    const fields = ['title', 'subtitle', 'content', 'authority'];
+    const fields = ['title', 'subtitle', 'content', 'authority', 'col2Title', 'col2Content', 'col3Title', 'col3Content'];
     setIsTranslating(true);
     try {
       const updates = { ...formData };
@@ -479,9 +470,9 @@ export default function SamajJogSandesh({ lang }) {
     }));
   };
 
-  const handleEdit = (item) => {
+  const handleEdit = (item, context = 'feed') => {
     setStyleOnlyMode(false);
-    setFormattingContext('feed'); // Reset context
+    setFormattingContext(context);
     setEditingId(item.id);
     setFormData({
       type: item.type || 'poster',
@@ -526,8 +517,16 @@ export default function SamajJogSandesh({ lang }) {
       gradientBg: item.gradientBg || false,
       gradientBgColor1: item.gradientBgColor1 || '',
       gradientBgColor2: item.gradientBgColor2 || '',
-      gradientBgAngle: item.gradientBgAngle || '135'
+      gradientBgAngle: item.gradientBgAngle || '135',
+      heroLayout: item.heroLayout || '1-col',
+      col2TitleEn: item.col2TitleEn || '', col2TitleGu: item.col2TitleGu || '',
+      col2ContentEn: item.col2ContentEn || '', col2ContentGu: item.col2ContentGu || '',
+      col2BannerUrl: item.col2BannerUrl || '',
+      col3TitleEn: item.col3TitleEn || '', col3TitleGu: item.col3TitleGu || '',
+      col3ContentEn: item.col3ContentEn || '', col3ContentGu: item.col3ContentGu || '',
+      col3BannerUrl: item.col3BannerUrl || ''
     });
+    setActiveColumnTab('col1');
     setShowModal(true);
   };
 
@@ -566,7 +565,14 @@ export default function SamajJogSandesh({ lang }) {
       gradientBorder: false,
       gradientColor1: '#7c3aed',
       gradientColor2: '#3b82f6',
-      gradientAngle: '135'
+      gradientAngle: '135',
+      heroLayout: '1-col',
+      col2TitleEn: '', col2TitleGu: '',
+      col2ContentEn: '', col2ContentGu: '',
+      col2BannerUrl: '',
+      col3TitleEn: '', col3TitleGu: '',
+      col3ContentEn: '', col3ContentGu: '',
+      col3BannerUrl: ''
     });
   };
 
@@ -642,8 +648,9 @@ export default function SamajJogSandesh({ lang }) {
     !m.isHighlight1 && !m.isHighlight2 && !m.isQuickLink
   );
 
-  // Find featured post: ONLY explicitly pinned Hero posts (no automatic fallback)
   const featured = activeMessages.find(m => m.isHero) || null;
+
+  // Side Slot detection
 
   // 1. Find the latest Highlight for Slot 1 (Top)
   const highlight1Post = activeMessages.find(m => m.isHighlight1) || null;
@@ -667,6 +674,12 @@ export default function SamajJogSandesh({ lang }) {
     return <span dangerouslySetInnerHTML={{ __html: item[preferredKey] || item[fallbackKey] || '' }} />;
   };
 
+  const getRawT = (item, field) => {
+    const preferredKey = field + (lang === 'gu' ? 'Gu' : 'En');
+    const fallbackKey = field + (lang === 'gu' ? 'En' : 'Gu');
+    return item[preferredKey] || item[fallbackKey] || '';
+  };
+
   if (loading) {
     return (
       <div className="sandesh-loader">
@@ -678,8 +691,308 @@ export default function SamajJogSandesh({ lang }) {
 
   return (
     <div className="samaj-jog-sandesh-root">
-      {/* Hero section removed */}
+      <div className="sandesh-layout-wrapper">
+        <div className={`hero-bento-grid ${!featured ? 'no-hero' : ''}`}>
+          {/* 1. TOP LEFT: HIGHLIGHT 1 (Top Slot) */}
+          <aside 
+            className="bento-item side top-left"
+            onClick={() => highlight1Post && setMaximizedId(highlight1Post.id)}
+            style={buildCardStyle(highlight1Post || {})}
+          >
+            <div className="side-bucket-content">
+              {canManage && (
+                <div className="admin-bucket-controls">
+                  <button 
+                    className="admin-edit-pill" 
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      highlight1Post ? handleEdit(highlight1Post) : setShowModal(true);
+                    }}
+                  >
+                    ✏️
+                  </button>
+                  {highlight1Post && (
+                    <button 
+                      className="admin-edit-pill" 
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleStyle(highlight1Post);
+                      }}
+                    >
+                      🎨
+                    </button>
+                  )}
+                </div>
+              )}
+              {highlight1Post ? (
+                <>
+                  <div className="highlight-badge-pill" style={{backgroundColor: highlight1Post.accentColor}}>{lang === 'gu' ? 'નવી હાઇલાઇટ' : 'LATEST HIGHLIGHT'}</div>
+                  <h3 className="card-html-title">{getT(highlight1Post, 'title')}</h3>
+                  <div className="card-html-desc">{getT(highlight1Post, 'subtitle')}</div>
+                  <div className="highlight-visit-cta">{lang === 'gu' ? 'વધુ વાંચો →' : 'Read More →'}</div>
+                </>
+              ) : (
+                <>
+                  <div className="stat-icon pink">⭐</div>
+                  <div className="stat-value">25+</div>
+                  <div className="stat-label">{lang === 'gu' ? 'વિભાગો' : 'Vibhags'}</div>
+                  <button className="add-highlight-btn" onClick={() => setShowModal(true)}>➕</button>
+                </>
+              )}
+            </div>
+          </aside>
 
+          {/* 2. BOTTOM LEFT: HIGHLIGHT 2 (Bottom Slot) */}
+          <aside 
+            className="bento-item side bottom-left"
+            onClick={() => highlight2Post && setMaximizedId(highlight2Post.id)}
+            style={buildCardStyle(highlight2Post || {})}
+          >
+            <div className="side-bucket-content">
+              {canManage && (
+                <div className="admin-bucket-controls">
+                  <button 
+                    className="admin-edit-pill" 
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      highlight2Post ? handleEdit(highlight2Post) : setShowModal(true);
+                    }}
+                  >
+                    ✏️
+                  </button>
+                  {highlight2Post && (
+                    <button 
+                      className="admin-edit-pill" 
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleStyle(highlight2Post);
+                      }}
+                    >
+                      🎨
+                    </button>
+                  )}
+                </div>
+              )}
+              {highlight2Post ? (
+                <>
+                  <div className="highlight-badge-pill blue" style={{backgroundColor: highlight2Post.accentColor}}>{lang === 'gu' ? 'મુખ્ય સમાચાર' : 'TOP UPDATE'}</div>
+                  <h3 className="card-html-title">{getT(highlight2Post, 'title')}</h3>
+                  <div className="card-html-desc">{getT(highlight2Post, 'subtitle')}</div>
+                  <div className="highlight-visit-cta">{lang === 'gu' ? 'વધુ વાંચો →' : 'Read More →'}</div>
+                </>
+              ) : (
+                <>
+                  <div className="stat-icon blue">📖</div>
+                  <div className="stat-value">1500+</div>
+                  <div className="stat-label">{lang === 'gu' ? 'મેસેજ' : 'Announcements'}</div>
+                  <button className="add-highlight-btn" onClick={() => setShowModal(true)}>➕</button>
+                </>
+              )}
+            </div>
+          </aside>
+
+          {/* 3. CENTER: MAIN FEATURED */}
+          {featured && (
+            <main 
+              className={`bento-item middle center-feature layout-mode-${featured.heroLayout || '1-col'}`} 
+              id={`card-${featured.id}`}
+              style={buildCardStyle(featured, 'hero')}
+            >
+              <div className={`hero-inner granular layout-mode-${featured.heroLayout || '1-col'}`}>
+                {canManage && (
+                  <div className="admin-hero-controls hero-abs-controls">
+                    <button 
+                      className="admin-edit-pill" 
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleEdit(featured, 'hero');
+                      }}
+                    >
+                      ✏️ Edit Layout
+                    </button>
+                    <button 
+                      className="admin-edit-pill" 
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleStyle(featured, 'hero');
+                      }}
+                    >
+                      🎨 Design
+                    </button>
+                  </div>
+                )}
+                {/* 🛡️ COLUMN 1 (PRIMARY) */}
+                <div className="hero-column col-1">
+                  {(featured?.heroLayoutOrder?.length > 2 
+                    ? featured.heroLayoutOrder 
+                    : GRANULAR_HERO_BLOCKS
+                  ).map((blockKey) => {
+                    const commonProps = {
+                      className: `hero-block block-${blockKey}`
+                    };
+
+                    if (blockKey === 'visual') {
+                      return (
+                        <div key="visual" {...commonProps}>
+                          {featured.bannerUrl ? <img src={featured.bannerUrl} alt="Hero" /> : <div className="hero-visual-fallback">🖼️</div>}
+                          <div className="visual-overlay"></div>
+                        </div>
+                      );
+                    }
+
+                    if (blockKey === 'badge') {
+                      return (
+                        <div key="badge" {...commonProps}>
+                          <div className="hero-badge">
+                            {featured.isSample && <span className="sample-pill">SAMPLE</span>}
+                            {lang === 'gu' ? '📢 લેટેસ્ટ જાહેરાત' : '📢 LATEST ANNOUNCEMENT'}
+                          </div>
+                        </div>
+                      );
+                    }
+
+                    if (blockKey === 'authority') {
+                      return <span key="authority" {...commonProps} style={{...commonProps.style, display:'block'}} className={`${commonProps.className} hero-authority`}>{getT(featured, 'authority')}</span>;
+                    }
+
+                    if (blockKey === 'title') {
+                      return <h1 key="title" {...commonProps}>{getT(featured, 'title')}</h1>;
+                    }
+
+                    if (blockKey === 'body') {
+                      return <p key="body" {...commonProps} className={`${commonProps.className} hero-p-desc`}>{getT(featured, 'content')}</p>;
+                    }
+
+                    if (blockKey === 'footer') {
+                      return (
+                        <div key="footer" {...commonProps} className={`${commonProps.className} hero-footer-row`}>
+                          <span className="hero-date">📅 {getT(featured, 'date')}</span>
+                          <button className="hero-btn-cta" onClick={() => setMaximizedId(featured.id)}>{lang === 'gu' ? 'સંપૂર્ણ વાંચો →' : 'Read Full →'}</button>
+                        </div>
+                      );
+                    }
+                    return null;
+                  })}
+                </div>
+
+                {/* 🛡️ COLUMN 2 */}
+                {(featured.heroLayout === '2-col' || featured.heroLayout === '3-col') && (
+                  <div className="hero-column col-2">
+                    <div className="hero-block">
+                      {featured.col2TitleEn && <h3>{getT(featured, 'col2Title')}</h3>}
+                      <div className="hero-col-content" dangerouslySetInnerHTML={{ __html: getRawT(featured, 'col2Content') }} />
+                      {featured.col2BannerUrl && <img src={featured.col2BannerUrl} alt="" className="col-image" />}
+                    </div>
+                  </div>
+                )}
+
+                {/* 🛡️ COLUMN 3 */}
+                {featured.heroLayout === '3-col' && (
+                  <div className="hero-column col-3">
+                    <div className="hero-block">
+                      {featured.col3TitleEn && <h3>{getT(featured, 'col3Title')}</h3>}
+                      <div className="hero-col-content" dangerouslySetInnerHTML={{ __html: getRawT(featured, 'col3Content') }} />
+                      {featured.col3BannerUrl && <img src={featured.col3BannerUrl} alt="" className="col-image" />}
+                    </div>
+                  </div>
+                )}
+
+                {/* Fixed Admin Controls in Corner */}
+                {canManage && (
+                  <div className="admin-hero-controls floating">
+                    <button className="admin-edit-hero" onClick={() => handleEdit(featured)} title="Edit Content">✏️</button>
+                    <button className="admin-edit-hero" style={{marginLeft: '8px'}} onClick={(e) => { e.stopPropagation(); handleStyle(featured, 'hero'); }} title="Formatting Style">🎨</button>
+                    <button 
+                      className="admin-edit-hero" 
+                      style={{marginLeft: '8px', background: '#e2e8f0', color: '#475569'}}
+                      title="Reset Layout"
+                      onClick={async (e) => {
+                        e.stopPropagation();
+                        await updateDoc(doc(db, 'samaj_jog_sandesh', featured.id), { heroLayoutOrder: GRANULAR_HERO_BLOCKS });
+                      }}
+                    >
+                      🔄
+                    </button>
+                    {!featured.isSample && (
+                      <button 
+                        className="admin-delete-hero" 
+                        title="Unpin from Hero"
+                        style={{background: 'rgba(251,191,36,0.2)', color: '#f59e0b', marginLeft: '8px'}}
+                        onClick={async (e) => {
+                          e.stopPropagation();
+                          await updateDoc(doc(db, 'samaj_jog_sandesh', featured.id), { 
+                            isHero: false, isHighlight1: false, isHighlight2: false, isQuickLink: false 
+                          });
+                        }}
+                      >✕</button>
+                    )}
+                  </div>
+                )}
+              </div>
+            </main>
+          )}
+
+          {/* Hero empty state when no post is pinned */}
+          {!featured && (
+            <main className="bento-item middle center-feature" id="hero-empty">
+              <div style={{display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',height:'100%',gap:'14px',padding:'24px'}}>
+                {canManage ? (
+                  <>
+                    <div style={{fontSize:'40px'}}>📢</div>
+                    <div style={{color:'white',fontWeight:'bold',fontSize:'18px'}}>Hero Slot Empty</div>
+                    <div style={{color:'rgba(255,255,255,0.75)',fontSize:'13px',textAlign:'center',maxWidth:'220px'}}>
+                      {lang === 'gu' ? 'કોઈ પ્રકાશન Hero સ્લોટ પર પિન નથી' : 'No announcement pinned to Hero slot. Use the pencil icon on any post to pin it here.'}
+                    </div>
+                    <button className="add-highlight-btn" style={{marginTop:'8px'}} onClick={() => setShowModal(true)}>
+                      ➕ {lang === 'gu' ? 'ઉમેરો' : 'Add Post'}
+                    </button>
+                  </>
+                ) : (
+                  <div style={{color:'rgba(255,255,255,0.5)',fontSize:'14px'}}>
+                    {lang === 'gu' ? 'ટૂંક સમયમાં...' : 'Coming soon...'}
+                  </div>
+                )}
+              </div>
+            </main>
+          )}
+
+          {/* 4. RIGHT PANEL: LIVE NEWS TICKER (Unified) */}
+          <aside className="bento-item ticker-panel right">
+            <div className="ticker-header">
+               <span>🔥 {lang === 'gu' ? 'લાઇવ સમાચાર' : 'LIVE TICKER'}</span>
+            </div>
+            <div className="ticker-container">
+              <div className="ticker-scroll">
+                {[...activeMessages].slice(0, 15).map((item, idx) => (
+                  <div 
+                    key={`ticker-${item.id}-${idx}`} 
+                    className="ticker-item"
+                    onClick={() => {
+                      setExpandedId(item.id);
+                      const el = document.getElementById(`card-${item.id}`);
+                      if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                    }}
+                  >
+                    <span className="ticker-bullet">•</span>
+                    <span className="ticker-text">{getT(item, 'title')}</span>
+                    <span className="ticker-time">{getT(item, 'date')}</span>
+                  </div>
+                ))}
+                {/* Duplicate for seamless loop */}
+                {[...activeMessages].slice(0, 5).map((item, idx) => (
+                  <div key={`dup-${item.id}-${idx}`} className="ticker-item">
+                    <span className="ticker-bullet">•</span>
+                    <span className="ticker-text">{getT(item, 'title')}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+            <div className="ticker-footer">
+               {lang === 'gu' ? 'તમામ પોસ્ટ જોવા માટે નીચે જાઓ' : 'Scroll down for all posts'}
+            </div>
+          </aside>
+        </div>
+      </div>
 
       {/* 📋 MAIN LAYOUT: SIDEBAR + FEED */}
       <div className="samaj-main-layout">
@@ -840,9 +1153,9 @@ export default function SamajJogSandesh({ lang }) {
                     }}>
                       <div className="active-slot-badges" style={{display: 'flex', gap: '5px'}}>
                         {item.isHero && <span style={{background: '#7c3aed', color: 'white', padding: '3px 8px', borderRadius: '4px', fontSize: '9px', fontWeight: 'bold', boxShadow: '0 2px 5px rgba(124, 58, 237, 0.3)'}}>🌟 HERO</span>}
-                        {item.isHighlight && <span style={{background: '#f59e0b', color: 'white', padding: '3px 8px', borderRadius: '4px', fontSize: '9px', fontWeight: 'bold'}}>📍 SIDE TOP</span>}
+                        {item.isHighlight1 && <span style={{background: '#f59e0b', color: 'white', padding: '3px 8px', borderRadius: '4px', fontSize: '9px', fontWeight: 'bold'}}>📍 SIDE TOP</span>}
                         {item.isHighlight2 && <span style={{background: '#3b82f6', color: 'white', padding: '3px 8px', borderRadius: '4px', fontSize: '9px', fontWeight: 'bold'}}>📍 SIDE BOTTOM</span>}
-                        {!item.isHero && !item.isHighlight && !item.isHighlight2 && (
+                        {!item.isHero && !item.isHighlight1 && !item.isHighlight2 && (
                           <span style={{color: '#94a3b8', fontSize: '9px', fontStyle: 'italic'}}>No Active Slot</span>
                         )}
                       </div>
@@ -945,81 +1258,194 @@ export default function SamajJogSandesh({ lang }) {
                 </button>
               </div>
 
+              {formData.priority === 'high' && (formData.heroLayout === '2-col' || formData.heroLayout === '3-col') && (
+                <div className="column-tabs-container">
+                   <button type="button" className={`col-tab ${activeColumnTab === 'col1' ? 'active' : ''}`} onClick={() => setActiveColumnTab('col1')}>
+                     1️⃣ {lang === 'gu' ? 'કૉલમ ૧' : 'Column 1'}
+                   </button>
+                   <button type="button" className={`col-tab ${activeColumnTab === 'col2' ? 'active' : ''}`} onClick={() => setActiveColumnTab('col2')}>
+                     2️⃣ {lang === 'gu' ? 'કૉલમ ૨' : 'Column 2'}
+                   </button>
+                   {formData.heroLayout === '3-col' && (
+                     <button type="button" className={`col-tab ${activeColumnTab === 'col3' ? 'active' : ''}`} onClick={() => setActiveColumnTab('col3')}>
+                       3️⃣ {lang === 'gu' ? 'કૉલમ ૩' : 'Column 3'}
+                     </button>
+                   )}
+                </div>
+              )}
+
               <div className="modal-content-wrapper">
-                <div className="modal-grid">
-                  <div className={`form-column ${isTranslating ? 'translating' : ''}`}>
-                    <h4>English Content</h4>
-                    <div className="field-with-canvas">
-                      <label>Title (English)</label>
-                      <div className="canvas-toolbar">
-                        <button type="button" onMouseDown={(e) => e.preventDefault()} onClick={() => applyStyle('titleEn', 'bold')}><b>B</b> Bold</button>
-                        <button type="button" onMouseDown={(e) => e.preventDefault()} onClick={() => applyStyle('titleEn', 'foreColor', formData.textColor)} className="tool-pen">🎨 Pen</button>
-                        <button type="button" onMouseDown={(e) => e.preventDefault()} onClick={() => applyStyle('titleEn', 'backColor', formData.accentColor)} className="tool-brush">🖌️ Highlight</button>
+                {/* 📐 VISUAL LAYOUT SELECTOR - ALWAYS VISIBLE FOR USER ACCESSIBILITY */}
+                <div className="admin-layout-orchestrator">
+                  <label>📐 Choose Structure (Standard, 2-Sec, or 3-Sec)</label>
+                  <div className="layout-picker-grid">
+                    <button 
+                      type="button" 
+                      className={`layout-opt-btn ${formData.heroLayout === '1-col' ? 'active' : ''}`}
+                      onClick={() => setFormData({...formData, heroLayout: '1-col'})}
+                    >
+                      <div className="layout-viz viz-1"></div>
+                      <span>Standard</span>
+                    </button>
+                    <button 
+                      type="button" 
+                      className={`layout-opt-btn ${formData.heroLayout === '2-col' ? 'active' : ''}`}
+                      onClick={() => setFormData({...formData, heroLayout: '2-col'})}
+                    >
+                      <div className="layout-viz viz-2"></div>
+                      <span>Split (2-Sec)</span>
+                    </button>
+                    <button 
+                      type="button" 
+                      className={`layout-opt-btn ${formData.heroLayout === '3-col' ? 'active' : ''}`}
+                      onClick={() => setFormData({...formData, heroLayout: '3-col'})}
+                    >
+                      <div className="layout-viz viz-3"></div>
+                      <span>Trio (3-Sec)</span>
+                    </button>
+                  </div>
+                </div>
+
+                <div className="sectioned-editor-container">
+                  {/* SECTION 1: PRIMARY (Always Visible) */}
+                  <div className="editor-structural-block">
+                    <div className="block-header">1️⃣ Primary Content {formattingContext === 'hero' && formData.heroLayout !== '1-col' ? '(Left/Center Section)' : ''}</div>
+                    <div className="modal-grid">
+                      <div className="form-column">
+                        <h4>English Content</h4>
+                        <div className="field-with-canvas">
+                          <label>Title (English)</label>
+                          <input type="text" value={formData.titleEn} onChange={e => setFormData({...formData, titleEn: e.target.value})} />
+                        </div>
+                        <div className="field-with-canvas">
+                          <label>Body (English)</label>
+                          <div className="canvas-toolbar">
+                             <button type="button" onMouseDown={(e) => e.preventDefault()} onClick={() => applyStyle('contentEn', 'bold')}><b>B</b></button>
+                             <button type="button" onMouseDown={(e) => e.preventDefault()} onClick={() => applyStyle('contentEn', 'foreColor', formData.textColor)} className="tool-pen">🎨</button>
+                          </div>
+                          <div id="editor-contentEn" className="canvas-painter" contentEditable onBlur={(e) => setFormData({...formData, contentEn: e.target.innerHTML})} dangerouslySetInnerHTML={{ __html: formData.contentEn }} />
+                        </div>
                       </div>
-                      <div id="editor-titleEn" className="canvas-painter" contentEditable onBlur={(e) => setFormData({...formData, titleEn: e.target.innerHTML})} dangerouslySetInnerHTML={{ __html: formData.titleEn }} />
-                    </div>
- 
-                    <div className="field-with-canvas">
-                      <label>Subtitle (English)</label>
-                      <div className="canvas-toolbar">
-                        <button type="button" onMouseDown={(e) => e.preventDefault()} onClick={() => applyStyle('subtitleEn', 'foreColor', formData.textColor)} className="tool-pen">🎨 Pen</button>
-                        <button type="button" onMouseDown={(e) => e.preventDefault()} onClick={() => applyStyle('subtitleEn', 'backColor', formData.accentColor)} className="tool-brush">🖌️ Highlight</button>
+
+                      <div className="form-column gujarati-column">
+                        <h4>ગુજરાતી સામગ્રી</h4>
+                        <div className="field-with-canvas">
+                          <label>શીર્ષક (Gujarati)</label>
+                          <input type="text" className="gu-font" value={formData.titleGu} onChange={e => setFormData({...formData, titleGu: e.target.value})} />
+                        </div>
+                        <div className="field-with-canvas">
+                          <label>સંદેશ વિગત (Gujarati)</label>
+                          <div id="editor-contentGu" className="canvas-painter gu-font" contentEditable onBlur={(e) => setFormData({...formData, contentGu: e.target.innerHTML})} dangerouslySetInnerHTML={{ __html: formData.contentGu }} />
+                        </div>
                       </div>
-                      <div id="editor-subtitleEn" className="canvas-painter" contentEditable onBlur={(e) => setFormData({...formData, subtitleEn: e.target.innerHTML})} dangerouslySetInnerHTML={{ __html: formData.subtitleEn }} />
                     </div>
- 
-                    <div className="field-with-canvas">
-                      <label>Message Body (English)</label>
-                      <div className="canvas-toolbar">
-                        <button type="button" onMouseDown={(e) => e.preventDefault()} onClick={() => applyStyle('contentEn', 'bold')}><b>B</b> Bold</button>
-                        <button type="button" onMouseDown={(e) => e.preventDefault()} onClick={() => applyStyle('contentEn', 'foreColor', formData.textColor)} className="tool-pen">🎨 Pen</button>
-                        <button type="button" onMouseDown={(e) => e.preventDefault()} onClick={() => applyStyle('contentEn', 'backColor', formData.accentColor)} className="tool-brush">🖌️ Highlight</button>
+
+                    {/* 📸 MAIN SECTION IMAGE/VIDEO UPLOAD */}
+                    <div className="form-group main-upload-section" style={{marginTop: '20px', padding: '15px', background: 'rgba(255,255,255,0.05)', borderRadius: '12px'}}>
+                      <label>🖼️ Main Content Media (Image or YouTube Link)</label>
+                      <div style={{display: 'flex', gap: '10px', marginTop: '5px'}}>
+                        <input 
+                          type="text" 
+                          placeholder="YouTube Link or Image URL" 
+                          style={{flex: 1}}
+                          value={formData.bannerUrl || formData.videoUrl} 
+                          onChange={e => {
+                            const val = e.target.value;
+                            if (val.includes('youtube.com') || val.includes('youtu.be')) {
+                              setFormData({...formData, videoUrl: val, type: 'video'});
+                            } else {
+                              setFormData({...formData, bannerUrl: val});
+                            }
+                          }} 
+                        />
+                        <input 
+                          type="file" 
+                          accept="image/*,video/mp4" 
+                          style={{width: 'auto'}}
+                          onChange={async (e) => {
+                            const file = e.target.files[0];
+                            if (file) {
+                              const reader = new FileReader();
+                              reader.onloadend = async () => {
+                                const result = reader.result;
+                                if (file.type.startsWith('video/')) {
+                                  setFormData({...formData, videoUrl: result, type: 'video'});
+                                } else {
+                                  const compressed = await compressImage(result);
+                                  setFormData({...formData, bannerUrl: compressed});
+                                }
+                              };
+                              reader.readAsDataURL(file);
+                            }
+                          }} 
+                        />
                       </div>
-                      <div id="editor-contentEn" className="canvas-painter content-body" contentEditable onBlur={(e) => setFormData({...formData, contentEn: e.target.innerHTML})} dangerouslySetInnerHTML={{ __html: formData.contentEn }} />
-                    </div>
- 
-                    <div className="form-group">
-                      <label>Issuing Authority (English)</label>
-                      <input type="text" placeholder="e.g., CWC Main Committee" value={formData.authorityEn} onChange={e => setFormData({...formData, authorityEn: e.target.value})} />
                     </div>
                   </div>
 
-                  <div className={`form-column gujarati-column ${isTranslating ? 'translating' : ''}`}>
-                    <h4>ગુજરાતી સામગ્રી (Gujarati)</h4>
-                    <div className="field-with-canvas">
-                      <label>શીર્ષક (Gujarati)</label>
-                      <div className="canvas-toolbar">
-                        <button type="button" onMouseDown={(e) => e.preventDefault()} onClick={() => applyStyle('titleGu', 'bold')}><b>B</b> Bold</button>
-                        <button type="button" onMouseDown={(e) => e.preventDefault()} onClick={() => applyStyle('titleGu', 'foreColor', formData.textColor)} className="tool-pen">🎨 Pen</button>
-                        <button type="button" onMouseDown={(e) => e.preventDefault()} onClick={() => applyStyle('titleGu', 'backColor', formData.accentColor)} className="tool-brush">🖌️ Highlight</button>
+                  {/* SECTION 2: HIDDEN UNLESS 2 OR 3 COL */}
+                  {formattingContext === 'hero' && (formData.heroLayout === '2-col' || formData.heroLayout === '3-col') && (
+                    <div className="editor-structural-block">
+                      <div className="block-header">2️⃣ Secondary Section (Middle/Left)</div>
+                      <div className="modal-grid">
+                        <div className="form-column">
+                          <label>Title (English)</label>
+                          <input type="text" value={formData.col2TitleEn} onChange={e => setFormData({...formData, col2TitleEn: e.target.value})} />
+                          <label style={{marginTop: '10px'}}>Content (English)</label>
+                          <div id="editor-col2ContentEn" className="canvas-painter" contentEditable onBlur={(e) => setFormData({...formData, col2ContentEn: e.target.innerHTML})} dangerouslySetInnerHTML={{ __html: formData.col2ContentEn }} />
+                        </div>
+                        <div className="form-column gujarati-column">
+                          <label>શીર્ષક (Gujarati)</label>
+                          <input type="text" className="gu-font" value={formData.col2TitleGu} onChange={e => setFormData({...formData, col2TitleGu: e.target.value})} />
+                          <label style={{marginTop: '10px'}}>સામગ્રી (Gujarati)</label>
+                          <div id="editor-col2ContentGu" className="canvas-painter gu-font" contentEditable onBlur={(e) => setFormData({...formData, col2ContentGu: e.target.innerHTML})} dangerouslySetInnerHTML={{ __html: formData.col2ContentGu }} />
+                        </div>
                       </div>
-                      <div id="editor-titleGu" className="canvas-painter gu-font" contentEditable onBlur={(e) => setFormData({...formData, titleGu: e.target.innerHTML})} dangerouslySetInnerHTML={{ __html: formData.titleGu }} />
-                    </div>
- 
-                    <div className="field-with-canvas">
-                      <label>પેટાશીર્ષક (Gujarati)</label>
-                      <div className="canvas-toolbar">
-                        <button type="button" onMouseDown={(e) => e.preventDefault()} onClick={() => applyStyle('subtitleGu', 'foreColor', formData.textColor)} className="tool-pen">🎨 Pen</button>
-                        <button type="button" onMouseDown={(e) => e.preventDefault()} onClick={() => applyStyle('subtitleGu', 'backColor', formData.accentColor)} className="tool-brush">🖌️ Highlight</button>
+                      <div className="form-group" style={{marginTop: '15px'}}>
+                         <label>Upload Section 2 Image</label>
+                         <input type="file" accept="image/*" onChange={async (e) => {
+                            const file = e.target.files[0];
+                            if (file) {
+                              const reader = new FileReader();
+                              reader.onloadend = async () => { setFormData({...formData, col2BannerUrl: await compressImage(reader.result)}); };
+                              reader.readAsDataURL(file);
+                            }
+                         }} />
                       </div>
-                      <div id="editor-subtitleGu" className="canvas-painter gu-font" contentEditable onBlur={(e) => setFormData({...formData, subtitleGu: e.target.innerHTML})} dangerouslySetInnerHTML={{ __html: formData.subtitleGu }} />
                     </div>
- 
-                    <div className="field-with-canvas">
-                      <label>સંદેશ વિગત (Gujarati)</label>
-                      <div className="canvas-toolbar">
-                        <button type="button" onMouseDown={(e) => e.preventDefault()} onClick={() => applyStyle('contentGu', 'bold')}><b>B</b> Bold</button>
-                        <button type="button" onMouseDown={(e) => e.preventDefault()} onClick={() => applyStyle('contentGu', 'foreColor', formData.textColor)} className="tool-pen">🎨 Pen</button>
-                        <button type="button" onMouseDown={(e) => e.preventDefault()} onClick={() => applyStyle('contentGu', 'backColor', formData.accentColor)} className="tool-brush">🖌️ Highlight</button>
+                  )}
+
+                  {/* SECTION 3: HIDDEN UNLESS 3 COL */}
+                  {formattingContext === 'hero' && formData.heroLayout === '3-col' && (
+                    <div className="editor-structural-block">
+                      <div className="block-header">3️⃣ Tertiary Section (Right Side)</div>
+                      <div className="modal-grid">
+                        <div className="form-column">
+                          <label>Title (English)</label>
+                          <input type="text" value={formData.col3TitleEn} onChange={e => setFormData({...formData, col3TitleEn: e.target.value})} />
+                          <label style={{marginTop: '10px'}}>Content (English)</label>
+                          <div id="editor-col3ContentEn" className="canvas-painter" contentEditable onBlur={(e) => setFormData({...formData, col3ContentEn: e.target.innerHTML})} dangerouslySetInnerHTML={{ __html: formData.col3ContentEn }} />
+                        </div>
+                        <div className="form-column gujarati-column">
+                          <label>શીર્ષક (Gujarati)</label>
+                          <input type="text" className="gu-font" value={formData.col3TitleGu} onChange={e => setFormData({...formData, col3TitleGu: e.target.value})} />
+                          <label style={{marginTop: '10px'}}>સામગ્રી (Gujarati)</label>
+                          <div id="editor-col3ContentGu" className="canvas-painter gu-font" contentEditable onBlur={(e) => setFormData({...formData, col3ContentGu: e.target.innerHTML})} dangerouslySetInnerHTML={{ __html: formData.col3ContentGu }} />
+                        </div>
                       </div>
-                      <div id="editor-contentGu" className="canvas-painter content-body gu-font" contentEditable onBlur={(e) => setFormData({...formData, contentGu: e.target.innerHTML})} dangerouslySetInnerHTML={{ __html: formData.contentGu }} />
+                      <div className="form-group" style={{marginTop: '15px'}}>
+                         <label>Upload Section 3 Image</label>
+                         <input type="file" accept="image/*" onChange={async (e) => {
+                            const file = e.target.files[0];
+                            if (file) {
+                              const reader = new FileReader();
+                              reader.onloadend = async () => { setFormData({...formData, col3BannerUrl: await compressImage(reader.result)}); };
+                              reader.readAsDataURL(file);
+                            }
+                         }} />
+                      </div>
                     </div>
- 
-                    <div className="form-group">
-                      <label>સત્તાવાર સહી (Gujarati)</label>
-                      <input type="text" placeholder="દા.ત., મુખ્ય સમિતિ CWC" value={formData.authorityGu} onChange={e => setFormData({...formData, authorityGu: e.target.value})} />
-                    </div>
-                  </div>
+                  )}
                 </div>
               </div>
 
