@@ -771,7 +771,18 @@ export default function SamajJogSandesh({ lang }) {
               id={`card-${featured.id}`}
               style={buildCardStyle(featured, 'hero')}
             >
-              <div className="hero-inner granular">
+              <div 
+                className="hero-inner granular"
+                onDragOver={(e) => {
+                  e.preventDefault();
+                  e.dataTransfer.dropEffect = 'move';
+                }}
+                onDrop={(e) => {
+                  e.preventDefault();
+                  // The blocks themselves handle the specific logic, 
+                  // but this prevents the 'No' cursor on the background
+                }}
+              >
                 {(localHeroOrder || (featured.heroLayoutOrder && Array.isArray(featured.heroLayoutOrder) && featured.heroLayoutOrder.length > 2 
                   ? featured.heroLayoutOrder 
                   : GRANULAR_HERO_BLOCKS)
