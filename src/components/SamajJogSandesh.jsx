@@ -117,7 +117,7 @@ export default function SamajJogSandesh({ lang }) {
   const [localHeroOrder, setLocalHeroOrder] = useState(null);
   const draggedBlockRef = useRef(null);
   
-  const HERO_BLOCKS = ['visual', 'badge', 'authority', 'title', 'body', 'footer'];
+  const GRANULAR_HERO_BLOCKS = ['visual', 'badge', 'authority', 'title', 'body', 'footer'];
   // 📦 Archive & Bulk Mode State
   const [bulkMode, setBulkMode] = useState(false);
   const [selectedIds, setSelectedIds] = useState(new Set());
@@ -772,9 +772,9 @@ export default function SamajJogSandesh({ lang }) {
               style={buildCardStyle(featured, 'hero')}
             >
               <div className="hero-inner granular">
-                {(localHeroOrder || featured.heroLayoutOrder && Array.isArray(featured.heroLayoutOrder) && featured.heroLayoutOrder.length > 2 
-                  ? (localHeroOrder || featured.heroLayoutOrder) 
-                  : HERO_BLOCKS
+                {(localHeroOrder || (featured.heroLayoutOrder && Array.isArray(featured.heroLayoutOrder) && featured.heroLayoutOrder.length > 2 
+                  ? featured.heroLayoutOrder 
+                  : GRANULAR_HERO_BLOCKS)
                 ).map((blockKey) => {
                   const isDragging = draggedHeroBlock === blockKey;
                   const isDragOver = dragOverBlock === blockKey;
@@ -785,10 +785,13 @@ export default function SamajJogSandesh({ lang }) {
                       if (canManage) {
                         setDraggedHeroBlock(blockKey);
                         draggedBlockRef.current = blockKey;
-                        const initialOrder = featured.heroLayoutOrder && Array.isArray(featured.heroLayoutOrder) && featured.heroLayoutOrder.length > 2 
+                        
+                        // Ensure we always start with a full granular list
+                        const currentOrder = featured.heroLayoutOrder && Array.isArray(featured.heroLayoutOrder) && featured.heroLayoutOrder.length > 2 
                           ? [...featured.heroLayoutOrder] 
-                          : [...HERO_BLOCKS];
-                        setLocalHeroOrder(initialOrder);
+                          : [...GRANULAR_HERO_BLOCKS];
+                        
+                        setLocalHeroOrder(currentOrder);
                         e.dataTransfer.effectAllowed = 'move';
                         e.dataTransfer.setData('text/plain', blockKey);
                         e.dataTransfer.setData('blockKey', blockKey);
@@ -806,26 +809,30 @@ export default function SamajJogSandesh({ lang }) {
                     onDragOver: (e) => {
                       e.preventDefault();
                       e.dataTransfer.dropEffect = 'move';
-                      if (draggedHeroBlock && draggedHeroBlock !== blockKey) {
-                        const currentOrder = [...(localHeroOrder || HERO_BLOCKS)];
-                        const sIdx = currentOrder.indexOf(draggedHeroBlock);
+                    },
+                    onDragEnter: (e) => {
+                      e.preventDefault();
+                      const sourceKey = draggedHeroBlock || draggedBlockRef.current;
+                      if (sourceKey && sourceKey !== blockKey) {
+                        setDragOverBlock(blockKey);
+                        
+                        const currentOrder = [...(localHeroOrder || (featured.heroLayoutOrder && featured.heroLayoutOrder.length > 2 ? featured.heroLayoutOrder : GRANULAR_HERO_BLOCKS))];
+                        const sIdx = currentOrder.indexOf(sourceKey);
                         const tIdx = currentOrder.indexOf(blockKey);
+                        
                         if (sIdx !== -1 && tIdx !== -1 && sIdx !== tIdx) {
                           currentOrder.splice(sIdx, 1);
-                          currentOrder.splice(tIdx, 0, draggedHeroBlock);
+                          currentOrder.splice(tIdx, 0, sourceKey);
                           setLocalHeroOrder(currentOrder);
                         }
                       }
                     },
-                    onDragEnter: (e) => {
-                      e.preventDefault();
-                    },
                     onDragLeave: (e) => {
+                      if (dragOverBlock === blockKey) setDragOverBlock(null);
                     },
                     onDrop: (e) => {
                       e.preventDefault();
-                      // Logic is handled in onDragOver for real-time feel
-                      // and onDragEnd for final persistence
+                      setDragOverBlock(null);
                     },
                     className: `hero-block block-${blockKey} ${isDragging ? 'dragging' : ''} ${isDragOver ? 'drag-over' : ''}`
                   };
@@ -884,7 +891,7 @@ export default function SamajJogSandesh({ lang }) {
                       title="Reset Layout"
                       onClick={async (e) => {
                         e.stopPropagation();
-                        await updateDoc(doc(db, 'samaj_jog_sandesh', featured.id), { heroLayoutOrder: HERO_BLOCKS });
+                        await updateDoc(doc(db, 'samaj_jog_sandesh', featured.id), { heroLayoutOrder: GRANULAR_HERO_BLOCKS });
                       }}
                     >
                       🔄
