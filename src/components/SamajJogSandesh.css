@@ -12,122 +12,111 @@
 
 /* 📋 MAIN LAYOUT: SIDEBAR + FEED */
 .samaj-main-layout {
-  display: grid;
-  grid-template-columns: 280px 1fr;
-  gap: 40px;
-  align-items: start;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  align-items: stretch;
 }
 
-/* 🏺 SIDEBAR (AMAZON STYLE) */
-.samaj-sidebar {
+/* 🏺 HORIZONTAL FILTERS */
+.filters-horizontal-container {
   background: white;
   border-radius: 20px;
-  padding: 30px;
+  padding: 16px 24px;
   border: 1px solid #e2e8f0;
-  position: sticky;
-  top: 100px;
-  display: flex;
-  flex-direction: column;
-  gap: 30px;
-}
-
-.sidebar-section h4 {
-  font-size: 14px;
-  text-transform: uppercase;
-  letter-spacing: 1px;
-  color: #64748b;
-  margin-bottom: 20px;
-  padding-bottom: 10px;
-  border-bottom: 1px solid #f1f5f9;
-}
-
-.sidebar-filters {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-
-.filter-pill {
   display: flex;
   align-items: center;
-  gap: 12px;
-  padding: 12px 16px;
-  border-radius: 10px;
-  background: none;
-  border: 1px solid transparent;
-  color: #475569;
-  font-weight: 600;
-  font-size: 14px;
-  cursor: pointer;
-  transition: all 0.2s;
-  text-align: left;
+  gap: 30px;
+  box-shadow: 0 10px 25px -5px rgba(0,0,0,0.02);
+  margin-bottom: 10px;
+  flex-wrap: wrap;
 }
 
-.filter-pill:hover {
-  background: #f8fafc;
-  color: #7c3aed;
-}
-
-.filter-pill.active {
-  background: #f5f3ff;
-  color: #7c3aed;
-  border-color: #ddd6fe;
-}
-
-.filter-pill .icon {
-  font-size: 18px;
-}
-
-.sidebar-vibhags {
+.filter-group {
   display: flex;
-  flex-direction: column;
+  align-items: center;
+  gap: 20px;
+}
+
+.filter-label {
+  font-size: 10px;
+  font-weight: 900;
+  color: #94a3b8;
+  text-transform: uppercase;
+  letter-spacing: 1.5px;
+  white-space: nowrap;
+}
+
+.filter-pills-row, 
+.filter-vibhags-row {
+  display: flex;
+  align-items: center;
   gap: 8px;
 }
 
-.sidebar-vibhags span {
+.vibhag-pill, .filter-pill {
+  display: flex;
+  align-items: center;
+  gap: 10px;
   font-size: 13px;
-  color: #64748b;
+  color: #475569;
+  padding: 8px 18px;
+  border-radius: 99px;
+  background: #f8fafc;
   cursor: pointer;
-  padding: 6px 10px;
-  border-radius: 6px;
-  transition: all 0.2s;
-}
-
-.sidebar-vibhags span:hover {
-  background: #f1f5f9;
-  color: #1e293b;
-}
-
-.sidebar-promo .promo-card {
-  background: linear-gradient(135deg, #1e293b 0%, #334155 100%);
-  color: white;
-  padding: 24px;
-  border-radius: 16px;
-  text-align: center;
-}
-
-.sidebar-promo h5 {
-  font-size: 16px;
-  margin-bottom: 8px;
-  color: #fbbf24;
-}
-
-.sidebar-promo p {
-  font-size: 12px;
-  opacity: 0.8;
-  margin-bottom: 16px;
-}
-
-.sidebar-promo button {
-  width: 100%;
-  padding: 10px;
-  border-radius: 8px;
-  background: white;
-  border: none;
-  color: #1e293b;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
   font-weight: 700;
+  border: 1px solid #e2e8f0;
+}
+
+.vibhag-pill:hover, .filter-pill:hover {
+  background: white;
+  border-color: #7c3aed;
+  color: #7c3aed;
+  transform: translateY(-1px);
+}
+
+.vibhag-pill.active, .filter-pill.active {
+  background: #7c3aed;
+  color: white;
+  border-color: #7c3aed;
+  box-shadow: 0 4px 12px rgba(124, 58, 237, 0.2);
+}
+
+.filter-separator {
+  width: 1px;
+  height: 24px;
+  background: #f1f5f9;
+}
+
+.filter-spacer {
+  flex: 1;
+}
+
+.help-btn {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 20px;
+  border-radius: 14px;
+  background: #1e293b;
+  color: #fbbf24;
+  border: none;
+  font-weight: 800;
   font-size: 12px;
   cursor: pointer;
+  transition: all 0.2s;
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+}
+
+.help-btn:hover {
+  background: #0f172a;
+  transform: translateY(-2px);
+  box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
+}
+
+.help-btn .icon {
+  font-size: 16px;
 }
 
 /* 📋 FEED AREA */
@@ -373,45 +362,29 @@
 
 /* 📱 RESPONSIVE overhaul */
 @media (max-width: 1100px) {
-  .samaj-main-layout {
-    grid-template-columns: 1fr;
+  .filters-horizontal-container {
+    padding: 12px;
     gap: 20px;
-  }
-
-  .samaj-sidebar {
-    position: static;
-    flex-direction: row;
     overflow-x: auto;
-    padding: 15px;
-    gap: 20px;
-    white-space: nowrap;
+    flex-wrap: nowrap;
     scrollbar-width: none;
+    -ms-overflow-style: none;
   }
 
-  .samaj-sidebar::-webkit-scrollbar {
+  .filters-horizontal-container::-webkit-scrollbar {
     display: none;
   }
 
-  .sidebar-section {
+  .filter-group {
     flex-shrink: 0;
   }
 
-  .sidebar-filters {
-    flex-direction: row;
+  .filter-separator {
+    flex-shrink: 0;
   }
 
-  .sidebar-vibhags {
-    flex-direction: row;
-    align-items: center;
-  }
-
-  .sidebar-promo {
+  .filter-spacer {
     display: none;
-  }
-
-  .sidebar-section h4 {
-    margin-bottom: 10px;
-    font-size: 11px;
   }
 }
 

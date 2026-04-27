@@ -683,10 +683,10 @@ export default function SamajJogSandesh({ lang }) {
 
       {/* 📋 MAIN LAYOUT: SIDEBAR + FEED */}
       <div className="samaj-main-layout">
-        <aside className="samaj-sidebar">
-          <div className="sidebar-section">
-            <h4>{lang === 'gu' ? 'શ્રેણીઓ' : 'Categories'}</h4>
-            <div className="sidebar-filters">
+        <div className="filters-horizontal-container">
+          <div className="filter-group">
+            <span className="filter-label">{lang === 'gu' ? 'શ્રેણીઓ' : 'CATEGORIES'}</span>
+            <div className="filter-pills-row">
               <button className="filter-pill active">
                 <span className="icon">🏛️</span> {lang === 'gu' ? 'બધા' : 'All Updates'}
               </button>
@@ -702,24 +702,26 @@ export default function SamajJogSandesh({ lang }) {
             </div>
           </div>
 
-          <div className="sidebar-section">
-            <h4>{lang === 'gu' ? 'વિભાગ ફિલ્ટર' : 'Vibhag Filters'}</h4>
-            <div className="sidebar-vibhags">
-              <span>{lang === 'gu' ? 'બધા વિભાગ' : 'All Districts'}</span>
-              <span>Central</span>
-              <span>Western</span>
-              <span>Harbour</span>
-            </div>
-          </div>
+          <div className="filter-separator"></div>
 
-          <div className="sidebar-promo">
-            <div className="promo-card">
-              <h5>{lang === 'gu' ? 'મદદ જોઈએ છે?' : 'Need Help?'}</h5>
-              <p>{lang === 'gu' ? 'તકનીકી સહાય માટે સંપર્ક કરો' : 'Contact for tech support'}</p>
-              <button onClick={() => window.open('https://wa.me/917208579149', '_blank')}>Contact Admin</button>
+          <div className="filter-group">
+            <span className="filter-label">{lang === 'gu' ? 'વિભાગ ફિલ્ટર' : 'VIBHAG FILTERS'}</span>
+            <div className="filter-vibhags-row">
+              <span className="vibhag-pill active">{lang === 'gu' ? 'બધા વિભાગ' : 'All Districts'}</span>
+              <span className="vibhag-pill">Central</span>
+              <span className="vibhag-pill">Western</span>
+              <span className="vibhag-pill">Harbour</span>
             </div>
           </div>
-        </aside>
+          
+          <div className="filter-spacer"></div>
+          
+          <div className="filter-help-action">
+             <button className="help-btn" onClick={() => window.open('https://wa.me/917208579149', '_blank')}>
+               <span className="icon">❓</span> {lang === 'gu' ? 'મદદ' : 'Help'}
+             </button>
+          </div>
+        </div>
 
         <div className={`samaj-feed ${lang === 'gu' ? 'lang-gu' : ''}`}>
           <div className="feed-header">
