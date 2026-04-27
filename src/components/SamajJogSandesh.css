@@ -119,6 +119,70 @@
   font-size: 16px;
 }
 
+/* 🚀 AUTO-SCROLLING MARQUEE */
+.marquee-wrapper {
+  overflow: hidden;
+  white-space: nowrap;
+  position: relative;
+  width: 100%;
+  padding: 10px 0;
+  margin-bottom: 20px;
+  background: linear-gradient(90deg, rgba(255,255,255,0) 0%, rgba(248,250,252,1) 5%, rgba(248,250,252,1) 95%, rgba(255,255,255,0) 100%);
+  border-radius: 12px;
+  display: flex;
+  align-items: center;
+}
+
+.marquee-track {
+  display: inline-flex;
+  gap: 15px;
+  animation: scrollMarquee 30s linear infinite;
+}
+
+.marquee-wrapper:hover .marquee-track {
+  animation-play-state: paused;
+}
+
+.marquee-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  background: white;
+  padding: 8px 16px;
+  border-radius: 100px;
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -1px rgba(0, 0, 0, 0.03);
+  border: 1px solid #e2e8f0;
+  cursor: pointer;
+  transition: all 0.2s;
+  flex-shrink: 0;
+}
+
+.marquee-item:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
+  border-color: #3b82f6;
+  background: #eff6ff;
+}
+
+.mq-icon {
+  font-size: 14px;
+}
+
+.mq-title {
+  font-size: 12px;
+  font-weight: 700;
+  color: #1e293b;
+  max-width: 150px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+@keyframes scrollMarquee {
+  0% { transform: translateX(0); }
+  100% { transform: translateX(calc(-50% - 7.5px)); }
+}
+
 /* 📋 FEED AREA */
 .feed-grid {
   display: grid;

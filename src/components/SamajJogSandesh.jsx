@@ -346,34 +346,7 @@ export default function SamajJogSandesh({ lang }) {
 
   // 📦 Archive a post (hides from public, reversible)
   // --- ATOMIC SLOT MANAGEMENT ---
-  const handleSlotSwap = async (item, targetSlot) => {
-    if (!canManage) return;
-    try {
-      // 1. Identify which field to clear based on target slot
-      let fieldToClear = '';
-      if (targetSlot === 'hero') fieldToClear = 'isHero';
-      if (targetSlot === 'side1') fieldToClear = 'isHighlight1';
-      if (targetSlot === 'side2') fieldToClear = 'isHighlight2';
 
-      // 2. Find all posts that currently have this slot active and clear them
-      const postsToClear = messages.filter(m => m[fieldToClear] === true && m.id !== item.id);
-      
-      const batchPromises = postsToClear.map(m => 
-        updateDoc(doc(db, "samaj_jog_sandesh", m.id), { [fieldToClear]: false })
-      );
-
-      // 3. Set the new slot on the target item
-      const newVal = !item[fieldToClear]; // Toggle
-      batchPromises.push(
-        updateDoc(doc(db, "samaj_jog_sandesh", item.id), { [fieldToClear]: newVal })
-      );
-
-      await Promise.all(batchPromises);
-      // Local state will update via useEffect listener
-    } catch (err) {
-      console.error("Error swapping slot:", err);
-    }
-  };
 
   const handleArchive = async (id) => {
     try {
@@ -637,26 +610,8 @@ export default function SamajJogSandesh({ lang }) {
   // Archived posts (real posts only, no samples)
   const archivedMessages = messages.filter(m => m?.isArchived);
   
-  // 🔥 HERO FIREWALL: Only consider posts that are NOT pinned to any Side Slot (Top or Bottom)
-  const heroCandidates = activeMessages.filter(m => 
-    !m.isHighlight1 && !m.isHighlight2 && !m.isQuickLink
-  );
-
-  // Find featured post: ONLY explicitly pinned Hero posts (no automatic fallback)
-  const featured = activeMessages.find(m => m.isHero) || null;
-
-  // 1. Find the latest Highlight for Slot 1 (Top)
-  const highlight1Post = activeMessages.find(m => m.isHighlight1) || null;
-
-  // 2. Find the latest Highlight for Slot 2 (Bottom) - STRICTLY EXCLUDES whatever is in Slot 1
-  const highlight2Post = activeMessages.find(m => m.isHighlight2) || null;
-  
-  // 3. Feed: Everything else (Strictly excludes Top Slot, Bottom Slot, and Hero Banner)
-  // Feed: All posts except Side Slot posts (Hero post ALSO shows in feed)
-  const feed = activeMessages.filter(m =>
-    m.id !== highlight1Post?.id &&
-    m.id !== highlight2Post?.id
-  ).slice(0, 15);
+  // Feed: All posts (including those previously marked as highlights, since side slots are removed)
+  const feed = activeMessages;
 
   // 4. Current display list (live or archived view)
   const displayFeed = showArchived ? archivedMessages : feed;
@@ -756,6 +711,35 @@ export default function SamajJogSandesh({ lang }) {
             </div>
           </div>
 
+          {/* 🚀 AUTO-SCROLLING MARQUEE */}
+          {displayFeed.length > 0 && !showArchived && (
+            <div className="marquee-wrapper">
+              <div className="marquee-track">
+                {displayFeed.map(item => (
+                  <div 
+                    key={`mq-${item.id}`} 
+                    className="marquee-item"
+                    onClick={() => setMaximizedId(item.id)}
+                  >
+                    <span className="mq-icon">{item.type === 'video' ? '🎥' : item.type === 'letter' ? '📜' : '🖼️'}</span>
+                    <span className="mq-title">{item[`title${lang === 'gu' ? 'Gu' : 'En'}`] || item[`title${lang === 'gu' ? 'En' : 'Gu'}`] || 'Update'}</span>
+                  </div>
+                ))}
+                {/* Duplicate for seamless infinite scrolling */}
+                {displayFeed.map(item => (
+                  <div 
+                    key={`mq-dup-${item.id}`} 
+                    className="marquee-item"
+                    onClick={() => setMaximizedId(item.id)}
+                  >
+                    <span className="mq-icon">{item.type === 'video' ? '🎥' : item.type === 'letter' ? '📜' : '🖼️'}</span>
+                    <span className="mq-title">{item[`title${lang === 'gu' ? 'Gu' : 'En'}`] || item[`title${lang === 'gu' ? 'En' : 'Gu'}`] || 'Update'}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
           <div className={`feed-grid ${bulkMode ? 'bulk-mode-active' : ''}`}>
             {displayFeed.length === 0 && (
               <div className="empty-archive-state">
@@ -829,51 +813,7 @@ export default function SamajJogSandesh({ lang }) {
                      {getT(item, 'date')} • {getT(item, 'authority')}
                   </div>
 
-                  {/* 🛡️ Admin Slot Management - CLEAN & PROFESSIONAL */}
-                  {canManage && (
-                    <div className="card-admin-management-row" style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'space-between',
-                      margin: '10px 0',
-                      padding: '8px 0',
-                      borderTop: '1px solid #f1f5f9',
-                      borderBottom: '1px solid #f1f5f9'
-                    }}>
-                      <div className="active-slot-badges" style={{display: 'flex', gap: '5px'}}>
-                        {item.isHero && <span style={{background: '#7c3aed', color: 'white', padding: '3px 8px', borderRadius: '4px', fontSize: '9px', fontWeight: 'bold', boxShadow: '0 2px 5px rgba(124, 58, 237, 0.3)'}}>🌟 HERO</span>}
-                        {item.isHighlight && <span style={{background: '#f59e0b', color: 'white', padding: '3px 8px', borderRadius: '4px', fontSize: '9px', fontWeight: 'bold'}}>📍 SIDE TOP</span>}
-                        {item.isHighlight2 && <span style={{background: '#3b82f6', color: 'white', padding: '3px 8px', borderRadius: '4px', fontSize: '9px', fontWeight: 'bold'}}>📍 SIDE BOTTOM</span>}
-                        {!item.isHero && !item.isHighlight && !item.isHighlight2 && (
-                          <span style={{color: '#94a3b8', fontSize: '9px', fontStyle: 'italic'}}>No Active Slot</span>
-                        )}
-                      </div>
 
-                      <div className="slot-quick-actions" style={{display: 'flex', gap: '4px'}}>
-                         <button 
-                            onClick={(e) => { e.stopPropagation(); handleSlotSwap(item, 'hero'); }}
-                            style={{padding: '4px 6px', fontSize: '9px', borderRadius: '4px', background: item.isHero ? '#eee' : '#fff', border: '1px solid #ddd', cursor: 'pointer'}}
-                            title="Set as Main Hero"
-                         >
-                            👑 Hero
-                         </button>
-                         <button 
-                            onClick={(e) => { e.stopPropagation(); handleSlotSwap(item, 'side1'); }}
-                            style={{padding: '4px 6px', fontSize: '9px', borderRadius: '4px', background: item.isHighlight ? '#eee' : '#fff', border: '1px solid #ddd', cursor: 'pointer'}}
-                            title="Set as Side Top"
-                         >
-                            👆 Side1
-                         </button>
-                         <button 
-                            onClick={(e) => { e.stopPropagation(); handleSlotSwap(item, 'side2'); }}
-                            style={{padding: '4px 6px', fontSize: '9px', borderRadius: '4px', background: item.isHighlight2 ? '#eee' : '#fff', border: '1px solid #ddd', cursor: 'pointer'}}
-                            title="Set as Side Bottom"
-                         >
-                            👇 Side2
-                         </button>
-                      </div>
-                    </div>
-                  )}
 
                   <p className={`card-text ${expandedId === item.id ? 'expanded' : ''}`}>
                     {getT(item, 'content')}
