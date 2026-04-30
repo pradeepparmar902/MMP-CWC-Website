@@ -35,12 +35,12 @@ export const getDirectUrl = (url) => {
   if (url.includes('drive.google.com') || url.includes('docs.google.com')) {
     const fileId = extractGDriveId(url);
     if (fileId) {
-      // Use thumbnail API — works reliably for images without CORS issues
-      return `https://drive.google.com/thumbnail?id=${fileId}&sz=w1600`;
+      // Use lh3.googleusercontent.com CDN — works WITHOUT Google login (Android safe)
+      return `https://lh3.googleusercontent.com/d/${fileId}`;
     }
   }
 
-  // For everything else (Firebase Storage, direct URLs), return as-is
+  // For everything else (Firebase Storage, base64, direct URLs), return as-is
   return url;
 };
 

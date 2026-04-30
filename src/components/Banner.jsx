@@ -17,10 +17,13 @@ export default function Banner({ config, isSticky, isCollapsed }) {
         {config.elements.map((el) => {
           if (!el.url) return null;
           
+          const validElements = config.elements.filter(e => e.url);
+          const isCenter = el.id === '2' || validElements.length === 1 || (el.name && el.name.toLowerCase().includes('center'));
+
           return (
             <div 
               key={el.id} 
-              className={`canvas-element ${el.id === '2' ? 'center-logo' : ''}`}
+              className={`canvas-element ${isCenter ? 'center-logo' : 'side-logo'}`}
               style={{
                 left: `${el.x}%`,
                 top: `${el.y}%`,
