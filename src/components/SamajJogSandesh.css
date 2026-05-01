@@ -2526,3 +2526,26 @@ body.reader-active .reader-overlay {
     padding: 20px 10px !important;
   }
 }
+/* 🛠️ WEBAPP ADMIN VISIBILITY FIX */
+.card-footer-actions {
+  display: flex !important;
+  flex-direction: column !important; /* Stack actions vertically */
+  align-items: stretch !important;
+  gap: 12px !important;
+  margin-top: 15px !important;
+}
+
+.admin-actions-inline {
+  display: flex !important;
+  flex-wrap: wrap !important;
+  gap: 6px !important;
+  width: 100% !important;
+  border-top: 1px solid #f1f5f9 !important;
+  padding-top: 10px !important;
+}
+
+/* Ensure the card doesn't clip the buttons on Desktop */
+.sandesh-card {
+  height: auto !important;
+  min-height: 450px !important; /* Give enough room for all admin tools */
+}
