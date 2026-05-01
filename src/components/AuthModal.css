@@ -327,3 +327,25 @@
 .logout-item:hover {
   background: #fee2e2;
 }
+
+/* 📱 MOBILE RESPONSIVENESS */
+@media (max-width: 480px) {
+  .auth-modal {
+    width: 95%;
+    padding: 24px 20px;
+  }
+  
+  .auth-modal h2 {
+    font-size: 20px;
+  }
+
+  .form-group input {
+    font-size: 16px; /* Prevents iOS auto-zoom */
+    padding: 10px;
+  }
+
+  .country-code {
+    font-size: 16px; /* Prevents iOS auto-zoom */
+    padding: 10px;
+  }
+}

@@ -1,5 +1,19 @@
 {
   "appId": "com.mmp.app",
   "appName": "MMP App",
-  "webDir": "dist"
+  "webDir": "dist",
+  "plugins": {
+    "SplashScreen": {
+      "launchShowDuration": 3000,
+      "launchAutoHide": false,
+      "backgroundColor": "#ffffff",
+      "androidSplashResourceName": "splash",
+      "androidScaleType": "CENTER_CROP",
+      "showSpinner": true,
+      "androidSpinnerStyle": "large",
+      "spinnerColor": "#3B82F6",
+      "splashFullScreen": true,
+      "splashImmersive": true
+    }
+  }
 }

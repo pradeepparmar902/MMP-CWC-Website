@@ -10,6 +10,7 @@ import SuperAdminPanel from './components/SuperAdminPanel';
 import { useAuth } from './context/AuthContext';
 import AuthModal from './components/AuthModal';
 import AccessWall from './components/AccessWall';
+import { SplashScreen } from '@capacitor/splash-screen';
 
 const DEFAULT_NAV_ITEMS = [
   { id: 'home', label: 'Home', color: '#3B82F6', visible: true, isProtected: false },
@@ -105,6 +106,11 @@ function App() {
         console.error("Error fetching cloud config:", error);
       } finally {
         setIsCloudLoaded(true);
+        try {
+          await SplashScreen.hide();
+        } catch (e) {
+          // Ignore error if not running in Capacitor/native context
+        }
       }
     };
     fetchConfig();
@@ -169,9 +175,10 @@ function App() {
   }, [bannerConfig, isCloudLoaded]);
 
   return (
-    <div className={`app-container ${isHeaderCollapsed ? 'header-collapsed' : ''}`} style={{ backgroundColor: bannerConfig.bodyBgColor || '#f9fafb', minHeight: '100vh' }}>
-      <Header 
-        config={bannerConfig} 
+    <>
+      <div className={`app-container ${isHeaderCollapsed ? 'header-collapsed' : ''}`} style={{ backgroundColor: bannerConfig.bodyBgColor || '#f9fafb', minHeight: '100vh' }}>
+        <Header 
+          config={bannerConfig} 
         onLoginClick={(view) => {
           setShowAuthModal(true);
           setAuthInitialView(view || 'login');
@@ -273,6 +280,7 @@ function App() {
         />
       )}
     </div>
+    </>
   );
 }
 

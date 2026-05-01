@@ -5,6 +5,11 @@ I have saved all our progress today in your local files and my context. Tomorrow
 
 
 
+for android 
+push to android  run this code
+ npm run build (This bundles all our new responsive CSS into production-ready files)
+npx cap sync android (This copies those new files directly into the Android native project folder)
+
 DEfault OTP 789789
 
 9819984437: (Primary Admin Bypass)

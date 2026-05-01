@@ -9,7 +9,7 @@ export default function Banner({ config, isSticky, isCollapsed }) {
     <section 
       className={`banner-canvas ${isSticky ? 'banner-sticky' : ''} ${isCollapsed ? 'collapsed' : ''}`} 
       style={{ 
-        height: isCollapsed ? '0px' : bannerHeight, 
+        height: isCollapsed ? '0px' : `calc(${bannerHeight} * var(--banner-scale, 1))`, 
         backgroundColor: config.bannerBgColor 
       }}
     >
@@ -17,18 +17,15 @@ export default function Banner({ config, isSticky, isCollapsed }) {
         {config.elements.map((el) => {
           if (!el.url) return null;
           
-          const validElements = config.elements.filter(e => e.url);
-          const isCenter = el.id === '2' || validElements.length === 1 || (el.name && el.name.toLowerCase().includes('center'));
-
           return (
             <div 
               key={el.id} 
-              className={`canvas-element ${isCenter ? 'center-logo' : 'side-logo'}`}
+              className="canvas-element"
               style={{
                 left: `${el.x}%`,
                 top: `${el.y}%`,
-                width: `${el.width}px`,
-                height: `${el.height}px`,
+                width: `calc(${el.width}px * var(--banner-scale, 1))`,
+                height: `calc(${el.height}px * var(--banner-scale, 1))`,
                 transform: `scale(${el.scale})`,
                 zIndex: 10 + parseInt(el.id || 0)
               }}

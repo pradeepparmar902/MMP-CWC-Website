@@ -70,3 +70,18 @@ body.modal-open .global-banner-wrap {
   pointer-events: none !important;
 }
 
+/* 📱 GLOBAL MOBILE RESPONSIVENESS */
+@media (max-width: 768px) {
+  html, body {
+    overflow-x: hidden;
+  }
+  
+  body {
+    font-size: 14px;
+  }
+
+  .container {
+    padding: 0 0.75rem;
+  }
+}
+

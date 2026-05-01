@@ -299,6 +299,33 @@
   }
 }
 
+@media (max-width: 768px) {
+  /* On mobile, NEVER float the header buttons over content */
+  .header-hidden {
+    height: auto !important;
+    padding: 0.4rem 0 !important;
+    background-color: var(--clr-white) !important;
+    box-shadow: 0 2px 4px var(--clr-shadow) !important;
+    pointer-events: auto !important;
+  }
+
+  .hamburger-btn.floating,
+  .header-right.floating {
+    position: static !important;
+    background: none !important;
+    box-shadow: none !important;
+    border: none !important;
+    backdrop-filter: none !important;
+    height: auto !important;
+    padding: 0.4rem !important;
+  }
+
+  .hamburger-btn.floating {
+    width: auto !important;
+    justify-content: flex-start !important;
+  }
+}
+
 @media (max-width: 600px) {
   .header {
     padding: 0.5rem 0;
