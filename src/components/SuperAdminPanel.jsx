@@ -385,18 +385,18 @@ export default function SuperAdminPanel({ config, setConfig, syncStatus, assets,
                 <tbody>
                   {(config.navItems || []).map(item => (
                     <tr key={item.id} className={item.isProtected ? 'row-protected' : 'row-public'}>
-                      <td className="page-label">{item.label}</td>
-                      <td>
+                      <td data-label="Page Label" className="page-label">{item.label}</td>
+                      <td data-label="Status">
                         <span className={`status-pill ${item.id === 'admin' ? 'admin-only' : item.isProtected ? 'protected' : 'public'}`}>
                           {item.id === 'admin' ? '🛡️ Admin Only' : item.isProtected ? '🔒 Member Only' : '🔓 Public Access'}
                         </span>
                       </td>
-                      <td>
+                      <td data-label="Visibility">
                         <span className={`visibility-indicator ${item.visible ? 'visible' : 'hidden'}`}>
                           {item.visible ? '👁️ Shown' : '🕶️ Hidden'}
                         </span>
                       </td>
-                      <td>
+                      <td data-label="Actions">
                         <div className="action-btns">
                           <button 
                             className={`toggle-security-btn ${item.isProtected ? 'make-public' : 'make-protected'}`}
@@ -499,7 +499,7 @@ export default function SuperAdminPanel({ config, setConfig, syncStatus, assets,
                       {allUsers.map(user => (
                         <React.Fragment key={user.uid}>
                           <tr className={expandedUser === user.uid ? 'row-expanded' : ''}>
-                             <td className="page-label">
+                             <td data-label="Expand" className="page-label">
                                <button 
                                  className="expand-row-btn" 
                                  onClick={() => {
@@ -512,15 +512,15 @@ export default function SuperAdminPanel({ config, setConfig, syncStatus, assets,
                              </td>
                              
                              {formSchema.map(field => (
-                               <td key={field.id} className="dynamic-cell">
+                               <td key={field.id} data-label={field.label} className="dynamic-cell">
                                  {renderDynamicCell(field, user.profile)}
                                </td>
                              ))}
 
-                            <td className="user-date" style={{fontSize:'12px', color:'#64748b'}}>
+                            <td data-label="Phone" className="user-date" style={{fontSize:'12px', color:'#64748b'}}>
                                {user.phone}
                             </td>
-                            <td>
+                            <td data-label="Status">
                               {user._source === 'approved' ? (
                                 <span className={`role-pill ${user.role}`}>
                                   {ROLE_MAP[user.role] || user.role}
@@ -531,7 +531,7 @@ export default function SuperAdminPanel({ config, setConfig, syncStatus, assets,
                                 </span>
                               )}
                             </td>
-                            <td>
+                            <td data-label="Actions">
                               <div className="action-btns">
                                 {/* Grant/Promote to Admin */}
                                 {user.role !== 'admin' && (
@@ -679,7 +679,7 @@ export default function SuperAdminPanel({ config, setConfig, syncStatus, assets,
                     {pendingUsers.map(user => (
                       <React.Fragment key={user.uid}>
                         <tr className={expandedUser === user.uid ? 'row-expanded' : ''}>
-                          <td>
+                          <td data-label="Expand">
                             <button 
                               className="expand-row-btn" 
                               onClick={() => setExpandedUser(expandedUser === user.uid ? null : user.uid)}
@@ -689,15 +689,15 @@ export default function SuperAdminPanel({ config, setConfig, syncStatus, assets,
                           </td>
 
                           {formSchema.map(field => (
-                             <td key={field.id} className="dynamic-cell">
+                             <td key={field.id} data-label={field.label} className="dynamic-cell">
                                {renderDynamicCell(field, user.profile)}
                              </td>
                           ))}
 
-                          <td className="user-phone">
+                          <td data-label="Phone" className="user-phone">
                              {user.phone}
                           </td>
-                          <td className="user-date">
+                          <td data-label="Date" className="user-date">
                             {(() => {
                               try {
                                 const d = user.registeredAt?.toDate ? user.registeredAt.toDate() : new Date(user.registeredAt);
@@ -705,12 +705,12 @@ export default function SuperAdminPanel({ config, setConfig, syncStatus, assets,
                               } catch(e) { return 'Recent'; }
                             })()}
                           </td>
-                          <td>
+                          <td data-label="Status">
                             <span className={`status-pill ${user.status}`}>
                               {user.status}
                             </span>
                           </td>
-                          <td>
+                          <td data-label="Actions">
                             <div className="action-btns" style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
                               {user.status !== 'approved' && (
                                 <>

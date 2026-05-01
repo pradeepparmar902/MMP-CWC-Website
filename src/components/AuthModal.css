@@ -349,3 +349,46 @@
     padding: 10px;
   }
 }
+
+/* 🚨 KEYBOARD-FRIENDLY MODAL FIX (v2.9) */
+@media (max-width: 600px) {
+  .auth-modal-overlay {
+    align-items: flex-start !important; /* Move to top to avoid keyboard overlap */
+    padding-top: 20px !important;
+    overflow-y: auto !important;
+  }
+
+  .auth-modal {
+    width: 95% !important;
+    max-height: none !important; /* Allow it to grow or use internal scroll */
+    margin-bottom: 300px !important; /* Buffer for keyboard space */
+    padding: 20px 15px !important;
+  }
+
+  .form-group {
+    margin-bottom: 12px !important;
+  }
+
+  .auth-submit-btn {
+    margin-top: 15px !important;
+  }
+}
+/* 🚨 UNIVERSAL MODAL APK FIX (v3.0) - FORCE TOP ALIGN */
+@media (max-width: 1200px) {
+  .auth-modal-overlay {
+    align-items: flex-start !important; /* Force to top */
+    padding-top: 50px !important; /* Stay below clock */
+    overflow-y: auto !important;
+    display: block !important; /* Change from flex to block for better scrolling */
+  }
+
+  .auth-modal {
+    margin: 0 auto !important;
+    width: 96% !important;
+    max-height: none !important;
+    padding: 25px 15px !important;
+    margin-bottom: 400px !important; /* Massive space for keyboard */
+    position: relative !important;
+    transform: none !important; /* Stop any centering math */
+  }
+}

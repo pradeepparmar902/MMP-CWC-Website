@@ -70,14 +70,24 @@ body.modal-open .global-banner-wrap {
   pointer-events: none !important;
 }
 
-/* 📱 GLOBAL MOBILE RESPONSIVENESS */
+/* 📱 GLOBAL MOBILE RESPONSIVENESS & SAFE AREAS */
 @media (max-width: 768px) {
+  :root {
+    /* Automatically detect status bar (clock/battery) and notches */
+    --safe-top: env(safe-area-inset-top, 0px);
+    --safe-bottom: env(safe-area-inset-bottom, 0px);
+  }
+
   html, body {
     overflow-x: hidden;
+    height: 100%;
+    /* Ensure the app doesn't slide under the phone's status bar */
+    padding-top: var(--safe-top);
   }
   
   body {
     font-size: 14px;
+    background-color: var(--clr-bg);
   }
 
   .container {

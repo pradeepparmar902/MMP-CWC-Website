@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { db } from '../firebase';
 import { 
@@ -100,6 +100,7 @@ export default function SamajJogSandesh({ lang }) {
 
   const [messages, setMessages] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [isOnline, setIsOnline] = useState(true); // 🌐 Connection Monitor
   const [expandedId, setExpandedId] = useState(null);
   const [maximizedId, setMaximizedId] = useState(null); // Full-screen Reader State
   
@@ -110,6 +111,24 @@ export default function SamajJogSandesh({ lang }) {
   const [isSaving, setIsSaving] = useState(false);
   const [isTranslating, setIsTranslating] = useState(false);
   const [editingId, setEditingId] = useState(null);
+  const [currentHeroIndex, setCurrentHeroIndex] = useState(0);
+  const heroIntervalRef = useRef(null);
+  const touchStartRef = useRef(null);
+  const touchEndRef = useRef(null);
+
+  // Toggle body class to hide main app header when reader is open
+  useEffect(() => {
+    if (maximizedId) {
+      document.body.classList.add('reader-active');
+    } else {
+      document.body.classList.remove('reader-active');
+    }
+    return () => document.body.classList.remove('reader-active');
+  }, [maximizedId]);
+
+  
+  // 📏 Swipe Sensitivity
+  const MIN_SWIPE_DISTANCE = 50;
   
   // Hero Drag & Drop State
   const [draggedHeroBlock, setDraggedHeroBlock] = useState(null);
@@ -136,6 +155,7 @@ export default function SamajJogSandesh({ lang }) {
     hasAttachment: false,
     isHighlight1: false,
     isHighlight2: false,
+    isHero: false,
     // 🎨 Styling Canvas Fields
     bgColor: '',
     textColor: '',
@@ -180,7 +200,12 @@ export default function SamajJogSandesh({ lang }) {
     const q = query(collection(db, 'samaj_jog_sandesh'), orderBy('createdAt', 'desc'));
     const unsubscribe = onSnapshot(q, (snapshot) => {
       const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-      setMessages(data.length > 0 ? data : DUMMY_MESSAGES.map(dm => ({ ...dm, isSample: true })));
+      setMessages(data.length > 0 ? data : []);
+      setLoading(false);
+      setIsOnline(true);
+    }, (error) => {
+      console.error("Firebase error:", error);
+      setIsOnline(false);
       setLoading(false);
     });
     return unsubscribe;
@@ -227,6 +252,18 @@ export default function SamajJogSandesh({ lang }) {
 
     setIsSaving(true);
     try {
+      // 📏 Size Check: Firestore limit is 1MB
+      const payloadString = JSON.stringify(formData);
+      const sizeInBytes = new Blob([payloadString]).size;
+      
+      if (sizeInBytes > 1000000) {
+        alert(lang === 'gu' 
+          ? 'ભૂલ: આ પોસ્ટ ખૂબ મોટી છે (1MB થી વધુ). કૃપા કરીને નાની છબી વાપરો અથવા વિડિઓ માટે YouTube લિંકનો ઉપયોગ કરો.' 
+          : 'Error: This post is too large (over 1MB). Please use a smaller image or a YouTube link for videos.');
+        setIsSaving(false);
+        return;
+      }
+
       // Extract style-related fields if we are in Hero context
       let styleFields = {};
       if (formattingContext === 'hero') {
@@ -267,7 +304,7 @@ export default function SamajJogSandesh({ lang }) {
       };
 
       const payload = formattingContext === 'hero' 
-        ? { heroStyle: styleFields } // ONLY save the heroStyle object if we are editing hero formatting
+        ? { heroStyle: styleFields } 
         : basePayload;
 
       if (editingId) {
@@ -281,10 +318,13 @@ export default function SamajJogSandesh({ lang }) {
       
       setShowModal(false);
       resetForm();
+      alert(lang === 'gu' ? '✅ સંદેશ સફળતાપૂર્વક પ્રકાશિત થયો!' : '✅ Message published successfully!');
     } catch (err) {
-      alert('Error saving message: ' + err.message);
+      console.error("Save error:", err);
+      alert('Error saving message: ' + (err.code || err.message));
+    } finally {
+      setIsSaving(false);
     }
-    setIsSaving(false);
   };
 
   const handleSuggestDraft = async (sourceLang) => {
@@ -452,6 +492,15 @@ export default function SamajJogSandesh({ lang }) {
     }));
   };
 
+  const handleToggleHero = async (item) => {
+    try {
+      const docRef = doc(db, "samaj_jog_sandesh", item.id);
+      await updateDoc(docRef, { isHero: !item.isHero });
+    } catch (error) {
+      console.error("Error toggling hero status:", error);
+    }
+  };
+
   const handleEdit = (item) => {
     setStyleOnlyMode(false);
     setFormattingContext('feed'); // Reset context
@@ -616,7 +665,48 @@ export default function SamajJogSandesh({ lang }) {
   // 4. Current display list (live or archived view)
   const displayFeed = showArchived ? archivedMessages : feed;
 
+  // 🎢 Hero Slider Logic - Only items explicitly marked by admin
+  const heroMessages = useMemo(() => {
+    if (!activeMessages) return [];
+    // Filter for items with isHero: true, or fallback to High Priority items if none marked
+    const markedHero = activeMessages.filter(m => m?.isHero);
+    const source = markedHero.length > 0 ? markedHero : activeMessages.filter(m => m?.priority === 'high');
+    
+    return source.filter(m => m && (m.titleEn || m.titleGu)).slice(0, 5); // Allow up to 5 items
+  }, [activeMessages]);
+
+  useEffect(() => {
+    if (heroMessages.length <= 1) return;
+    heroIntervalRef.current = setInterval(() => {
+      setCurrentHeroIndex(prev => (prev + 1) % heroMessages.length);
+    }, 5000);
+    return () => clearInterval(heroIntervalRef.current);
+  }, [heroMessages]);
+
+  const onTouchStart = (e) => {
+    touchEndRef.current = null;
+    touchStartRef.current = e.targetTouches[0].clientX;
+  };
+
+  const onTouchMove = (e) => {
+    touchEndRef.current = e.targetTouches[0].clientX;
+  };
+
+  const onTouchEnd = () => {
+    if (!touchStartRef.current || !touchEndRef.current) return;
+    const distance = touchStartRef.current - touchEndRef.current;
+    const isLeftSwipe = distance > MIN_SWIPE_DISTANCE;
+    const isRightSwipe = distance < -MIN_SWIPE_DISTANCE;
+
+    if (isLeftSwipe) {
+      setCurrentHeroIndex(prev => (prev + 1) % heroMessages.length);
+    } else if (isRightSwipe) {
+      setCurrentHeroIndex(prev => (prev - 1 + heroMessages.length) % heroMessages.length);
+    }
+  };
+
   const getT = (item, field) => {
+    if (!item) return null;
     const preferredKey = field + (lang === 'gu' ? 'Gu' : 'En');
     const fallbackKey = field + (lang === 'gu' ? 'En' : 'Gu');
     return <span dangerouslySetInnerHTML={{ __html: item[preferredKey] || item[fallbackKey] || '' }} />;
@@ -632,51 +722,55 @@ export default function SamajJogSandesh({ lang }) {
   }
 
   return (
-    <div className="samaj-jog-sandesh-root">
-      {/* Hero section removed */}
-
-
-      {/* 📋 MAIN LAYOUT: SIDEBAR + FEED */}
-      <div className="samaj-main-layout">
-        <div className="filters-horizontal-container">
-          <div className="filter-group">
-            <span className="filter-label">{lang === 'gu' ? 'શ્રેણીઓ' : 'CATEGORIES'}</span>
-            <div className="filter-pills-row">
-              <button className="filter-pill active">
-                <span className="icon">🏛️</span> {lang === 'gu' ? 'બધા' : 'All Updates'}
-              </button>
-              <button className="filter-pill">
-                <span className="icon">📸</span> {lang === 'gu' ? 'પોસ્ટર્સ' : 'Posters'}
-              </button>
-              <button className="filter-pill">
-                <span className="icon">📜</span> {lang === 'gu' ? 'પત્રો' : 'Letters'}
-              </button>
-              <button className="filter-pill">
-                <span className="icon">🎥</span> {lang === 'gu' ? 'વીડિયો' : 'Videos'}
-              </button>
-            </div>
+    <div className="samaj-container">
+      {/* 🎢 PREMIUM HERO SLIDER */}
+      {!showArchived && heroMessages.length > 0 && (
+        <div 
+          className="hero-slider-container"
+          onTouchStart={onTouchStart}
+          onTouchMove={onTouchMove}
+          onTouchEnd={onTouchEnd}
+        >
+          <div className="hero-slider-indicators">
+            {heroMessages.map((_, idx) => (
+              <div 
+                key={idx} 
+                className={`indicator-bar ${idx === currentHeroIndex ? 'active' : (idx < currentHeroIndex ? 'passed' : '')}`}
+                onClick={() => setCurrentHeroIndex(idx)}
+              >
+                <div className="indicator-progress" style={{ animationDuration: '5s' }}></div>
+              </div>
+            ))}
           </div>
 
-          <div className="filter-separator"></div>
-
-          <div className="filter-group">
-            <span className="filter-label">{lang === 'gu' ? 'વિભાગ ફિલ્ટર' : 'VIBHAG FILTERS'}</span>
-            <div className="filter-vibhags-row">
-              <span className="vibhag-pill active">{lang === 'gu' ? 'બધા વિભાગ' : 'All Districts'}</span>
-              <span className="vibhag-pill">Central</span>
-              <span className="vibhag-pill">Western</span>
-              <span className="vibhag-pill">Harbour</span>
-            </div>
-          </div>
-          
-          <div className="filter-spacer"></div>
-          
-          <div className="filter-help-action">
-             <button className="help-btn" onClick={() => window.open('https://wa.me/917208579149', '_blank')}>
-               <span className="icon">❓</span> {lang === 'gu' ? 'મદદ' : 'Help'}
-             </button>
+          <div className="hero-slider-track" style={{ transform: `translateX(-${currentHeroIndex * 100}%)` }}>
+            {heroMessages.map((item, idx) => (
+              <div 
+                key={item.id} 
+                className={`hero-slide ${idx === currentHeroIndex ? 'active' : ''}`}
+                onClick={() => setMaximizedId(item.id)}
+              >
+                <div className="hero-slide-bg" style={{ backgroundImage: `url(${item.bannerUrl || 'https://images.unsplash.com/photo-1517245386807-bb43f82c33c4?q=80&w=2070&auto=format&fit=crop'})` }}></div>
+                <div className="hero-slide-overlay" onClick={(e) => { e.stopPropagation(); setMaximizedId(item.id); }}>
+                  <div className="hero-slide-content">
+                    <span className="hero-slide-tag">{getT(item, 'subtitle')}</span>
+                    <h2 className="hero-slide-title">{getT(item, 'title')}</h2>
+                    <button 
+                      className="hero-slide-cta"
+                      onClick={(e) => { e.stopPropagation(); setMaximizedId(item.id); }}
+                    >
+                      {lang === 'gu' ? 'વધુ વાંચો' : 'Read More'}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            ))}
           </div>
         </div>
+      )}
+
+      {/* 📋 MAIN LAYOUT: SIDEBAR + FEED (Filter row removed as requested) */}
+      <div className="samaj-main-layout">
 
         <div className={`samaj-feed ${lang === 'gu' ? 'lang-gu' : ''}`}>
           <div className="feed-header">
@@ -746,7 +840,7 @@ export default function SamajJogSandesh({ lang }) {
                 {showArchived ? '📦 No archived posts yet.' : '📭 No posts available.'}
               </div>
             )}
-            {displayFeed.map(item => (
+            {displayFeed.filter(m => m && m.id).map(item => (
               <div
                 key={item.id}
                 id={`card-${item.id}`}
@@ -832,19 +926,41 @@ export default function SamajJogSandesh({ lang }) {
                     )}
 
                     {canManage && !bulkMode && (
-                      <div className="admin-actions-inline">
-                        {!item.isArchived && <button onClick={() => handleEdit(item)} title="Edit">✏️</button>}
-                        {!item.isSample && <button onClick={() => handleClone(item)} title="Clone post" className="clone-action-btn">📋</button>}
-                        {!item.isSample && !item.isArchived && (
-                          <button onClick={() => handleArchive(item.id)} title="Archive" className="archive-action-btn">📦</button>
-                        )}
-                        {!item.isSample && item.isArchived && (
-                          <button onClick={() => handleRestore(item.id)} title="Restore" className="restore-action-btn">♻️</button>
-                        )}
-                        {!item.isSample && (
-                          <button onClick={() => handleDelete(item.id)} title="Delete" className="delete-action-btn">🗑️</button>
-                        )}
-                      </div>
+                        <div className="admin-actions-inline">
+                          {!item.isArchived && (
+                            <button onClick={() => handleEdit(item)} className="admin-btn edit-btn">
+                              ✏️ <span className="admin-btn-label">{lang === 'gu' ? 'સુધારો' : 'Edit'}</span>
+                            </button>
+                          )}
+                          {!item.isSample && (
+                            <button onClick={() => handleClone(item)} className="admin-btn clone-btn">
+                              📋 <span className="admin-btn-label">{lang === 'gu' ? 'નકલ' : 'Clone'}</span>
+                            </button>
+                          )}
+                          {!item.isSample && !item.isArchived && (
+                            <button 
+                              onClick={() => handleToggleHero(item)} 
+                              className={`admin-btn hero-btn ${item.isHero ? 'active' : ''}`}
+                            >
+                              {item.isHero ? '⭐' : '☆'} <span className="admin-btn-label">{lang === 'gu' ? 'બેનર' : 'Hero'}</span>
+                            </button>
+                          )}
+                          {!item.isSample && !item.isArchived && (
+                            <button onClick={() => handleArchive(item.id)} className="admin-btn archive-btn">
+                              📦 <span className="admin-btn-label">{lang === 'gu' ? 'આર્કાઇવ' : 'Archive'}</span>
+                            </button>
+                          )}
+                          {!item.isSample && item.isArchived && (
+                            <button onClick={() => handleRestore(item.id)} className="admin-btn restore-btn">
+                              ♻️ <span className="admin-btn-label">{lang === 'gu' ? 'રીસ્ટોર' : 'Restore'}</span>
+                            </button>
+                          )}
+                          {!item.isSample && (
+                            <button onClick={() => handleDelete(item.id)} className="admin-btn delete-btn">
+                              🗑️ <span className="admin-btn-label">{lang === 'gu' ? 'કાઢી નાખો' : 'Del'}</span>
+                            </button>
+                          )}
+                        </div>
                     )}
                   </div>
                 </div>
@@ -1172,32 +1288,56 @@ export default function SamajJogSandesh({ lang }) {
               const item = activeMessages.find(m => m.id === maximizedId);
               if (!item) return null;
               return (
-                <div className="reader-content-wrap">
-                  <div className="reader-header">
-                    <span className="reader-category">{getT(item, 'subtitle')}</span>
-                    <h2>{getT(item, 'title')}</h2>
-                    <div className="reader-meta">
-                      <span>👤 {getT(item, 'authority')}</span>
-                      <span>📅 {getT(item, 'date')}</span>
+                <div className="reader-content-wrap" onScroll={e => {
+                  const scroll = e.target.scrollTop;
+                  const height = e.target.scrollHeight - e.target.clientHeight;
+                  const progress = (scroll / height) * 100;
+                  const bar = document.getElementById('reading-progress');
+                  if (bar) bar.style.width = `${progress}%`;
+                }}>
+                  {/* Reading Progress Bar */}
+                  <div id="reading-progress" className="reading-progress-bar"></div>
+
+                  {/* 🖼️ HERO BANNER (Full Width) */}
+                  {item.bannerUrl ? (
+                    <div className="reader-top-banner">
+                       <img src={item.bannerUrl} alt="Banner" className="banner-img" />
                     </div>
-                  </div>
+                  ) : (
+                    <div className={`reader-top-banner themed ${item.type}`}>
+                       <div className="banner-placeholder-icon">
+                         {item.type === 'video' ? '🎥' : item.type === 'letter' ? '📜' : '📢'}
+                       </div>
+                    </div>
+                  )}
 
-                  <div className="reader-body">
-                    {item.bannerUrl && (
-                      <div className="reader-media">
-                        <img src={item.bannerUrl} alt="Visual" />
+                  <div className="reader-article-area">
+                    {/* 🏷️ META CHIPS */}
+                    <div className="article-meta-row">
+                      <span className="article-chip-premium">{getT(item, 'subtitle')}</span>
+                      <div className="meta-info-item">
+                        <span className="meta-icon">👤</span>
+                        <span className="meta-text">{getT(item, 'authority')}</span>
                       </div>
-                    )}
-                    <div className="reader-text-box" dangerouslySetInnerHTML={{ __html: item[`content${lang === 'gu' ? 'Gu' : 'En'}`] || item[`content${lang === 'gu' ? 'En' : 'Gu'}`] || '' }} />
+                      <div className="meta-info-item">
+                        <span className="meta-icon">📅</span>
+                        <span className="meta-text">{getT(item, 'date')}</span>
+                      </div>
+                    </div>
 
+                    {/* 📰 MAIN TITLE */}
+                    <h1 className="article-main-title">{getT(item, 'title')}</h1>
+
+                    {/* 🖋️ ARTICLE BODY */}
+                    <div className="article-rich-content" dangerouslySetInnerHTML={{ __html: item[`content${lang === 'gu' ? 'Gu' : 'En'}`] || item[`content${lang === 'gu' ? 'En' : 'Gu'}`] || '' }} />
                   </div>
 
                   <div className="reader-footer">
-                    <div className="reader-source-tag">
-                       Source: Official {getT(item, 'authority')} Channel
-                    </div>
-                    <button className="reader-exit-cta" onClick={() => setMaximizedId(null)}>
-                       {lang === 'gu' ? 'બંધ કરો' : 'Close Reader'}
+                    <span className="footer-source">
+                       {lang === 'gu' ? 'સત્તાવાર સ્ત્રોત:' : 'Official Source:'} {getT(item, 'authority')}
+                    </span>
+                    <button className="footer-exit-btn" onClick={() => setMaximizedId(null)}>
+                       {lang === 'gu' ? 'વાંચન પૂર્ણ' : 'Done Reading'}
                     </button>
                   </div>
                 </div>

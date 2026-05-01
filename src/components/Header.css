@@ -486,3 +486,204 @@
   color: #64748b;
   border-top: 1px solid rgba(255,255,255,0.1);
 }
+
+/* 🛠️ HEADER OVERLAP FIX */
+@media (max-width: 768px) {
+  .header {
+    position: relative !important; /* Don't stick or float on mobile to avoid overlap */
+    background: white !important;
+    z-index: 1000 !important;
+    padding: 10px 0 !important;
+    height: auto !important;
+  }
+
+  .header-container {
+    flex-wrap: wrap !important;
+    gap: 10px !important;
+  }
+
+  /* Force floating buttons to stay in the header area */
+  .hamburger-btn.floating,
+  .header-right.floating {
+    position: static !important; /* NO MORE OVERWRITING Content */
+    width: 100% !important;
+    justify-content: space-between !important;
+    background: transparent !important;
+    box-shadow: none !important;
+    border: none !important;
+    padding: 0 15px !important;
+  }
+
+  .header-right.floating {
+    margin-top: 5px;
+    justify-content: flex-end !important;
+  }
+}
+/* 🛡️ REAL-PHONE SYNC: Protects header from status bar overlap */
+@media (max-width: 768px) {
+  .header {
+    padding-top: calc(10px + env(safe-area-inset-top, 0px)) !important;
+    position: relative !important;
+    margin-bottom: 0 !important;
+  }
+}
+/* 🚨 MASTER APK LAYOUT FIX - FORCE PARITY WITH EMULATOR */
+@media (max-width: 768px) {
+  .header {
+    position: relative !important;
+    top: 0 !important;
+    display: block !important;
+    background: white !important;
+    padding-top: 35px !important; /* Hard-coded shield for status bar */
+    z-index: 2000 !important;
+    width: 100% !important;
+    box-shadow: 0 2px 5px rgba(0,0,0,0.1) !important;
+  }
+
+  .header-container {
+    display: flex !important;
+    flex-direction: column !important;
+    align-items: center !important;
+    gap: 12px !important;
+  }
+
+  .header-left, .header-right {
+    position: static !important;
+    width: 100% !important;
+    justify-content: center !important;
+    background: none !important;
+    box-shadow: none !important;
+    border: none !important;
+    padding: 5px !important;
+  }
+
+  .header-right {
+    flex-wrap: wrap !important;
+    gap: 8px !important;
+  }
+
+  .logo-title {
+    font-size: 1rem !important;
+    width: 100% !important;
+    text-align: center !important;
+  }
+
+  /* Force Banner to sit BELOW header */
+  .banner-canvas {
+    position: relative !important;
+    margin-top: 0 !important;
+    z-index: 1000 !important;
+  }
+}
+/* 🔢 VERSION TAG STYLES */
+.version-tag {
+  font-size: 9px !important;
+  color: #94a3b8 !important;
+  margin-top: 5px !important;
+  letter-spacing: 1px;
+}
+
+.build-badge {
+  font-size: 10px;
+  background: #f1f5f9;
+  color: #64748b;
+  padding: 4px 8px;
+  border-radius: 4px;
+  border: 1px solid #e2e8f0;
+  font-weight: bold;
+}
+/* 🏷️ DRAWER VERSION STYLES */
+.drawer-version {
+  font-size: 0.7rem !important;
+  background: rgba(255, 255, 255, 0.1);
+  padding: 2px 8px;
+  border-radius: 10px;
+  color: #94a3b8;
+  margin-left: 10px;
+  font-weight: normal;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+}
+/* 🚨 DOUBLE-DECKER MOBILE HEADER (v2.6) */
+@media (max-width: 600px) {
+  .header-container {
+    display: flex !important;
+    flex-direction: column !important; /* Stack rows */
+    padding: 8px 15px !important;
+    gap: 8px !important;
+  }
+
+  /* ROW 1: Buttons and Icons */
+  .header-left, .header-right {
+    width: 100% !important;
+    justify-content: space-between !important;
+    flex: none !important;
+  }
+
+  /* Ensure Hamburger Menu is at the far left */
+  .header-left {
+    order: 1;
+  }
+
+  /* ROW 2: Admin Badge and Language */
+  .header-right {
+    order: 2;
+    border-top: 1px solid #f1f5f9;
+    padding-top: 8px;
+    justify-content: center !important;
+    gap: 15px !important;
+  }
+
+  .logo-title {
+    order: 0;
+    width: 100%;
+    margin-bottom: 5px;
+    font-size: 0.9rem !important;
+  }
+}
+/* 🚨 UNIVERSAL APK SYNC (v2.7) - FORCE EMULATOR PARITY */
+@media (max-width: 1024px) {
+  .header {
+    display: block !important;
+    position: relative !important;
+    padding-top: 40px !important; /* Guaranteed clock-shield */
+    height: auto !important;
+    background: white !important;
+  }
+
+  .header-container {
+    display: grid !important; /* Force a grid layout */
+    grid-template-columns: 1fr !important; /* Only 1 column allowed */
+    justify-items: center !important;
+    gap: 10px !important;
+  }
+
+  /* Force elements to their own rows */
+  .header-left {
+    grid-row: 1 !important;
+    width: 100% !important;
+    display: flex !important;
+    justify-content: space-between !important;
+    padding: 0 10px !important;
+  }
+
+  .header-right {
+    grid-row: 2 !important;
+    width: 100% !important;
+    display: flex !important;
+    justify-content: center !important;
+    gap: 20px !important;
+    border-top: 1px solid #f1f5f9;
+    padding-top: 10px;
+  }
+
+  .logo-title {
+    display: none !important; /* Hide text logo on mobile to save space for banner logo */
+  }
+
+  /* Push banner logo to be clearly below the header grid */
+  .banner-canvas {
+    display: block !important;
+    width: 100% !important;
+    margin-top: 10px !important;
+  }
+}

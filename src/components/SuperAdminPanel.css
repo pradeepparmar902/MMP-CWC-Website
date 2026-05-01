@@ -1304,3 +1304,116 @@
   padding-top: 12px;
 }
 
+
+/* 📱 MOBILE RESPONSIVE REFINEMENTS */
+@media (max-width: 900px) {
+  .super-admin-panel {
+    margin-top: 0;
+    border-radius: 0;
+    box-shadow: none;
+  }
+  
+  .sap-container-wide {
+    width: 100%;
+    padding: 0;
+  }
+
+  .sap-header {
+    padding: 20px 15px 0 15px;
+  }
+
+  .sap-title-row h1 {
+    font-size: 20px;
+  }
+
+  .sap-tabs {
+    overflow-x: auto;
+    padding-bottom: 5px;
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+  }
+  
+  .sap-tabs::-webkit-scrollbar {
+    display: none;
+  }
+
+  .sap-tab {
+    padding: 10px 15px;
+    font-size: 13px;
+    white-space: nowrap;
+    flex-shrink: 0;
+  }
+
+  .sap-content {
+    padding: 20px 15px;
+  }
+
+  /* Transform Tables to Cards on Mobile */
+  .access-table thead, 
+  .approvals-table thead {
+    display: none; /* Hide headers on mobile */
+  }
+
+  .access-table, .approvals-table, 
+  .access-table tbody, .approvals-table tbody,
+  .access-table tr, .approvals-table tr,
+  .access-table td, .approvals-table td {
+    display: block;
+    width: 100%;
+  }
+
+  .access-table tr, .approvals-table tr {
+    background: white;
+    border: 1px solid #e2e8f0;
+    border-radius: 12px;
+    margin-bottom: 15px;
+    padding: 15px;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+  }
+
+  .access-table td, .approvals-table td {
+    padding: 8px 0;
+    border: none;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-size: 13px;
+  }
+
+  .access-table td::before, .approvals-table td::before {
+    content: attr(data-label);
+    font-weight: 700;
+    color: #64748b;
+    margin-right: 10px;
+  }
+
+  .dynamic-cell {
+    flex-direction: column;
+    align-items: flex-start !important;
+  }
+  
+  .dynamic-cell::before {
+    margin-bottom: 5px;
+  }
+
+  .action-btns {
+    width: 100%;
+    margin-top: 10px;
+    padding-top: 10px;
+    border-top: 1px solid #f1f5f9;
+    justify-content: center !important;
+  }
+
+  .manual-add-form {
+    flex-direction: column;
+    gap: 15px;
+  }
+
+  .manual-add-form .input-group {
+    width: 100% !important;
+  }
+
+  .add-now-btn {
+    width: 100%;
+  }
+}

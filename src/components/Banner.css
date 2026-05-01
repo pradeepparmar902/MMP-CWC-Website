@@ -41,18 +41,6 @@
   --banner-scale: 1;
 }
 
-@media (max-width: 1024px) {
-  :root { --banner-scale: 0.85; }
-}
-
-@media (max-width: 768px) {
-  :root { --banner-scale: 0.65; }
-}
-
-@media (max-width: 480px) {
-  :root { --banner-scale: 0.45; }
-}
-
 .canvas-element {
   position: absolute;
   display: flex;
@@ -77,4 +65,21 @@
   opacity: 0;
   border: none;
   pointer-events: none;
+}
+
+/* 🚨 BANNER APK FIX */
+@media (max-width: 768px) {
+  .banner-canvas {
+    width: 100vw !important;
+    max-width: 100vw !important;
+    overflow: hidden !important;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+  }
+  
+  .canvas-container {
+    width: 100% !important;
+    transform-origin: top center !important;
+  }
 }
