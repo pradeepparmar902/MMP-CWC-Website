@@ -676,12 +676,17 @@ export default function SamajJogSandesh({ lang }) {
   }, [activeMessages]);
 
   useEffect(() => {
-    if (heroMessages.length <= 1) return;
+    // 🔒 SAFETY LOCK: Pause timer if admin is typing or reader is open
+    if (heroMessages.length <= 1 || showModal || maximizedId) {
+      if (heroIntervalRef.current) clearInterval(heroIntervalRef.current);
+      return;
+    }
+    
     heroIntervalRef.current = setInterval(() => {
       setCurrentHeroIndex(prev => (prev + 1) % heroMessages.length);
     }, 5000);
     return () => clearInterval(heroIntervalRef.current);
-  }, [heroMessages]);
+  }, [heroMessages, showModal, maximizedId]);
 
   const onTouchStart = (e) => {
     touchEndRef.current = null;

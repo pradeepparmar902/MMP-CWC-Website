@@ -150,7 +150,7 @@ export default function Header({ config, onLoginClick, isCollapsed, navItems, ac
         <div className={`side-drawer-backdrop ${isDrawerOpen ? 'open' : ''}`} onClick={() => setIsDrawerOpen(false)} />
         <div className={`side-drawer ${isDrawerOpen ? 'open' : ''}`}>
           <div className="drawer-header">
-            <h3>Menu <span className="drawer-version">v3.1</span></h3>
+            <h3>Menu <span className="drawer-version">v3.2</span></h3>
             <button className="close-drawer" onClick={() => setIsDrawerOpen(false)}>✕</button>
           </div>
           <nav className="drawer-nav">
