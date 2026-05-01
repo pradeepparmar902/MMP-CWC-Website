@@ -1014,7 +1014,13 @@ export default function SamajJogSandesh({ lang }) {
                         <button type="button" onMouseDown={(e) => e.preventDefault()} onClick={() => applyStyle('titleEn', 'foreColor', formData.textColor)} className="tool-pen">🎨 Pen</button>
                         <button type="button" onMouseDown={(e) => e.preventDefault()} onClick={() => applyStyle('titleEn', 'backColor', formData.accentColor)} className="tool-brush">🖌️ Highlight</button>
                       </div>
-                      <div id="editor-titleEn" className="canvas-painter" contentEditable onBlur={(e) => setFormData({...formData, titleEn: e.target.innerHTML})} dangerouslySetInnerHTML={{ __html: formData.titleEn }} />
+                      <div 
+                        id="editor-titleEn" 
+                        className="canvas-painter" 
+                        contentEditable 
+                        onInput={(e) => setFormData({...formData, titleEn: e.currentTarget.innerHTML})} 
+                        dangerouslySetInnerHTML={{ __html: formData.titleEn }} 
+                      />
                     </div>
  
                     <div className="field-with-canvas">
@@ -1023,7 +1029,13 @@ export default function SamajJogSandesh({ lang }) {
                         <button type="button" onMouseDown={(e) => e.preventDefault()} onClick={() => applyStyle('subtitleEn', 'foreColor', formData.textColor)} className="tool-pen">🎨 Pen</button>
                         <button type="button" onMouseDown={(e) => e.preventDefault()} onClick={() => applyStyle('subtitleEn', 'backColor', formData.accentColor)} className="tool-brush">🖌️ Highlight</button>
                       </div>
-                      <div id="editor-subtitleEn" className="canvas-painter" contentEditable onBlur={(e) => setFormData({...formData, subtitleEn: e.target.innerHTML})} dangerouslySetInnerHTML={{ __html: formData.subtitleEn }} />
+                      <div 
+                        id="editor-subtitleEn" 
+                        className="canvas-painter" 
+                        contentEditable 
+                        onInput={(e) => setFormData({...formData, subtitleEn: e.currentTarget.innerHTML})} 
+                        dangerouslySetInnerHTML={{ __html: formData.subtitleEn }} 
+                      />
                     </div>
  
                     <div className="field-with-canvas">
@@ -1033,7 +1045,13 @@ export default function SamajJogSandesh({ lang }) {
                         <button type="button" onMouseDown={(e) => e.preventDefault()} onClick={() => applyStyle('contentEn', 'foreColor', formData.textColor)} className="tool-pen">🎨 Pen</button>
                         <button type="button" onMouseDown={(e) => e.preventDefault()} onClick={() => applyStyle('contentEn', 'backColor', formData.accentColor)} className="tool-brush">🖌️ Highlight</button>
                       </div>
-                      <div id="editor-contentEn" className="canvas-painter content-body" contentEditable onBlur={(e) => setFormData({...formData, contentEn: e.target.innerHTML})} dangerouslySetInnerHTML={{ __html: formData.contentEn }} />
+                      <div 
+                        id="editor-contentEn" 
+                        className="canvas-painter content-body" 
+                        contentEditable 
+                        onInput={(e) => setFormData({...formData, contentEn: e.currentTarget.innerHTML})} 
+                        dangerouslySetInnerHTML={{ __html: formData.contentEn }} 
+                      />
                     </div>
  
                     <div className="form-group">
@@ -1051,7 +1069,13 @@ export default function SamajJogSandesh({ lang }) {
                         <button type="button" onMouseDown={(e) => e.preventDefault()} onClick={() => applyStyle('titleGu', 'foreColor', formData.textColor)} className="tool-pen">🎨 Pen</button>
                         <button type="button" onMouseDown={(e) => e.preventDefault()} onClick={() => applyStyle('titleGu', 'backColor', formData.accentColor)} className="tool-brush">🖌️ Highlight</button>
                       </div>
-                      <div id="editor-titleGu" className="canvas-painter gu-font" contentEditable onBlur={(e) => setFormData({...formData, titleGu: e.target.innerHTML})} dangerouslySetInnerHTML={{ __html: formData.titleGu }} />
+                      <div 
+                        id="editor-titleGu" 
+                        className="canvas-painter gu-font" 
+                        contentEditable 
+                        onInput={(e) => setFormData({...formData, titleGu: e.currentTarget.innerHTML})} 
+                        dangerouslySetInnerHTML={{ __html: formData.titleGu }} 
+                      />
                     </div>
  
                     <div className="field-with-canvas">
@@ -1060,7 +1084,13 @@ export default function SamajJogSandesh({ lang }) {
                         <button type="button" onMouseDown={(e) => e.preventDefault()} onClick={() => applyStyle('subtitleGu', 'foreColor', formData.textColor)} className="tool-pen">🎨 Pen</button>
                         <button type="button" onMouseDown={(e) => e.preventDefault()} onClick={() => applyStyle('subtitleGu', 'backColor', formData.accentColor)} className="tool-brush">🖌️ Highlight</button>
                       </div>
-                      <div id="editor-subtitleGu" className="canvas-painter gu-font" contentEditable onBlur={(e) => setFormData({...formData, subtitleGu: e.target.innerHTML})} dangerouslySetInnerHTML={{ __html: formData.subtitleGu }} />
+                      <div 
+                        id="editor-subtitleGu" 
+                        className="canvas-painter gu-font" 
+                        contentEditable 
+                        onInput={(e) => setFormData({...formData, subtitleGu: e.currentTarget.innerHTML})} 
+                        dangerouslySetInnerHTML={{ __html: formData.subtitleGu }} 
+                      />
                     </div>
  
                     <div className="field-with-canvas">
@@ -1070,7 +1100,13 @@ export default function SamajJogSandesh({ lang }) {
                         <button type="button" onMouseDown={(e) => e.preventDefault()} onClick={() => applyStyle('contentGu', 'foreColor', formData.textColor)} className="tool-pen">🎨 Pen</button>
                         <button type="button" onMouseDown={(e) => e.preventDefault()} onClick={() => applyStyle('contentGu', 'backColor', formData.accentColor)} className="tool-brush">🖌️ Highlight</button>
                       </div>
-                      <div id="editor-contentGu" className="canvas-painter content-body gu-font" contentEditable onBlur={(e) => setFormData({...formData, contentGu: e.target.innerHTML})} dangerouslySetInnerHTML={{ __html: formData.contentGu }} />
+                      <div 
+                        id="editor-contentGu" 
+                        className="canvas-painter content-body gu-font" 
+                        contentEditable 
+                        onInput={(e) => setFormData({...formData, contentGu: e.currentTarget.innerHTML})} 
+                        dangerouslySetInnerHTML={{ __html: formData.contentGu }} 
+                      />
                     </div>
  
                     <div className="form-group">
