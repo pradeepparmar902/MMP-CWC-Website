@@ -132,6 +132,11 @@
   padding: 12px 16px;
 }
 
+.dropdown-badge-container {
+  margin-top: 8px;
+  display: flex;
+}
+
 .dropdown-label {
   font-size: 11px;
   color: #64748b;

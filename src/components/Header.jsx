@@ -87,11 +87,7 @@ export default function Header({ config, onLoginClick, isCollapsed, navItems, ac
               aria-label="Profile" 
               onClick={() => setIsDropdownOpen(!isDropdownOpen)}
             >
-              {badgeLabel && (
-                <span className={`status-badge ${badgeClass}`}>
-                  {badgeLabel}
-                </span>
-              )}
+
               {identifier && (
                 <span className="user-identifier">
                   {identifier.length > 15 ? identifier.substring(0, 12) + '...' : identifier}
@@ -110,6 +106,13 @@ export default function Header({ config, onLoginClick, isCollapsed, navItems, ac
                     <div className="dropdown-header">
                       <p className="dropdown-label">Signed in as</p>
                       <p className="dropdown-user">{identifier}</p>
+                      {badgeLabel && (
+                        <div className="dropdown-badge-container">
+                          <span className={`status-badge ${badgeClass}`}>
+                            {badgeLabel}
+                          </span>
+                        </div>
+                      )}
                     </div>
                     <div className="dropdown-divider"></div>
                     <button className="dropdown-item" onClick={() => { setIsDropdownOpen(false); onLoginClick('profile'); }}>
