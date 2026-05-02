@@ -191,4 +191,39 @@
   }
 }
 
+
+.side-toggle {
+  width: 32px;
+  background-color: #1e293b; /* Premium Dark Slate */
+  color: #FBBF24;            /* Gold Arrow - High Contrast */
+  border: none;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 16px;
+  transition: all 0.2s;
+  z-index: 10;
+}
+
+.side-toggle:hover {
+  background-color: #334155;
+  color: #ffffff;
+}
+
+.side-toggle.left {
+  border-right: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.side-toggle.right {
+  border-left: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+@media (max-width: 640px) {
+  .side-toggle {
+    width: 28px;
+    font-size: 14px;
+  }
+}
+
 /* End of Navigation Styles */
