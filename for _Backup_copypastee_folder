@@ -1,13 +1,13 @@
 
-step 1
-robocopy "e:\My Website\MMP Website CWC\main CWC" "D:\web_bakcup\Destination\main CWC" /E /256 /XD node_modules android\.gradle android\build android\.idea dist .git
 
-step 2
-# Go to the destination folder
-cd "D:\Destination\main CWC"
+# Step 1: Copying (Fixed path typo and ensured quotes)
+robocopy "e:\My Website\MMP Website CWC\main CWC" "D:\web_backup\Destination\main CWC" /E /256 /XD node_modules android\.gradle android\build android\.idea dist .git
 
-# Reinstall node_modules
+# Step 2: Navigate to the CORRECT destination
+cd "D:\web_backup\Destination\main CWC"
+
+# Step 3: Reinstall, Build & Sync
 npm install
-
-# Rebuild the android project
+npm run build
 npx cap sync
+
