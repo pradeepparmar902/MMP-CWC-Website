@@ -18,8 +18,8 @@
   overflow-x: auto;
   scrollbar-width: none;
   flex: 1;
-  padding: 6px 15px; /* Vertical padding added */
-  gap: 20px;
+  padding: 4px 8px; /* Slimmer padding */
+  gap: 8px; /* Tighter gap */
 }
 
 .nav-list {
@@ -142,11 +142,11 @@
   }
   
   .nav-search-input {
-    width: 100px;
+    width: 85px;
   }
   
   .nav-search-input:focus {
-    width: 120px;
+    width: 110px;
   }
 }
 
@@ -204,6 +204,7 @@
   
   .nav-search-lang-row {
     gap: 6px;
+    margin-right: 25px; /* Safety margin for scroll arrow */
   }
 
   .nav-language-toggle button {
