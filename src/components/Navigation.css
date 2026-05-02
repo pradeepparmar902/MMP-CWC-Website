@@ -13,25 +13,27 @@
 
 .nav-bar {
   display: flex;
-  align-items: stretch;
+  align-items: center;
   background-color: #FBBF24;
   overflow-x: auto;
   scrollbar-width: none;
   flex: 1;
+  padding: 6px 15px; /* Vertical padding added */
+  gap: 20px;
 }
 
 .nav-list {
   display: flex;
   list-style: none;
-  margin: 0;
+  margin: 0 auto; /* Center the list */
   padding: 0;
-  flex: 1;
+  flex: 0 1 auto; /* Don't stretch */
+  gap: 12px; /* Spacing between icons */
 }
 
 .nav-item {
-  flex: 1;
+  flex: 0 0 auto; /* No stretching */
   min-width: fit-content;
-  height: 38px;
 }
 
 .nav-btn {
