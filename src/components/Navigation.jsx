@@ -21,8 +21,11 @@ export default function Navigation({ activeSection, setActiveSection, navItems, 
     return true;
   });
 
-  // Only show items that are in 'favorites'
+  // Filter by favorites
   const visibleItems = allVisibleItems.filter(item => favorites.includes(item.id));
+  
+  // Enforce maximum 3 items on mobile to save vertical space
+  const displayItems = isMobile ? visibleItems.slice(0, 3) : visibleItems;
 
   return (
     <nav className={`navigation ${isHeaderCollapsed ? 'collapsed' : ''}`}>
@@ -36,7 +39,7 @@ export default function Navigation({ activeSection, setActiveSection, navItems, 
 
       <div className="nav-bar">
         <ul className="nav-list">
-          {visibleItems.map((item) => (
+          {displayItems.map((item) => (
             <li key={item.id} className="nav-item">
               <button
                 className={`nav-btn ${activeSection === item.id ? 'active' : ''}`}

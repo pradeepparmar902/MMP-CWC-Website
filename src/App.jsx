@@ -47,7 +47,7 @@ function App() {
   const [language, setLanguage] = useState(() => localStorage.getItem('mmp_language') || 'gu');
   const [favorites, setFavorites] = useState(() => {
     const saved = localStorage.getItem('mmp_nav_favorites');
-    return saved ? JSON.parse(saved) : ['home', 'education', 'samaj'];
+    return saved ? JSON.parse(saved) : ['home'];
   });
 
   useEffect(() => {
