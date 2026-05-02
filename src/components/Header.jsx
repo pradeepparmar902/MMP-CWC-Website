@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { useAuth } from '../context/AuthContext';
 import './Header.css';
 
-export default function Header({ config, onLoginClick, isCollapsed, navItems, activeSection, setActiveSection, language, setLanguage }) {
+export default function Header({ config, onLoginClick, isCollapsed, navItems, activeSection, setActiveSection, language, setLanguage, favorites, setFavorites }) {
   const { userStatus, isAdmin, isSuperAdmin, currentUser, logout } = useAuth();
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
@@ -145,18 +145,33 @@ export default function Header({ config, onLoginClick, isCollapsed, navItems, ac
               if (item.id === 'admin') return isAdmin || isSuperAdmin;
               return true;
             }).map((item) => (
-              <button
-                key={item.id}
-                className={`drawer-link ${activeSection === item.id ? 'active' : ''}`}
-                onClick={() => {
-                  setActiveSection(item.id);
-                  setIsDrawerOpen(false);
-                }}
-              >
-                <span className="drawer-dot" style={{ background: item.color }}></span>
-                {item.label}
-                {item.isProtected && <span className="drawer-lock">🔒</span>}
-              </button>
+              <div key={item.id} className="drawer-item-wrapper">
+                <button
+                  className={`drawer-link ${activeSection === item.id ? 'active' : ''}`}
+                  onClick={() => {
+                    setActiveSection(item.id);
+                    setIsDrawerOpen(false);
+                  }}
+                >
+                  <span className="drawer-dot" style={{ background: item.color }}></span>
+                  <span className="drawer-icon-label">{item.icon} {item.label}</span>
+                  {item.isProtected && <span className="drawer-lock">🔒</span>}
+                </button>
+                <button 
+                  className={`favorite-toggle ${favorites.includes(item.id) ? 'is-favorite' : ''}`}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    if (favorites.includes(item.id)) {
+                      setFavorites(favorites.filter(id => id !== item.id));
+                    } else {
+                      setFavorites([...favorites, item.id]);
+                    }
+                  }}
+                  title={favorites.includes(item.id) ? "Remove from Quick Menu" : "Add to Quick Menu"}
+                >
+                  {favorites.includes(item.id) ? '⭐' : '☆'}
+                </button>
+              </div>
             ))}
           </nav>
           <div className="drawer-footer">

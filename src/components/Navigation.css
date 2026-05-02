@@ -31,143 +31,137 @@
 .nav-item {
   flex: 1;
   min-width: fit-content;
+  height: 38px;
 }
 
 .nav-btn {
-  width: 100%;
   height: 100%;
-  padding: 1rem 1.25rem;
-  background-color: var(--item-bg);
-  color: white;
+  padding: 0 12px;
+  border-radius: 8px;
+  border: 1px solid transparent;
+  background: #f1f5f9;
+  color: #475569;
   font-weight: 700;
-  font-size: 0.95rem;
-  text-transform: capitalize;
-  border-radius: 0;
-  transition: filter 0.2s ease, transform 0.1s ease;
-  white-space: nowrap;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border-right: 1px solid rgba(255,255,255,0.1);
-}
-
-.nav-btn:hover {
-  filter: brightness(1.1);
-}
-
-.nav-btn.active {
-  box-shadow: inset 0 -4px 0 rgba(0,0,0,0.2);
-  filter: brightness(1.2);
-}
-
-.nav-lock-icon {
-  font-size: 0.75rem;
-  margin-left: 0.5rem;
-  opacity: 0.8;
-  filter: grayscale(1);
-}
-
-/* 🔍 SEARCH + LANGUAGE WRAPPER ROW */
-.nav-search-lang-row {
+  font-size: 13px;
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 0 0.75rem;
-  align-self: center;
-  flex-shrink: 0;
+  cursor: pointer;
+  transition: all 0.2s;
+  white-space: nowrap;
+}
+
+.nav-btn .nav-icon {
+  font-size: 1.1rem;
+}
+
+.nav-btn:hover {
+  background: #e2e8f0;
+}
+
+.nav-btn.active {
+  background: var(--item-bg);
+  color: white;
+  border-color: rgba(0,0,0,0.1);
+  box-shadow: 0 4px 12px -2px rgba(0,0,0,0.15);
+}
+
+.nav-search-lang-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
 }
 
 .search-container {
+  position: relative;
   display: flex;
   align-items: center;
-  background-color: white;
-  padding: 0.25rem 0.75rem;
-  border-radius: 9999px;
-  min-width: 160px;
-  height: 36px;
 }
 
 .nav-search-input {
-  border: none;
+  width: 140px;
+  height: 34px;
+  padding: 0 35px 0 12px;
+  border-radius: 20px;
+  border: 1px solid #e2e8f0;
+  background: #f8fafc;
+  font-size: 12px;
   outline: none;
-  flex: 1;
-  font-size: 0.875rem;
-  color: #4B5563;
-  width: 100%;
+  transition: all 0.2s;
+}
+
+.nav-search-input:focus {
+  width: 180px;
+  border-color: var(--clr-primary);
+  background: white;
 }
 
 .search-btn {
-  color: #9CA3AF;
-  font-size: 1rem;
+  position: absolute;
+  right: 5px;
+  background: none;
+  border: none;
+  padding: 5px;
+  cursor: pointer;
+  opacity: 0.5;
 }
 
-/* 🔘 LANGUAGE TOGGLE — inline beside search */
+/* 🔘 SLIM LANGUAGE TOGGLE */
 .nav-language-toggle {
   display: flex;
-  background: rgba(255, 255, 255, 0.12);
-  padding: 3px;
-  border-radius: 10px;
-  border: 1px solid rgba(255, 255, 255, 0.2);
-  gap: 2px;
-  flex-shrink: 0;
+  background: #f1f5f9;
+  padding: 2px;
+  border-radius: 8px;
+  border: 1px solid #e2e8f0;
 }
 
 .nav-language-toggle button {
-  padding: 4px 10px;
-  border-radius: 7px;
-  font-size: 11px;
-  font-weight: 700;
-  transition: all 0.2s;
-  color: rgba(255, 255, 255, 0.7);
+  padding: 4px 8px;
+  border-radius: 6px;
+  font-size: 10px;
+  font-weight: 800;
+  color: #64748b;
   cursor: pointer;
-  background: transparent;
-  border: none;
-  white-space: nowrap;
 }
 
 .nav-language-toggle button.active {
   background: white;
-  color: #7c3aed;
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.15);
+  color: var(--clr-primary);
+  box-shadow: 0 1px 3px rgba(0,0,0,0.1);
 }
 
-.nav-language-toggle button:hover:not(.active) {
-  color: white;
-  background: rgba(255, 255, 255, 0.1);
+@media (max-width: 768px) {
+  .nav-label-text {
+    display: none; /* Hide text, keep icons only on tablets/mobile */
+  }
+  
+  .nav-btn {
+    padding: 0 10px;
+  }
+  
+  .nav-search-input {
+    width: 100px;
+  }
+  
+  .nav-search-input:focus {
+    width: 120px;
+  }
 }
 
-/* SIDE TOGGLES */
 .side-toggle {
-  background: #1e293b;
-  color: #fbbf24;
+  width: 30px;
+  background: #f1f5f9;
   border: none;
-  width: 44px;
+  color: #94a3b8;
+  cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 16px;
-  cursor: pointer;
+  font-size: 10px;
   transition: all 0.2s;
-  z-index: 10;
 }
 
 .side-toggle:hover {
-  background: #0f172a;
-  color: white;
-}
-
-.side-toggle.left {
-  border-right: 1px solid rgba(255,255,255,0.1);
-}
-
-.side-toggle.right {
-  border-left: 1px solid rgba(255,255,255,0.1);
-}
-
-@media (max-width: 1024px) {
-  .nav-bar {
-    flex-wrap: wrap;
-  }
   
   .nav-list {
     flex-wrap: wrap;

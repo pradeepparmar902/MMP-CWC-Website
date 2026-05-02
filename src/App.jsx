@@ -13,13 +13,13 @@ import AccessWall from './components/AccessWall';
 import { SplashScreen } from '@capacitor/splash-screen';
 
 const DEFAULT_NAV_ITEMS = [
-  { id: 'home', label: 'Home', color: '#3B82F6', visible: true, isProtected: false },
-  { id: 'education', label: 'Education', color: '#10B981', visible: true, isProtected: true },
-  { id: 'matrimony', label: 'Matrimony', color: '#EC4899', visible: true, isProtected: true },
-  { id: 'meghpush', label: 'MeghPush (News)', color: '#F59E0B', visible: true, isProtected: false },
-  { id: 'election', label: 'Election Card', color: '#6366F1', visible: true, isProtected: true },
-  { id: 'samaj', label: 'Samaj Jog Sandesh', color: '#8B5CF6', visible: true, isProtected: false },
-  { id: 'admin', label: 'Admin', color: '#374151', visible: true, isProtected: true }
+  { id: 'home', label: 'Home', color: '#3B82F6', visible: true, isProtected: false, icon: '🏠' },
+  { id: 'education', label: 'Education', color: '#10B981', visible: true, isProtected: true, icon: '🎓' },
+  { id: 'matrimony', label: 'Matrimony', color: '#EC4899', visible: true, isProtected: true, icon: '💍' },
+  { id: 'meghpush', label: 'MeghPush (News)', color: '#F59E0B', visible: true, isProtected: false, icon: '📰' },
+  { id: 'election', label: 'Election Card', color: '#6366F1', visible: true, isProtected: true, icon: '🆔' },
+  { id: 'samaj', label: 'Samaj Jog Sandesh', color: '#8B5CF6', visible: true, isProtected: false, icon: '🤝' },
+  { id: 'admin', label: 'Admin', color: '#374151', visible: true, isProtected: true, icon: '⚙️' }
 ];
 
 const DEFAULT_BANNER_CONFIG = {
@@ -45,6 +45,14 @@ function App() {
   const [isHeaderCollapsed, setIsHeaderCollapsed] = useState(false);
   const [authInitialView, setAuthInitialView] = useState('login');
   const [language, setLanguage] = useState(() => localStorage.getItem('mmp_language') || 'gu');
+  const [favorites, setFavorites] = useState(() => {
+    const saved = localStorage.getItem('mmp_nav_favorites');
+    return saved ? JSON.parse(saved) : ['home', 'education', 'samaj'];
+  });
+
+  useEffect(() => {
+    localStorage.setItem('mmp_nav_favorites', JSON.stringify(favorites));
+  }, [favorites]);
 
   useEffect(() => {
     localStorage.setItem('mmp_language', language);
@@ -189,6 +197,8 @@ function App() {
         setActiveSection={setActiveSection}
         language={language}
         setLanguage={setLanguage}
+        favorites={favorites}
+        setFavorites={setFavorites}
       />
       <main>
         <Banner config={bannerConfig} isSticky={activeSection === 'admin'} isCollapsed={isHeaderCollapsed} />
@@ -200,6 +210,7 @@ function App() {
           setIsHeaderCollapsed={setIsHeaderCollapsed}
           language={language}
           setLanguage={setLanguage}
+          favorites={favorites}
         />
         {activeSection === 'admin' ? (
           /* ADMIN TAB GUARD: Only for Staff/Seniors */

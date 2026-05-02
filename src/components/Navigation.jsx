@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
 import './Navigation.css';
 
-export default function Navigation({ activeSection, setActiveSection, navItems, isHeaderCollapsed, setIsHeaderCollapsed, language, setLanguage }) {
+export default function Navigation({ activeSection, setActiveSection, navItems, isHeaderCollapsed, setIsHeaderCollapsed, language, setLanguage, favorites }) {
   const { isAdmin, isSuperAdmin } = useAuth();
   const [isMobile, setIsMobile] = useState(window.innerWidth < 640);
   
@@ -21,8 +21,8 @@ export default function Navigation({ activeSection, setActiveSection, navItems, 
     return true;
   });
 
-  // On mobile, slice to show only first 3
-  const visibleItems = isMobile ? allVisibleItems.slice(0, 3) : allVisibleItems;
+  // Only show items that are in 'favorites'
+  const visibleItems = allVisibleItems.filter(item => favorites.includes(item.id));
 
   return (
     <nav className={`navigation ${isHeaderCollapsed ? 'collapsed' : ''}`}>
@@ -42,8 +42,10 @@ export default function Navigation({ activeSection, setActiveSection, navItems, 
                 className={`nav-btn ${activeSection === item.id ? 'active' : ''}`}
                 onClick={() => setActiveSection(item.id)}
                 style={{ '--item-bg': item.color }}
+                title={item.label}
               >
-                {item.label}
+                <span className="nav-icon">{item.icon}</span>
+                <span className="nav-label-text">{item.label}</span>
                 {item.isProtected && <span className="nav-lock-icon">🔒</span>}
               </button>
             </li>
