@@ -22,13 +22,13 @@
   gap: 8px; /* Tighter gap */
 }
 
-.nav-list {
+.nav-content-centered {
   display: flex;
-  list-style: none;
-  margin: 0 auto; /* Center the list */
-  padding: 0;
-  flex: 0 1 auto; /* Don't stretch */
-  gap: 12px; /* Spacing between icons */
+  align-items: center;
+  justify-content: center;
+  margin: 0 auto;
+  gap: 10px; /* EQUAL PADDING BETWEEN EVERYTHING */
+  padding: 0 10px;
 }
 
 .nav-item {
@@ -68,11 +68,7 @@
   box-shadow: 0 4px 12px -2px rgba(0,0,0,0.15);
 }
 
-.nav-search-lang-row {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
+/* Removed nav-search-lang-row as it's now merged into nav-content-centered */
 
 .search-container {
   position: relative;
@@ -142,11 +138,11 @@
   }
   
   .nav-search-input {
-    width: 85px;
+    width: 70px; /* Slimmer to prevent overlap */
   }
   
   .nav-search-input:focus {
-    width: 110px;
+    width: 90px;
   }
 }
 
@@ -202,13 +198,14 @@
     flex: 1 0 33.333%;
   }
   
-  .nav-search-lang-row {
-    gap: 6px;
-    margin-right: 25px; /* Safety margin for scroll arrow */
+  .nav-content-centered {
+    gap: 8px; /* Slightly tighter on tiny screens */
+    margin-right: 20px; /* Safety gap for scroll arrow */
+    justify-content: flex-start; /* Start from left but keep centered margin */
   }
 
   .nav-language-toggle button {
-    padding: 4px 7px;
+    padding: 3px 6px;
     font-size: 10px;
   }
 

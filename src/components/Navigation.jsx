@@ -38,9 +38,9 @@ export default function Navigation({ activeSection, setActiveSection, navItems, 
       </button>
 
       <div className="nav-bar">
-        <ul className="nav-list">
+        <div className="nav-content-centered">
           {displayItems.map((item) => (
-            <li key={item.id} className="nav-item">
+            <div key={item.id} className="nav-item">
               <button
                 className={`nav-btn ${activeSection === item.id ? 'active' : ''}`}
                 onClick={() => setActiveSection(item.id)}
@@ -50,22 +50,20 @@ export default function Navigation({ activeSection, setActiveSection, navItems, 
                 <span className="nav-icon">{item.icon}</span>
                 {item.isProtected && <span className="nav-lock-icon">🔒</span>}
               </button>
-            </li>
+            </div>
           ))}
-        </ul>
-        
-        <div className="nav-search-lang-row">
+          
           <div className="search-container">
             <input 
               type="text" 
-              placeholder="Searching for?" 
+              placeholder="Search" 
               className="nav-search-input"
             />
             <button className="search-btn" aria-label="Search">
               🔍
             </button>
           </div>
-          {/* 🔘 LANGUAGE TOGGLE — moved from Header to here */}
+
           <div className="nav-language-toggle">
             <button 
               className={language === 'en' ? 'active' : ''} 
