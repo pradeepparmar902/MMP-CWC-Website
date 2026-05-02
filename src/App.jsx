@@ -65,9 +65,10 @@ function App() {
   
     // Migration and initialization for new properties
     const migratedItems = (parsed.navItems || DEFAULT_NAV_ITEMS).map(item => {
-      // Ensure 'isProtected' exists, migrating from old 'protected' if needed
+      const defaultItem = DEFAULT_NAV_ITEMS.find(d => d.id === item.id);
       return { 
         ...item, 
+        icon: item.icon || defaultItem?.icon || '📍',
         isProtected: item.isProtected ?? item.protected ?? false 
       };
     });
@@ -95,10 +96,15 @@ function App() {
             
             // Apply protected status only to 'admin' section if missing
             const finalizedNavItems = mergedNavItems.map(item => {
+              const defaultItem = DEFAULT_NAV_ITEMS.find(d => d.id === item.id);
+              let newItem = { 
+                ...item,
+                icon: item.icon || defaultItem?.icon || '📍'
+              };
               if (item.id === 'admin') {
-                return { ...item, isProtected: true }; // Force admin to be protected
+                newItem.isProtected = true;
               }
-              return item;
+              return newItem;
             });
 
             return {

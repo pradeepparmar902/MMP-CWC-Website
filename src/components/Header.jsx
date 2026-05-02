@@ -154,19 +154,23 @@ export default function Header({ config, onLoginClick, isCollapsed, navItems, ac
                   }}
                 >
                   <span className="drawer-dot" style={{ background: item.color }}></span>
-                  <span className="drawer-icon-label">{item.icon} {item.label}</span>
+                  <span className="drawer-icon">{item.icon || '📍'}</span>
+                  <span className="drawer-label-text">{item.label}</span>
                   {item.isProtected && <span className="drawer-lock">🔒</span>}
                 </button>
                 <button 
                   className={`favorite-toggle ${favorites.includes(item.id) ? 'is-favorite' : ''}`}
                   onClick={(e) => {
+                    e.preventDefault();
                     e.stopPropagation();
-                    if (favorites.includes(item.id)) {
-                      setFavorites(favorites.filter(id => id !== item.id));
+                    const isFav = favorites.includes(item.id);
+                    if (isFav) {
+                      setFavorites(prev => prev.filter(id => id !== item.id));
                     } else {
-                      setFavorites([...favorites, item.id]);
+                      setFavorites(prev => [...prev, item.id]);
                     }
                   }}
+                  type="button"
                   title={favorites.includes(item.id) ? "Remove from Quick Menu" : "Add to Quick Menu"}
                 >
                   {favorites.includes(item.id) ? '⭐' : '☆'}

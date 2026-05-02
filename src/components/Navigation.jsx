@@ -45,7 +45,6 @@ export default function Navigation({ activeSection, setActiveSection, navItems, 
                 title={item.label}
               >
                 <span className="nav-icon">{item.icon}</span>
-                <span className="nav-label-text">{item.label}</span>
                 {item.isProtected && <span className="nav-lock-icon">🔒</span>}
               </button>
             </li>
