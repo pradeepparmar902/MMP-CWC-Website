@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
 import './Navigation.css';
 
-export default function Navigation({ activeSection, setActiveSection, navItems, isHeaderCollapsed, setIsHeaderCollapsed }) {
+export default function Navigation({ activeSection, setActiveSection, navItems, isHeaderCollapsed, setIsHeaderCollapsed, language, setLanguage }) {
   const { isAdmin, isSuperAdmin } = useAuth();
   const [isMobile, setIsMobile] = useState(window.innerWidth < 640);
   
@@ -50,15 +50,32 @@ export default function Navigation({ activeSection, setActiveSection, navItems, 
           ))}
         </ul>
         
-        <div className="search-container">
-          <input 
-            type="text" 
-            placeholder="Searching for?" 
-            className="nav-search-input"
-          />
-          <button className="search-btn" aria-label="Search">
-            🔍
-          </button>
+        <div className="nav-search-lang-row">
+          <div className="search-container">
+            <input 
+              type="text" 
+              placeholder="Searching for?" 
+              className="nav-search-input"
+            />
+            <button className="search-btn" aria-label="Search">
+              🔍
+            </button>
+          </div>
+          {/* 🔘 LANGUAGE TOGGLE — moved from Header to here */}
+          <div className="nav-language-toggle">
+            <button 
+              className={language === 'en' ? 'active' : ''} 
+              onClick={() => setLanguage('en')}
+            >
+              EN
+            </button>
+            <button 
+              className={language === 'gu' ? 'active' : ''} 
+              onClick={() => setLanguage('gu')}
+            >
+              ગુજ
+            </button>
+          </div>
         </div>
       </div>
 

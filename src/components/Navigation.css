@@ -67,16 +67,24 @@
   filter: grayscale(1);
 }
 
+/* 🔍 SEARCH + LANGUAGE WRAPPER ROW */
+.nav-search-lang-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 0.75rem;
+  align-self: center;
+  flex-shrink: 0;
+}
+
 .search-container {
   display: flex;
   align-items: center;
   background-color: white;
-  margin: 0.5rem 1rem;
   padding: 0.25rem 0.75rem;
   border-radius: 9999px;
-  min-width: 200px;
-  height: 40px;
-  align-self: center;
+  min-width: 160px;
+  height: 36px;
 }
 
 .nav-search-input {
@@ -91,6 +99,41 @@
 .search-btn {
   color: #9CA3AF;
   font-size: 1rem;
+}
+
+/* 🔘 LANGUAGE TOGGLE — inline beside search */
+.nav-language-toggle {
+  display: flex;
+  background: rgba(255, 255, 255, 0.12);
+  padding: 3px;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  gap: 2px;
+  flex-shrink: 0;
+}
+
+.nav-language-toggle button {
+  padding: 4px 10px;
+  border-radius: 7px;
+  font-size: 11px;
+  font-weight: 700;
+  transition: all 0.2s;
+  color: rgba(255, 255, 255, 0.7);
+  cursor: pointer;
+  background: transparent;
+  border: none;
+  white-space: nowrap;
+}
+
+.nav-language-toggle button.active {
+  background: white;
+  color: #7c3aed;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.15);
+}
+
+.nav-language-toggle button:hover:not(.active) {
+  color: white;
+  background: rgba(255, 255, 255, 0.1);
 }
 
 /* SIDE TOGGLES */
@@ -140,13 +183,18 @@
     font-size: 0.75rem;
   }
 
+  .nav-search-lang-row {
+    width: calc(100% - 1.5rem);
+    padding: 0.25rem 0.75rem;
+    justify-content: space-between;
+  }
+
   .search-container {
-    margin: 0.25rem;
-    width: calc(100% - 0.5rem);
+    flex: 1;
     min-width: auto;
     height: 34px;
   }
-  
+
   .side-toggle {
     width: 32px;
     font-size: 12px;
@@ -158,6 +206,15 @@
     flex: 1 0 33.333%;
   }
   
+  .nav-search-lang-row {
+    gap: 6px;
+  }
+
+  .nav-language-toggle button {
+    padding: 4px 7px;
+    font-size: 10px;
+  }
+
   .side-toggle {
     width: 30px;
   }

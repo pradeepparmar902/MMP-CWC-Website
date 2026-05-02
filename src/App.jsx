@@ -198,6 +198,8 @@ function App() {
           navItems={bannerConfig.navItems || []} 
           isHeaderCollapsed={isHeaderCollapsed}
           setIsHeaderCollapsed={setIsHeaderCollapsed}
+          language={language}
+          setLanguage={setLanguage}
         />
         {activeSection === 'admin' ? (
           /* ADMIN TAB GUARD: Only for Staff/Seniors */

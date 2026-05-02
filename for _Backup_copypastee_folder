@@ -1,0 +1,13 @@
+
+step 1
+robocopy "e:\My Website\MMP Website CWC\main CWC" "D:\web_bakcup\Destination\main CWC" /E /256 /XD node_modules android\.gradle android\build android\.idea dist .git
+
+step 2
+# Go to the destination folder
+cd "D:\Destination\main CWC"
+
+# Reinstall node_modules
+npm install
+
+# Rebuild the android project
+npx cap sync

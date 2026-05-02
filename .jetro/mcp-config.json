@@ -1,0 +1,15 @@
+{
+  "mcpServers": {
+    "jetro": {
+      "command": "C:\\Users\\Windows\\.jetro\\runtime\\node-win32-x64.exe",
+      "args": [
+        "C:\\Users\\Windows\\.jetro\\mcp-server\\index.js"
+      ],
+      "env": {
+        "JET_WORKSPACE": "e:\\My Website\\MMP Website CWC\\main CWC",
+        "JET_API_URL": "https://api.jetro.ai",
+        "PATH": "C:\\Users\\Windows\\.jetro\\runtime;C:\\WINDOWS\\system32;C:\\WINDOWS;C:\\WINDOWS\\System32\\Wbem;C:\\WINDOWS\\System32\\WindowsPowerShell\\v1.0\\;C:\\WINDOWS\\System32\\OpenSSH\\;C:\\Program Files\\nodejs\\;C:\\Program Files\\Docker\\Docker\\resources\\bin;C:\\Program Files\\Git\\cmd;c:\\Users\\Windows\\AppData\\Roaming\\Code\\User\\globalStorage\\github.copilot-chat\\debugCommand;c:\\Users\\Windows\\AppData\\Roaming\\Code\\User\\globalStorage\\github.copilot-chat\\copilotCli;C:\\Windows\\system32;C:\\Windows;C:\\Windows\\System32\\Wbem;C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\;C:\\Windows\\System32\\OpenSSH\\;C:\\Users\\Windows\\AppData\\Local\\Microsoft\\WindowsApps;C:\\Program Files\\nodejs;C:\\Program Files\\nodejs\\node_modules\\npm\\bin;C:\\Users\\Windows\\AppData\\Local\\Programs\\Microsoft VS Code\\bin;C:\\Users\\Windows\\AppData\\Roaming\\npm;C:\\Users\\Windows\\AppData\\Local\\Programs\\cursor\\resources\\app\\bin;C:\\Users\\Windows\\AppData\\Local\\Microsoft\\WindowsApps;C:\\Users\\Windows\\AppData\\Local\\Programs\\Antigravity\\bin"
+      }
+    }
+  }
+}

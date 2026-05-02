@@ -81,40 +81,23 @@ export default function Header({ config, onLoginClick, isCollapsed, navItems, ac
         )}
         
         <div className={`header-right ${!showTitle ? 'floating' : ''}`}>
-          {badgeLabel && (
-            <span className={`status-badge ${badgeClass}`}>
-              {badgeLabel}
-            </span>
-          )}
-          {identifier && (
-            <span className="user-identifier">
-              {identifier.length > 15 ? identifier.substring(0, 12) + '...' : identifier}
-            </span>
-          )}
-
-          {/* 🔘 UNIVERSAL LANGUAGE TOGGLE */}
-          <div className="header-language-toggle">
-            <button 
-              className={language === 'en' ? 'active' : ''} 
-              onClick={() => setLanguage('en')}
-            >
-              EN
-            </button>
-            <button 
-              className={language === 'gu' ? 'active' : ''} 
-              onClick={() => setLanguage('gu')}
-            >
-              ગુજ
-            </button>
-          </div>
-
           <div className="profile-wrapper" ref={dropdownRef}>
             <button 
               className={`profile-btn ${isDropdownOpen ? 'active' : ''}`} 
               aria-label="Profile" 
               onClick={() => setIsDropdownOpen(!isDropdownOpen)}
             >
-              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              {badgeLabel && (
+                <span className={`status-badge ${badgeClass}`}>
+                  {badgeLabel}
+                </span>
+              )}
+              {identifier && (
+                <span className="user-identifier">
+                  {identifier.length > 15 ? identifier.substring(0, 12) + '...' : identifier}
+                </span>
+              )}
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                 <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
                 <circle cx="12" cy="7" r="4"></circle>
               </svg>
