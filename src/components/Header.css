@@ -562,6 +562,8 @@
   display: flex;
   align-items: center;
   gap: 12px;
+  margin-right: 8px; /* Physical isolation gap */
+  user-select: none;
 }
 
 .drawer-icon {

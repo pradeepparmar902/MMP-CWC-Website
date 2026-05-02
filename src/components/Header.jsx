@@ -160,6 +160,18 @@ export default function Header({ config, onLoginClick, isCollapsed, navItems, ac
                 </button>
                 <button 
                   className={`favorite-toggle ${favorites.includes(item.id) ? 'is-favorite' : ''}`}
+                  onPointerDown={(e) => e.stopPropagation()}
+                  onTouchStart={(e) => e.stopPropagation()}
+                  onTouchEnd={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    const isFav = favorites.includes(item.id);
+                    if (isFav) {
+                      setFavorites(prev => prev.filter(id => id !== item.id));
+                    } else {
+                      setFavorites(prev => [...prev, item.id]);
+                    }
+                  }}
                   onClick={(e) => {
                     e.preventDefault();
                     e.stopPropagation();
@@ -170,7 +182,6 @@ export default function Header({ config, onLoginClick, isCollapsed, navItems, ac
                       setFavorites(prev => [...prev, item.id]);
                     }
                   }}
-                  onPointerDown={(e) => e.stopPropagation()}
                   type="button"
                   title={favorites.includes(item.id) ? "Remove from Quick Menu" : "Add to Quick Menu"}
                 >
