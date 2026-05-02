@@ -56,7 +56,7 @@ export default function Navigation({ activeSection, setActiveSection, navItems, 
           <div className="search-container">
             <input 
               type="text" 
-              placeholder="Search" 
+              placeholder="🔍" 
               className="nav-search-input"
             />
             <button className="search-btn" aria-label="Search">

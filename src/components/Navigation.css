@@ -27,8 +27,8 @@
   align-items: center;
   justify-content: center;
   margin: 0 auto;
-  gap: 10px; /* EQUAL PADDING BETWEEN EVERYTHING */
-  padding: 0 10px;
+  gap: 8px; /* Balanced default gap */
+  padding: 0 5px;
 }
 
 .nav-item {
@@ -37,34 +37,32 @@
 }
 
 .nav-btn {
-  height: 100%;
-  padding: 0 12px;
-  border-radius: 8px;
-  border: 1px solid transparent;
-  background: #f1f5f9;
-  color: #475569;
-  font-weight: 700;
-  font-size: 13px;
   display: flex;
+  flex-direction: column;
   align-items: center;
-  gap: 8px;
+  justify-content: center;
+  padding: 0 10px;
+  background: white;
+  border: 1px solid #E5E7EB;
+  border-radius: 12px;
   cursor: pointer;
-  transition: all 0.2s;
-  white-space: nowrap;
-}
-
-.nav-btn .nav-icon {
-  font-size: 1.1rem;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+  position: relative;
+  height: 36px;
+  min-width: 44px;
 }
 
 .nav-btn:hover {
-  background: #e2e8f0;
+  transform: translateY(-2px);
+  border-color: var(--item-bg);
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
 }
 
 .nav-btn.active {
-  background: var(--item-bg);
+  background-color: var(--item-bg);
   color: white;
-  border-color: rgba(0,0,0,0.1);
+  border-color: var(--item-bg);
   box-shadow: 0 4px 12px -2px rgba(0,0,0,0.15);
 }
 
@@ -77,72 +75,119 @@
 }
 
 .nav-search-input {
+  background: white;
+  border: 1px solid #E5E7EB;
+  border-radius: 50px;
+  padding: 0 30px 0 12px;
+  height: 36px;
   width: 140px;
-  height: 34px;
-  padding: 0 35px 0 12px;
-  border-radius: 20px;
-  border: 1px solid #e2e8f0;
-  background: #f8fafc;
-  font-size: 12px;
-  outline: none;
-  transition: all 0.2s;
+  font-size: 14px;
+  transition: all 0.3s;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.05);
 }
 
 .nav-search-input:focus {
+  outline: none;
+  border-color: #3B82F6;
   width: 180px;
-  border-color: var(--clr-primary);
-  background: white;
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
 }
 
 .search-btn {
   position: absolute;
-  right: 5px;
+  right: 10px;
   background: none;
   border: none;
-  padding: 5px;
   cursor: pointer;
-  opacity: 0.5;
+  font-size: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #6B7280;
 }
 
-/* 🔘 SLIM LANGUAGE TOGGLE */
 .nav-language-toggle {
   display: flex;
-  background: #f1f5f9;
+  background: white;
   padding: 2px;
-  border-radius: 8px;
-  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  border: 1px solid #E5E7EB;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.05);
 }
 
 .nav-language-toggle button {
-  padding: 4px 8px;
-  border-radius: 6px;
-  font-size: 10px;
-  font-weight: 800;
-  color: #64748b;
+  padding: 5px 12px;
+  border: none;
+  background: none;
+  font-size: 12px;
+  font-weight: 700;
+  color: #4B5563;
   cursor: pointer;
+  border-radius: 8px;
+  transition: all 0.2s;
 }
 
 .nav-language-toggle button.active {
-  background: white;
-  color: var(--clr-primary);
-  box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+  background: #3B82F6;
+  color: white;
 }
 
-@media (max-width: 768px) {
-  .nav-label-text {
-    display: none; /* Hide text, keep icons only on tablets/mobile */
+/* 🏆 MASTER MOBILE RESPONSIVE NAV BAR (max-width: 640px) */
+@media (max-width: 640px) {
+  .nav-bar {
+    height: 48px;
+    padding: 0 4px;
+  }
+
+  .nav-item {
+    flex: 0 0 auto;
   }
   
   .nav-btn {
-    padding: 0 10px;
+    height: 32px;
+    min-width: 38px;
+    padding: 0 6px;
   }
-  
+
+  .nav-icon {
+    font-size: 16px;
+  }
+
+  .nav-lock-icon {
+    font-size: 8px;
+    bottom: 2px;
+    right: 2px;
+  }
+
   .nav-search-input {
-    width: 70px; /* Slimmer to prevent overlap */
+    width: 55px; /* Nuclear slim search bar */
+    height: 32px;
+    font-size: 12px;
+    padding: 0 22px 0 8px;
   }
   
   .nav-search-input:focus {
-    width: 90px;
+    width: 80px;
+  }
+
+  .search-btn {
+    font-size: 12px;
+    right: 8px;
+  }
+
+  .nav-content-centered {
+    gap: 6px; /* Micro-gap for tiny screens */
+    margin-right: 15px; /* Smaller safety margin */
+    justify-content: center;
+  }
+
+  .nav-language-toggle {
+    height: 32px;
+  }
+
+  .nav-language-toggle button {
+    padding: 2px 4px;
+    font-size: 9px;
   }
 }
 
@@ -160,17 +205,6 @@
 }
 
 .side-toggle:hover {
-  
-  .nav-list {
-    flex-wrap: wrap;
-    width: 100%;
-  }
-  
-  .nav-item {
-    flex: 1 0 33.333%;
-  }
-
-  .nav-btn {
     padding: 0.6rem 0.25rem;
     font-size: 0.75rem;
   }
