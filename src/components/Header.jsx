@@ -170,6 +170,7 @@ export default function Header({ config, onLoginClick, isCollapsed, navItems, ac
                       setFavorites(prev => [...prev, item.id]);
                     }
                   }}
+                  onPointerDown={(e) => e.stopPropagation()}
                   type="button"
                   title={favorites.includes(item.id) ? "Remove from Quick Menu" : "Add to Quick Menu"}
                 >

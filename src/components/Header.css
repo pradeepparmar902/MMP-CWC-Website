@@ -580,7 +580,7 @@
   background: rgba(255, 255, 255, 0.05);
   border: 1px solid rgba(255, 255, 255, 0.1);
   color: #94a3b8;
-  width: 38px;
+  width: 44px; /* Increased for better hit-area */
   height: 46px; /* Matches drawer-link height approx */
   border-radius: 10px;
   display: flex;
@@ -589,6 +589,9 @@
   font-size: 1.2rem;
   cursor: pointer;
   transition: all 0.2s;
+  position: relative;
+  z-index: 100; /* Ensure it stays above the link button */
+  pointer-events: auto !important;
 }
 
 .favorite-toggle:hover {
