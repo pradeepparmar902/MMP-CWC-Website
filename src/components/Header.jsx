@@ -58,6 +58,7 @@ export default function Header({ config, onLoginClick, isCollapsed, navItems, ac
   }
 
   return (
+    <>
     <header className={`header ${!showTitle ? 'header-hidden' : ''} ${isCollapsed ? 'collapsed' : ''}`}>
       <div className="header-container container">
         <div className="header-left">
