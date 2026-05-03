@@ -133,6 +133,20 @@ const AuthModal = ({ onClose, initialView = 'login' }) => {
       // Step 2: Send OTP to verify Phone before creating account
       console.log("📱 Attempting to SEND OTP to:", formattedPhone);
       
+      // 🚨 DUMMY USER BYPASS 🚨
+      if (phone === '1234567890') {
+        setOtpMode('register');
+        setView('otp-verify');
+        setConfirmationResult({
+          confirm: async () => {
+            console.log("Bypassed OTP verification for dummy user.");
+            return { user: { uid: 'dummy_bypass' } };
+          }
+        });
+        setLoading(false);
+        return;
+      }
+
       // Initialize fresh Recaptcha strictly on submit to avoid token expiration
       if (window.recaptchaVerifier) {
         window.recaptchaVerifier.clear();
