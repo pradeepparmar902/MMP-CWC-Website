@@ -15,6 +15,7 @@ const AuthModal = ({ onClose, initialView = 'login' }) => {
     checkPhoneRegistered, 
     unifiedLogin, 
     unifiedRegister, 
+    loginWithPhone,
     resetPasswordByEmail, 
     updateUserPassword,
     changeMobileNumber,
