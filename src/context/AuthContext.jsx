@@ -280,7 +280,16 @@ export const AuthProvider = ({ children }) => {
 
   return (
     <AuthContext.Provider value={value}>
-      {!loading && children}
+      {loading ? (
+        <div style={{ 
+          display: 'flex', alignItems: 'center', justifyContent: 'center', 
+          minHeight: '100vh', background: '#fff', flexDirection: 'column', gap: '12px' 
+        }}>
+          <div style={{ width: 40, height: 40, border: '4px solid #e2e8f0', borderTopColor: '#3b82f6', borderRadius: '50%', animation: 'spin 0.8s linear infinite' }} />
+          <style>{'@keyframes spin { to { transform: rotate(360deg); } }'}</style>
+          <p style={{ color: '#94a3b8', fontSize: '14px' }}>Loading...</p>
+        </div>
+      ) : children}
     </AuthContext.Provider>
   );
 };

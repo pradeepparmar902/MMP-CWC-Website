@@ -44,6 +44,7 @@ function App() {
     isEduAdmin, 
     isSamajAdmin, 
     userStatus, 
+    currentUser,
     forceAdmin, 
     logout 
   } = useAuth();
@@ -63,6 +64,16 @@ function App() {
   useEffect(() => {
     localStorage.setItem('mmp_nav_favorites', JSON.stringify(favorites));
   }, [favorites]);
+
+  // Redirect to home on logout if currently on a protected section
+  useEffect(() => {
+    if (!currentUser && activeSection !== 'home') {
+      const activeItem = bannerConfig.navItems?.find(i => i.id === activeSection);
+      if (activeItem?.isProtected) {
+        setActiveSection('home');
+      }
+    }
+  }, [currentUser]);
 
   useEffect(() => {
     localStorage.setItem('mmp_language', language);
