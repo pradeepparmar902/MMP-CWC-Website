@@ -1417,3 +1417,92 @@
     width: 100%;
   }
 }
+
+/* ── Registry Verification ── */
+.cross-check-section {
+  animation: sapSlideDown 0.4s ease-out;
+}
+
+@keyframes sapSlideDown {
+  from { opacity: 0; transform: translateY(-10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.registry-match-card {
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -1px rgba(0, 0, 0, 0.03);
+  transition: all 0.2s ease;
+}
+
+.registry-match-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.08);
+}
+
+.match-data-item {
+  padding: 10px;
+  background: rgba(255, 255, 255, 0.6);
+  border-radius: 8px;
+  border: 1px solid rgba(0, 0, 0, 0.03);
+  transition: background 0.2s;
+}
+
+.match-data-item:hover {
+  background: rgba(255, 255, 255, 0.9);
+}
+
+.loading-check {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  color: #64748b;
+  font-size: 14px;
+  padding: 20px;
+  background: #f8fafc;
+  border-radius: 10px;
+  border: 1px dashed #cbd5e1;
+}
+
+.loading-check::before {
+  content: "";
+  width: 18px;
+  height: 18px;
+  border: 2px solid #3b82f6;
+  border-top-color: transparent;
+  border-radius: 50%;
+  animation: sapSpin 1s linear infinite;
+}
+
+@keyframes sapSpin {
+  to { transform: rotate(360deg); }
+}
+
+.no-mno-warning {
+  border: 1px solid #fecaca;
+  box-shadow: 0 2px 4px rgba(239, 68, 68, 0.05);
+}
+
+.refresh-registry-btn {
+  background: #f1f5f9;
+  border: 1px solid #e2e8f0;
+  color: #64748b;
+  padding: 4px 8px;
+  border-radius: 6px;
+  font-size: 11px;
+  font-weight: 700;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  transition: all 0.2s;
+}
+
+.refresh-registry-btn:hover {
+  background: #e2e8f0;
+  color: #1e293b;
+}
+
+.refresh-registry-btn.spinning::after {
+  content: "🔄";
+  animation: sapSpin 1s linear infinite;
+  display: inline-block;
+}

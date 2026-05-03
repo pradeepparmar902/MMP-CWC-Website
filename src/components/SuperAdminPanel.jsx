@@ -52,6 +52,11 @@ export default function SuperAdminPanel({ config, setConfig, syncStatus, assets,
   const [builderMode, setBuilderMode] = useState('registration'); // 'registration' or 'education'
   const [isSavingEduSchema, setIsSavingEduSchema] = useState(false);
   const [expandedUser, setExpandedUser] = useState(null);
+  const [registryData, setRegistryData] = useState([]);
+  const [isRegistryLoading, setIsRegistryLoading] = useState(false);
+  const [registryUrl, setRegistryUrl] = useState('');
+  const [isSavingRegistryUrl, setIsSavingRegistryUrl] = useState(false);
+  const [registrySearch, setRegistrySearch] = useState('');
   // 🗑️ Delete Requests State
   const [deleteRequests, setDeleteRequests] = useState([]);
 
@@ -146,6 +151,67 @@ export default function SuperAdminPanel({ config, setConfig, syncStatus, assets,
     }, () => {}); // Silently ignore if collection doesn't exist yet
     return unsubscribe;
   }, []);
+
+  const fetchRegistry = async () => {
+    setIsRegistryLoading(true);
+    try {
+      const docSnap = await getDoc(doc(db, 'site_settings', 'election_config'));
+      if (docSnap.exists()) {
+        const data = docSnap.data();
+        setRegistryUrl(data.sheetUrl || '');
+        if (data.sheetUrl) {
+          const response = await fetch(data.sheetUrl);
+          const csvText = await response.text();
+          const { rows } = parseCSV(csvText);
+          setRegistryData(rows);
+          console.log(`✅ Loaded ${rows.length} registry records for validation.`);
+        }
+      }
+    } catch (e) {
+      console.error("Registry fetch failed:", e);
+    } finally {
+      setIsRegistryLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchRegistry();
+  }, []);
+
+  /** Parse a published Google Sheet CSV string into array of row objects */
+  function parseCSV(csvText) {
+    const rows = [];
+    let inQuote = false;
+    let cur = '';
+    let row = [];
+    for (let i = 0; i < csvText.length; i++) {
+      const ch = csvText[i];
+      const nextCh = csvText[i + 1];
+      if (ch === '"') {
+        if (inQuote && nextCh === '"') { cur += '"'; i++; }
+        else { inQuote = !inQuote; }
+      } else if (ch === ',' && !inQuote) {
+        row.push(cur.trim()); cur = '';
+      } else if ((ch === '\n' || (ch === '\r' && nextCh === '\n')) && !inQuote) {
+        row.push(cur.trim());
+        if (row.length > 0 && row.some(c => c !== '')) rows.push(row);
+        row = []; cur = '';
+        if (ch === '\r') i++;
+      } else { cur += ch; }
+    }
+    if (cur !== '' || row.length > 0) {
+      row.push(cur.trim());
+      if (row.length > 0 && row.some(c => c !== '')) rows.push(row);
+    }
+    if (rows.length < 2) return { headers: [], rows: [] };
+    const headers = rows[0].map(h => h.trim().replace(/^"|"$/g, ''));
+    const data = rows.slice(1).map(r => {
+      const obj = {};
+      headers.forEach((h, i) => { obj[h] = r[i] || ''; });
+      return obj;
+    });
+    return { headers, rows: data };
+  }
 
   const handleApprove = async (user, role) => {
     try {
@@ -359,6 +425,14 @@ export default function SuperAdminPanel({ config, setConfig, syncStatus, assets,
               onClick={() => setActiveTab('approvals')}
             >
               User Approvals {pendingUsers.length > 0 && <span className="notif-dot">{pendingUsers.length}</span>}
+            </button>
+          )}
+          {isCwcSuper && (
+            <button 
+              className={`sap-tab ${activeTab === 'registry' ? 'active' : ''}`}
+              onClick={() => setActiveTab('registry')}
+            >
+              🗳️ Election Registry
             </button>
           )}
           {isSuperAdmin && (
@@ -660,6 +734,69 @@ export default function SuperAdminPanel({ config, setConfig, syncStatus, assets,
                                     })}
                                     {(!user.profile || Object.keys(user.profile).length === 0) && <p className="no-profile-msg">No extra profile data provided.</p>}
                                   </div>
+
+                                  {/* ── Registry Cross-Check ── */}
+                                  <div className="cross-check-section">
+                                     <div style={{display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom: '15px'}}>
+                                       <h4 style={{display:'flex', alignItems:'center', gap:'8px', color: '#1e293b', margin: 0}}>
+                                         🔍 Registry Data Verification
+                                       </h4>
+                                       <button 
+                                         className={`refresh-registry-btn ${isRegistryLoading ? 'spinning' : ''}`}
+                                         onClick={(e) => { e.stopPropagation(); fetchRegistry(); }}
+                                         disabled={isRegistryLoading}
+                                       >
+                                         {isRegistryLoading ? 'Refreshing...' : 'Refresh Registry'}
+                                       </button>
+                                     </div>
+
+                                     {isRegistryLoading ? (
+                                       <div className="loading-check">Searching official election registry...</div>
+                                     ) : (() => {
+                                       const mNo = user.membershipNo || user.profile?.membershipNo;
+                                       if (!mNo) return <div className="no-mno-warning" style={{color:'#ef4444', background:'#fef2f2', padding:'12px', borderRadius:'6px', fontSize:'14px'}}>⚠️ <strong>Warning:</strong> User did not provide a Membership Number. Manual validation required.</div>;
+                                       
+                                       // Case-insensitive search across all registry rows for the membership ID
+                                       const match = registryData.find(row => 
+                                         Object.values(row).some(v => v && v.toString().toLowerCase().trim() === mNo.toString().toLowerCase().trim())
+                                       );
+
+                                       if (match) {
+                                         return (
+                                           <div className="registry-match-card" style={{background:'#f0fdf4', border:'1px solid #bcf0da', padding:'20px', borderRadius:'10px'}}>
+                                             <div style={{color:'#166534', fontWeight:'700', fontSize: '15px', marginBottom:'15px', display:'flex', justifyContent:'space-between', borderBottom: '1px solid #bcf0da', paddingBottom: '10px'}}>
+                                               <span>✅ OFFICIAL REGISTRY MATCH FOUND</span>
+                                               <span>Member ID: {mNo}</span>
+                                             </div>
+                                             <div style={{display:'grid', gridTemplateColumns:'repeat(auto-fit, minmax(180px, 1fr))', gap:'20px'}}>
+                                               {Object.entries(match).map(([k, v]) => (
+                                                 v && k !== 'Card Link' && (
+                                                   <div key={k} className="match-data-item">
+                                                     <label style={{display:'block', fontSize:'11px', color:'#64748b', textTransform:'uppercase', fontWeight: 'bold', marginBottom: '4px'}}>{k}</label>
+                                                     <span style={{fontSize:'14px', color:'#0f172a', fontWeight:'600'}}>{v}</span>
+                                                   </div>
+                                                 )
+                                               ))}
+                                             </div>
+                                             <div style={{marginTop:'20px', padding:'12px', background:'rgba(255,255,255,0.7)', borderRadius:'6px', fontSize:'13px', color:'#1e293b', border:'1px dashed #22c55e'}}>
+                                               <strong>Validation Step:</strong> Compare the <b>Full Name</b> and <b>Vibhag</b> in this green box with the user's provided details above. If they match, the user is a verified genuine member.
+                                             </div>
+                                           </div>
+                                         );
+                                       }
+
+                                       return (
+                                         <div className="registry-match-card" style={{background:'#fff1f2', border:'1px solid #fecaca', padding:'20px', borderRadius:'10px', color:'#991b1b'}}>
+                                           <div style={{fontWeight:'700', fontSize: '15px', marginBottom:'10px'}}>❌ NO REGISTRY MATCH FOUND</div>
+                                           <p style={{fontSize:'14px', lineHeight:'1.5'}}>
+                                             The Membership ID "<strong>{mNo}</strong>" was not found in the official election database records. 
+                                             This could mean the ID is incorrect or the user is not in the system. 
+                                             <strong>Please verify identity before approving.</strong>
+                                           </p>
+                                         </div>
+                                       );
+                                     })()}
+                                  </div>
                                 </div>
                               </td>
                             </tr>
@@ -781,6 +918,69 @@ export default function SuperAdminPanel({ config, setConfig, syncStatus, assets,
                                     })}
                                   {(!user.profile || Object.keys(user.profile).length === 0) && <p className="no-profile-msg">No extra profile data provided.</p>}
                                 </div>
+
+                                {/* ── Registry Cross-Check ── */}
+                                <div className="cross-check-section">
+                                   <div style={{display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom: '15px'}}>
+                                     <h4 style={{display:'flex', alignItems:'center', gap:'8px', color: '#1e293b', margin: 0}}>
+                                       🔍 Registry Data Verification
+                                     </h4>
+                                     <button 
+                                       className={`refresh-registry-btn ${isRegistryLoading ? 'spinning' : ''}`}
+                                       onClick={(e) => { e.stopPropagation(); fetchRegistry(); }}
+                                       disabled={isRegistryLoading}
+                                     >
+                                       {isRegistryLoading ? 'Refreshing...' : 'Refresh Registry'}
+                                     </button>
+                                   </div>
+
+                                   {isRegistryLoading ? (
+                                     <div className="loading-check">Searching official election registry...</div>
+                                   ) : (() => {
+                                     const mNo = user.membershipNo || user.profile?.membershipNo;
+                                     if (!mNo) return <div className="no-mno-warning" style={{color:'#ef4444', background:'#fef2f2', padding:'12px', borderRadius:'6px', fontSize:'14px'}}>⚠️ <strong>Warning:</strong> User did not provide a Membership Number. Manual validation required.</div>;
+                                     
+                                     // Case-insensitive search across all registry rows for the membership ID
+                                     const match = registryData.find(row => 
+                                       Object.values(row).some(v => v && v.toString().toLowerCase().trim() === mNo.toString().toLowerCase().trim())
+                                     );
+
+                                     if (match) {
+                                       return (
+                                         <div className="registry-match-card" style={{background:'#f0fdf4', border:'1px solid #bcf0da', padding:'20px', borderRadius:'10px'}}>
+                                           <div style={{color:'#166534', fontWeight:'700', fontSize: '15px', marginBottom:'15px', display:'flex', justifyContent:'space-between', borderBottom: '1px solid #bcf0da', paddingBottom: '10px'}}>
+                                             <span>✅ OFFICIAL REGISTRY MATCH FOUND</span>
+                                             <span>Member ID: {mNo}</span>
+                                           </div>
+                                           <div style={{display:'grid', gridTemplateColumns:'repeat(auto-fit, minmax(180px, 1fr))', gap:'20px'}}>
+                                             {Object.entries(match).map(([k, v]) => (
+                                               v && k !== 'Card Link' && (
+                                                 <div key={k} className="match-data-item">
+                                                   <label style={{display:'block', fontSize:'11px', color:'#64748b', textTransform:'uppercase', fontWeight: 'bold', marginBottom: '4px'}}>{k}</label>
+                                                   <span style={{fontSize:'14px', color:'#0f172a', fontWeight:'600'}}>{v}</span>
+                                                 </div>
+                                               )
+                                             ))}
+                                           </div>
+                                           <div style={{marginTop:'20px', padding:'12px', background:'rgba(255,255,255,0.7)', borderRadius:'6px', fontSize:'13px', color:'#1e293b', border:'1px dashed #22c55e'}}>
+                                             <strong>Validation Step:</strong> Compare the <b>Full Name</b> and <b>Vibhag</b> in this green box with the user's provided details above. If they match, the user is a verified genuine member.
+                                           </div>
+                                         </div>
+                                       );
+                                     }
+
+                                     return (
+                                       <div className="registry-match-card" style={{background:'#fff1f2', border:'1px solid #fecaca', padding:'20px', borderRadius:'10px', color:'#991b1b'}}>
+                                         <div style={{fontWeight:'700', fontSize: '15px', marginBottom:'10px'}}>❌ NO REGISTRY MATCH FOUND</div>
+                                         <p style={{fontSize:'14px', lineHeight:'1.5'}}>
+                                           The Membership ID "<strong>{mNo}</strong>" was not found in the official election database records. 
+                                           This could mean the ID is incorrect or the user is not in the system. 
+                                           <strong>Please verify identity before approving.</strong>
+                                         </p>
+                                       </div>
+                                     );
+                                   })()}
+                                </div>
                               </div>
                             </td>
                           </tr>
@@ -791,6 +991,119 @@ export default function SuperAdminPanel({ config, setConfig, syncStatus, assets,
                 </table>
               </div>
             )}
+          </div>
+        )}
+
+        {(activeTab === 'registry' && isCwcSuper) && (
+          <div className="registry-view">
+            <div className="view-header" style={{display:'flex', justifyContent:'space-between', alignItems:'flex-end'}}>
+              <div>
+                <h2>🗳️ Election Registry Management</h2>
+                <p>Configure the official member database used for registration cross-checks.</p>
+              </div>
+              <button 
+                className={`refresh-registry-btn ${isRegistryLoading ? 'spinning' : ''}`}
+                onClick={fetchRegistry}
+                disabled={isRegistryLoading}
+                style={{padding:'10px 20px', fontSize:'13px'}}
+              >
+                {isRegistryLoading ? 'Syncing...' : '🔄 Sync with Google Sheets'}
+              </button>
+            </div>
+
+            <div className="registry-config-card" style={{background:'#f8fafc', padding:'25px', borderRadius:'12px', border:'1px solid #e2e8f0', marginBottom:'30px'}}>
+              <h3 style={{fontSize:'16px', marginBottom:'15px', color:'#1e293b'}}>🔗 Registry Source Configuration</h3>
+              <div style={{display:'flex', gap:'15px'}}>
+                <div style={{flex:1}}>
+                  <label style={{display:'block', fontSize:'12px', fontWeight:'700', color:'#64748b', marginBottom:'8px'}}>Google Sheet CSV URL (Published to Web)</label>
+                  <input 
+                    type="text"
+                    className="manual-input"
+                    placeholder="https://docs.google.com/spreadsheets/d/.../pub?output=csv"
+                    value={registryUrl}
+                    onChange={(e) => setRegistryUrl(e.target.value)}
+                    style={{width:'100%', padding:'12px', borderRadius:'8px', border:'1px solid #cbd5e1'}}
+                  />
+                </div>
+                <button 
+                  className="add-now-btn"
+                  disabled={isSavingRegistryUrl}
+                  onClick={async () => {
+                    setIsSavingRegistryUrl(true);
+                    try {
+                      await setDoc(doc(db, 'site_settings', 'election_config'), { sheetUrl: registryUrl });
+                      await fetchRegistry();
+                      alert('✅ Registry URL updated and synced!');
+                    } catch(e) { alert('❌ Failed to save URL'); }
+                    setIsSavingRegistryUrl(false);
+                  }}
+                  style={{height:'46px'}}
+                >
+                  {isSavingRegistryUrl ? 'Saving...' : 'Save & Sync'}
+                </button>
+              </div>
+              <p style={{fontSize:'12px', color:'#64748b', marginTop:'10px'}}>
+                💡 <strong>How to get this:</strong> In Google Sheets, go to <b>File &gt; Share &gt; Publish to web</b>. Select <b>Entire Document</b> and <b>Comma-separated values (.csv)</b>, then copy the link.
+              </p>
+            </div>
+
+            <div className="registry-data-explorer">
+              <div style={{display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:'15px'}}>
+                <h3 style={{fontSize:'16px', color:'#1e293b', margin:0}}>📊 Registry Records ({registryData.length})</h3>
+                <div className="search-box" style={{width:'300px'}}>
+                  <input 
+                    type="text"
+                    placeholder="🔍 Search registry (Name, ID, Phone...)"
+                    value={registrySearch}
+                    onChange={(e) => setRegistrySearch(e.target.value)}
+                    style={{width:'100%', padding:'10px 15px', borderRadius:'20px', border:'1px solid #e2e8f0', fontSize:'14px'}}
+                  />
+                </div>
+              </div>
+
+              {registryData.length === 0 ? (
+                <div className="empty-state" style={{padding:'40px'}}>
+                  <p>No registry data loaded. Please configure a valid Sheet URL above.</p>
+                </div>
+              ) : (
+                <div className="access-table-wrapper" style={{maxHeight:'600px', overflowY:'auto'}}>
+                  <table className="access-table">
+                    <thead style={{position:'sticky', top:0, zIndex:10}}>
+                      <tr>
+                        {registryData.length > 0 && Object.keys(registryData[0]).map(key => (
+                          <th key={key}>{key}</th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {registryData
+                        .filter(row => {
+                          if (!registrySearch) return true;
+                          return Object.values(row).some(val => 
+                            val && val.toString().toLowerCase().includes(registrySearch.toLowerCase())
+                          );
+                        })
+                        .slice(0, 100) // Performance: only show first 100
+                        .map((row, idx) => (
+                          <tr key={idx}>
+                            {Object.values(row).map((val, i) => (
+                              <td key={i} style={{fontSize:'13px'}}>{val}</td>
+                            ))}
+                          </tr>
+                        ))
+                      }
+                      {registryData.length > 100 && (
+                        <tr>
+                          <td colSpan={Object.keys(registryData[0]).length} style={{textAlign:'center', padding:'20px', color:'#64748b', fontStyle:'italic'}}>
+                            Showing first 100 records. Use search to find specific members.
+                          </td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
           </div>
         )}
 
