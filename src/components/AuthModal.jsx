@@ -552,16 +552,8 @@ const AuthModal = ({ onClose, initialView = 'login' }) => {
            </div>
         )}
 
-        {/* Global ReCaptcha Container (Stay visible but unobtrusive for Invisible mode) */}
-        <div 
-          id="recaptcha-container" 
-          style={{ 
-            opacity: 0, 
-            position: 'absolute', 
-            pointerEvents: 'none',
-            zIndex: -1
-          }}
-        ></div>
+        {/* Global ReCaptcha Container (Must remain visible for Google TOS & Bot detection) */}
+        <div id="recaptcha-container" className="recaptcha-wrapper"></div>
         <div style={{ textAlign: 'center', marginTop: '10px', fontSize: '10px', color: '#9ca3af' }}>
           Portal Version: v1.2.1
         </div>
