@@ -130,7 +130,7 @@ export default function Education() {
     });
     setFormData(cleanData);
     setSubmissionId(sub.id);
-    setIsEditable(sub.isLocked !== true || isAdmin);
+    setIsEditable((sub.isLocked !== true && sub.status !== 'Approved') || isAdmin);
     setViewMode('form');
   };
 
@@ -223,9 +223,11 @@ export default function Education() {
       {/* PANEL 1 & 2: LEFT SIDEBAR */}
       <aside className="edu-sidebar">
         <div className="edu-sidebar-top">
-          <button className="n-button-create" onClick={handleNewEntry}>
-            ➕ Create New Form
-          </button>
+          {(isAdmin || allSubmissions.length === 0) && (
+            <button className="n-button-create" onClick={handleNewEntry}>
+              ➕ Create New Form
+            </button>
+          )}
           <div className="list-search">
             <input 
               type="text" 
@@ -248,6 +250,11 @@ export default function Education() {
                   <div className="item-details">
                     <span className="item-name">{sub.studentName}</span>
                     <span className="item-id">ID: {sub.formId}</span>
+                  </div>
+                  <div className={`item-status-indicator ${(sub.status || 'Pending').toLowerCase().replace(/ /g, '-')}`} title={sub.status || 'Pending'}>
+                    {sub.status === 'Approved' ? '✅' : 
+                     sub.status === 'Rejected' ? '❌' : 
+                     sub.status === 'Required More Info' ? '⚠️' : '🕒'}
                   </div>
                 </div>
               ))
@@ -304,41 +311,6 @@ export default function Education() {
           </div>
         )}
       </main>
-
-      {/* PANEL 4: RIGHT SIDEBAR (STATUS & INFO) */}
-      <aside className="edu-right-panel">
-        <div className="status-overview-card">
-          <h4>Application Status</h4>
-          <div className={`status-display ${(formData.status || 'Pending').toLowerCase().replace(/ /g, '-')}`}>
-            <span className="status-icon">
-              {formData.status === 'Approved' ? '✅' : 
-               formData.status === 'Rejected' ? '❌' : 
-               formData.status === 'Required More Info' ? '⚠️' : '🕒'}
-            </span>
-            <div className="status-info">
-              <span className="status-text">{formData.status || 'Pending Review'}</span>
-              <span className="status-date">
-                {formData.verifiedAt ? `Updated: ${new Date(formData.verifiedAt).toLocaleDateString()}` : 'Waiting for Admin'}
-              </span>
-            </div>
-          </div>
-          
-          <div className="status-guidance">
-             {formData.status === 'Approved' ? (
-               <p className="guide-success">Your information has been verified and approved by the CWC committee.</p>
-             ) : formData.status === 'Required More Info' ? (
-               <p className="guide-warning">Admin has requested more information. Please check your data and update if necessary.</p>
-             ) : (
-               <p className="guide-neutral">An education admin will review your marksheet and information shortly. Please stay tuned.</p>
-             )}
-          </div>
-        </div>
-
-        <div className="portal-help-box">
-          <h5>Need Help?</h5>
-          <p>If you have questions about your verification status, contact the Education Department via the official WhatsApp group.</p>
-        </div>
-      </aside>
     </div>
   );
 }

@@ -1,6 +1,6 @@
 .edu-dashboard {
   display: grid;
-  grid-template-columns: 300px 1fr 300px;
+  grid-template-columns: 300px 1fr;
   height: calc(100vh - 120px);
   background: #f8fafc;
   overflow: hidden;
@@ -84,6 +84,9 @@
   transition: all 0.2s;
   margin-bottom: 6px;
   border: 1px solid transparent;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
 }
 
 .list-item:hover {
@@ -183,145 +186,27 @@
   font-size: 14px;
 }
 
-/* RIGHT PANEL */
-.edu-right-panel {
-  background: #f8fafc;
-  border-left: 1px solid #e2e8f0;
-  padding: 24px;
-}
-
-.empty-panel-msg {
-  text-align: center;
-  padding-top: 60px;
-  color: #94a3b8;
-}
-
-.empty-panel-msg h4 {
-  color: #64748b;
-  margin-bottom: 8px;
-}
-
-/* SUCCESS VIEW */
-.edu-success-view {
-  text-align: center;
-  padding: 60px 20px;
-}
-
-.success-banner {
-  font-size: 48px;
-  margin-bottom: 24px;
-}
-
-.success-actions {
-  display: flex;
-  justify-content: center;
-  gap: 12px;
-  margin-top: 32px;
-}
-
-.success-actions button {
-  padding: 12px 24px;
-  border-radius: 8px;
-  font-weight: 600;
-  cursor: pointer;
-  border: 1px solid #e2e8f0;
-  background: white;
-}
-
-.success-actions button.primary {
-  background: #3b82f6;
-  color: white;
-  border: none;
-}
-
-/* STATUS CARD STYLES */
-.status-overview-card {
-  background: white;
-  border-radius: 12px;
-  padding: 20px;
-  border: 1px solid #e2e8f0;
-  margin-bottom: 20px;
-  box-shadow: 0 1px 3px rgba(0,0,0,0.05);
-}
-
-.status-overview-card h4 {
-  margin: 0 0 16px 0;
-  font-size: 14px;
-  color: #475569;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-}
-
-.status-display {
+/* INLINE STATUS INDICATOR */
+.item-status-indicator {
+  font-size: 16px;
   display: flex;
   align-items: center;
-  gap: 15px;
-  padding: 16px;
-  border-radius: 10px;
-  margin-bottom: 16px;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: #f8fafc;
 }
 
-.status-display.pending { background: #fffbeb; border: 1px solid #fef3c7; }
-.status-display.approved { background: #f0fdf4; border: 1px solid #dcfce7; }
-.status-display.required-more-info { background: #fff7ed; border: 1px solid #ffedd5; }
-.status-display.rejected { background: #fef2f2; border: 1px solid #fee2e2; }
-
-.status-icon {
-  font-size: 24px;
-}
-
-.status-info {
-  display: flex;
-  flex-direction: column;
-}
-
-.status-text {
-  font-weight: 700;
-  font-size: 16px;
-  color: #1e293b;
-}
-
-.status-date {
-  font-size: 11px;
-  color: #64748b;
-}
-
-.status-guidance p {
-  font-size: 13px;
-  line-height: 1.5;
-  margin: 0;
-}
-
-.guide-success { color: #166534; }
-.guide-warning { color: #9a3412; font-weight: 500; }
-.guide-neutral { color: #475569; }
-
-.portal-help-box {
-  background: #f1f5f9;
-  padding: 16px;
-  border-radius: 10px;
-}
-
-.portal-help-box h5 {
-  margin: 0 0 8px 0;
-  font-size: 13px;
-  color: #1e293b;
-}
-
-.portal-help-box p {
-  font-size: 12px;
-  color: #64748b;
-  margin: 0;
-  line-height: 1.4;
-}
+.item-status-indicator.pending { background: #fffbeb; border: 1px solid #fef3c7; }
+.item-status-indicator.approved { background: #f0fdf4; border: 1px solid #dcfce7; }
+.item-status-indicator.required-more-info { background: #fff7ed; border: 1px solid #ffedd5; }
+.item-status-indicator.rejected { background: #fef2f2; border: 1px solid #fee2e2; }
 
 /* RESPONSIVE */
 @media (max-width: 1200px) {
   .edu-dashboard {
     grid-template-columns: 280px 1fr;
-  }
-  .edu-right-panel {
-    display: none;
   }
 }
 
