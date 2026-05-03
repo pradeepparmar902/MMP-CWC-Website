@@ -7,10 +7,8 @@ import SectionPage from './SectionPage';
 import './ElectionCard.css';
 
 // ─────────────────────────────────────────────────────────────────────────────
-// ⚙️  CONFIG — Update these two URLs after setting up Google Drive & Sheet
+// 🛠️  Helpers
 // ─────────────────────────────────────────────────────────────────────────────
-const SHEET_CSV_URL = ''; // Paste your Google Sheet published CSV URL here
-//  Example: 'https://docs.google.com/spreadsheets/d/YOUR_ID/export?format=csv&gid=0'
 
 // ─────────────────────────────────────────────────────────────────────────────
 // 🛠️  Helpers
@@ -262,46 +260,63 @@ export default function ElectionCard() {
   const canManage = isAdmin || isSuperAdmin;
 
   const [allCards, setAllCards] = useState([]);
-  const [fetchState, setFetchState] = useState('idle'); // 'idle' | 'loading' | 'done' | 'error' | 'no-config'
+  const [fetchState, setFetchState] = useState('loading'); // 'loading' | 'done' | 'error' | 'no-config'
   const [membershipNo, setMembershipNo] = useState('');
   const [profileLoading, setProfileLoading] = useState(true);
+  
+  // Dynamic Config State
+  const [configUrl, setConfigUrl] = useState('');
+  const [isEditingConfig, setIsEditingConfig] = useState(false);
+  const [newConfigUrl, setNewConfigUrl] = useState('');
+  const [savingConfig, setSavingConfig] = useState(false);
 
-  // 1. Load user's membership number from Firestore
+  // 1. Load Config & User's membership number from Firestore
   useEffect(() => {
-    if (!currentUser) { setProfileLoading(false); return; }
-    const load = async () => {
+    const loadConfigAndProfile = async () => {
+      // Load Config First
       try {
-        // Check admins collection first
-        const adminDoc = await getDoc(doc(db, 'admins', currentUser.uid));
-        if (adminDoc.exists() && adminDoc.data().membershipNo) {
-          setMembershipNo(adminDoc.data().membershipNo);
-          setProfileLoading(false);
-          return;
-        }
-        // Fall back to pending_users
-        const pendingDoc = await getDoc(doc(db, 'pending_users', currentUser.uid));
-        if (pendingDoc.exists()) {
-          const data = pendingDoc.data();
-          const mno = data.membershipNo || data.profile?.membershipNo || '';
-          setMembershipNo(mno);
+        const configDoc = await getDoc(doc(db, 'site_settings', 'election_card'));
+        if (configDoc.exists() && configDoc.data().sheetUrl) {
+          setConfigUrl(configDoc.data().sheetUrl);
+          setNewConfigUrl(configDoc.data().sheetUrl);
+        } else {
+          setFetchState('no-config');
         }
       } catch (e) {
-        console.error('Error loading membership no:', e);
+        console.error('Error loading config:', e);
+        setFetchState('error');
+      }
+
+      // Load Profile
+      if (currentUser) {
+        try {
+          const adminDoc = await getDoc(doc(db, 'admins', currentUser.uid));
+          if (adminDoc.exists() && adminDoc.data().membershipNo) {
+            setMembershipNo(adminDoc.data().membershipNo);
+          } else {
+            const pendingDoc = await getDoc(doc(db, 'pending_users', currentUser.uid));
+            if (pendingDoc.exists()) {
+              const data = pendingDoc.data();
+              setMembershipNo(data.membershipNo || data.profile?.membershipNo || '');
+            }
+          }
+        } catch (e) {
+          console.error('Error loading membership no:', e);
+        }
       }
       setProfileLoading(false);
     };
-    load();
+    
+    loadConfigAndProfile();
   }, [currentUser]);
 
   // 2. Fetch Google Sheet CSV
   const fetchCards = useCallback(async () => {
-    if (!SHEET_CSV_URL) {
-      setFetchState('no-config');
-      return;
-    }
+    if (!configUrl) return;
+    
     setFetchState('loading');
     try {
-      const res = await fetch(`${SHEET_CSV_URL}&cachebust=${Date.now()}`);
+      const res = await fetch(`${configUrl}&cachebust=${Date.now()}`);
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const csv = await res.text();
       const rows = parseCSV(csv);
@@ -325,9 +340,32 @@ export default function ElectionCard() {
       console.error('Sheet fetch error:', e);
       setFetchState('error');
     }
-  }, []);
+  }, [configUrl]);
 
-  useEffect(() => { fetchCards(); }, [fetchCards]);
+  useEffect(() => { 
+    if (configUrl) {
+      fetchCards(); 
+    }
+  }, [fetchCards, configUrl]);
+
+  const handleSaveConfig = async () => {
+    if (!newConfigUrl.trim()) return;
+    setSavingConfig(true);
+    try {
+      await setDoc(doc(db, 'site_settings', 'election_card'), {
+        sheetUrl: newConfigUrl.trim(),
+        updatedAt: new Date().toISOString(),
+        updatedBy: currentUser?.uid
+      }, { merge: true });
+      setConfigUrl(newConfigUrl.trim());
+      setIsEditingConfig(false);
+      setFetchState('loading'); // will trigger fetchCards due to useEffect
+    } catch (e) {
+      alert("Failed to save configuration: " + e.message);
+    } finally {
+      setSavingConfig(false);
+    }
+  };
 
   // ── Render ──────────────────────────────────────────────────────────────────
   if (profileLoading) {
@@ -348,13 +386,65 @@ export default function ElectionCard() {
         </div>
       </div>
 
-      {/* ── SHEET NOT CONFIGURED ───────────────────────────────────────────── */}
-      {fetchState === 'no-config' && (
+      {/* ── ADMIN CONFIG SETTINGS ─────────────────────────────────────────── */}
+      {canManage && (fetchState === 'no-config' || isEditingConfig) && (
+        <div className="ec-setup-banner" style={{ display: 'block' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '12px' }}>
+            <span>⚙️</span>
+            <strong style={{ fontSize: '1.1rem' }}>Election Card Configuration</strong>
+          </div>
+          <p style={{ marginBottom: '16px' }}>Paste the published CSV link from your Google Sheet below to connect the database.</p>
+          
+          <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
+            <input 
+              type="url" 
+              value={newConfigUrl} 
+              onChange={e => setNewConfigUrl(e.target.value)}
+              placeholder="https://docs.google.com/spreadsheets/d/e/2PACX-.../pub?output=csv"
+              style={{ flex: 1, minWidth: '300px', padding: '10px 14px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '0.9rem' }}
+              disabled={savingConfig}
+            />
+            <button 
+              onClick={handleSaveConfig} 
+              disabled={savingConfig || !newConfigUrl}
+              style={{ padding: '10px 24px', background: '#2563eb', color: 'white', border: 'none', borderRadius: '8px', fontWeight: 'bold', cursor: savingConfig ? 'not-allowed' : 'pointer' }}
+            >
+              {savingConfig ? 'Saving...' : 'Connect Database'}
+            </button>
+            {isEditingConfig && fetchState !== 'no-config' && (
+              <button 
+                onClick={() => { setIsEditingConfig(false); setNewConfigUrl(configUrl); }}
+                style={{ padding: '10px 20px', background: '#e2e8f0', color: '#475569', border: 'none', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer' }}
+              >
+                Cancel
+              </button>
+            )}
+          </div>
+          <div style={{ marginTop: '16px', fontSize: '0.8rem', opacity: 0.8, background: 'rgba(0,0,0,0.05)', padding: '12px', borderRadius: '6px' }}>
+            <strong>How to get the link:</strong> Open Google Sheet → File → Share → Publish to web → Select "Comma-separated values (.csv)" → Click Publish → Copy the generated link.
+          </div>
+        </div>
+      )}
+
+      {/* ── ADMIN EDIT BUTTON (When configured) ───────────────────────────── */}
+      {canManage && fetchState === 'done' && !isEditingConfig && (
+        <div style={{ display: 'flex', justifyContent: 'flex-end', margin: '0 16px 12px' }}>
+          <button 
+            onClick={() => setIsEditingConfig(true)}
+            style={{ background: 'none', border: 'none', color: '#64748b', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.85rem' }}
+          >
+            <span>⚙️</span> Edit Database Connection
+          </button>
+        </div>
+      )}
+
+      {/* ── SHEET NOT CONFIGURED (For regular users) ─────────────────────── */}
+      {!canManage && fetchState === 'no-config' && (
         <div className="ec-setup-banner">
-          <span>⚙️</span>
+          <span>⏳</span>
           <div>
-            <strong>Google Sheet not configured yet</strong>
-            <p>Update <code>SHEET_CSV_URL</code> in <code>ElectionCard.jsx</code> with your published sheet URL.</p>
+            <strong>System Maintenance</strong>
+            <p>The election card database is currently being updated. Please check back later.</p>
           </div>
         </div>
       )}
