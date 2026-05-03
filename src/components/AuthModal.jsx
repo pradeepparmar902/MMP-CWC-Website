@@ -16,7 +16,8 @@ const AuthModal = ({ onClose, initialView = 'login' }) => {
     resetPasswordByEmail, 
     updateUserPassword,
     currentUser,
-    forceAdmin
+    forceAdmin,
+    logout
   } = useAuth();
   
   // Views: 'login', 'register', 'forgot', 'otp-verify', 'new-password', 'success', 'profile', 'change-phone'
