@@ -1,0 +1,167 @@
+.office-color-picker {
+  position: relative;
+  display: inline-block;
+  font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+}
+
+.ocp-trigger {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  padding: 4px 6px;
+  border: 1px solid #cbd5e1;
+  background: white;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all 0.15s;
+  height: 32px;
+  min-width: 50px;
+}
+
+.ocp-trigger:hover {
+  background: #f8fafc;
+  border-color: #94a3b8;
+}
+
+.ocp-swatch {
+  width: 20px;
+  height: 20px;
+  border-radius: 2px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+}
+
+.ocp-arrow {
+  font-size: 9px;
+  color: #64748b;
+}
+
+.ocp-popover {
+  position: absolute;
+  bottom: 100%;
+  left: 0;
+  margin-bottom: 6px;
+  background: #f3f4f6; /* slightly gray MS office style */
+  border: 1px solid #d1d5db;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+  padding: 8px;
+  z-index: 9999;
+  width: max-content;
+}
+
+.ocp-section {
+  margin-bottom: 8px;
+}
+
+.ocp-title {
+  font-size: 11px;
+  color: #374151;
+  margin-bottom: 4px;
+}
+
+.ocp-theme-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.ocp-theme-row {
+  display: flex;
+  gap: 1px;
+}
+
+.ocp-main-row {
+  margin-bottom: 4px; /* gap between main and variants */
+}
+
+.ocp-main-row .ocp-color-btn {
+  height: 16px;
+  width: 16px;
+  border: 1px solid #d1d5db;
+}
+
+.ocp-color-btn {
+  width: 16px;
+  height: 16px;
+  border: 1px solid transparent;
+  cursor: pointer;
+  padding: 0;
+  transition: transform 0.1s;
+}
+
+.ocp-theme-row:not(.ocp-main-row) .ocp-color-btn {
+  height: 14px;
+}
+
+.ocp-color-btn:hover {
+  outline: 1px solid #f59e0b;
+  outline-offset: 1px;
+  z-index: 10;
+  transform: scale(1.2);
+}
+
+.ocp-standard-row {
+  display: flex;
+  gap: 1px;
+}
+
+.ocp-standard-btn {
+  height: 16px;
+  width: 16px;
+  border: 1px solid #d1d5db;
+}
+
+.ocp-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  border-top: 1px solid #d1d5db;
+  padding-top: 6px;
+  margin-top: 6px;
+}
+
+.ocp-action-btn {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 4px 6px;
+  background: transparent;
+  border: 1px solid transparent;
+  font-size: 11px;
+  color: #374151;
+  text-align: left;
+  cursor: pointer;
+}
+
+.ocp-action-btn:hover {
+  background: #e5e7eb;
+  border-color: #d1d5db;
+}
+
+.ocp-nofill-icon-box {
+  width: 16px;
+  height: 16px;
+  border: 1px solid #d1d5db;
+  background: white;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.ocp-nofill-line {
+  width: 140%;
+  height: 1px;
+  background: red;
+  transform: rotate(45deg);
+  display: block;
+}
+
+.ocp-more-icon {
+  font-size: 14px;
+  width: 16px;
+  text-align: center;
+}

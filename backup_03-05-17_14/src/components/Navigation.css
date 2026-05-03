@@ -1,0 +1,229 @@
+.navigation {
+  margin-bottom: 0px !important; /* Zero gap below nav bar */
+  background-color: #1e293b; /* Set to dark for the side buttons */
+  display: flex;
+  align-items: stretch;
+  overflow: hidden;
+  transition: all 0.3s ease;
+}
+
+.navigation.collapsed {
+  margin-bottom: 0.5rem;
+}
+
+.nav-bar {
+  display: flex;
+  align-items: center;
+  background-color: #FBBF24;
+  overflow-x: auto;
+  scrollbar-width: none;
+  flex: 1;
+  padding: 4px 8px; /* Slimmer padding */
+  gap: 8px; /* Tighter gap */
+}
+
+.nav-content-centered {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0 auto;
+  gap: 8px; /* Balanced default gap */
+  padding: 0 5px;
+}
+
+.nav-item {
+  flex: 0 0 auto; /* No stretching */
+  min-width: fit-content;
+}
+
+.nav-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 0 10px;
+  background: white;
+  border: 1px solid #E5E7EB;
+  border-radius: 12px;
+  cursor: pointer;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+  position: relative;
+  height: 36px;
+  min-width: 44px;
+}
+
+.nav-btn:hover {
+  transform: translateY(-2px);
+  border-color: var(--item-bg);
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+}
+
+.nav-btn.active {
+  background-color: var(--item-bg);
+  color: white;
+  border-color: var(--item-bg);
+  box-shadow: 0 4px 12px -2px rgba(0,0,0,0.15);
+}
+
+/* Removed nav-search-lang-row as it's now merged into nav-content-centered */
+
+.search-container {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.nav-search-input {
+  background: white;
+  border: 1px solid #E5E7EB;
+  border-radius: 50px;
+  padding: 0 30px 0 12px;
+  height: 36px;
+  width: 140px;
+  font-size: 14px;
+  transition: all 0.3s;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+}
+
+.nav-search-input:focus {
+  outline: none;
+  border-color: #3B82F6;
+  width: 180px;
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+}
+
+.search-btn {
+  position: absolute;
+  right: 10px;
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #6B7280;
+}
+
+.nav-language-toggle {
+  display: flex;
+  background: white;
+  padding: 2px;
+  border-radius: 10px;
+  border: 1px solid #E5E7EB;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+}
+
+.nav-language-toggle button {
+  padding: 5px 12px;
+  border: none;
+  background: none;
+  font-size: 12px;
+  font-weight: 700;
+  color: #4B5563;
+  cursor: pointer;
+  border-radius: 8px;
+  transition: all 0.2s;
+}
+
+.nav-language-toggle button.active {
+  background: #3B82F6;
+  color: white;
+}
+
+/* 🏆 MASTER MOBILE RESPONSIVE NAV BAR (max-width: 640px) */
+@media (max-width: 640px) {
+  .nav-bar {
+    height: 48px;
+    padding: 0 4px;
+  }
+
+  .nav-item {
+    flex: 0 0 auto;
+  }
+  
+  .nav-btn {
+    height: 32px;
+    min-width: 38px;
+    padding: 0 6px;
+  }
+
+  .nav-icon {
+    font-size: 16px;
+  }
+
+  .nav-lock-icon {
+    font-size: 8px;
+    bottom: 2px;
+    right: 2px;
+  }
+
+  .nav-search-input {
+    width: 55px; /* Nuclear slim search bar */
+    height: 32px;
+    font-size: 12px;
+    padding: 0 22px 0 8px;
+  }
+  
+  .nav-search-input:focus {
+    width: 80px;
+  }
+
+  .search-btn {
+    font-size: 12px;
+    right: 8px;
+  }
+
+  .nav-content-centered {
+    gap: 6px; /* Micro-gap for tiny screens */
+    margin-right: 15px; /* Smaller safety margin */
+    justify-content: center;
+  }
+
+  .nav-language-toggle {
+    height: 32px;
+  }
+
+  .nav-language-toggle button {
+    padding: 2px 4px;
+    font-size: 9px;
+  }
+}
+
+
+.side-toggle {
+  width: 32px;
+  background-color: #1e293b; /* Premium Dark Slate */
+  color: #FBBF24;            /* Gold Arrow - High Contrast */
+  border: none;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 16px;
+  transition: all 0.2s;
+  z-index: 10;
+}
+
+.side-toggle:hover {
+  background-color: #334155;
+  color: #ffffff;
+}
+
+.side-toggle.left {
+  border-right: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.side-toggle.right {
+  border-left: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+@media (max-width: 640px) {
+  .side-toggle {
+    width: 28px;
+    font-size: 14px;
+  }
+}
+
+/* End of Navigation Styles */

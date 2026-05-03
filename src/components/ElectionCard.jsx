@@ -16,25 +16,50 @@ import './ElectionCard.css';
 
 /** Parse a published Google Sheet CSV string into array of row objects */
 function parseCSV(csvText) {
-  const lines = csvText.trim().split('\n');
-  if (lines.length < 2) return [];
-  const headers = lines[0].split(',').map(h => h.trim().replace(/^"|"$/g, ''));
-  const rows = lines.slice(1).map(line => {
-    // Handle commas inside quoted fields
-    const cols = [];
-    let inQuote = false, cur = '';
-    for (let i = 0; i < line.length; i++) {
-      const ch = line[i];
-      if (ch === '"') { inQuote = !inQuote; continue; }
-      if (ch === ',' && !inQuote) { cols.push(cur.trim()); cur = ''; continue; }
+  const rows = [];
+  let inQuote = false;
+  let cur = '';
+  let row = [];
+  
+  for (let i = 0; i < csvText.length; i++) {
+    const ch = csvText[i];
+    const nextCh = csvText[i + 1];
+    
+    if (ch === '"') {
+      if (inQuote && nextCh === '"') {
+        cur += '"'; // Escaped quote
+        i++;
+      } else {
+        inQuote = !inQuote;
+      }
+    } else if (ch === ',' && !inQuote) {
+      row.push(cur.trim());
+      cur = '';
+    } else if ((ch === '\n' || (ch === '\r' && nextCh === '\n')) && !inQuote) {
+      row.push(cur.trim());
+      if (row.length > 0 && row.some(c => c !== '')) rows.push(row);
+      row = [];
+      cur = '';
+      if (ch === '\r') i++;
+    } else {
       cur += ch;
     }
-    cols.push(cur.trim());
+  }
+  if (cur !== '' || row.length > 0) {
+    row.push(cur.trim());
+    if (row.length > 0 && row.some(c => c !== '')) rows.push(row);
+  }
+
+  if (rows.length < 2) return { headers: [], rows: [] };
+  
+  const headers = rows[0].map(h => h.trim().replace(/^"|"$/g, ''));
+  const data = rows.slice(1).map(r => {
     const obj = {};
-    headers.forEach((h, i) => { obj[h] = cols[i] || ''; });
+    headers.forEach((h, i) => { obj[h] = r[i] || ''; });
     return obj;
   });
-  return { headers, rows };
+  
+  return { headers, rows: data };
 }
 
 /** Convert Google Drive share link → embeddable preview link */
@@ -181,6 +206,8 @@ function MyElectionCard({ membershipNo, allCards }) {
 function AdminCardTable({ allCards, tableHeaders }) {
   const [search, setSearch] = useState('');
   const [viewCard, setViewCard] = useState(null);
+  const [currentPage, setCurrentPage] = useState(1);
+  const rowsPerPage = 50;
 
   // Identify which header contains the card link so we can hide it from text columns
   const linkHeaderMatch = tableHeaders.find(h => {
@@ -196,6 +223,14 @@ function AdminCardTable({ allCards, tableHeaders }) {
     // Search across all dynamic fields
     return displayHeaders.some(h => c[h]?.toString().toLowerCase().includes(searchLower));
   });
+
+  const totalPages = Math.ceil(filtered.length / rowsPerPage);
+  const currentData = filtered.slice((currentPage - 1) * rowsPerPage, currentPage * rowsPerPage);
+
+  // Reset pagination when searching
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [search]);
 
   return (
     <>
@@ -222,11 +257,11 @@ function AdminCardTable({ allCards, tableHeaders }) {
               </tr>
             </thead>
             <tbody>
-              {filtered.length === 0 ? (
+              {currentData.length === 0 ? (
                 <tr><td colSpan={displayHeaders.length + 2} className="ec-empty-row">No records found</td></tr>
-              ) : filtered.map((card, i) => (
+              ) : currentData.map((card, i) => (
                 <tr key={i} className={card._cardLink ? '' : 'ec-row-no-card'}>
-                  <td>{i + 1}</td>
+                  <td>{(currentPage - 1) * rowsPerPage + i + 1}</td>
                   {displayHeaders.map(header => (
                     <td key={header}>
                       {header.toLowerCase().includes('status') ? (
@@ -255,7 +290,24 @@ function AdminCardTable({ allCards, tableHeaders }) {
               ))}
             </tbody>
           </table>
-          <p className="ec-table-count">{filtered.length} of {allCards.length} records</p>
+          <div className="ec-admin-footer">
+            <p className="ec-table-count">Showing {currentData.length} on this page (Total {filtered.length} records)</p>
+            {totalPages > 1 && (
+              <div className="ec-pagination">
+                <button 
+                  onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                  disabled={currentPage === 1}>
+                  Previous
+                </button>
+                <span>Page {currentPage} of {totalPages}</span>
+                <button 
+                  onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+                  disabled={currentPage === totalPages}>
+                  Next
+                </button>
+              </div>
+            )}
+          </div>
         </div>
       </div>
       {viewCard && <CardViewerModal card={viewCard} onClose={() => setViewCard(null)} />}

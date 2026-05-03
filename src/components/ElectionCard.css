@@ -524,6 +524,45 @@
 
 .ec-open-drive-btn:hover { background: #e2e8f0; }
 
+.ec-admin-footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 16px;
+  background: white;
+  border-bottom-left-radius: 12px;
+  border-bottom-right-radius: 12px;
+}
+
+.ec-pagination {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-size: 0.85rem;
+  color: #64748b;
+  font-weight: 500;
+}
+
+.ec-pagination button {
+  background: #f1f5f9;
+  border: 1px solid #e2e8f0;
+  padding: 6px 12px;
+  border-radius: 6px;
+  color: #1e293b;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.ec-pagination button:hover:not(:disabled) {
+  background: #e2e8f0;
+}
+
+.ec-pagination button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
 /* ── News Section Divider ────────────────────────────── */
 .ec-news-section {
   margin-top: 32px;

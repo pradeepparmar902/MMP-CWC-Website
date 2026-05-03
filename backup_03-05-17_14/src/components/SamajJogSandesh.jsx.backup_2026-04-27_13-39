@@ -1,0 +1,1695 @@
+import React, { useState, useEffect, useRef } from 'react';
+import { useAuth } from '../context/AuthContext';
+import { db } from '../firebase';
+import { 
+  collection, 
+  onSnapshot, 
+  addDoc, 
+  updateDoc,
+  deleteDoc, 
+  doc, 
+  query, 
+  orderBy, 
+  serverTimestamp 
+} from 'firebase/firestore';
+import { compressImage } from '../utils/imageUtils';
+import { fetchTranslation } from '../utils/translationUtils';
+import BorderEditor from './BorderEditor';
+import ColorPicker from './ColorPicker';
+import './SamajJogSandesh.css';
+
+const DUMMY_MESSAGES = [
+  {
+    id: 'msg_1',
+    type: 'poster',
+    priority: 'high',
+    titleEn: '📢 Mega Health Camp 2026',
+    titleGu: '📢 મેગા હેલ્થ કેમ્પ 2026',
+    subtitleEn: 'Main Committee Announcement',
+    subtitleGu: 'મુખ્ય સમિતિની જાહેરાત',
+    dateEn: '19 April 2026',
+    dateGu: '19 એપ્રિલ 2026',
+    contentEn: 'The Mumbai Meghwal Panchayat is organizing a free health check-up camp for all community members. Specialist doctors from top hospitals will be available for consultations.',
+    contentGu: 'મુંબઈ મેઘવાળ પંચાયત તમામ સમુદાયના સભ્યો માટે મફત આરોગ્ય તપાસ શિબિરનું આયોજન કરી રહી છે. ટોચની હોસ્પિટલોના નિષ્ણાત ડોકટરો પરામર્શ માટે ઉપલબ્ધ રહેશે.',
+    bannerUrl: 'https://images.unsplash.com/photo-1576091160550-217359f42f8c?auto=format&fit=crop&q=80&w=1200',
+    tagsEn: ['Health', 'Important'],
+    tagsGu: ['આરોગ્ય', 'મહત્વપૂર્ણ'],
+    authorityEn: 'Main Committee CWC',
+    authorityGu: 'મુખ્ય સમિતિ CWC'
+  },
+  {
+    id: 'msg_2',
+    type: 'letter',
+    priority: 'normal',
+    titleEn: '📜 Official Election Notification',
+    titleGu: '📜 સત્તાવાર ચૂંટણી સૂચના',
+    subtitleEn: 'Likhit Sandesh (Written Message)',
+    subtitleGu: 'લિખિત સંદેશ',
+    dateEn: '18 April 2026',
+    dateGu: '18 એપ્રિલ 2026',
+    contentEn: 'Important notification regarding the upcoming Vibhag-level committee selection. Please download the PDF letter to read the full guidelines and eligibility criteria.',
+    contentGu: 'આગામી વિભાગ સ્તરીય સમિતિની પસંદગી અંગે મહત્વની સૂચના. સંપૂર્ણ માર્ગદર્શિકા વાંચવા માટે કૃપા કરીને PDF પત્ર ડાઉનલોડ કરો.',
+    tagsEn: ['Election', 'Official'],
+    tagsGu: ['ચૂંટણી', 'સત્તાવાર'],
+    authorityEn: 'Election Commission',
+    authorityGu: 'ચૂંટણી પંચ',
+    hasAttachment: true
+  },
+  {
+    id: 'msg_3',
+    type: 'text',
+    priority: 'normal',
+    titleEn: '✨ Congratulations to Students',
+    titleGu: '✨ વિદ્યાર્થીઓને અભિનંદન',
+    subtitleEn: 'Recognition Alert',
+    subtitleGu: 'ગૌરવ નોંધ',
+    dateEn: '15 April 2026',
+    dateGu: '15 એપ્રિલ 2026',
+    contentEn: 'MMP congratulates all students who have achieved top scores in the recent board exams. We are proud of your dedication and hard work. Your awards will be presented at the Annual Meet.',
+    contentGu: 'MMP એ તમામ વિદ્યાર્થીઓને અભિનંદન પાઠવે છે જેમણે તાજેતરની બોર્ડ પરીક્ષાઓમાં ઉચ્ચ સ્કોર મેળવ્યો છે. અમને તમારા સમર્પણ અને મહેનત પર ગર્વ છે.',
+    tagsEn: ['Education', 'Celebration'],
+    tagsGu: ['શિક્ષણ', 'અભિનંદન'],
+    authorityEn: 'Education Wing',
+    authorityGu: 'શિક્ષણ વિભાગ'
+  },
+  {
+    id: 'msg_4',
+    type: 'poster',
+    priority: 'normal',
+    titleEn: '🏏 Community Cricket League',
+    titleGu: '🏏 કોમ્યુનિટી ક્રિકેટ લીગ',
+    subtitleEn: 'Sports Event Flyer',
+    subtitleGu: 'રમતગમત કાર્યક્રમ',
+    dateEn: '12 April 2026',
+    dateGu: '12 એપ્રિલ 2026',
+    contentEn: 'Registration is now open for the MMP Premier League! Form your teams and register at the local Vibhag office by the end of this month.',
+    contentGu: 'MMP પ્રીમિયર લીગ માટે રજીસ્ટ્રેશન હવે ખુલ્લું છે! તમારી ટીમો બનાવો અને આ મહિનાના અંત સુધીમાં સ્થાનિક વિભાગ કચેરીએ નોંધણી કરાવો.',
+    bannerUrl: 'https://images.unsplash.com/photo-1531415074968-036ba1b575da?auto=format&fit=crop&q=80&w=800',
+    tagsEn: ['Sports', 'Youth'],
+    tagsGu: ['રમતગમત', 'યુવા'],
+    authorityEn: 'Youth Committee',
+    authorityGu: 'યુવા સમિતિ'
+  }
+];
+
+export default function SamajJogSandesh({ lang }) {
+  const { isSamajAdmin, isSuperAdmin, currentUser } = useAuth();
+  const canManage = isSamajAdmin || isSuperAdmin;
+
+
+
+  const [messages, setMessages] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [expandedId, setExpandedId] = useState(null);
+  const [maximizedId, setMaximizedId] = useState(null); // Full-screen Reader State
+  
+  // Admin Editing State
+  const [showModal, setShowModal] = useState(false);
+  const [styleOnlyMode, setStyleOnlyMode] = useState(false);
+  const [formattingContext, setFormattingContext] = useState('feed');
+  const [isSaving, setIsSaving] = useState(false);
+  const [isTranslating, setIsTranslating] = useState(false);
+  const [editingId, setEditingId] = useState(null);
+  
+  const GRANULAR_HERO_BLOCKS = ['visual', 'badge', 'authority', 'title', 'body', 'footer'];
+  
+  // 📦 Archive & Bulk Mode State
+  const [bulkMode, setBulkMode] = useState(false);
+  const [selectedIds, setSelectedIds] = useState(new Set());
+  const [showArchived, setShowArchived] = useState(false);
+  const [formData, setFormData] = useState({
+    type: 'poster',
+    priority: 'normal',
+    titleEn: '', titleGu: '',
+    subtitleEn: '', subtitleGu: '',
+    contentEn: '', contentGu: '',
+    authorityEn: '', authorityGu: '',
+    bannerUrl: '',
+    videoUrl: '',
+    tagsEn: ['General'],
+    tagsGu: ['સામાન્ય'],
+    hasAttachment: false,
+    isHighlight1: false,
+    isHighlight2: false,
+    // 🎨 Styling Canvas Fields
+    bgColor: '',
+    textColor: '',
+    accentColor: '',
+    // 🖊 Border Editor Fields
+    borderColor: '',
+    borderStyle: 'solid',
+    borderWidth: '1',
+    borderRadius: '12',
+    borderRadiusTL: '',
+    borderRadiusTR: '',
+    borderRadiusBL: '',
+    borderRadiusBR: '',
+    shadowEnabled: false,
+    shadowX: '0',
+    shadowY: '4',
+    shadowBlur: '12',
+    shadowSpread: '0',
+    shadowColor: 'rgba(0,0,0,0.1)',
+    gradientBorder: false,
+    gradientColor1: '#7c3aed',
+    gradientColor2: '#3b82f6',
+    gradientAngle: '135',
+    // 🍱 Hero Multi-Column Layout Fields
+    heroLayout: '1-col', // '1-col', '2-col', '3-col'
+    col2TitleEn: '', col2TitleGu: '',
+    col2ContentEn: '', col2ContentGu: '',
+    col2BannerUrl: '',
+    col3TitleEn: '', col3TitleGu: '',
+    col3ContentEn: '', col3ContentGu: '',
+    col3BannerUrl: ''
+  });
+  
+  const [activeColumnTab, setActiveColumnTab] = useState('col1');
+
+  // 1. REAL-TIME DATA FETCH
+  useEffect(() => {
+    const q = query(collection(db, 'samaj_jog_sandesh'), orderBy('createdAt', 'desc'));
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      setMessages(data.length > 0 ? data : DUMMY_MESSAGES.map(dm => ({ ...dm, isSample: true })));
+      setLoading(false);
+    });
+    return unsubscribe;
+  }, []);
+
+  const applyStyle = (field, command, value) => {
+    const el = document.getElementById(`editor-${field}`);
+    if (!el) return;
+    
+    // Proactively focus the editor to ensure selection is active
+    el.focus();
+    
+    // Robust value handling for colors
+    let finalValue = value;
+    if (command === 'foreColor' && !value) finalValue = '#1e3a8a'; // Default Blue
+    if (command === 'backColor' && !value) finalValue = '#fbbf24'; // Default Yellow
+    
+    document.execCommand(command, false, finalValue);
+    
+    // Sync the HTML back to state
+    setFormData(prev => ({ ...prev, [field]: el.innerHTML }));
+  };
+
+  // 2. MODAL BODY LOCK & BANNER SUPPRESSION
+  useEffect(() => {
+    if (showModal || maximizedId) {
+      document.body.classList.add('modal-open');
+    } else {
+      document.body.classList.remove('modal-open');
+    }
+    return () => document.body.classList.remove('modal-open');
+  }, [showModal, maximizedId]);
+
+  const handlePost = async (e) => {
+    e.preventDefault();
+    const hasTitle = formData.titleEn.trim() || formData.titleGu.trim();
+    const hasContent = formData.contentEn.trim() || formData.contentGu.trim();
+    const hasAuthority = formData.authorityEn.trim() || formData.authorityGu.trim();
+
+    if (!hasTitle || !hasContent || !hasAuthority) {
+      alert(lang === 'gu' ? 'કૃપા કરીને રજૂ કરવા માટે ઓછામાં ઓછા એક ભાષામાં શીર્ષક અને સામગ્રી ભરો.' : 'Please provide at least one language version (English or Gujarati) for the Title, Content, and Authority.');
+      return;
+    }
+
+    setIsSaving(true);
+    try {
+      // Extract style-related fields if we are in Hero context
+      let styleFields = {};
+      if (formattingContext === 'hero') {
+        styleFields = {
+          bgColor: formData.bgColor,
+          textColor: formData.textColor,
+          accentColor: formData.accentColor,
+          borderColor: formData.borderColor,
+          borderStyle: formData.borderStyle,
+          borderWidth: formData.borderWidth,
+          borderRadius: formData.borderRadius,
+          borderRadiusTL: formData.borderRadiusTL,
+          borderRadiusTR: formData.borderRadiusTR,
+          borderRadiusBL: formData.borderRadiusBL,
+          borderRadiusBR: formData.borderRadiusBR,
+          shadowEnabled: formData.shadowEnabled,
+          shadowX: formData.shadowX,
+          shadowY: formData.shadowY,
+          shadowBlur: formData.shadowBlur,
+          shadowSpread: formData.shadowSpread,
+          shadowColor: formData.shadowColor,
+          gradientBorder: formData.gradientBorder,
+          gradientColor1: formData.gradientColor1,
+          gradientColor2: formData.gradientColor2,
+          gradientAngle: formData.gradientAngle,
+          gradientBg: formData.gradientBg,
+          gradientBgColor1: formData.gradientBgColor1,
+          gradientBgColor2: formData.gradientBgColor2,
+          gradientBgAngle: formData.gradientBgAngle
+        };
+      }
+
+      const basePayload = {
+        ...formData,
+        dateEn: new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' }),
+        dateGu: new Date().toLocaleDateString('gu-IN', { day: 'numeric', month: 'long', year: 'numeric' }),
+        updatedAt: serverTimestamp()
+      };
+
+      const payload = formattingContext === 'hero' 
+        ? { heroStyle: styleFields } // ONLY save the heroStyle object if we are editing hero formatting
+        : basePayload;
+
+      if (editingId) {
+        await updateDoc(doc(db, 'samaj_jog_sandesh', editingId), payload);
+      } else {
+        await addDoc(collection(db, 'samaj_jog_sandesh'), {
+          ...basePayload,
+          createdAt: serverTimestamp()
+        });
+      }
+      
+      setShowModal(false);
+      resetForm();
+    } catch (err) {
+      alert('Error saving message: ' + err.message);
+    }
+    setIsSaving(false);
+  };
+
+  const handleSuggestDraft = async (sourceLang) => {
+    if (isTranslating) return;
+    const targetLang = sourceLang === 'en' ? 'gu' : 'en';
+    const fields = ['title', 'subtitle', 'content', 'authority', 'col2Title', 'col2Content', 'col3Title', 'col3Content'];
+    setIsTranslating(true);
+    try {
+      const updates = { ...formData };
+      for (const field of fields) {
+        const sourceKey = field + (sourceLang === 'en' ? 'En' : 'Gu');
+        const targetKey = field + (targetLang === 'gu' ? 'Gu' : 'En');
+        if (formData[sourceKey] && formData[sourceKey].trim()) {
+           const suggestion = await fetchTranslation(formData[sourceKey], targetLang);
+           if (suggestion) updates[targetKey] = suggestion;
+        }
+      }
+      setFormData(updates);
+    } catch (err) {
+      console.error("Translation logic error:", err);
+    }
+    setIsTranslating(false);
+  };
+
+  const handleDelete = async (id) => {
+    const post = messages.find(m => m.id === id);
+    if (!post) return;
+
+    const createdMs = post.createdAt?.toDate
+      ? post.createdAt.toDate().getTime()
+      : post.createdAt?.seconds * 1000 || 0;
+    const isOlderThan24h = createdMs > 0 && (Date.now() - createdMs) > 24 * 60 * 60 * 1000;
+
+    if (isOlderThan24h && !isSuperAdmin) {
+      // Samaj Admin: post is old — escalate to Super Admin
+      if (!window.confirm('This post is older than 24 hours.\n\nA DELETE REQUEST will be sent to Super Admin for review.\n\nProceed?')) return;
+      try {
+        await addDoc(collection(db, 'samaj_delete_requests'), {
+          postId: id,
+          postData: post,
+          requestedBy: currentUser?.uid || 'unknown',
+          requestedAt: serverTimestamp(),
+          status: 'pending'
+        });
+        alert('📬 Delete request sent to Super Admin for review.');
+      } catch (err) {
+        alert('Error sending request: ' + err.message);
+      }
+    } else {
+      // Super Admin (any age) OR any admin (< 24h): direct delete
+      if (!window.confirm('Permanently delete this announcement?')) return;
+      try {
+        await deleteDoc(doc(db, 'samaj_jog_sandesh', id));
+      } catch (err) {
+        alert('Error deleting: ' + err.message);
+      }
+    }
+  };
+
+  // 📦 Archive a post (hides from public, reversible)
+  // --- ATOMIC SLOT MANAGEMENT ---
+  const handleSlotSwap = async (item, targetSlot) => {
+    if (!canManage) return;
+    try {
+      // 1. Identify which field to clear based on target slot
+      let fieldToClear = '';
+      if (targetSlot === 'hero') fieldToClear = 'isHero';
+      if (targetSlot === 'side1') fieldToClear = 'isHighlight1';
+      if (targetSlot === 'side2') fieldToClear = 'isHighlight2';
+
+      // 2. Find all posts that currently have this slot active and clear them
+      const postsToClear = messages.filter(m => m[fieldToClear] === true && m.id !== item.id);
+      
+      const batchPromises = postsToClear.map(m => 
+        updateDoc(doc(db, "samaj_jog_sandesh", m.id), { [fieldToClear]: false })
+      );
+
+      // 3. Set the new slot on the target item
+      const newVal = !item[fieldToClear]; // Toggle
+      batchPromises.push(
+        updateDoc(doc(db, "samaj_jog_sandesh", item.id), { [fieldToClear]: newVal })
+      );
+
+      await Promise.all(batchPromises);
+      // Local state will update via useEffect listener
+    } catch (err) {
+      console.error("Error swapping slot:", err);
+    }
+  };
+
+  const handleArchive = async (id) => {
+    try {
+      await updateDoc(doc(db, 'samaj_jog_sandesh', id), { isArchived: true });
+    } catch (err) { alert('Error archiving: ' + err.message); }
+  };
+
+  // ♻️ Restore an archived post back to live
+  const handleRestore = async (id) => {
+    try {
+      await updateDoc(doc(db, 'samaj_jog_sandesh', id), { isArchived: false });
+    } catch (err) { alert('Error restoring: ' + err.message); }
+  };
+
+  // 📋 Clone/Duplicate a post
+  const handleClone = async (item) => {
+    const { id, createdAt, updatedAt, ...rest } = item;
+    try {
+      await addDoc(collection(db, 'samaj_jog_sandesh'), {
+        ...rest,
+        titleEn: `📋 Copy: ${rest.titleEn || ''}`,
+        titleGu: `📋 નકલ: ${rest.titleGu || ''}`,
+        isHighlight: false,
+        isHighlight1: false,
+        isHighlight2: false,
+        isQuickLink: false,
+        isArchived: false,
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp()
+      });
+      alert('✅ Post cloned successfully!');
+    } catch (err) { alert('Error cloning: ' + err.message); }
+  };
+
+  // ☑ Bulk selection toggle
+  const toggleSelect = (id) => {
+    setSelectedIds(prev => {
+      const next = new Set(prev);
+      next.has(id) ? next.delete(id) : next.add(id);
+      return next;
+    });
+  };
+
+  // 📦 Bulk archive selected
+  const handleBulkArchive = async () => {
+    if (!window.confirm(`Archive ${selectedIds.size} selected posts?`)) return;
+    try {
+      for (const id of selectedIds) {
+        await updateDoc(doc(db, 'samaj_jog_sandesh', id), { isArchived: true });
+      }
+    } catch (err) { alert('Error: ' + err.message); }
+    setSelectedIds(new Set());
+    setBulkMode(false);
+  };
+
+  // 🗑️ Bulk delete selected
+  const handleBulkDelete = async () => {
+    if (!window.confirm(`Permanently delete ${selectedIds.size} selected posts? This cannot be undone.`)) return;
+    try {
+      for (const id of selectedIds) {
+        await deleteDoc(doc(db, 'samaj_jog_sandesh', id));
+      }
+    } catch (err) { alert('Error: ' + err.message); }
+    setSelectedIds(new Set());
+    setBulkMode(false);
+  };
+
+  const handleStyle = (item, context = 'feed') => {
+    handleEdit(item);
+    setStyleOnlyMode(true);
+    setFormattingContext(context);
+    
+    // If editing hero context, load ONLY from item.heroStyle to prevent inheriting feed card styles
+    const source = context === 'hero' ? (item.heroStyle || {}) : item;
+
+    setFormData(prev => ({
+      ...prev,
+      bgColor: source.bgColor || '',
+      textColor: source.textColor || '',
+      accentColor: source.accentColor || '',
+      borderColor: source.borderColor || '',
+      borderStyle: source.borderStyle || 'solid',
+      borderWidth: source.borderWidth || '1',
+      borderRadius: source.borderRadius || '12',
+      borderRadiusTL: source.borderRadiusTL || '',
+      borderRadiusTR: source.borderRadiusTR || '',
+      borderRadiusBL: source.borderRadiusBL || '',
+      borderRadiusBR: source.borderRadiusBR || '',
+      shadowEnabled: source.shadowEnabled || false,
+      shadowX: source.shadowX || '0',
+      shadowY: source.shadowY || '4',
+      shadowBlur: source.shadowBlur || '12',
+      shadowSpread: source.shadowSpread || '0',
+      shadowColor: source.shadowColor || 'rgba(0,0,0,0.1)',
+      gradientBorder: source.gradientBorder || false,
+      gradientColor1: source.gradientColor1 || '#7c3aed',
+      gradientColor2: source.gradientColor2 || '#3b82f6',
+      gradientAngle: source.gradientAngle || '135',
+      gradientBg: source.gradientBg || false,
+      gradientBgColor1: source.gradientBgColor1 || '',
+      gradientBgColor2: source.gradientBgColor2 || '',
+      gradientBgAngle: source.gradientBgAngle || '135'
+    }));
+  };
+
+  const handleEdit = (item, context = 'feed') => {
+    setStyleOnlyMode(false);
+    setFormattingContext(context);
+    setEditingId(item.id);
+    setFormData({
+      type: item.type || 'poster',
+      priority: item.priority || 'normal',
+      titleEn: item.titleEn || '',
+      titleGu: item.titleGu || '',
+      subtitleEn: item.subtitleEn || '',
+      subtitleGu: item.subtitleGu || '',
+      contentEn: item.contentEn || '',
+      contentGu: item.contentGu || '',
+      authorityEn: item.authorityEn || '',
+      authorityGu: item.authorityGu || '',
+      bannerUrl: item.bannerUrl || '',
+      videoUrl: item.videoUrl || '',
+      tagsEn: item.tagsEn || ['General'],
+      tagsGu: item.tagsGu || ['સામાન્ય'],
+      hasAttachment: item.hasAttachment || false,
+      isHighlight1: item.isHighlight1 || false,
+      isHighlight2: item.isHighlight2 || false,
+      bgColor: item.bgColor || '',
+      textColor: item.textColor || '',
+      accentColor: item.accentColor || '',
+      borderColor: item.borderColor || '',
+      borderStyle: item.borderStyle || 'solid',
+      borderWidth: item.borderWidth || '1',
+      borderRadius: item.borderRadius || '12',
+      borderRadiusTL: item.borderRadiusTL || '',
+      borderRadiusTR: item.borderRadiusTR || '',
+      borderRadiusBL: item.borderRadiusBL || '',
+      borderRadiusBR: item.borderRadiusBR || '',
+      shadowEnabled: item.shadowEnabled || false,
+      shadowX: item.shadowX || '0',
+      shadowY: item.shadowY || '4',
+      shadowBlur: item.shadowBlur || '12',
+      shadowSpread: item.shadowSpread || '0',
+      shadowColor: item.shadowColor || 'rgba(0,0,0,0.1)',
+      gradientBorder: item.gradientBorder || false,
+      gradientColor1: item.gradientColor1 || '#7c3aed',
+      gradientColor2: item.gradientColor2 || '#3b82f6',
+      gradientAngle: item.gradientAngle || '135',
+      isHero: item.isHero || false,
+      gradientBg: item.gradientBg || false,
+      gradientBgColor1: item.gradientBgColor1 || '',
+      gradientBgColor2: item.gradientBgColor2 || '',
+      gradientBgAngle: item.gradientBgAngle || '135',
+      heroLayout: item.heroLayout || '1-col',
+      col2TitleEn: item.col2TitleEn || '', col2TitleGu: item.col2TitleGu || '',
+      col2ContentEn: item.col2ContentEn || '', col2ContentGu: item.col2ContentGu || '',
+      col2BannerUrl: item.col2BannerUrl || '',
+      col3TitleEn: item.col3TitleEn || '', col3TitleGu: item.col3TitleGu || '',
+      col3ContentEn: item.col3ContentEn || '', col3ContentGu: item.col3ContentGu || '',
+      col3BannerUrl: item.col3BannerUrl || ''
+    });
+    setActiveColumnTab('col1');
+    setShowModal(true);
+  };
+
+  const resetForm = () => {
+    setStyleOnlyMode(false);
+    setEditingId(null);
+    setFormData({
+      type: 'poster', priority: 'normal',
+      titleEn: '', titleGu: '',
+      subtitleEn: '', subtitleGu: '',
+      contentEn: '', contentGu: '',
+      authorityEn: '', authorityGu: '',
+      bannerUrl: '',
+      videoUrl: '',
+      tagsEn: ['General'], tagsGu: ['સામાન્ય'],
+      hasAttachment: false,
+      isHighlight1: false,
+      isHighlight2: false,
+      bgColor: '',
+      textColor: '',
+      accentColor: '',
+      borderColor: '',
+      borderStyle: 'solid',
+      borderWidth: '1',
+      borderRadius: '12',
+      borderRadiusTL: '',
+      borderRadiusTR: '',
+      borderRadiusBL: '',
+      borderRadiusBR: '',
+      shadowEnabled: false,
+      shadowX: '0',
+      shadowY: '4',
+      shadowBlur: '12',
+      shadowSpread: '0',
+      shadowColor: 'rgba(0,0,0,0.1)',
+      gradientBorder: false,
+      gradientColor1: '#7c3aed',
+      gradientColor2: '#3b82f6',
+      gradientAngle: '135',
+      heroLayout: '1-col',
+      col2TitleEn: '', col2TitleGu: '',
+      col2ContentEn: '', col2ContentGu: '',
+      col2BannerUrl: '',
+      col3TitleEn: '', col3TitleGu: '',
+      col3ContentEn: '', col3ContentGu: '',
+      col3BannerUrl: ''
+    });
+  };
+
+  /* ── buildCardStyle: compute inline styles from any item's border fields ── */
+  const buildCardStyle = (item, context = 'feed') => {
+    if (!item) return {};
+    // If context is hero, ONLY use heroStyle. If it doesn't exist, return empty object (uses CSS defaults).
+    if (context === 'hero' && !item.heroStyle) return {};
+    const source = context === 'hero' ? item.heroStyle : item;
+
+    const s = { color: source.textColor || undefined };
+
+    // Border radius (per-corner overrides, else global)
+    const r  = source.borderRadius || '12';
+    const tl = source.borderRadiusTL !== '' && source.borderRadiusTL != null ? `${source.borderRadiusTL}px` : `${r}px`;
+    const tr = source.borderRadiusTR !== '' && source.borderRadiusTR != null ? `${source.borderRadiusTR}px` : `${r}px`;
+    const br = source.borderRadiusBR !== '' && source.borderRadiusBR != null ? `${source.borderRadiusBR}px` : `${r}px`;
+    const bl = source.borderRadiusBL !== '' && source.borderRadiusBL != null ? `${source.borderRadiusBL}px` : `${r}px`;
+    s.borderRadius = `${tl} ${tr} ${br} ${bl}`;
+
+    // ── Background & Border logic ────────────────────────────────────────────────
+    const hasGradientColors = source.gradientBg && (source.gradientBgColor1 || source.gradientBgColor2);
+    let baseBg = null;
+    if (hasGradientColors) {
+      baseBg = `linear-gradient(${source.gradientBgAngle || '135'}deg, ${source.gradientBgColor1 || '#7c3aed'}, ${source.gradientBgColor2 || '#4f46e5'})`;
+    } else if (source.bgColor) {
+      baseBg = source.bgColor;
+    }
+
+    if (source.gradientBorder && Number(source.borderWidth) > 0) {
+      // 1. Gradient border (uses padding-box / border-box trick)
+      const ang = source.gradientAngle  || '135';
+      const c1  = source.gradientColor1 || '#7c3aed';
+      const c2  = source.gradientColor2 || '#3b82f6';
+      const paddingBoxBg = baseBg ? baseBg : 'white';
+      const paddingBoxBgWrapped = hasGradientColors ? paddingBoxBg : `linear-gradient(${paddingBoxBg}, ${paddingBoxBg})`;
+      s.background = `${paddingBoxBgWrapped} padding-box, linear-gradient(${ang}deg, ${c1}, ${c2}) border-box`;
+      s.border = `${source.borderWidth}px solid transparent`;
+    } else {
+      if (source.borderStyle === 'none') {
+        s.border = 'none';
+      } else if (source.borderColor && source.borderStyle && Number(source.borderWidth || 1) > 0) {
+        s.borderColor = source.borderColor;
+        s.borderWidth = `${source.borderWidth || 1}px`;
+        s.borderStyle = source.borderStyle || 'solid';
+      }
+      // Only override CSS background if a custom bg is actually set
+      if (baseBg) {
+        s.background = baseBg;
+      }
+    }
+
+    // Shadow / Glow
+    if (source.shadowEnabled) {
+      s.boxShadow = `${source.shadowX || 0}px ${source.shadowY || 4}px ${source.shadowBlur || 12}px ${source.shadowSpread || 0}px ${source.shadowColor || 'rgba(0,0,0,0.1)'}`;
+    }
+
+    return s;
+  };
+
+  // 2. DATA PROCESSING
+  // NOTE: messages already contains DUMMY_MESSAGES as fallback when DB is empty
+  // (set in the Firebase onSnapshot listener above). No need to append them again.
+  const allAvailable = messages || [];
+  
+  const activeMessages = allAvailable.filter(m => !m?.isArchived);
+
+  // Archived posts (real posts only, no samples)
+  const archivedMessages = messages.filter(m => m?.isArchived);
+  
+  // 🔥 HERO FIREWALL: Only consider posts that are NOT pinned to any Side Slot (Top or Bottom)
+  const heroCandidates = activeMessages.filter(m => 
+    !m.isHighlight1 && !m.isHighlight2 && !m.isQuickLink
+  );
+
+  const featured = activeMessages.find(m => m.isHero) || null;
+
+  // Side Slot detection
+
+  // 1. Find the latest Highlight for Slot 1 (Top)
+  const highlight1Post = activeMessages.find(m => m.isHighlight1) || null;
+
+  // 2. Find the latest Highlight for Slot 2 (Bottom) - STRICTLY EXCLUDES whatever is in Slot 1
+  const highlight2Post = activeMessages.find(m => m.isHighlight2) || null;
+  
+  // 3. Feed: Everything else (Strictly excludes Top Slot, Bottom Slot, and Hero Banner)
+  // Feed: All posts except Side Slot posts (Hero post ALSO shows in feed)
+  const feed = activeMessages.filter(m =>
+    m.id !== highlight1Post?.id &&
+    m.id !== highlight2Post?.id
+  ).slice(0, 15);
+
+  // 4. Current display list (live or archived view)
+  const displayFeed = showArchived ? archivedMessages : feed;
+
+  const getT = (item, field) => {
+    const preferredKey = field + (lang === 'gu' ? 'Gu' : 'En');
+    const fallbackKey = field + (lang === 'gu' ? 'En' : 'Gu');
+    return <span dangerouslySetInnerHTML={{ __html: item[preferredKey] || item[fallbackKey] || '' }} />;
+  };
+
+  const getRawT = (item, field) => {
+    const preferredKey = field + (lang === 'gu' ? 'Gu' : 'En');
+    const fallbackKey = field + (lang === 'gu' ? 'En' : 'Gu');
+    return item[preferredKey] || item[fallbackKey] || '';
+  };
+
+  if (loading) {
+    return (
+      <div className="sandesh-loader">
+        <div className="spinner"></div>
+        <p>{lang === 'gu' ? 'જાહેરાતો લોડ થઈ રહી છે...' : 'Loading Announcements...'}</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="samaj-jog-sandesh-root">
+      <div className="sandesh-layout-wrapper">
+        <div className={`hero-bento-grid ${!featured ? 'no-hero' : ''}`}>
+          {/* 1. TOP LEFT: HIGHLIGHT 1 (Top Slot) */}
+          <aside 
+            className="bento-item side top-left"
+            onClick={() => highlight1Post && setMaximizedId(highlight1Post.id)}
+            style={buildCardStyle(highlight1Post || {})}
+          >
+            <div className="side-bucket-content">
+              {canManage && (
+                <div className="admin-bucket-controls">
+                  <button 
+                    className="admin-edit-pill" 
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      highlight1Post ? handleEdit(highlight1Post) : setShowModal(true);
+                    }}
+                  >
+                    ✏️
+                  </button>
+                  {highlight1Post && (
+                    <button 
+                      className="admin-edit-pill" 
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleStyle(highlight1Post);
+                      }}
+                    >
+                      🎨
+                    </button>
+                  )}
+                </div>
+              )}
+              {highlight1Post ? (
+                <>
+                  <div className="highlight-badge-pill" style={{backgroundColor: highlight1Post.accentColor}}>{lang === 'gu' ? 'નવી હાઇલાઇટ' : 'LATEST HIGHLIGHT'}</div>
+                  <h3 className="card-html-title">{getT(highlight1Post, 'title')}</h3>
+                  <div className="card-html-desc">{getT(highlight1Post, 'subtitle')}</div>
+                  <div className="highlight-visit-cta">{lang === 'gu' ? 'વધુ વાંચો →' : 'Read More →'}</div>
+                </>
+              ) : (
+                <>
+                  <div className="stat-icon pink">⭐</div>
+                  <div className="stat-value">25+</div>
+                  <div className="stat-label">{lang === 'gu' ? 'વિભાગો' : 'Vibhags'}</div>
+                  <button className="add-highlight-btn" onClick={() => setShowModal(true)}>➕</button>
+                </>
+              )}
+            </div>
+          </aside>
+
+          {/* 2. BOTTOM LEFT: HIGHLIGHT 2 (Bottom Slot) */}
+          <aside 
+            className="bento-item side bottom-left"
+            onClick={() => highlight2Post && setMaximizedId(highlight2Post.id)}
+            style={buildCardStyle(highlight2Post || {})}
+          >
+            <div className="side-bucket-content">
+              {canManage && (
+                <div className="admin-bucket-controls">
+                  <button 
+                    className="admin-edit-pill" 
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      highlight2Post ? handleEdit(highlight2Post) : setShowModal(true);
+                    }}
+                  >
+                    ✏️
+                  </button>
+                  {highlight2Post && (
+                    <button 
+                      className="admin-edit-pill" 
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleStyle(highlight2Post);
+                      }}
+                    >
+                      🎨
+                    </button>
+                  )}
+                </div>
+              )}
+              {highlight2Post ? (
+                <>
+                  <div className="highlight-badge-pill blue" style={{backgroundColor: highlight2Post.accentColor}}>{lang === 'gu' ? 'મુખ્ય સમાચાર' : 'TOP UPDATE'}</div>
+                  <h3 className="card-html-title">{getT(highlight2Post, 'title')}</h3>
+                  <div className="card-html-desc">{getT(highlight2Post, 'subtitle')}</div>
+                  <div className="highlight-visit-cta">{lang === 'gu' ? 'વધુ વાંચો →' : 'Read More →'}</div>
+                </>
+              ) : (
+                <>
+                  <div className="stat-icon blue">📖</div>
+                  <div className="stat-value">1500+</div>
+                  <div className="stat-label">{lang === 'gu' ? 'મેસેજ' : 'Announcements'}</div>
+                  <button className="add-highlight-btn" onClick={() => setShowModal(true)}>➕</button>
+                </>
+              )}
+            </div>
+          </aside>
+
+          {/* 3. CENTER: MAIN FEATURED */}
+          {featured && (
+            <main 
+              className={`bento-item middle center-feature layout-mode-${featured.heroLayout || '1-col'}`} 
+              id={`card-${featured.id}`}
+              style={buildCardStyle(featured, 'hero')}
+            >
+              <div className={`hero-inner granular layout-mode-${featured.heroLayout || '1-col'}`}>
+                {canManage && (
+                  <div className="admin-hero-controls hero-abs-controls">
+                    <button 
+                      className="admin-edit-pill" 
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleEdit(featured, 'hero');
+                      }}
+                    >
+                      ✏️ Edit Layout
+                    </button>
+                    <button 
+                      className="admin-edit-pill" 
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleStyle(featured, 'hero');
+                      }}
+                    >
+                      🎨 Design
+                    </button>
+                  </div>
+                )}
+                {/* 🛡️ COLUMN 1 (PRIMARY) */}
+                <div className="hero-column col-1">
+                  {(featured?.heroLayoutOrder?.length > 2 
+                    ? featured.heroLayoutOrder 
+                    : GRANULAR_HERO_BLOCKS
+                  ).map((blockKey) => {
+                    const commonProps = {
+                      className: `hero-block block-${blockKey}`
+                    };
+
+                    if (blockKey === 'visual') {
+                      return (
+                        <div key="visual" {...commonProps}>
+                          {featured.bannerUrl ? <img src={featured.bannerUrl} alt="Hero" /> : <div className="hero-visual-fallback">🖼️</div>}
+                          <div className="visual-overlay"></div>
+                        </div>
+                      );
+                    }
+
+                    if (blockKey === 'badge') {
+                      return (
+                        <div key="badge" {...commonProps}>
+                          <div className="hero-badge">
+                            {featured.isSample && <span className="sample-pill">SAMPLE</span>}
+                            {lang === 'gu' ? '📢 લેટેસ્ટ જાહેરાત' : '📢 LATEST ANNOUNCEMENT'}
+                          </div>
+                        </div>
+                      );
+                    }
+
+                    if (blockKey === 'authority') {
+                      return <span key="authority" {...commonProps} style={{...commonProps.style, display:'block'}} className={`${commonProps.className} hero-authority`}>{getT(featured, 'authority')}</span>;
+                    }
+
+                    if (blockKey === 'title') {
+                      return <h1 key="title" {...commonProps}>{getT(featured, 'title')}</h1>;
+                    }
+
+                    if (blockKey === 'body') {
+                      return <p key="body" {...commonProps} className={`${commonProps.className} hero-p-desc`}>{getT(featured, 'content')}</p>;
+                    }
+
+                    if (blockKey === 'footer') {
+                      return (
+                        <div key="footer" {...commonProps} className={`${commonProps.className} hero-footer-row`}>
+                          <span className="hero-date">📅 {getT(featured, 'date')}</span>
+                          <button className="hero-btn-cta" onClick={() => setMaximizedId(featured.id)}>{lang === 'gu' ? 'સંપૂર્ણ વાંચો →' : 'Read Full →'}</button>
+                        </div>
+                      );
+                    }
+                    return null;
+                  })}
+                </div>
+
+                {/* 🛡️ COLUMN 2 */}
+                {(featured.heroLayout === '2-col' || featured.heroLayout === '3-col') && (
+                  <div className="hero-column col-2">
+                    <div className="hero-block">
+                      {featured.col2TitleEn && <h3>{getT(featured, 'col2Title')}</h3>}
+                      <div className="hero-col-content" dangerouslySetInnerHTML={{ __html: getRawT(featured, 'col2Content') }} />
+                      {featured.col2BannerUrl && <img src={featured.col2BannerUrl} alt="" className="col-image" />}
+                    </div>
+                  </div>
+                )}
+
+                {/* 🛡️ COLUMN 3 */}
+                {featured.heroLayout === '3-col' && (
+                  <div className="hero-column col-3">
+                    <div className="hero-block">
+                      {featured.col3TitleEn && <h3>{getT(featured, 'col3Title')}</h3>}
+                      <div className="hero-col-content" dangerouslySetInnerHTML={{ __html: getRawT(featured, 'col3Content') }} />
+                      {featured.col3BannerUrl && <img src={featured.col3BannerUrl} alt="" className="col-image" />}
+                    </div>
+                  </div>
+                )}
+
+                {/* Fixed Admin Controls in Corner */}
+                {canManage && (
+                  <div className="admin-hero-controls floating">
+                    <button className="admin-edit-hero" onClick={() => handleEdit(featured)} title="Edit Content">✏️</button>
+                    <button className="admin-edit-hero" style={{marginLeft: '8px'}} onClick={(e) => { e.stopPropagation(); handleStyle(featured, 'hero'); }} title="Formatting Style">🎨</button>
+                    <button 
+                      className="admin-edit-hero" 
+                      style={{marginLeft: '8px', background: '#e2e8f0', color: '#475569'}}
+                      title="Reset Layout"
+                      onClick={async (e) => {
+                        e.stopPropagation();
+                        await updateDoc(doc(db, 'samaj_jog_sandesh', featured.id), { heroLayoutOrder: GRANULAR_HERO_BLOCKS });
+                      }}
+                    >
+                      🔄
+                    </button>
+                    {!featured.isSample && (
+                      <button 
+                        className="admin-delete-hero" 
+                        title="Unpin from Hero"
+                        style={{background: 'rgba(251,191,36,0.2)', color: '#f59e0b', marginLeft: '8px'}}
+                        onClick={async (e) => {
+                          e.stopPropagation();
+                          await updateDoc(doc(db, 'samaj_jog_sandesh', featured.id), { 
+                            isHero: false, isHighlight1: false, isHighlight2: false, isQuickLink: false 
+                          });
+                        }}
+                      >✕</button>
+                    )}
+                  </div>
+                )}
+              </div>
+            </main>
+          )}
+
+          {/* Hero empty state when no post is pinned */}
+          {!featured && (
+            <main className="bento-item middle center-feature" id="hero-empty">
+              <div style={{display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',height:'100%',gap:'14px',padding:'24px'}}>
+                {canManage ? (
+                  <>
+                    <div style={{fontSize:'40px'}}>📢</div>
+                    <div style={{color:'white',fontWeight:'bold',fontSize:'18px'}}>Hero Slot Empty</div>
+                    <div style={{color:'rgba(255,255,255,0.75)',fontSize:'13px',textAlign:'center',maxWidth:'220px'}}>
+                      {lang === 'gu' ? 'કોઈ પ્રકાશન Hero સ્લોટ પર પિન નથી' : 'No announcement pinned to Hero slot. Use the pencil icon on any post to pin it here.'}
+                    </div>
+                    <button className="add-highlight-btn" style={{marginTop:'8px'}} onClick={() => setShowModal(true)}>
+                      ➕ {lang === 'gu' ? 'ઉમેરો' : 'Add Post'}
+                    </button>
+                  </>
+                ) : (
+                  <div style={{color:'rgba(255,255,255,0.5)',fontSize:'14px'}}>
+                    {lang === 'gu' ? 'ટૂંક સમયમાં...' : 'Coming soon...'}
+                  </div>
+                )}
+              </div>
+            </main>
+          )}
+
+          {/* 4. RIGHT PANEL: LIVE NEWS TICKER (Unified) */}
+          <aside className="bento-item ticker-panel right">
+            <div className="ticker-header">
+               <span>🔥 {lang === 'gu' ? 'લાઇવ સમાચાર' : 'LIVE TICKER'}</span>
+            </div>
+            <div className="ticker-container">
+              <div className="ticker-scroll">
+                {[...activeMessages].slice(0, 15).map((item, idx) => (
+                  <div 
+                    key={`ticker-${item.id}-${idx}`} 
+                    className="ticker-item"
+                    onClick={() => {
+                      setExpandedId(item.id);
+                      const el = document.getElementById(`card-${item.id}`);
+                      if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                    }}
+                  >
+                    <span className="ticker-bullet">•</span>
+                    <span className="ticker-text">{getT(item, 'title')}</span>
+                    <span className="ticker-time">{getT(item, 'date')}</span>
+                  </div>
+                ))}
+                {/* Duplicate for seamless loop */}
+                {[...activeMessages].slice(0, 5).map((item, idx) => (
+                  <div key={`dup-${item.id}-${idx}`} className="ticker-item">
+                    <span className="ticker-bullet">•</span>
+                    <span className="ticker-text">{getT(item, 'title')}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+            <div className="ticker-footer">
+               {lang === 'gu' ? 'તમામ પોસ્ટ જોવા માટે નીચે જાઓ' : 'Scroll down for all posts'}
+            </div>
+          </aside>
+        </div>
+      </div>
+
+      {/* 📋 MAIN LAYOUT: SIDEBAR + FEED */}
+      <div className="samaj-main-layout">
+        <aside className="samaj-sidebar">
+          <div className="sidebar-section">
+            <h4>{lang === 'gu' ? 'શ્રેણીઓ' : 'Categories'}</h4>
+            <div className="sidebar-filters">
+              <button className="filter-pill active">
+                <span className="icon">🏛️</span> {lang === 'gu' ? 'બધા' : 'All Updates'}
+              </button>
+              <button className="filter-pill">
+                <span className="icon">📸</span> {lang === 'gu' ? 'પોસ્ટર્સ' : 'Posters'}
+              </button>
+              <button className="filter-pill">
+                <span className="icon">📜</span> {lang === 'gu' ? 'પત્રો' : 'Letters'}
+              </button>
+              <button className="filter-pill">
+                <span className="icon">🎥</span> {lang === 'gu' ? 'વીડિયો' : 'Videos'}
+              </button>
+            </div>
+          </div>
+
+          <div className="sidebar-section">
+            <h4>{lang === 'gu' ? 'વિભાગ ફિલ્ટર' : 'Vibhag Filters'}</h4>
+            <div className="sidebar-vibhags">
+              <span>{lang === 'gu' ? 'બધા વિભાગ' : 'All Districts'}</span>
+              <span>Central</span>
+              <span>Western</span>
+              <span>Harbour</span>
+            </div>
+          </div>
+
+          <div className="sidebar-promo">
+            <div className="promo-card">
+              <h5>{lang === 'gu' ? 'મદદ જોઈએ છે?' : 'Need Help?'}</h5>
+              <p>{lang === 'gu' ? 'તકનીકી સહાય માટે સંપર્ક કરો' : 'Contact for tech support'}</p>
+              <button onClick={() => window.open('https://wa.me/917208579149', '_blank')}>Contact Admin</button>
+            </div>
+          </div>
+        </aside>
+
+        <div className={`samaj-feed ${lang === 'gu' ? 'lang-gu' : ''}`}>
+          <div className="feed-header">
+            <h2>
+              {showArchived ? (lang === 'gu' ? '📦 આર્કાઇવ' : '📦 Archived Posts') : (lang === 'gu' ? 'તાજેતરના અપડેટ્સ' : 'Recent Updates')}
+              {showArchived && <span className="archive-count-badge">{archivedMessages.length}</span>}
+            </h2>
+            
+            <div className="header-actions">
+              {canManage && (
+                <>
+                  <button
+                    className={`archive-view-btn ${showArchived ? 'active' : ''}`}
+                    onClick={() => { setShowArchived(!showArchived); setBulkMode(false); setSelectedIds(new Set()); }}
+                  >
+                    {showArchived ? '📢 Live Posts' : '📦 Archived'}
+                    {!showArchived && archivedMessages.length > 0 && <span className="archive-notif">{archivedMessages.length}</span>}
+                  </button>
+                  <button
+                    className={`bulk-mode-btn ${bulkMode ? 'active' : ''}`}
+                    onClick={() => { setBulkMode(!bulkMode); setSelectedIds(new Set()); }}
+                  >
+                    {bulkMode ? '✕ Cancel' : '☑ Bulk Select'}
+                  </button>
+                  {!showArchived && (
+                    <button className="admin-add-btn" onClick={() => setShowModal(true)}>
+                      ➕ {lang === 'gu' ? 'નવો સંદેશ મૂકો' : 'Post New Announcement'}
+                    </button>
+                  )}
+                </>
+              )}
+            </div>
+          </div>
+
+          <div className={`feed-grid ${bulkMode ? 'bulk-mode-active' : ''}`}>
+            {displayFeed.length === 0 && (
+              <div className="empty-archive-state">
+                {showArchived ? '📦 No archived posts yet.' : '📭 No posts available.'}
+              </div>
+            )}
+            {displayFeed.map(item => (
+              <div
+                key={item.id}
+                id={`card-${item.id}`}
+                className={`sandesh-card ${item.type} ${item.isSample ? 'sample-card' : ''} ${selectedIds.has(item.id) ? 'card-selected' : ''} ${item.isArchived ? 'card-archived' : ''}`}
+                style={buildCardStyle(item)}
+                onClick={bulkMode && !item.isSample ? () => toggleSelect(item.id) : undefined}
+              >
+                {/* Bulk Checkbox */}
+                {bulkMode && !item.isSample && (
+                  <div className="bulk-checkbox-wrap">
+                    <input
+                      type="checkbox"
+                      className="bulk-checkbox"
+                      checked={selectedIds.has(item.id)}
+                      onChange={() => toggleSelect(item.id)}
+                      onClick={e => e.stopPropagation()}
+                    />
+                  </div>
+                )}
+
+                {/* Archive badge for archived view */}
+                {item.isArchived && canManage && (
+                  <div className="archived-badge">📦 Archived</div>
+                )}
+
+                {/* Media Section */}
+                <div className="card-media">
+                  {item.priority === 'high' && <div className="priority-pill">{lang === 'gu' ? 'મહત્વપૂર્ણ' : 'OFFER'}</div>}
+                  <div className="type-pill">{item.type.toUpperCase()}</div>
+                  
+                  {item.type === 'video' ? (
+                    <div className="video-container">
+                      {item.videoUrl?.includes('youtube.com') || item.videoUrl?.includes('youtu.be') ? (
+                        <iframe 
+                          src={`https://www.youtube.com/embed/${item.videoUrl.split('v=')[1] || item.videoUrl.split('/').pop()}`}
+                          title="YouTube video player"
+                          frameBorder="0"
+                          allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                          allowFullScreen
+                        ></iframe>
+                      ) : (
+                        <video src={item.videoUrl} controls poster={item.bannerUrl} />
+                      )}
+                    </div>
+                  ) : item.bannerUrl ? (
+                    <div className="card-image">
+                        <img src={item.bannerUrl} alt={item[`title${lang === 'gu' ? 'Gu' : 'En'}`] || item[`title${lang === 'gu' ? 'En' : 'Gu'}`] || ''} />
+                    </div>
+                  ) : (
+                    <div className="card-text-icon">
+                       <span className="media-placeholder-icon">{item.type === 'letter' ? '📜' : '📝'}</span>
+                    </div>
+                  )}
+
+                  {!bulkMode && <button className="card-quick-action" onClick={() => setExpandedId(expandedId === item.id ? null : item.id)}>+</button>}
+                </div>
+
+                <div className="card-body">
+                  <div className="deal-label">{item.priority === 'high' ? (lang === 'gu' ? 'મર્યાદિત સમયની જાહેરાત' : 'Limited time deal') : ''}</div>
+                  
+                  <h3 className="card-title" title={item[`title${lang === 'gu' ? 'Gu' : 'En'}`] || item[`title${lang === 'gu' ? 'En' : 'Gu'}`] || ''}>{getT(item, 'title')}</h3>
+
+                  <div className="card-date">
+                     {getT(item, 'date')} • {getT(item, 'authority')}
+                  </div>
+
+                  {/* 🛡️ Admin Slot Management - CLEAN & PROFESSIONAL */}
+                  {canManage && (
+                    <div className="card-admin-management-row" style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      margin: '10px 0',
+                      padding: '8px 0',
+                      borderTop: '1px solid #f1f5f9',
+                      borderBottom: '1px solid #f1f5f9'
+                    }}>
+                      <div className="active-slot-badges" style={{display: 'flex', gap: '5px'}}>
+                        {item.isHero && <span style={{background: '#7c3aed', color: 'white', padding: '3px 8px', borderRadius: '4px', fontSize: '9px', fontWeight: 'bold', boxShadow: '0 2px 5px rgba(124, 58, 237, 0.3)'}}>🌟 HERO</span>}
+                        {item.isHighlight1 && <span style={{background: '#f59e0b', color: 'white', padding: '3px 8px', borderRadius: '4px', fontSize: '9px', fontWeight: 'bold'}}>📍 SIDE TOP</span>}
+                        {item.isHighlight2 && <span style={{background: '#3b82f6', color: 'white', padding: '3px 8px', borderRadius: '4px', fontSize: '9px', fontWeight: 'bold'}}>📍 SIDE BOTTOM</span>}
+                        {!item.isHero && !item.isHighlight1 && !item.isHighlight2 && (
+                          <span style={{color: '#94a3b8', fontSize: '9px', fontStyle: 'italic'}}>No Active Slot</span>
+                        )}
+                      </div>
+
+                      <div className="slot-quick-actions" style={{display: 'flex', gap: '4px'}}>
+                         <button 
+                            onClick={(e) => { e.stopPropagation(); handleSlotSwap(item, 'hero'); }}
+                            style={{padding: '4px 6px', fontSize: '9px', borderRadius: '4px', background: item.isHero ? '#eee' : '#fff', border: '1px solid #ddd', cursor: 'pointer'}}
+                            title="Set as Main Hero"
+                         >
+                            👑 Hero
+                         </button>
+                         <button 
+                            onClick={(e) => { e.stopPropagation(); handleSlotSwap(item, 'side1'); }}
+                            style={{padding: '4px 6px', fontSize: '9px', borderRadius: '4px', background: item.isHighlight ? '#eee' : '#fff', border: '1px solid #ddd', cursor: 'pointer'}}
+                            title="Set as Side Top"
+                         >
+                            👆 Side1
+                         </button>
+                         <button 
+                            onClick={(e) => { e.stopPropagation(); handleSlotSwap(item, 'side2'); }}
+                            style={{padding: '4px 6px', fontSize: '9px', borderRadius: '4px', background: item.isHighlight2 ? '#eee' : '#fff', border: '1px solid #ddd', cursor: 'pointer'}}
+                            title="Set as Side Bottom"
+                         >
+                            👇 Side2
+                         </button>
+                      </div>
+                    </div>
+                  )}
+
+                  <p className={`card-text ${expandedId === item.id ? 'expanded' : ''}`}>
+                    {getT(item, 'content')}
+                  </p>
+
+                  <div className="card-footer-actions">
+                    {!bulkMode && (
+                      <button className="full-reader-btn" onClick={() => setMaximizedId(item.id)}>
+                        🔍 {lang === 'gu' ? 'વાંચો' : 'Read'}
+                      </button>
+                    )}
+                    {!bulkMode && (
+                      <span className="read-more-link" onClick={() => setExpandedId(expandedId === item.id ? null : item.id)}>
+                        {expandedId === item.id ? (lang === 'gu' ? 'ઓછામાં જુઓ' : 'Close Details') : (lang === 'gu' ? 'સંપૂર્ણ સંદેશ વાંચો' : 'Read Details')}
+                      </span>
+                    )}
+
+                    {canManage && !bulkMode && (
+                      <div className="admin-actions-inline">
+                        {!item.isArchived && <button onClick={() => handleEdit(item)} title="Edit">✏️</button>}
+                        {!item.isSample && <button onClick={() => handleClone(item)} title="Clone post" className="clone-action-btn">📋</button>}
+                        {!item.isSample && !item.isArchived && (
+                          <button onClick={() => handleArchive(item.id)} title="Archive" className="archive-action-btn">📦</button>
+                        )}
+                        {!item.isSample && item.isArchived && (
+                          <button onClick={() => handleRestore(item.id)} title="Restore" className="restore-action-btn">♻️</button>
+                        )}
+                        {!item.isSample && (
+                          <button onClick={() => handleDelete(item.id)} title="Delete" className="delete-action-btn">🗑️</button>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+
+          {/* 🧲 FLOATING BULK ACTION BAR */}
+          {bulkMode && selectedIds.size > 0 && (
+            <div className="bulk-action-bar">
+              <span className="bulk-count">{selectedIds.size} {lang === 'gu' ? 'પોસ્ટ પસંદ' : 'posts selected'}</span>
+              <button className="bulk-select-all-btn" onClick={() => {
+                const allIds = displayFeed.filter(i => !i.isSample).map(i => i.id);
+                setSelectedIds(new Set(allIds));
+              }}>✅ Select All</button>
+              {!showArchived && <button className="bulk-archive-btn" onClick={handleBulkArchive}>📦 {lang === 'gu' ? 'આર્કાઇવ' : 'Archive All'}</button>}
+              <button className="bulk-delete-btn" onClick={handleBulkDelete}>🗑️ {lang === 'gu' ? 'ડિલીટ' : 'Delete All'}</button>
+              <button className="bulk-cancel-btn" onClick={() => { setBulkMode(false); setSelectedIds(new Set()); }}>✕ Cancel</button>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* 📝 ADMIN EDITOR MODAL */}
+      {showModal && (
+        <div className="sandesh-modal-overlay">
+          <div className="sandesh-modal">
+            <div className="modal-header">
+              <h3>{editingId ? (lang === 'gu' ? 'જાહેરાતમાં ફેરફાર કરો' : 'Edit Announcement') : (lang === 'gu' ? 'નવી જાહેરાત બનાવો' : 'Create New Announcement')}</h3>
+              <button className="close-modal" onClick={() => { setShowModal(false); resetForm(); }}>&times;</button>
+            </div>
+            
+            <form onSubmit={handlePost}>
+              <div className="modal-magic-actions">
+                <button type="button" className="magic-pill-btn" onClick={() => handleSuggestDraft('en')} disabled={isTranslating}>
+                  🪄 Suggest Gujarati (Draft ➡️)
+                </button>
+                <button type="button" className="magic-pill-btn" onClick={() => handleSuggestDraft('gu')} disabled={isTranslating}>
+                  🪄 Suggest English (Draft ⬅️)
+                </button>
+              </div>
+
+              {formData.priority === 'high' && (formData.heroLayout === '2-col' || formData.heroLayout === '3-col') && (
+                <div className="column-tabs-container">
+                   <button type="button" className={`col-tab ${activeColumnTab === 'col1' ? 'active' : ''}`} onClick={() => setActiveColumnTab('col1')}>
+                     1️⃣ {lang === 'gu' ? 'કૉલમ ૧' : 'Column 1'}
+                   </button>
+                   <button type="button" className={`col-tab ${activeColumnTab === 'col2' ? 'active' : ''}`} onClick={() => setActiveColumnTab('col2')}>
+                     2️⃣ {lang === 'gu' ? 'કૉલમ ૨' : 'Column 2'}
+                   </button>
+                   {formData.heroLayout === '3-col' && (
+                     <button type="button" className={`col-tab ${activeColumnTab === 'col3' ? 'active' : ''}`} onClick={() => setActiveColumnTab('col3')}>
+                       3️⃣ {lang === 'gu' ? 'કૉલમ ૩' : 'Column 3'}
+                     </button>
+                   )}
+                </div>
+              )}
+
+              <div className="modal-content-wrapper">
+                {/* 📐 VISUAL LAYOUT SELECTOR - ALWAYS VISIBLE FOR USER ACCESSIBILITY */}
+                <div className="admin-layout-orchestrator">
+                  <label>📐 Choose Structure (Standard, 2-Sec, or 3-Sec)</label>
+                  <div className="layout-picker-grid">
+                    <button 
+                      type="button" 
+                      className={`layout-opt-btn ${formData.heroLayout === '1-col' ? 'active' : ''}`}
+                      onClick={() => setFormData({...formData, heroLayout: '1-col'})}
+                    >
+                      <div className="layout-viz viz-1"></div>
+                      <span>Standard</span>
+                    </button>
+                    <button 
+                      type="button" 
+                      className={`layout-opt-btn ${formData.heroLayout === '2-col' ? 'active' : ''}`}
+                      onClick={() => setFormData({...formData, heroLayout: '2-col'})}
+                    >
+                      <div className="layout-viz viz-2"></div>
+                      <span>Split (2-Sec)</span>
+                    </button>
+                    <button 
+                      type="button" 
+                      className={`layout-opt-btn ${formData.heroLayout === '3-col' ? 'active' : ''}`}
+                      onClick={() => setFormData({...formData, heroLayout: '3-col'})}
+                    >
+                      <div className="layout-viz viz-3"></div>
+                      <span>Trio (3-Sec)</span>
+                    </button>
+                  </div>
+                </div>
+
+                <div className="sectioned-editor-container">
+                  {/* SECTION 1: PRIMARY (Always Visible) */}
+                  <div className="editor-structural-block">
+                    <div className="block-header">1️⃣ Primary Content {formattingContext === 'hero' && formData.heroLayout !== '1-col' ? '(Left/Center Section)' : ''}</div>
+                    <div className="modal-grid">
+                      <div className="form-column">
+                        <h4>English Content</h4>
+                        <div className="field-with-canvas">
+                          <label>Title (English)</label>
+                          <input type="text" value={formData.titleEn} onChange={e => setFormData({...formData, titleEn: e.target.value})} />
+                        </div>
+                        <div className="field-with-canvas">
+                          <label>Body (English)</label>
+                          <div className="canvas-toolbar">
+                             <button type="button" onMouseDown={(e) => e.preventDefault()} onClick={() => applyStyle('contentEn', 'bold')}><b>B</b></button>
+                             <button type="button" onMouseDown={(e) => e.preventDefault()} onClick={() => applyStyle('contentEn', 'foreColor', formData.textColor)} className="tool-pen">🎨</button>
+                          </div>
+                          <div id="editor-contentEn" className="canvas-painter" contentEditable onBlur={(e) => setFormData({...formData, contentEn: e.target.innerHTML})} dangerouslySetInnerHTML={{ __html: formData.contentEn }} />
+                        </div>
+                      </div>
+
+                      <div className="form-column gujarati-column">
+                        <h4>ગુજરાતી સામગ્રી</h4>
+                        <div className="field-with-canvas">
+                          <label>શીર્ષક (Gujarati)</label>
+                          <input type="text" className="gu-font" value={formData.titleGu} onChange={e => setFormData({...formData, titleGu: e.target.value})} />
+                        </div>
+                        <div className="field-with-canvas">
+                          <label>સંદેશ વિગત (Gujarati)</label>
+                          <div id="editor-contentGu" className="canvas-painter gu-font" contentEditable onBlur={(e) => setFormData({...formData, contentGu: e.target.innerHTML})} dangerouslySetInnerHTML={{ __html: formData.contentGu }} />
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* 📸 MAIN SECTION IMAGE/VIDEO UPLOAD */}
+                    <div className="form-group main-upload-section" style={{marginTop: '20px', padding: '15px', background: 'rgba(255,255,255,0.05)', borderRadius: '12px'}}>
+                      <label>🖼️ Main Content Media (Image or YouTube Link)</label>
+                      <div style={{display: 'flex', gap: '10px', marginTop: '5px'}}>
+                        <input 
+                          type="text" 
+                          placeholder="YouTube Link or Image URL" 
+                          style={{flex: 1}}
+                          value={formData.bannerUrl || formData.videoUrl} 
+                          onChange={e => {
+                            const val = e.target.value;
+                            if (val.includes('youtube.com') || val.includes('youtu.be')) {
+                              setFormData({...formData, videoUrl: val, type: 'video'});
+                            } else {
+                              setFormData({...formData, bannerUrl: val});
+                            }
+                          }} 
+                        />
+                        <input 
+                          type="file" 
+                          accept="image/*,video/mp4" 
+                          style={{width: 'auto'}}
+                          onChange={async (e) => {
+                            const file = e.target.files[0];
+                            if (file) {
+                              const reader = new FileReader();
+                              reader.onloadend = async () => {
+                                const result = reader.result;
+                                if (file.type.startsWith('video/')) {
+                                  setFormData({...formData, videoUrl: result, type: 'video'});
+                                } else {
+                                  const compressed = await compressImage(result);
+                                  setFormData({...formData, bannerUrl: compressed});
+                                }
+                              };
+                              reader.readAsDataURL(file);
+                            }
+                          }} 
+                        />
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* SECTION 2: HIDDEN UNLESS 2 OR 3 COL */}
+                  {formattingContext === 'hero' && (formData.heroLayout === '2-col' || formData.heroLayout === '3-col') && (
+                    <div className="editor-structural-block">
+                      <div className="block-header">2️⃣ Secondary Section (Middle/Left)</div>
+                      <div className="modal-grid">
+                        <div className="form-column">
+                          <label>Title (English)</label>
+                          <input type="text" value={formData.col2TitleEn} onChange={e => setFormData({...formData, col2TitleEn: e.target.value})} />
+                          <label style={{marginTop: '10px'}}>Content (English)</label>
+                          <div id="editor-col2ContentEn" className="canvas-painter" contentEditable onBlur={(e) => setFormData({...formData, col2ContentEn: e.target.innerHTML})} dangerouslySetInnerHTML={{ __html: formData.col2ContentEn }} />
+                        </div>
+                        <div className="form-column gujarati-column">
+                          <label>શીર્ષક (Gujarati)</label>
+                          <input type="text" className="gu-font" value={formData.col2TitleGu} onChange={e => setFormData({...formData, col2TitleGu: e.target.value})} />
+                          <label style={{marginTop: '10px'}}>સામગ્રી (Gujarati)</label>
+                          <div id="editor-col2ContentGu" className="canvas-painter gu-font" contentEditable onBlur={(e) => setFormData({...formData, col2ContentGu: e.target.innerHTML})} dangerouslySetInnerHTML={{ __html: formData.col2ContentGu }} />
+                        </div>
+                      </div>
+                      <div className="form-group" style={{marginTop: '15px'}}>
+                         <label>Upload Section 2 Image</label>
+                         <input type="file" accept="image/*" onChange={async (e) => {
+                            const file = e.target.files[0];
+                            if (file) {
+                              const reader = new FileReader();
+                              reader.onloadend = async () => { setFormData({...formData, col2BannerUrl: await compressImage(reader.result)}); };
+                              reader.readAsDataURL(file);
+                            }
+                         }} />
+                      </div>
+                    </div>
+                  )}
+
+                  {/* SECTION 3: HIDDEN UNLESS 3 COL */}
+                  {formattingContext === 'hero' && formData.heroLayout === '3-col' && (
+                    <div className="editor-structural-block">
+                      <div className="block-header">3️⃣ Tertiary Section (Right Side)</div>
+                      <div className="modal-grid">
+                        <div className="form-column">
+                          <label>Title (English)</label>
+                          <input type="text" value={formData.col3TitleEn} onChange={e => setFormData({...formData, col3TitleEn: e.target.value})} />
+                          <label style={{marginTop: '10px'}}>Content (English)</label>
+                          <div id="editor-col3ContentEn" className="canvas-painter" contentEditable onBlur={(e) => setFormData({...formData, col3ContentEn: e.target.innerHTML})} dangerouslySetInnerHTML={{ __html: formData.col3ContentEn }} />
+                        </div>
+                        <div className="form-column gujarati-column">
+                          <label>શીર્ષક (Gujarati)</label>
+                          <input type="text" className="gu-font" value={formData.col3TitleGu} onChange={e => setFormData({...formData, col3TitleGu: e.target.value})} />
+                          <label style={{marginTop: '10px'}}>સામગ્રી (Gujarati)</label>
+                          <div id="editor-col3ContentGu" className="canvas-painter gu-font" contentEditable onBlur={(e) => setFormData({...formData, col3ContentGu: e.target.innerHTML})} dangerouslySetInnerHTML={{ __html: formData.col3ContentGu }} />
+                        </div>
+                      </div>
+                      <div className="form-group" style={{marginTop: '15px'}}>
+                         <label>Upload Section 3 Image</label>
+                         <input type="file" accept="image/*" onChange={async (e) => {
+                            const file = e.target.files[0];
+                            if (file) {
+                              const reader = new FileReader();
+                              reader.onloadend = async () => { setFormData({...formData, col3BannerUrl: await compressImage(reader.result)}); };
+                              reader.readAsDataURL(file);
+                            }
+                         }} />
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+               <div className="modal-settings">
+                  {!styleOnlyMode && (
+                 <div className="settings-left">
+                   <div className="form-group">
+                     <label>Announcement Type</label>
+                     <select value={formData.type} onChange={e => setFormData({...formData, type: e.target.value})}>
+                       <option value="poster">🖼️ Poster Announcement</option>
+                       <option value="video">🎥 Video Content (MP4/YouTube)</option>
+                       <option value="letter">📜 Official Letter</option>
+                       <option value="text">📝 General Text Message</option>
+                     </select>
+                   </div>
+                   <div className="form-group">
+                     <label>Priority</label>
+                     <select value={formData.priority} onChange={e => setFormData({...formData, priority: e.target.value})}>
+                       <option value="normal">Normal Card</option>
+                       <option value="high">🌟 High Priority (Featured Hero)</option>
+                     </select>
+                   </div>
+                   <div className="form-group">
+                     <label>Media Source (URL or Upload)</label>
+                     <input 
+                       type="text" 
+                       placeholder="YouTube URL or Image Link" 
+                       value={formData.bannerUrl || formData.videoUrl} 
+                       onChange={e => {
+                         const val = e.target.value;
+                         if (val.includes('youtube.com') || val.includes('youtu.be')) {
+                           setFormData({...formData, videoUrl: val, type: 'video'});
+                         } else {
+                           setFormData({...formData, bannerUrl: val});
+                         }
+                       }} 
+                     />
+                     <input type="file" accept="image/*,video/mp4" style={{marginTop: '10px'}} onChange={async (e) => {
+                       const file = e.target.files[0];
+                       if (file) {
+                         const reader = new FileReader();
+                         reader.onloadend = async () => {
+                           const result = reader.result;
+                           if (file.type.startsWith('video/')) {
+                             setFormData({...formData, videoUrl: result, type: 'video'});
+                           } else {
+                             const compressed = await compressImage(result);
+                             setFormData({...formData, bannerUrl: compressed});
+                           }
+                         };
+                         reader.readAsDataURL(file);
+                       }
+                     }} />
+                   </div>
+ 
+                   <div className="form-group highlight-toggle">
+                     <div className="slot-indicator">
+                       {(formData.isHighlight || formData.isHighlight1) && <span className="slot-pill highlight">📍 Pinned to TOP</span>}
+                       {(formData.isHighlight2 || formData.isQuickLink) && <span className="slot-pill quick">📍 Pinned to BOTTOM</span>}
+                     </div>
+                     <label className="checkbox-label">
+                       <input 
+                         type="checkbox" 
+                         checked={formData.isHighlight1 || formData.isHighlight} 
+                         onChange={e => setFormData({
+                           ...formData, 
+                           isHighlight1: e.target.checked, 
+                           isHighlight: e.target.checked,
+                           isHighlight2: false,
+                           isQuickLink: false
+                         })} 
+                       />
+                       ⭐ Slot 1 (Top)
+                     </label>
+                     <label className="checkbox-label" style={{marginTop: '8px'}}>
+                       <input 
+                         type="checkbox" 
+                         checked={formData.isHighlight2 || formData.isQuickLink} 
+                         onChange={e => setFormData({
+                           ...formData, 
+                           isHighlight2: e.target.checked, 
+                           isQuickLink: e.target.checked,
+                           isHighlight1: false,
+                           isHighlight: false
+                         })} 
+                       />
+                       🔗 Slot 2 (Bottom)
+                     </label>
+                   </div>
+                 </div>
+ 
+                 )}
+                  {/* 🎨 COLOR + BORDER CANVAS TOOLKIT */}
+                  <div className="canvas-toolkit" style={styleOnlyMode ? {width: "100%", margin: 0} : {}}>
+                    <h4 className="toolkit-title">🎨 Design Canvas</h4>
+
+                    {/* Basic color pickers row */}
+                    <div className="color-grid">
+                      <div className="color-pick-item">
+                        <label>Background</label>
+                        <ColorPicker
+                          value={formData.bgColor || ''}
+                          onChange={val => setFormData({...formData, bgColor: val})}
+                          defaultColor="#ffffff"
+                          allowNoFill={true}
+                        />
+                      </div>
+                      <div className="color-pick-item">
+                        <label>Text</label>
+                        <ColorPicker
+                          value={formData.textColor || ''}
+                          onChange={val => setFormData({...formData, textColor: val})}
+                          defaultColor="#1e3a8a"
+                          allowNoFill={false}
+                        />
+                      </div>
+                      <div className="color-pick-item">
+                        <label>Highlighter</label>
+                        <ColorPicker
+                          value={formData.accentColor || ''}
+                          onChange={val => setFormData({...formData, accentColor: val})}
+                          defaultColor="#fbbf24"
+                          allowNoFill={false}
+                        />
+                      </div>
+                    </div>
+
+                    {/* 🌈 Background Gradient Section */}
+                    <div className="bg-gradient-controls" style={{marginTop: '14px', padding: '12px', background: '#f8fafc', borderRadius: '10px', border: '1px solid #e2e8f0'}}>
+                      <label className="checkbox-label" style={{marginBottom: '10px', fontWeight: 'bold'}}>
+                        <input 
+                          type="checkbox" 
+                          checked={formData.gradientBg} 
+                          onChange={e => setFormData({...formData, gradientBg: e.target.checked})} 
+                        />
+                        🌈 Enable Background Gradient
+                      </label>
+                      
+                      {formData.gradientBg && (
+                        <div className="gradient-config-row" style={{display: 'flex', gap: '10px', alignItems: 'center'}}>
+                          <ColorPicker
+                            value={formData.gradientBgColor1}
+                            onChange={val => setFormData({...formData, gradientBgColor1: val})}
+                            defaultColor="#7c3aed"
+                          />
+                          <ColorPicker
+                            value={formData.gradientBgColor2}
+                            onChange={val => setFormData({...formData, gradientBgColor2: val})}
+                            defaultColor="#4f46e5"
+                          />
+                          <div style={{flex: 1}}>
+                            <label style={{fontSize: '10px', display: 'block'}}>Angle: {formData.gradientBgAngle}°</label>
+                            <input 
+                              type="range" min="0" max="360" 
+                              value={formData.gradientBgAngle} 
+                              onChange={e => setFormData({...formData, gradientBgAngle: e.target.value})}
+                              style={{width: '100%'}}
+                            />
+                          </div>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* 🖊 Full Border Editor */}
+                    <div style={{marginTop: '14px'}}>
+                      <div className="be-section-heading">🖊 Border &amp; Frame</div>
+                      <BorderEditor
+                        formData={formData}
+                        onChange={(key, val) => setFormData(prev => ({ ...prev, [key]: val }))}
+                      />
+                    </div>
+
+                    <button
+                      type="button"
+                      className="reset-canvas-btn"
+                      onClick={() => setFormData(prev => ({
+                        ...prev,
+                        bgColor: '', textColor: '', accentColor: '',
+                        gradientBg: false, gradientBgColor1: '#7c3aed', gradientBgColor2: '#4f46e5', gradientBgAngle: '135',
+                        borderColor: '', borderStyle: 'solid', borderWidth: '1',
+                        borderRadius: '12', borderRadiusTL: '', borderRadiusTR: '', borderRadiusBL: '', borderRadiusBR: '',
+                        shadowEnabled: false, shadowX: '0', shadowY: '4', shadowBlur: '12', shadowSpread: '0', shadowColor: 'rgba(0,0,0,0.1)',
+                        gradientBorder: false, gradientColor1: '#7c3aed', gradientColor2: '#3b82f6', gradientAngle: '135'
+                      }))}
+                    >
+                      🧹 Clear Design
+                    </button>
+                  </div>
+                </div>
+                
+              <div className="modal-actions">
+                <button type="button" className="cancel-btn" onClick={() => setShowModal(false)}>Cancel</button>
+                <button type="submit" className="publish-btn" disabled={isSaving}>
+                  {isSaving ? 'Publishing...' : '🚀 Publish Announcement'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+      {/* 📖 FULL-SCREEN READER MODAL */}
+      {maximizedId && (
+        <div className="reader-overlay" onClick={() => setMaximizedId(null)}>
+          <div className="reader-modal" onClick={e => e.stopPropagation()}>
+            <button className="reader-close-btn" onClick={() => setMaximizedId(null)}>×</button>
+            
+            {(() => {
+              const item = activeMessages.find(m => m.id === maximizedId);
+              if (!item) return null;
+              return (
+                <div className="reader-content-wrap">
+                  <div className="reader-header">
+                    <span className="reader-category">{getT(item, 'subtitle')}</span>
+                    <h2>{getT(item, 'title')}</h2>
+                    <div className="reader-meta">
+                      <span>👤 {getT(item, 'authority')}</span>
+                      <span>📅 {getT(item, 'date')}</span>
+                    </div>
+                  </div>
+
+                  <div className="reader-body">
+                    {item.bannerUrl && (
+                      <div className="reader-media">
+                        <img src={item.bannerUrl} alt="Visual" />
+                      </div>
+                    )}
+                    <div className="reader-text-box" dangerouslySetInnerHTML={{ __html: item[`content${lang === 'gu' ? 'Gu' : 'En'}`] || item[`content${lang === 'gu' ? 'En' : 'Gu'}`] || '' }} />
+
+                  </div>
+
+                  <div className="reader-footer">
+                    <div className="reader-source-tag">
+                       Source: Official {getT(item, 'authority')} Channel
+                    </div>
+                    <button className="reader-exit-cta" onClick={() => setMaximizedId(null)}>
+                       {lang === 'gu' ? 'બંધ કરો' : 'Close Reader'}
+                    </button>
+                  </div>
+                </div>
+              );
+            })()}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
