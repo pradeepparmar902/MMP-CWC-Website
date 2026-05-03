@@ -9,7 +9,8 @@ export default function DynamicForm({
   onSubmit, 
   loading, 
   submitText = 'Submit',
-  showSubmit = true
+  showSubmit = true,
+  readOnly = false
 }) {
   
   const handleChange = (fieldId, value) => {
@@ -51,9 +52,10 @@ export default function DynamicForm({
                 id={`file-${field.id}`}
                 style={{display:'none'}}
                 onChange={(e) => handleFileChange(field.id, e.target.files[0])}
+                disabled={readOnly}
               />
               {!value ? (
-                <div className="file-uploader-box" onClick={() => document.getElementById(`file-${field.id}`).click()}>
+                <div className={`file-uploader-box ${readOnly ? 'disabled' : ''}`} onClick={() => !readOnly && document.getElementById(`file-${field.id}`).click()}>
                   <span>{isDoc ? '📄 Click to Upload Document (PDF/Image)' : '📷 Click to Upload Profile Photo'}</span>
                 </div>
               ) : (
@@ -66,9 +68,11 @@ export default function DynamicForm({
                   ) : (
                     <img src={value} alt={field.label} className={isDoc ? "doc-preview-img" : "file-preview-img"} />
                   )}
-                  <button type="button" className="change-file-btn" onClick={() => document.getElementById(`file-${field.id}`).click()}>
-                    Change {isDoc ? 'Document' : 'Photo'}
-                  </button>
+                  {!readOnly && (
+                    <button type="button" className="change-file-btn" onClick={() => document.getElementById(`file-${field.id}`).click()}>
+                      Change {isDoc ? 'Document' : 'Photo'}
+                    </button>
+                  )}
                 </div>
               )}
             </div>
@@ -85,6 +89,7 @@ export default function DynamicForm({
               value={value}
               onChange={(e) => handleChange(field.id, e.target.value)}
               required={field.required}
+              disabled={readOnly}
             >
               <option value="">Select option...</option>
               {field.options?.map(opt => <option key={opt} value={opt}>{opt}</option>)}
@@ -105,6 +110,7 @@ export default function DynamicForm({
                 onChange={(e) => handleChange(field.id, { ...value, firstName: e.target.value })}
                 placeholder="First Name"
                 required={field.required}
+                disabled={readOnly}
               />
               <input 
                 type="text"
@@ -112,6 +118,7 @@ export default function DynamicForm({
                 onChange={(e) => handleChange(field.id, { ...value, middleName: e.target.value })}
                 placeholder="Middle Name"
                 required={field.required}
+                disabled={readOnly}
               />
               <input 
                 type="text"
@@ -119,6 +126,7 @@ export default function DynamicForm({
                 onChange={(e) => handleChange(field.id, { ...value, lastName: e.target.value })}
                 placeholder="Surname / Last Name"
                 required={field.required}
+                disabled={readOnly}
               />
             </div>
           </div>
@@ -135,6 +143,7 @@ export default function DynamicForm({
               onChange={(e) => handleChange(field.id, e.target.value)}
               required={field.required}
               placeholder={`Enter ${field.label}...`}
+              disabled={readOnly}
             />
           </div>
         );
@@ -156,6 +165,7 @@ export default function DynamicForm({
                 }}
                 required={field.required}
                 placeholder="10-digit number"
+                disabled={readOnly}
               />
             </div>
           </div>
@@ -172,7 +182,8 @@ export default function DynamicForm({
               value={value}
               onChange={(e) => handleChange(field.id, e.target.value)}
               required={field.required}
-              max={new Date().toISOString().split('T')[0]} // Helpful for DOB (can't be in future)
+              max={new Date().toISOString().split('T')[0]}
+              disabled={readOnly}
             />
           </div>
         );
@@ -189,6 +200,7 @@ export default function DynamicForm({
               onChange={(e) => handleChange(field.id, e.target.value)}
               required={field.required}
               placeholder={field.placeholder || `Enter ${field.label}`}
+              disabled={readOnly}
             />
           </div>
         );

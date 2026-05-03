@@ -252,9 +252,12 @@ export default function Education() {
                     <span className="item-id">ID: {sub.formId}</span>
                   </div>
                   <div className={`item-status-indicator ${(sub.status || 'Pending').toLowerCase().replace(/ /g, '-')}`} title={sub.status || 'Pending'}>
-                    {sub.status === 'Approved' ? '✅' : 
-                     sub.status === 'Rejected' ? '❌' : 
-                     sub.status === 'Required More Info' ? '⚠️' : '🕒'}
+                    <span className="status-icon-small">
+                      {sub.status === 'Approved' ? '✅' : 
+                       sub.status === 'Rejected' ? '❌' : 
+                       sub.status === 'Required More Info' ? '⚠️' : '🕒'}
+                    </span>
+                    <span className="status-label-small">{sub.status || 'Pending'}</span>
                   </div>
                 </div>
               ))
@@ -292,7 +295,7 @@ export default function Education() {
         ) : (
           <div className="edu-form-container">
             <div className="form-header">
-              <h2>{submissionId ? 'Update Record' : 'New Enrollment'}</h2>
+              <h2>{submissionId ? (formData.status || 'Pending') : 'New Enrollment'}</h2>
               <p>Form ID: {submissionId ? (allSubmissions.find(s => s.id === submissionId)?.formId) : 'New'}</p>
             </div>
             
@@ -305,6 +308,7 @@ export default function Education() {
                 loading={loading}
                 submitText={submissionId ? "Save Changes" : "Submit Entry"}
                 showSubmit={isEditable}
+                readOnly={!isEditable}
               />
               {!isEditable && <div className="locked-notice">🔒 This record is locked for editing.</div>}
             </div>

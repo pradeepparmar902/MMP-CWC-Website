@@ -188,14 +188,22 @@
 
 /* INLINE STATUS INDICATOR */
 .item-status-indicator {
-  font-size: 16px;
-  display: flex;
+  display: inline-flex;
   align-items: center;
-  justify-content: center;
-  width: 28px;
-  height: 28px;
-  border-radius: 50%;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: 20px;
   background: #f8fafc;
+}
+
+.status-icon-small {
+  font-size: 14px;
+}
+
+.status-label-small {
+  font-size: 12px;
+  font-weight: 600;
+  color: #475569;
 }
 
 .item-status-indicator.pending { background: #fffbeb; border: 1px solid #fef3c7; }
