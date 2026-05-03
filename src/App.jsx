@@ -8,6 +8,7 @@ import ContentArea from './components/ContentArea';
 import AdminPanel from './components/AdminPanel';
 import SuperAdminPanel from './components/SuperAdminPanel';
 import EduVerify from './components/EduVerify';
+import Education from './components/Education';
 import { useAuth } from './context/AuthContext';
 import AuthModal from './components/AuthModal';
 import AccessWall from './components/AccessWall';
@@ -276,6 +277,21 @@ function App() {
               sectionLabel="Management Portal" 
               onLoginClick={() => setShowAuthModal(true)} 
             />
+            )
+          ) : activeSection === 'education' ? (
+            /* EDUCATION: Login required */
+            !currentUser ? (
+              <AccessWall
+                type="login"
+                sectionLabel="Education"
+                onLoginClick={() => setShowAuthModal(true)}
+              />
+            ) : userStatus === 'pending' ? (
+              <AccessWall type="pending" sectionLabel="Education" />
+            ) : userStatus === 'rejected' ? (
+              <AccessWall type="rejected" sectionLabel="Education" />
+            ) : (
+              <Education />
             )
           ) : activeSection === 'edu_verify' ? (
             /* EDU VERIFY: Only for staff */
