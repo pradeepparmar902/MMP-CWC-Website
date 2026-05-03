@@ -48,6 +48,7 @@ const AuthModal = ({ onClose, initialView = 'login' }) => {
   // Profile fields specific
   const [userMembershipNo, setUserMembershipNo] = useState('');
   const [isEditingMembership, setIsEditingMembership] = useState(false);
+  const [fullProfileData, setFullProfileData] = useState(null);
   
   // Load membership on profile view
   useEffect(() => {
@@ -55,14 +56,17 @@ const AuthModal = ({ onClose, initialView = 'login' }) => {
       const loadProfileData = async () => {
         try {
           const adminDoc = await getDoc(doc(db, 'admins', currentUser.uid));
-          if (adminDoc.exists() && adminDoc.data().membershipNo) {
-            setUserMembershipNo(adminDoc.data().membershipNo);
+          if (adminDoc.exists()) {
+            const data = adminDoc.data();
+            setUserMembershipNo(data.membershipNo || data.profile?.membershipNo || '');
+            setFullProfileData(data.profile || null);
             return;
           }
           const pendingDoc = await getDoc(doc(db, 'pending_users', currentUser.uid));
           if (pendingDoc.exists()) {
             const data = pendingDoc.data();
             setUserMembershipNo(data.membershipNo || data.profile?.membershipNo || '');
+            setFullProfileData(data.profile || null);
           }
         } catch (e) {
           console.error('Error loading membership no:', e);
@@ -626,6 +630,35 @@ const AuthModal = ({ onClose, initialView = 'login' }) => {
                       )}
                     </span>
                  </div>
+
+                 {/* ── Dynamic Registration Data ── */}
+                 {fullProfileData && Object.keys(fullProfileData).map(key => {
+                   if (key === 'membershipNo' || !fullProfileData[key]) return null;
+                   
+                   const fieldDef = formSchema.find(f => f.id === key);
+                   const label = fieldDef ? fieldDef.label.replace('Emal', 'Email') : key;
+                   const val = fullProfileData[key];
+                   const isPhoto = fieldDef?.type === 'file';
+                   const isName = fieldDef?.type === 'fullname';
+                   
+                   let displayVal = val;
+                   if (isName && typeof val === 'object') {
+                     displayVal = `${val.firstName || ''} ${val.middleName || ''} ${val.lastName || ''}`.trim();
+                   } else if (isPhoto) {
+                     displayVal = <img src={val} alt="Profile" style={{ width: '40px', height: '40px', borderRadius: '50%', objectFit: 'cover' }} />;
+                   } else if (typeof val === 'object') {
+                     displayVal = JSON.stringify(val);
+                   }
+                   
+                   return (
+                     <div className="profile-info-row" key={key}>
+                       <span className="info-label">{label}</span>
+                       <span className="info-value" style={fieldDef?.type === 'address' ? {whiteSpace:'pre-line', fontSize:'13px', lineHeight:'1.4', textAlign:'right'} : {}}>
+                         {displayVal}
+                       </span>
+                     </div>
+                   );
+                 })}
               </div>
               
               <div className="profile-actions">
