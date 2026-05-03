@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { useAuth } from '../context/AuthContext';
 import './Header.css';
 
@@ -132,7 +133,11 @@ export default function Header({ config, onLoginClick, isCollapsed, navItems, ac
           </div>
         </div>
 
-        {/* SIDE DRAWER (Moved outside main flex row) */}
+      </div>
+    </header>
+    {/* DRAWER PORTAL: Rendered on document.body to escape header stacking context */}
+    {createPortal(
+      <>
         <div className={`side-drawer-backdrop ${isDrawerOpen ? 'open' : ''}`} onClick={() => setIsDrawerOpen(false)} />
         <div className={`side-drawer ${isDrawerOpen ? 'open' : ''}`}>
           <div className="drawer-header">
@@ -194,7 +199,9 @@ export default function Header({ config, onLoginClick, isCollapsed, navItems, ac
             <p>© {new Date().getFullYear()} MMP CWC</p>
           </div>
         </div>
-      </div>
-    </header>
+      </>,
+      document.body
+    )}
+  </>
   );
 }
