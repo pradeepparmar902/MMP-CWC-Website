@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { useAuth } from '../context/AuthContext';
 import { 
   doc, 
@@ -295,7 +296,7 @@ export default function Education() {
       </main>
 
       {/* FORM MODAL */}
-      {isModalOpen && (
+      {isModalOpen && createPortal(
         <div className="edu-modal-overlay">
           <div className="edu-modal-content">
             <button className="edu-modal-close" onClick={() => setIsModalOpen(false)}>✕</button>
@@ -320,7 +321,8 @@ export default function Education() {
               </div>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
     </div>
   );
