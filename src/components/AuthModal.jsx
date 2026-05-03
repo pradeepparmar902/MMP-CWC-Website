@@ -75,19 +75,13 @@ const AuthModal = ({ onClose, initialView = 'login' }) => {
     };
     fetchSchema();
 
-    // 2. Setup Recaptcha
-    const timer = setTimeout(() => {
-      setupRecaptcha('recaptcha-container');
-    }, 500);
-    
     return () => {
-      clearTimeout(timer);
       if (window.recaptchaVerifier) {
         window.recaptchaVerifier.clear();
         window.recaptchaVerifier = null;
       }
     };
-  }, [setupRecaptcha]);
+  }, []);
 
   const handleUnifiedLogin = async (e) => {
     e.preventDefault();
@@ -139,7 +133,13 @@ const AuthModal = ({ onClose, initialView = 'login' }) => {
       // Step 2: Send OTP to verify Phone before creating account
       console.log("📱 Attempting to SEND OTP to:", formattedPhone);
       
-      const appVerifier = window.recaptchaVerifier;
+      // Initialize fresh Recaptcha strictly on submit to avoid token expiration
+      if (window.recaptchaVerifier) {
+        window.recaptchaVerifier.clear();
+        window.recaptchaVerifier = null;
+      }
+      
+      const appVerifier = setupRecaptcha('recaptcha-container');
       const confirmation = await loginWithPhone(formattedPhone, appVerifier);
       setConfirmationResult(confirmation);
       console.log("✅ OTP successfully triggered by Firebase!");
@@ -163,7 +163,14 @@ const AuthModal = ({ onClose, initialView = 'login' }) => {
     
     try {
       console.log("📱 Verifying NEW phone number:", formattedNew);
-      const appVerifier = window.recaptchaVerifier;
+      
+      // Fresh Recaptcha
+      if (window.recaptchaVerifier) {
+        window.recaptchaVerifier.clear();
+        window.recaptchaVerifier = null;
+      }
+      const appVerifier = setupRecaptcha('recaptcha-container');
+      
       const confirmation = await loginWithPhone(formattedNew, appVerifier);
       setConfirmationResult(confirmation);
       setOtpMode('change-phone');
