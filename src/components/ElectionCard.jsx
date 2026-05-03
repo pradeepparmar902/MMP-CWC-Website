@@ -19,7 +19,7 @@ function parseCSV(csvText) {
   const lines = csvText.trim().split('\n');
   if (lines.length < 2) return [];
   const headers = lines[0].split(',').map(h => h.trim().replace(/^"|"$/g, ''));
-  return lines.slice(1).map(line => {
+  const rows = lines.slice(1).map(line => {
     // Handle commas inside quoted fields
     const cols = [];
     let inQuote = false, cur = '';
@@ -34,6 +34,7 @@ function parseCSV(csvText) {
     headers.forEach((h, i) => { obj[h] = cols[i] || ''; });
     return obj;
   });
+  return { headers, rows };
 }
 
 /** Convert Google Drive share link → embeddable preview link */
@@ -56,16 +57,16 @@ function isImageLink(link) {
 // 🖼️  Card Viewer Modal
 // ─────────────────────────────────────────────────────────────────────────────
 function CardViewerModal({ card, onClose }) {
-  const previewUrl = toPreviewUrl(card?.cardLink);
-  const isImage = isImageLink(card?.cardLink || '');
+  const previewUrl = toPreviewUrl(card?._cardLink);
+  const isImage = isImageLink(card?._cardLink || '');
 
   return createPortal(
     <div className="ec-viewer-overlay" onClick={onClose}>
       <div className="ec-viewer-modal" onClick={e => e.stopPropagation()}>
         <div className="ec-viewer-header">
           <div className="ec-viewer-info">
-            <h3>🆔 {card?.name}</h3>
-            <span className="ec-viewer-meta">{card?.membershipNo} • {card?.vibhag} • {card?.year}</span>
+            <h3>🆔 {card?._name}</h3>
+            <span className="ec-viewer-meta">{card?._membershipNo} • {card?._vibhag} • {card?._year}</span>
           </div>
           <button className="ec-viewer-close" onClick={onClose}>✕</button>
         </div>
@@ -85,17 +86,17 @@ function CardViewerModal({ card, onClose }) {
             <div className="ec-no-card">
               <span>📄</span>
               <p>Card preview not available</p>
-              {card?.cardLink && (
-                <a href={card.cardLink} target="_blank" rel="noreferrer" className="ec-open-btn">
+              {card?._cardLink && (
+                <a href={card._cardLink} target="_blank" rel="noreferrer" className="ec-open-btn">
                   Open in Google Drive ↗
                 </a>
               )}
             </div>
           )}
         </div>
-        {card?.cardLink && (
+        {card?._cardLink && (
           <div className="ec-viewer-footer">
-            <a href={card.cardLink} target="_blank" rel="noreferrer" className="ec-open-drive-btn">
+            <a href={card._cardLink} target="_blank" rel="noreferrer" className="ec-open-drive-btn">
               🔗 Open in Google Drive
             </a>
           </div>
@@ -113,7 +114,7 @@ function MyElectionCard({ membershipNo, allCards }) {
   const [viewCard, setViewCard] = useState(null);
 
   const myCard = allCards.find(
-    c => c.membershipNo?.trim().toLowerCase() === membershipNo?.trim().toLowerCase()
+    c => c._membershipNo?.trim().toLowerCase() === membershipNo?.trim().toLowerCase()
   );
 
   if (!membershipNo) {
@@ -142,26 +143,26 @@ function MyElectionCard({ membershipNo, allCards }) {
       <div className="ec-my-card ec-found">
         <div className="ec-card-visual">
           <div className="ec-card-logo">🗳️</div>
-          <div className="ec-card-badge">{myCard.status === 'Active' ? '✅ Active' : '⚠️ ' + (myCard.status || 'Pending')}</div>
+          <div className="ec-card-badge">{myCard._status === 'Active' ? '✅ Active' : '⚠️ ' + (myCard._status || 'Pending')}</div>
         </div>
         <div className="ec-card-details">
-          <h2 className="ec-card-name">{myCard.name}</h2>
+          <h2 className="ec-card-name">{myCard._name}</h2>
           <div className="ec-detail-grid">
             <div className="ec-detail-item">
               <span className="ec-detail-label">Membership No</span>
-              <span className="ec-detail-value ec-id-pill">{myCard.membershipNo}</span>
+              <span className="ec-detail-value ec-id-pill">{myCard._membershipNo}</span>
             </div>
             <div className="ec-detail-item">
               <span className="ec-detail-label">Vibhag / Zone</span>
-              <span className="ec-detail-value">{myCard.vibhag || '—'}</span>
+              <span className="ec-detail-value">{myCard._vibhag || '—'}</span>
             </div>
             <div className="ec-detail-item">
               <span className="ec-detail-label">Year</span>
-              <span className="ec-detail-value">{myCard.year || '—'}</span>
+              <span className="ec-detail-value">{myCard._year || '—'}</span>
             </div>
             <div className="ec-detail-item">
               <span className="ec-detail-label">Mobile</span>
-              <span className="ec-detail-value">{myCard.mobile || '—'}</span>
+              <span className="ec-detail-value">{myCard._mobile || '—'}</span>
             </div>
           </div>
           <button className="ec-view-btn" onClick={() => setViewCard(myCard)}>
@@ -177,16 +178,24 @@ function MyElectionCard({ membershipNo, allCards }) {
 // ─────────────────────────────────────────────────────────────────────────────
 // 📋  Admin Table
 // ─────────────────────────────────────────────────────────────────────────────
-function AdminCardTable({ allCards }) {
+function AdminCardTable({ allCards, tableHeaders }) {
   const [search, setSearch] = useState('');
   const [viewCard, setViewCard] = useState(null);
 
-  const filtered = allCards.filter(c =>
-    !search ||
-    c.name?.toLowerCase().includes(search.toLowerCase()) ||
-    c.membershipNo?.toLowerCase().includes(search.toLowerCase()) ||
-    c.vibhag?.toLowerCase().includes(search.toLowerCase())
-  );
+  // Identify which header contains the card link so we can hide it from text columns
+  const linkHeaderMatch = tableHeaders.find(h => {
+    const norm = h.toLowerCase().replace(/\s+/g,'');
+    return norm === 'cardlink' || norm === 'drivelink' || norm === 'cardurl';
+  });
+  
+  const displayHeaders = tableHeaders.filter(h => h !== linkHeaderMatch);
+
+  const filtered = allCards.filter(c => {
+    if (!search) return true;
+    const searchLower = search.toLowerCase();
+    // Search across all dynamic fields
+    return displayHeaders.some(h => c[h]?.toString().toLowerCase().includes(searchLower));
+  });
 
   return (
     <>
@@ -195,7 +204,7 @@ function AdminCardTable({ allCards }) {
           <h3>📋 All Election Cards Registry</h3>
           <input
             type="text"
-            placeholder="🔍 Search name, ID, or zone..."
+            placeholder="🔍 Search registry..."
             value={search}
             onChange={e => setSearch(e.target.value)}
             className="ec-search"
@@ -206,33 +215,35 @@ function AdminCardTable({ allCards }) {
             <thead>
               <tr>
                 <th>#</th>
-                <th>Name</th>
-                <th>Membership No</th>
-                <th>Vibhag</th>
-                <th>Mobile</th>
-                <th>Year</th>
-                <th>Status</th>
+                {displayHeaders.map(header => (
+                  <th key={header}>{header}</th>
+                ))}
                 <th>Action</th>
               </tr>
             </thead>
             <tbody>
               {filtered.length === 0 ? (
-                <tr><td colSpan={8} className="ec-empty-row">No records found</td></tr>
+                <tr><td colSpan={displayHeaders.length + 2} className="ec-empty-row">No records found</td></tr>
               ) : filtered.map((card, i) => (
-                <tr key={i} className={card.cardLink ? '' : 'ec-row-no-card'}>
+                <tr key={i} className={card._cardLink ? '' : 'ec-row-no-card'}>
                   <td>{i + 1}</td>
-                  <td className="ec-td-name">{card.name}</td>
-                  <td><span className="ec-id-pill-sm">{card.membershipNo}</span></td>
-                  <td>{card.vibhag}</td>
-                  <td>{card.mobile}</td>
-                  <td>{card.year}</td>
+                  {displayHeaders.map(header => (
+                    <td key={header}>
+                      {header.toLowerCase().includes('status') ? (
+                        <span className={`ec-status-badge ${card[header] === 'Active' ? 'active' : 'inactive'}`}>
+                          {card[header] || 'Pending'}
+                        </span>
+                      ) : header.toLowerCase().includes('membership') || header.toLowerCase() === 'id' ? (
+                        <span className="ec-id-pill-sm">{card[header]}</span>
+                      ) : (
+                        <span className={header.toLowerCase().includes('name') ? 'ec-td-name' : ''}>
+                          {card[header]}
+                        </span>
+                      )}
+                    </td>
+                  ))}
                   <td>
-                    <span className={`ec-status-badge ${card.status === 'Active' ? 'active' : 'inactive'}`}>
-                      {card.status || 'Pending'}
-                    </span>
-                  </td>
-                  <td>
-                    {card.cardLink ? (
+                    {card._cardLink ? (
                       <button className="ec-view-btn-sm" onClick={() => setViewCard(card)}>
                         👁 View
                       </button>
@@ -260,6 +271,7 @@ export default function ElectionCard() {
   const canManage = isAdmin || isSuperAdmin;
 
   const [allCards, setAllCards] = useState([]);
+  const [tableHeaders, setTableHeaders] = useState([]);
   const [fetchState, setFetchState] = useState('loading'); // 'loading' | 'done' | 'error' | 'no-config'
   const [membershipNo, setMembershipNo] = useState('');
   const [profileLoading, setProfileLoading] = useState(true);
@@ -319,21 +331,27 @@ export default function ElectionCard() {
       const res = await fetch(`${configUrl}&cachebust=${Date.now()}`);
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const csv = await res.text();
-      const rows = parseCSV(csv);
-      // Normalize column headers (case-insensitive mapping)
-      const normalized = rows.map(row => {
+      const parsed = parseCSV(csv);
+      
+      // Save original headers for dynamic table rendering
+      setTableHeaders(parsed.headers);
+
+      // Normalize column headers for internal logic while preserving original data
+      const normalized = parsed.rows.map(row => {
         const k = key => Object.entries(row).find(([h]) => h.toLowerCase().replace(/\s+/g,'') === key)?.[1] || '';
         return {
-          name:         k('fullname') || k('name'),
-          membershipNo: k('membershipno') || k('membershipnumber') || k('id'),
-          vibhag:       k('vibhag') || k('zone') || k('area'),
-          mobile:       k('mobile') || k('phone') || k('contact'),
-          year:         k('year'),
-          fileName:     k('filename') || k('cardfilename'),
-          cardLink:     k('cardlink') || k('drivelink') || k('cardurl'),
-          status:       k('status') || 'Active',
+          ...row, // Preserve all original dynamic columns
+          _name:         k('fullname') || k('name') || row[parsed.headers[0]], // Fallback to first col
+          _membershipNo: k('membershipno') || k('membershipnumber') || k('id'),
+          _vibhag:       k('vibhag') || k('zone') || k('area'),
+          _mobile:       k('mobile') || k('phone') || k('contact'),
+          _year:         k('year'),
+          _fileName:     k('filename') || k('cardfilename'),
+          _cardLink:     k('cardlink') || k('drivelink') || k('cardurl') || k('link'),
+          _status:       k('status') || 'Active',
         };
-      }).filter(r => r.name || r.membershipNo);
+      }).filter(r => r._name || r._membershipNo || r[parsed.headers[0]]); // Filter empty rows
+      
       setAllCards(normalized);
       setFetchState('done');
     } catch (e) {
@@ -471,7 +489,7 @@ export default function ElectionCard() {
 
       {/* ── ADMIN VIEW — Full Table ────────────────────────────────────────── */}
       {canManage && fetchState === 'done' && (
-        <AdminCardTable allCards={allCards} />
+        <AdminCardTable allCards={allCards} tableHeaders={tableHeaders} />
       )}
 
       {/* ── ELECTION NEWS FEED (SectionPage) ──────────────────────────────── */}
