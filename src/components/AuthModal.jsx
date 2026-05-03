@@ -212,28 +212,42 @@ const AuthModal = ({ onClose, initialView = 'login' }) => {
     setLoading(true);
     setError('');
     
-    // Check if identifier is phone or email
     const isEmail = identifier.includes('@');
     
     try {
-      if (isEmail) {
-        await resetPasswordByEmail(identifier);
-        setSuccessMsg('Reset link sent to your email!');
-        setView('success');
-      } else {
-        // Phone Reset Path - Step 1: Send OTP
+      let resetEmail = identifier;
+      
+      // If user entered a mobile number, we MUST use their real email to send the reset link.
+      // Firebase client SDK cannot reset a mapped virtual-email account via SMS OTP without a Cloud Function.
+      if (!isEmail) {
         const formattedPhone = identifier.startsWith('+') ? identifier : `+91${identifier}`;
-        console.log("📱 Sending RESET OTP to:", formattedPhone);
-
-        const appVerifier = window.recaptchaVerifier;
-        const confirmation = await loginWithPhone(formattedPhone, appVerifier);
-        setConfirmationResult(confirmation);
-        console.log("✅ RESET OTP successfully triggered!");
-
-        setView('otp-verify');
+        const mappingDoc = await getDoc(doc(db, 'user_mappings', formattedPhone));
+        
+        if (!mappingDoc.exists()) {
+          throw new Error('No account found with this mobile number.');
+        }
+        
+        const mappingData = mappingDoc.data();
+        if (mappingData.realEmail) {
+          resetEmail = mappingData.realEmail;
+        } else {
+          throw new Error('No email address is linked to this mobile number. Please contact the administrator to reset your password.');
+        }
       }
+
+      await resetPasswordByEmail(resetEmail);
+      
+      if (!isEmail) {
+        // Mask the email for privacy (e.g., pr***@gmail.com)
+        const maskedEmail = resetEmail.replace(/(.{2})(.*)(?=@)/, "$1***");
+        setSuccessMsg(`Reset link sent to your registered email (${maskedEmail})`);
+      } else {
+        setSuccessMsg('Reset link sent to your email!');
+      }
+      
+      setView('success');
     } catch (err) {
-      console.error("❌ Reset SMS Error:", err);
+      console.error("❌ Reset Error:", err);
       setError(err.message.replace('Firebase: ', ''));
     } finally {
       setLoading(false);
