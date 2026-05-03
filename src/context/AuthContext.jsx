@@ -132,7 +132,7 @@ export const AuthProvider = ({ children }) => {
     return signInWithEmailAndPassword(auth, email, password);
   };
 
-  const unifiedRegister = async (email, phone, password, profileData = {}) => {
+  const unifiedRegister = async (email, phone, password, profileData = {}, membershipNo = '') => {
     // 1. Check if phone already exists
     const formattedPhone = phone.startsWith('+') ? phone : `+91${phone}`;
     const mappingDoc = await getDoc(doc(db, 'user_mappings', formattedPhone));
@@ -163,6 +163,7 @@ export const AuthProvider = ({ children }) => {
         email: email || null,
         virtualEmail: finalEmail,
         status: 'pending',
+        membershipNo: membershipNo,
         registeredAt: new Date().toISOString(),
         profile: profileData // Dynamic fields from the registration form builder
       });

@@ -7,17 +7,18 @@ import './AuthModal.css';
 
 const AuthModal = ({ onClose, initialView = 'login' }) => {
   const { 
+    isSamajAdmin, 
+    isEduAdmin,
+    userStatus,
+    logout, 
+    setupRecaptcha, 
+    checkPhoneRegistered, 
     unifiedLogin, 
     unifiedRegister, 
-    loginWithPhone, 
-    checkPhoneRegistered,
-    setupRecaptcha, 
-    changeMobileNumber,
     resetPasswordByEmail, 
     updateUserPassword,
-    currentUser,
-    forceAdmin,
-    logout
+    changeMobileNumber,
+    currentUser
   } = useAuth();
   
   // Views: 'login', 'register', 'forgot', 'otp-verify', 'new-password', 'success', 'profile', 'change-phone'
@@ -162,6 +163,9 @@ const AuthModal = ({ onClose, initialView = 'login' }) => {
 
   const handleRegister = async (e) => {
     e.preventDefault();
+    if (!userMembershipNo.trim()) {
+      return setError('Please enter your Membership Number.');
+    }
     // Validate Dynamic Fields
     for (const field of formSchema) {
       if (field.required) {
@@ -267,8 +271,8 @@ const AuthModal = ({ onClose, initialView = 'login' }) => {
     setError('');
     
     try {
-      console.log("🚀 FINALIZING REGISTRATION:", { email, phone, profile: profileData });
-      await unifiedRegister(email, phone, password, profileData);
+      console.log("🚀 FINALIZING REGISTRATION:", { email, phone, profile: profileData, membershipNo: userMembershipNo });
+      await unifiedRegister(email, phone, password, profileData, userMembershipNo);
       setSuccessMsg('✅ Registration successful! Your account is now pending approval by a Senior Admin.');
       setView('success');
       setTimeout(onClose, 4000);
@@ -280,7 +284,7 @@ const AuthModal = ({ onClose, initialView = 'login' }) => {
 
   const finalizeRegistration = async () => {
     try {
-      await unifiedRegister(email, phone, password, profileData);
+      await unifiedRegister(email, phone, password, profileData, userMembershipNo);
       setSuccessMsg('✅ Registration successful! Your account is now pending approval by a Senior Admin.');
       setView('success');
       setTimeout(onClose, 4000);
@@ -457,6 +461,17 @@ const AuthModal = ({ onClose, initialView = 'login' }) => {
               />
             </div>
 
+            <div className="form-group">
+              <label>Membership Number <span style={{color: 'red'}}>*</span></label>
+              <input 
+                type="text" 
+                value={userMembershipNo} 
+                onChange={(e) => setUserMembershipNo(e.target.value)} 
+                required 
+                placeholder="e.g. MMP-1042"
+              />
+            </div>
+
             <DynamicForm 
               schema={formSchema}
               data={profileData}
@@ -622,12 +637,14 @@ const AuthModal = ({ onClose, initialView = 'login' }) => {
                       ) : (
                         <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
                           <span>{userMembershipNo || <span style={{opacity:0.5, fontStyle:'italic'}}>Not Set</span>}</span>
-                          <button 
-                            onClick={() => setIsEditingMembership(true)}
-                            style={{ background: 'none', border: 'none', color: '#3b82f6', cursor: 'pointer', fontSize: '12px', fontWeight: 'bold', textDecoration: 'underline' }}
-                          >
-                            Edit
-                          </button>
+                          {userStatus !== 'approved' && (
+                            <button 
+                              onClick={() => setIsEditingMembership(true)}
+                              style={{ background: 'none', border: 'none', color: '#3b82f6', cursor: 'pointer', fontSize: '12px', fontWeight: 'bold', textDecoration: 'underline' }}
+                            >
+                              Edit
+                            </button>
+                          )}
                         </div>
                       )}
                     </span>
