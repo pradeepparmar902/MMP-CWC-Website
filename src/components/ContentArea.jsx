@@ -48,12 +48,6 @@ export default function ContentArea({ activeSection, assets = [], language }) {
           bilingual={true}
           adminRoles={['isSuperAdmin']}
         />
-      ) : activeSection === 'election' ? (
-        <SectionPage
-          collectionName="election_posts"
-          bilingual={true}
-          adminRoles={['isSuperAdmin']}
-        />
       ) : sectionAssets.length > 0 ? (
         <div className="content-assets-grid">
           {sectionAssets.map(asset => (

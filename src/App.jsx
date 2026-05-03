@@ -9,6 +9,7 @@ import AdminPanel from './components/AdminPanel';
 import SuperAdminPanel from './components/SuperAdminPanel';
 import EduVerify from './components/EduVerify';
 import Education from './components/Education';
+import ElectionCard from './components/ElectionCard';
 import { useAuth } from './context/AuthContext';
 import AuthModal from './components/AuthModal';
 import AccessWall from './components/AccessWall';
@@ -292,6 +293,21 @@ function App() {
               <AccessWall type="rejected" sectionLabel="Education" />
             ) : (
               <Education />
+            )
+          ) : activeSection === 'election' ? (
+            /* ELECTION CARD: Login required */
+            !currentUser ? (
+              <AccessWall
+                type="login"
+                sectionLabel="Election Card"
+                onLoginClick={() => setShowAuthModal(true)}
+              />
+            ) : userStatus === 'pending' ? (
+              <AccessWall type="pending" sectionLabel="Election Card" />
+            ) : userStatus === 'rejected' ? (
+              <AccessWall type="rejected" sectionLabel="Election Card" />
+            ) : (
+              <ElectionCard />
             )
           ) : activeSection === 'edu_verify' ? (
             /* EDU VERIFY: Only for staff */

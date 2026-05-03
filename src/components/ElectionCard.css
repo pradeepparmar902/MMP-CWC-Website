@@ -1,0 +1,545 @@
+/* ═══════════════════════════════════════════════════════
+   ElectionCard.css — Election Card Page Styles
+═══════════════════════════════════════════════════════ */
+
+.ec-page {
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: 0 0 60px;
+}
+
+/* ── Page Header ─────────────────────────────────────── */
+.ec-page-header {
+  background: linear-gradient(135deg, #1e3a8a 0%, #3b82f6 100%);
+  border-radius: 0 0 24px 24px;
+  padding: 28px 28px 24px;
+  margin-bottom: 24px;
+  color: white;
+}
+
+.ec-page-title-row {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.ec-page-icon {
+  font-size: 2.8rem;
+  line-height: 1;
+}
+
+.ec-page-title {
+  font-size: 1.8rem;
+  font-weight: 800;
+  margin: 0 0 2px;
+  letter-spacing: -0.5px;
+}
+
+.ec-page-subtitle {
+  font-size: 0.85rem;
+  opacity: 0.85;
+  margin: 0;
+}
+
+/* ── Status Banners ──────────────────────────────────── */
+.ec-setup-banner,
+.ec-error-banner {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+  margin: 0 16px 20px;
+  padding: 16px 20px;
+  border-radius: 14px;
+  font-size: 0.9rem;
+}
+
+.ec-setup-banner {
+  background: #fffbeb;
+  border: 1px solid #fde68a;
+  color: #92400e;
+}
+
+.ec-error-banner {
+  background: #fef2f2;
+  border: 1px solid #fecaca;
+  color: #991b1b;
+}
+
+.ec-setup-banner span,
+.ec-error-banner span {
+  font-size: 1.4rem;
+  flex-shrink: 0;
+}
+
+.ec-setup-banner strong,
+.ec-error-banner strong {
+  display: block;
+  font-weight: 700;
+  margin-bottom: 4px;
+}
+
+.ec-setup-banner p,
+.ec-error-banner p {
+  margin: 0;
+  opacity: 0.85;
+}
+
+.ec-setup-banner code {
+  background: rgba(0,0,0,0.08);
+  padding: 1px 5px;
+  border-radius: 4px;
+  font-family: monospace;
+  font-size: 0.82em;
+}
+
+.ec-retry-btn {
+  margin-left: auto;
+  flex-shrink: 0;
+  padding: 8px 16px;
+  background: #dc2626;
+  color: white;
+  border: none;
+  border-radius: 8px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+/* ── Loading ─────────────────────────────────────────── */
+.ec-loading {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  padding: 48px 0;
+  color: #94a3b8;
+}
+
+.ec-spinner {
+  width: 36px;
+  height: 36px;
+  border: 3px solid #e2e8f0;
+  border-top-color: #3b82f6;
+  border-radius: 50%;
+  animation: ec-spin 0.8s linear infinite;
+}
+
+@keyframes ec-spin { to { transform: rotate(360deg); } }
+
+/* ── My Election Card (Member View) ─────────────────── */
+.ec-my-card {
+  margin: 0 16px 24px;
+  border-radius: 20px;
+  overflow: hidden;
+}
+
+.ec-my-card.ec-no-membership,
+.ec-my-card.ec-not-found {
+  background: #f8fafc;
+  border: 2px dashed #cbd5e1;
+  padding: 40px 24px;
+  text-align: center;
+}
+
+.ec-big-icon {
+  font-size: 3rem;
+  display: block;
+  margin-bottom: 12px;
+}
+
+.ec-no-membership h3,
+.ec-not-found h3 {
+  font-size: 1.2rem;
+  font-weight: 700;
+  color: #334155;
+  margin: 0 0 8px;
+}
+
+.ec-no-membership p,
+.ec-not-found p {
+  color: #64748b;
+  margin: 0 0 4px;
+  font-size: 0.9rem;
+}
+
+.ec-hint { font-size: 0.8rem !important; color: #94a3b8 !important; }
+
+.ec-my-card.ec-found {
+  background: linear-gradient(135deg, #1e3a8a 0%, #2563eb 60%, #3b82f6 100%);
+  color: white;
+  display: flex;
+  align-items: stretch;
+  gap: 0;
+  box-shadow: 0 12px 32px rgba(37, 99, 235, 0.4);
+}
+
+.ec-card-visual {
+  width: 120px;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0,0,0,0.15);
+  padding: 24px 16px;
+  gap: 12px;
+}
+
+.ec-card-logo {
+  font-size: 3rem;
+}
+
+.ec-card-badge {
+  font-size: 0.7rem;
+  font-weight: 700;
+  background: rgba(255,255,255,0.2);
+  padding: 4px 10px;
+  border-radius: 20px;
+  text-align: center;
+}
+
+.ec-card-details {
+  flex: 1;
+  padding: 24px 20px;
+}
+
+.ec-card-name {
+  font-size: 1.4rem;
+  font-weight: 800;
+  margin: 0 0 16px;
+  letter-spacing: -0.3px;
+}
+
+.ec-detail-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px 20px;
+  margin-bottom: 20px;
+}
+
+.ec-detail-item {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.ec-detail-label {
+  font-size: 0.68rem;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  opacity: 0.7;
+}
+
+.ec-detail-value {
+  font-size: 0.92rem;
+  font-weight: 600;
+}
+
+.ec-id-pill {
+  background: rgba(255,255,255,0.2);
+  padding: 2px 10px;
+  border-radius: 20px;
+  font-family: monospace;
+  letter-spacing: 0.5px;
+  display: inline-block;
+}
+
+.ec-view-btn {
+  background: white;
+  color: #1e3a8a;
+  border: none;
+  padding: 10px 22px;
+  border-radius: 10px;
+  font-weight: 700;
+  font-size: 0.9rem;
+  cursor: pointer;
+  transition: transform 0.15s, box-shadow 0.15s;
+}
+
+.ec-view-btn:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 16px rgba(0,0,0,0.2);
+}
+
+/* ── Admin Table ─────────────────────────────────────── */
+.ec-admin-table-section {
+  margin: 0 16px 24px;
+  background: white;
+  border-radius: 16px;
+  border: 1px solid #e2e8f0;
+  overflow: hidden;
+  box-shadow: 0 2px 12px rgba(0,0,0,0.06);
+}
+
+.ec-admin-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 20px;
+  border-bottom: 1px solid #f1f5f9;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.ec-admin-header h3 {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 700;
+  color: #1e293b;
+}
+
+.ec-search {
+  padding: 8px 14px;
+  border: 1.5px solid #e2e8f0;
+  border-radius: 10px;
+  font-size: 0.875rem;
+  outline: none;
+  width: 240px;
+  transition: border-color 0.2s;
+}
+
+.ec-search:focus { border-color: #3b82f6; }
+
+.ec-table-wrap {
+  overflow-x: auto;
+}
+
+.ec-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.875rem;
+}
+
+.ec-table th {
+  background: #f8fafc;
+  color: #64748b;
+  font-weight: 600;
+  font-size: 0.78rem;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  padding: 10px 14px;
+  text-align: left;
+  border-bottom: 1px solid #e2e8f0;
+  white-space: nowrap;
+}
+
+.ec-table td {
+  padding: 10px 14px;
+  border-bottom: 1px solid #f1f5f9;
+  color: #334155;
+  vertical-align: middle;
+}
+
+.ec-table tr:last-child td { border-bottom: none; }
+.ec-table tr:hover td { background: #f8fafc; }
+.ec-row-no-card td { opacity: 0.6; }
+
+.ec-td-name { font-weight: 600; color: #1e293b; }
+
+.ec-id-pill-sm {
+  background: #eff6ff;
+  color: #1d4ed8;
+  padding: 2px 8px;
+  border-radius: 20px;
+  font-family: monospace;
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+
+.ec-status-badge {
+  padding: 3px 10px;
+  border-radius: 20px;
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+
+.ec-status-badge.active {
+  background: #dcfce7;
+  color: #166534;
+}
+
+.ec-status-badge.inactive {
+  background: #fef3c7;
+  color: #92400e;
+}
+
+.ec-view-btn-sm {
+  padding: 6px 12px;
+  background: #3b82f6;
+  color: white;
+  border: none;
+  border-radius: 7px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.ec-view-btn-sm:hover { background: #2563eb; }
+
+.ec-no-file {
+  color: #94a3b8;
+  font-size: 0.8rem;
+  font-style: italic;
+}
+
+.ec-empty-row {
+  text-align: center;
+  padding: 32px !important;
+  color: #94a3b8;
+}
+
+.ec-table-count {
+  text-align: right;
+  padding: 8px 16px;
+  color: #94a3b8;
+  font-size: 0.78rem;
+  margin: 0;
+  border-top: 1px solid #f1f5f9;
+}
+
+/* ── Card Viewer Modal ───────────────────────────────── */
+.ec-viewer-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.82);
+  z-index: 9000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  backdrop-filter: blur(4px);
+}
+
+.ec-viewer-modal {
+  background: white;
+  border-radius: 20px;
+  width: 100%;
+  max-width: 780px;
+  max-height: 90vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  box-shadow: 0 30px 80px rgba(0,0,0,0.5);
+}
+
+.ec-viewer-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 20px;
+  border-bottom: 1px solid #f1f5f9;
+  background: #f8fafc;
+  gap: 12px;
+}
+
+.ec-viewer-info h3 {
+  margin: 0 0 2px;
+  font-size: 1rem;
+  font-weight: 700;
+  color: #1e293b;
+}
+
+.ec-viewer-meta {
+  font-size: 0.8rem;
+  color: #64748b;
+}
+
+.ec-viewer-close {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  border: none;
+  background: #e2e8f0;
+  color: #475569;
+  font-size: 1rem;
+  cursor: pointer;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.15s;
+}
+
+.ec-viewer-close:hover { background: #cbd5e1; }
+
+.ec-viewer-body {
+  flex: 1;
+  overflow: hidden;
+  background: #1e293b;
+}
+
+.ec-viewer-iframe {
+  width: 100%;
+  height: 65vh;
+  border: none;
+  display: block;
+}
+
+.ec-viewer-image {
+  max-width: 100%;
+  max-height: 65vh;
+  display: block;
+  margin: 0 auto;
+  object-fit: contain;
+}
+
+.ec-no-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 300px;
+  color: #94a3b8;
+  gap: 10px;
+}
+
+.ec-no-card span { font-size: 3rem; }
+
+.ec-open-btn {
+  padding: 10px 20px;
+  background: #3b82f6;
+  color: white;
+  text-decoration: none;
+  border-radius: 10px;
+  font-weight: 600;
+}
+
+.ec-viewer-footer {
+  padding: 12px 20px;
+  border-top: 1px solid #f1f5f9;
+  display: flex;
+  justify-content: flex-end;
+}
+
+.ec-open-drive-btn {
+  padding: 8px 16px;
+  background: #f1f5f9;
+  color: #1e3a8a;
+  text-decoration: none;
+  border-radius: 8px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  transition: background 0.15s;
+}
+
+.ec-open-drive-btn:hover { background: #e2e8f0; }
+
+/* ── News Section Divider ────────────────────────────── */
+.ec-news-section {
+  margin-top: 32px;
+  border-top: 2px solid #f1f5f9;
+  padding-top: 8px;
+}
+
+/* ── Mobile Responsive ───────────────────────────────── */
+@media (max-width: 600px) {
+  .ec-page-header { padding: 20px 16px 16px; }
+  .ec-page-title { font-size: 1.3rem; }
+  .ec-my-card.ec-found { flex-direction: column; }
+  .ec-card-visual { width: 100%; flex-direction: row; padding: 16px; }
+  .ec-detail-grid { grid-template-columns: 1fr 1fr; }
+  .ec-admin-header { flex-direction: column; align-items: flex-start; }
+  .ec-search { width: 100%; }
+  .ec-table { font-size: 0.78rem; }
+  .ec-table th, .ec-table td { padding: 8px 10px; }
+}

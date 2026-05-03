@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
-import { doc, getDoc } from 'firebase/firestore';
+import { doc, getDoc, setDoc } from 'firebase/firestore';
 import { db } from '../firebase';
 import DynamicForm from './common/DynamicForm';
 import './AuthModal.css';
@@ -44,6 +44,61 @@ const AuthModal = ({ onClose, initialView = 'login' }) => {
   const [formSchema, setFormSchema] = useState([]);
   const [profileData, setProfileData] = useState({});
   const [isSchemaLoading, setIsSchemaLoading] = useState(false);
+
+  // Profile fields specific
+  const [userMembershipNo, setUserMembershipNo] = useState('');
+  const [isEditingMembership, setIsEditingMembership] = useState(false);
+  
+  // Load membership on profile view
+  useEffect(() => {
+    if (view === 'profile' && currentUser) {
+      const loadProfileData = async () => {
+        try {
+          const adminDoc = await getDoc(doc(db, 'admins', currentUser.uid));
+          if (adminDoc.exists() && adminDoc.data().membershipNo) {
+            setUserMembershipNo(adminDoc.data().membershipNo);
+            return;
+          }
+          const pendingDoc = await getDoc(doc(db, 'pending_users', currentUser.uid));
+          if (pendingDoc.exists()) {
+            const data = pendingDoc.data();
+            setUserMembershipNo(data.membershipNo || data.profile?.membershipNo || '');
+          }
+        } catch (e) {
+          console.error('Error loading membership no:', e);
+        }
+      };
+      loadProfileData();
+    }
+  }, [view, currentUser]);
+
+  const handleSaveMembership = async () => {
+    if (!currentUser) return;
+    setLoading(true);
+    try {
+      const pendingRef = doc(db, 'pending_users', currentUser.uid);
+      const adminRef = doc(db, 'admins', currentUser.uid);
+      
+      const pendingDoc = await getDoc(pendingRef);
+      if (pendingDoc.exists()) {
+        await setDoc(pendingRef, { membershipNo: userMembershipNo }, { merge: true });
+      }
+      
+      const adminDoc = await getDoc(adminRef);
+      if (adminDoc.exists()) {
+        await setDoc(adminRef, { membershipNo: userMembershipNo }, { merge: true });
+      }
+      
+      setIsEditingMembership(false);
+      setSuccessMsg('Membership number updated successfully');
+      setTimeout(() => setSuccessMsg(''), 3000);
+    } catch (e) {
+      console.error('Error saving membership:', e);
+      setError('Failed to update membership number');
+    } finally {
+      setLoading(false);
+    }
+  };
 
   useEffect(() => {
     // 1. Fetch Dynamic Form Schema
@@ -529,6 +584,47 @@ const AuthModal = ({ onClose, initialView = 'login' }) => {
                  <div className="profile-info-row">
                     <span className="info-label">Account UID</span>
                     <span className="info-value" style={{fontSize:'10px', opacity: 0.6}}>{currentUser?.uid}</span>
+                 </div>
+                 <div className="profile-info-row">
+                    <span className="info-label">Membership Number</span>
+                    <span className="info-value">
+                      {isEditingMembership ? (
+                        <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                          <input 
+                            type="text" 
+                            value={userMembershipNo} 
+                            onChange={(e) => setUserMembershipNo(e.target.value)}
+                            placeholder="e.g. MMP-1042"
+                            style={{ padding: '4px 8px', borderRadius: '4px', border: '1px solid #cbd5e1', fontSize: '14px', width: '120px' }}
+                            disabled={loading}
+                          />
+                          <button 
+                            onClick={handleSaveMembership} 
+                            disabled={loading}
+                            style={{ background: '#22c55e', color: 'white', border: 'none', padding: '4px 8px', borderRadius: '4px', cursor: 'pointer', fontSize: '12px', fontWeight: 'bold' }}
+                          >
+                            Save
+                          </button>
+                          <button 
+                            onClick={() => setIsEditingMembership(false)} 
+                            disabled={loading}
+                            style={{ background: '#ef4444', color: 'white', border: 'none', padding: '4px 8px', borderRadius: '4px', cursor: 'pointer', fontSize: '12px', fontWeight: 'bold' }}
+                          >
+                            Cancel
+                          </button>
+                        </div>
+                      ) : (
+                        <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
+                          <span>{userMembershipNo || <span style={{opacity:0.5, fontStyle:'italic'}}>Not Set</span>}</span>
+                          <button 
+                            onClick={() => setIsEditingMembership(true)}
+                            style={{ background: 'none', border: 'none', color: '#3b82f6', cursor: 'pointer', fontSize: '12px', fontWeight: 'bold', textDecoration: 'underline' }}
+                          >
+                            Edit
+                          </button>
+                        </div>
+                      )}
+                    </span>
                  </div>
               </div>
               
