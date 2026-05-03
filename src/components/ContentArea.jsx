@@ -1,5 +1,6 @@
 import { getDirectUrl, getOpenUrl } from '../utils/assetUtils';
 import SamajJogSandesh from './SamajJogSandesh';
+import Education from './Education';
 import './ContentArea.css';
 
 const SECTION_MAP = {
@@ -24,11 +25,16 @@ export default function ContentArea({ activeSection, assets = [], language }) {
     : [];
 
   return (
-    <section className={`content-area ${activeSection !== 'samaj' ? 'container' : 'panorama-view'} fade-in`} key={activeSection}>
+    <section 
+      className={`content-area ${ (activeSection !== 'samaj' && activeSection !== 'education') ? 'container' : 'panorama-view'} fade-in`} 
+      key={activeSection}
+    >
       <h3 className="section-title">{title}</h3>
 
       {activeSection === 'samaj' ? (
         <SamajJogSandesh lang={language} />
+      ) : activeSection === 'education' ? (
+        <Education />
       ) : sectionAssets.length > 0 ? (
         <div className="content-assets-grid">
           {sectionAssets.map(asset => (

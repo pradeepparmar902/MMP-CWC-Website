@@ -9,6 +9,29 @@
   align-items: center;
   margin-bottom: 3rem;
   border: 1px solid var(--clr-border);
+  transition: all 0.3s ease;
+}
+
+/* 🚀 FULL WIDTH MODE (Used for Education & Samaj) */
+.content-area.panorama-view {
+  width: 100% !important;
+  max-width: none !important;
+  padding: 0 !important;
+  border-radius: 0 !important;
+  border: none !important;
+  box-shadow: none !important;
+  background: transparent !important;
+  margin: 0 !important;
+  align-items: stretch !important; /* Force children to fill width */
+}
+
+.content-area.panorama-view .section-title {
+  padding-left: 2.5%;
+  padding-right: 2.5%;
+  background: white;
+  margin-top: 0;
+  margin-bottom: 0;
+  border-bottom: 1px solid #e2e8f0;
 }
 
 .section-title {

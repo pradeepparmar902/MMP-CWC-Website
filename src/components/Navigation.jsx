@@ -16,8 +16,8 @@ export default function Navigation({ activeSection, setActiveSection, navItems, 
   // Only show visible items, and strictly hide 'admin' for non-staff users
   const allVisibleItems = (navItems || []).filter(item => {
     if (!item.visible) return false;
-    // Special rule: Only show 'Admin' tab to verified staff
-    if (item.id === 'admin') return isAdmin || isSuperAdmin;
+    // Special rule: Only show 'Admin' and 'Verify' tabs to verified staff
+    if (['admin', 'edu_verify'].includes(item.id)) return isAdmin || isSuperAdmin;
     return true;
   });
 

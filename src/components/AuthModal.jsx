@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { doc, getDoc } from 'firebase/firestore';
 import { db } from '../firebase';
-import { compressImage } from '../utils/imageUtils';
+import DynamicForm from './common/DynamicForm';
 import './AuthModal.css';
 
 const AuthModal = ({ onClose, initialView = 'login' }) => {
@@ -348,7 +348,7 @@ const AuthModal = ({ onClose, initialView = 'login' }) => {
 
         {/* REGISTER VIEW */}
         {view === 'register' && (
-          <form className="auth-form" onSubmit={handleRegister}>
+          <div className="auth-form">
             <div className="form-group">
               <label>Mobile Number (+91)</label>
               <input 
@@ -360,162 +360,19 @@ const AuthModal = ({ onClose, initialView = 'login' }) => {
               />
             </div>
 
-            {/* DYNAMIC PROFILE FIELDS */}
-            {isSchemaLoading ? (
-               <div style={{textAlign:'center', padding:'10px', color:'#94a3b8', fontSize:'12px'}}>Loading registration details...</div>
-            ) : (
-              <>
-                {/* TOP PROFILE PHOTO SECTION */}
-                {formSchema.filter(f => f.type === 'file').map(field => (
-                  <div key={field.id} className="top-center-photo-container reg-photo-section">
-                    <label className="top-photo-label">{field.label} {field.required && <span style={{color:'#ef4444'}}>*</span>}</label>
-                    <div className="photo-upload-wrapper">
-                      <input 
-                        type="file" 
-                        accept="image/*"
-                        id={`reg-file-${field.id}`}
-                        style={{display:'none'}}
-                        onChange={(e) => {
-                          const file = e.target.files[0];
-                          if (!file) return;
-                          const reader = new FileReader();
-                          reader.onloadend = async () => {
-                            const compressed = await compressImage(reader.result);
-                            setProfileData({ ...profileData, [field.id]: compressed });
-                          };
-                          reader.readAsDataURL(file);
-                        }}
-                        required={field.required}
-                      />
-                      {!profileData[field.id] ? (
-                        <div className="mock-file-input top-center-uploader" onClick={() => document.getElementById(`reg-file-${field.id}`).click()}>
-                          <span>📷 Click to Upload Photo</span>
-                        </div>
-                      ) : (
-                        <div className="preview-image-centered-container">
-                          <img src={profileData[field.id]} alt="Profile Photo" className="preview-uploaded-img" />
-                          <button type="button" className="change-preview-img-btn" onClick={() => document.getElementById(`reg-file-${field.id}`).click()}>Change Photo</button>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                ))}
-
-                {/* OTHER FIELDS SECTION */}
-                {formSchema.filter(f => f.type !== 'file').map((field) => (
-                  <div className="form-group" key={field.id}>
-                    <label>
-                      {(field.label || '').replace('Emal Address', 'Email Address')} {field.required && <span style={{color:'#ef4444'}}>*</span>}
-                    </label>
-                    
-                    {field.type === 'select' ? (
-                      <select
-                        value={profileData[field.id] || ''}
-                        onChange={(e) => setProfileData({ ...profileData, [field.id]: e.target.value })}
-                        required={field.required}
-                      >
-                        <option value="">Select option...</option>
-                        {field.options?.map(opt => <option key={opt} value={opt}>{opt}</option>)}
-                      </select>
-                    ) : field.type === 'fullname' ? (
-                      <div className="fullname-group" style={{display:'flex', flexDirection:'column', gap:'10px'}}>
-                        <input 
-                          type="text"
-                          value={profileData[field.id]?.firstName || ''}
-                          onChange={(e) => setProfileData({ 
-                            ...profileData, 
-                            [field.id]: { ...(profileData[field.id] || {}), firstName: e.target.value } 
-                          })}
-                          placeholder="First Name"
-                          required={field.required}
-                        />
-                        <input 
-                          type="text"
-                          value={profileData[field.id]?.middleName || ''}
-                          onChange={(e) => setProfileData({ 
-                            ...profileData, 
-                            [field.id]: { ...(profileData[field.id] || {}), middleName: e.target.value } 
-                          })}
-                          placeholder="Middle Name"
-                          required={field.required}
-                        />
-                        <input 
-                          type="text"
-                          value={profileData[field.id]?.lastName || ''}
-                          onChange={(e) => setProfileData({ 
-                            ...profileData, 
-                            [field.id]: { ...(profileData[field.id] || {}), lastName: e.target.value } 
-                          })}
-                          placeholder="Surname / Last Name"
-                          required={field.required}
-                        />
-                      </div>
-                    ) : field.type === 'address' ? (
-                      <textarea 
-                        value={profileData[field.id] || ''}
-                        onChange={(e) => setProfileData({ ...profileData, [field.id]: e.target.value })}
-                        required={field.required}
-                        placeholder={`Enter ${field.label}...`}
-                        style={{minHeight: '80px'}}
-                      />
-                    ) : field.type === 'email' ? (
-                      <input 
-                        type="email"
-                        value={profileData[field.id] || ''}
-                        onChange={(e) => {
-                          setProfileData({ ...profileData, [field.id]: e.target.value });
-                          // Sync with core email state for auth
-                          setEmail(e.target.value);
-                        }}
-                        required={field.required}
-                        placeholder={`Enter Email Address (e.g. name@example.com)`}
-                      />
-                    ) : field.type === 'tel_in' ? (
-                      <div className="tel-in-group" style={{display:'flex', gap:'5px', alignItems:'center'}}>
-                        <span className="tel-prefix" style={{padding:'10px', background:'#f1f5f9', border:'1px solid #cbd5e1', borderRadius:'6px', fontSize:'14px', fontWeight:'700', color:'#475569'}}>+91</span>
-                        <input 
-                          type="tel"
-                          value={profileData[field.id] || ''}
-                          onChange={(e) => {
-                            const val = e.target.value.replace(/\D/g, '').slice(0, 10);
-                            setProfileData({ ...profileData, [field.id]: val });
-                          }}
-                          required={field.required}
-                          placeholder="10-digit number"
-                          style={{flex: 1}}
-                        />
-                      </div>
-                    ) : field.type === 'number' ? (
-                      <input 
-                        type="number"
-                        value={profileData[field.id] || ''}
-                        onChange={(e) => setProfileData({ ...profileData, [field.id]: e.target.value })}
-                        required={field.required}
-                        placeholder={field.placeholder || 'Enter number'}
-                      />
-                    ) : (
-                      <input 
-                        type={field.type === 'email' ? 'email' : (field.type || 'text')}
-                        value={profileData[field.id] || ''}
-                        onChange={(e) => setProfileData({ ...profileData, [field.id]: e.target.value })}
-                        required={field.required}
-                        placeholder={field.placeholder || `Enter ${field.label}`}
-                      />
-                    )}
-                  </div>
-                ))}
-              </>
-            )}
-
-            {/* STATIC EMAIL REMOVED - Dynamic field now handles it */}
+            <DynamicForm 
+              schema={formSchema}
+              data={profileData}
+              setData={setProfileData}
+              onSubmit={handleRegister}
+              loading={loading}
+              submitText="Continue To Verification"
+            />
             
-            <button type="submit" className="auth-submit-btn" disabled={loading}>
-              {loading ? <span className="spinner"></span> : 'Continue To Verification'}
-            </button>
             <div className="auth-toggle">
               <span onClick={() => setView('login')}>Already have an account? Login</span>
             </div>
-          </form>
+          </div>
         )}
 
         {/* REGISTER PASSWORD VIEW (Option B Step 3) */}

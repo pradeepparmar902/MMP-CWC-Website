@@ -7,7 +7,5 @@ robocopy "e:\My Website\MMP Website CWC\main CWC" "D:\web_backup\Destination\mai
 cd "D:\web_backup\Destination\main CWC"
 
 # Step 3: Reinstall, Build & Sync
-npm install
-npm run build
-npx cap sync
+npm install ; npm run build ; npx cap sync
 

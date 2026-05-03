@@ -17,13 +17,18 @@ import {
 import { db } from '../firebase';
 import AdminPanel from './AdminPanel';
 import { compressImage } from '../utils/imageUtils';
+import FormBuilder from './common/FormBuilder';
+import DynamicForm from './common/DynamicForm';
 import './SuperAdminPanel.css';
 
 export default function SuperAdminPanel({ config, setConfig, syncStatus, assets, setAssets }) {
-  const { currentUser } = useAuth();
+  const { currentUser, isSuperAdmin, isEduAdmin } = useAuth();
   const isCwcSuper = currentUser?.email === 'admin@cwc.com';
   
-  const [activeTab, setActiveTab] = useState(isCwcSuper ? 'access' : 'config');
+  const [activeTab, setActiveTab] = useState(
+    isCwcSuper ? 'access' : 
+    (isEduAdmin && !isSuperAdmin) ? 'form_builder' : 'config'
+  );
   const [pendingUsers, setPendingUsers] = useState([]);
   const [approvedUsers, setApprovedUsers] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -42,6 +47,10 @@ export default function SuperAdminPanel({ config, setConfig, syncStatus, assets,
   const [draggedItemIndex, setDraggedItemIndex] = useState(null);
   const [previewData, setPreviewData] = useState({});
   const [previewErrors, setPreviewErrors] = useState([]);
+  const [eduFormSchema, setEduFormSchema] = useState([]);
+  const [eduWebhookUrl, setEduWebhookUrl] = useState('');
+  const [builderMode, setBuilderMode] = useState('registration'); // 'registration' or 'education'
+  const [isSavingEduSchema, setIsSavingEduSchema] = useState(false);
   const [expandedUser, setExpandedUser] = useState(null);
   // 🗑️ Delete Requests State
   const [deleteRequests, setDeleteRequests] = useState([]);
@@ -84,6 +93,19 @@ export default function SuperAdminPanel({ config, setConfig, syncStatus, assets,
       }
     };
     fetchSchema();
+  }, []);
+
+  // 2. Fetch Education Schema & Config
+  useEffect(() => {
+    const fetchEduConfig = async () => {
+      const docSnap = await getDoc(doc(db, 'site_settings', 'education_form_config'));
+      if (docSnap.exists()) {
+        const data = docSnap.data();
+        setEduFormSchema(data.fields || []);
+        setEduWebhookUrl(data.webhookUrl || '');
+      }
+    };
+    fetchEduConfig();
   }, []);
 
   // 1. Real-time listener for pending users
@@ -339,18 +361,24 @@ export default function SuperAdminPanel({ config, setConfig, syncStatus, assets,
               User Approvals {pendingUsers.length > 0 && <span className="notif-dot">{pendingUsers.length}</span>}
             </button>
           )}
-          <button 
-            className={`sap-tab ${activeTab === 'config' ? 'active' : ''}`}
-            onClick={() => setActiveTab('config')}
-          >
-            Website Control
-          </button>
-          {isCwcSuper && (
+          {isSuperAdmin && (
+            <button 
+              className={`sap-tab ${activeTab === 'config' ? 'active' : ''}`}
+              onClick={() => setActiveTab('config')}
+            >
+              Website Control
+            </button>
+          )}
+
+          {(isSuperAdmin || isEduAdmin) && (
             <button 
               className={`sap-tab ${activeTab === 'form_builder' ? 'active' : ''}`}
-              onClick={() => setActiveTab('form_builder')}
+              onClick={() => {
+                setActiveTab('form_builder');
+                if (isEduAdmin && !isSuperAdmin) setBuilderMode('education');
+              }}
             >
-              📋 Join Form 
+              📋 {isEduAdmin && !isSuperAdmin ? 'Education' : 'Form Builder'}
             </button>
           )}
           {isCwcSuper && (
@@ -849,189 +877,79 @@ export default function SuperAdminPanel({ config, setConfig, syncStatus, assets,
           </div>
         )}
 
-        {(activeTab === 'form_builder' && isCwcSuper) && (
+        {(activeTab === 'form_builder' && (isCwcSuper || currentUser?.role === 'edu_admin')) && (
           <div className="form-builder-view">
             <div className="view-header">
               <div style={{display:'flex', justifyContent:'space-between', alignItems:'center'}}>
                 <div>
-                  <h2>Registration Form Builder</h2>
-                  <p>Define which fields users must fill during registration. Changes reflect instantly on the signup modal.</p>
+                  <h2>{builderMode === 'registration' ? 'Registration' : 'Education'} Form Builder</h2>
+                  <p>
+                    {builderMode === 'registration' 
+                      ? 'Define which fields users must fill during registration.' 
+                      : 'Define fields for student data collection (Marks, Certificates, etc.).'}
+                  </p>
                 </div>
                 <div style={{display:'flex', gap:'10px'}}>
+                  {isCwcSuper && (
+                    <select 
+                      className="builder-mode-select"
+                      value={builderMode}
+                      onChange={(e) => setBuilderMode(e.target.value)}
+                      style={{padding:'10px', borderRadius:'8px', border:'1px solid #cbd5e1'}}
+                    >
+                      <option value="registration">Registration Form</option>
+                      <option value="education">Education Form</option>
+                    </select>
+                  )}
                   <button 
                     className="preview-form-btn"
                     onClick={() => setShowPreview(true)}
                   >
-                    👁️ View Form Preview
-                  </button>
-                  <button 
-                    className="save-schema-btn" 
-                    disabled={isSavingSchema}
-                    onClick={async () => {
-                      setIsSavingSchema(true);
-                      try {
-                        await setDoc(doc(db, 'site_settings', 'registration_form'), { fields: formSchema });
-                        alert('✅ Registration form updated successfully!');
-                      } catch(e) { alert('❌ Failed to save'); }
-                      setIsSavingSchema(false);
-                    }}
-                  >
-                    {isSavingSchema ? 'Saving...' : '💾 Save Form Layout'}
+                    👁️ Preview Form
                   </button>
                 </div>
               </div>
             </div>
 
-            <div className="schema-builder-container">
-              <div className="schema-tools">
-                <button className="add-field-btn" onClick={() => {
-                  const id = `field_${Date.now()}`;
-                  setFormSchema([...formSchema, { id, label: 'New Field', type: 'text', required: false }]);
-                }}>
-                  ➕ Add New Field
-                </button>
+            {builderMode === 'education' && (
+              <div className="webhook-settings" style={{marginBottom:'20px', padding:'15px', background:'#f8fafc', borderRadius:'12px', border:'1px solid #e2e8f0'}}>
+                <label style={{display:'block', fontSize:'13px', fontWeight:'700', marginBottom:'8px'}}>Google Sheets Webhook URL</label>
+                <input 
+                  type="text"
+                  placeholder="https://script.google.com/macros/s/.../exec"
+                  value={eduWebhookUrl}
+                  onChange={(e) => setEduWebhookUrl(e.target.value)}
+                  style={{width:'100%', padding:'10px', borderRadius:'6px', border:'1px solid #cbd5e1'}}
+                />
+                <p style={{fontSize:'11px', color:'#64748b', marginTop:'5px'}}>Data submitted by students will be sent to this Google Apps Script endpoint.</p>
               </div>
+            )}
 
-              <div className="fields-grid">
-                {formSchema.map((field, index) => (
-                  <div 
-                    key={field.id} 
-                    className={`field-card ${draggedItemIndex === index ? 'dragging' : ''}`}
-                    draggable
-                    onDragStart={() => handleDragStart(index)}
-                    onDragOver={handleDragOver}
-                    onDrop={() => handleDrop(index)}
-                  >
-                    <div className="field-card-header">
-                      <div style={{display:'flex', alignItems:'center', gap:'10px'}}>
-                        <span className="drag-handle" title="Drag to reorder">⠿</span>
-                        <span className="field-index">Field #{index + 1}</span>
-                        <div className="reorder-btns">
-                          <button 
-                            className="reorder-btn" 
-                            disabled={index === 0}
-                            onClick={() => moveField(index, -1)}
-                            title="Move Up"
-                          >
-                            🔼
-                          </button>
-                          <button 
-                            className="reorder-btn" 
-                            disabled={index === formSchema.length - 1}
-                            onClick={() => moveField(index, 1)}
-                            title="Move Down"
-                          >
-                            🔽
-                          </button>
-                        </div>
-                      </div>
-                      <button className="remove-field" onClick={() => setFormSchema(formSchema.filter(f => f.id !== field.id))}>✕</button>
-                    </div>
-                    
-                    <div className="field-inputs">
-                      <div className="f-input-group">
-                        <label>Display Label</label>
-                        <input 
-                          type="text" 
-                          value={field.label} 
-                          onChange={(e) => {
-                            const newSchema = [...formSchema];
-                            newSchema[index].label = e.target.value;
-                            setFormSchema(newSchema);
-                          }}
-                        />
-                      </div>
-
-                      <div className="f-input-group">
-                        <label>Field Type</label>
-                        <select 
-                          value={field.type} 
-                          onChange={(e) => {
-                            const newSchema = [...formSchema];
-                            newSchema[index].type = e.target.value;
-                            if (e.target.value === 'select') newSchema[index].options = ['Option 1'];
-                            setFormSchema(newSchema);
-                          }}
-                        >
-                          <option value="text">Short Text</option>
-                          <option value="email">Email Address</option>
-                          <option value="address">Address (Multi-line)</option>
-                          <option value="fullname">Structured Name (First/Mid/Last)</option>
-                          <option value="date">Date Picker</option>
-                          <option value="tel">Phone (Global)</option>
-                          <option value="tel_in">India Mobile (+91)</option>
-                          <option value="number">General Number</option>
-                          <option value="select">Dropdown List</option>
-                          <option value="file">Photo/File Upload</option>
-                        </select>
-                      </div>
-
-                      <div className="f-checkbox-group">
-                        <label>
-                          <input 
-                            type="checkbox" 
-                            checked={field.required} 
-                            onChange={(e) => {
-                              const newSchema = [...formSchema];
-                              newSchema[index].required = e.target.checked;
-                              setFormSchema(newSchema);
-                            }}
-                          />
-                          Mandatory Field
-                        </label>
-                      </div>
-                    </div>
-
-                    {field.type === 'select' && (
-                      <div className="field-options-manager">
-                        <label>Dropdown Options ({field.options?.length || 0})</label>
-                        <div className="bulk-upload-row">
-                          <input 
-                            type="file" 
-                            accept=".xlsx, .xls, .csv" 
-                            id={`excel-upload-${field.id}`}
-                            style={{display:'none'}}
-                            onChange={(e) => {
-                              const file = e.target.files[0];
-                              const reader = new FileReader();
-                              reader.onload = (evt) => {
-                                const bstr = evt.target.result;
-                                const wb = XLSX.read(bstr, { type: 'binary' });
-                                const wsname = wb.SheetNames[0];
-                                const ws = wb.Sheets[wsname];
-                                const data = XLSX.utils.sheet_to_json(ws, { header: 1 });
-                                const options = data.flat().filter(val => val !== null && val !== undefined && val !== '').map(String);
-                                
-                                const newSchema = [...formSchema];
-                                newSchema[index].options = options;
-                                setFormSchema(newSchema);
-                                alert(`✅ Imported ${options.length} options from Excel!`);
-                              };
-                              reader.readAsBinaryString(file);
-                            }}
-                          />
-                          <button 
-                            className="excel-import-btn"
-                            onClick={() => document.getElementById(`excel-upload-${field.id}`).click()}
-                          >
-                            📈 Import from Excel
-                          </button>
-                        </div>
-                        <textarea 
-                          placeholder="Enter choices (one per line)..."
-                          value={field.options?.join('\n') || ''}
-                          onChange={(e) => {
-                            const newSchema = [...formSchema];
-                            newSchema[index].options = e.target.value.split('\n').filter(s => s.trim() !== '');
-                            setFormSchema(newSchema);
-                          }}
-                        />
-                      </div>
-                    )}
-                  </div>
-                ))}
-              </div>
-            </div>
+            <FormBuilder 
+              fields={builderMode === 'registration' ? formSchema : eduFormSchema}
+              setFields={builderMode === 'registration' ? setFormSchema : setEduFormSchema}
+              isSaving={builderMode === 'registration' ? isSavingSchema : isSavingEduSchema}
+              onSave={async () => {
+                if (builderMode === 'registration') {
+                  setIsSavingSchema(true);
+                  try {
+                    await setDoc(doc(db, 'site_settings', 'registration_form'), { fields: formSchema });
+                    alert('✅ Registration form updated successfully!');
+                  } catch(e) { alert('❌ Failed to save'); }
+                  setIsSavingSchema(false);
+                } else {
+                  setIsSavingEduSchema(true);
+                  try {
+                    await setDoc(doc(db, 'site_settings', 'education_form_config'), { 
+                      fields: eduFormSchema,
+                      webhookUrl: eduWebhookUrl 
+                    });
+                    alert('✅ Education form updated successfully!');
+                  } catch(e) { alert('❌ Failed to save'); }
+                  setIsSavingEduSchema(false);
+                }
+              }}
+            />
           </div>
         )}
 
@@ -1049,172 +967,14 @@ export default function SuperAdminPanel({ config, setConfig, syncStatus, assets,
               </div>
               <div className="preview-content">
                 <p className="preview-tip">🚀 This is an interactive preview. You can test inputs!</p>
-                <div className="auth-form">
-                  <div className={`form-group ${previewErrors.includes('primary_phone') ? 'error' : ''}`}>
-                    <label>Mobile Number <span style={{color:'#ef4444'}}>*</span></label>
-                    <input 
-                      type="tel" 
-                      placeholder="9876543210" 
-                      value={previewData.primary_phone || ''}
-                      onChange={(e) => {
-                        setPreviewData({...previewData, primary_phone: e.target.value});
-                        setPreviewErrors(prev => prev.filter(id => id !== 'primary_phone'));
-                      }}
-                    />
-                  </div>
-
-                  {/* TOP CENTER PHOTO FIELDS */}
-                  {formSchema?.filter(f => f.type === 'file').map(field => (
-                    <div key={field.id} className={`top-center-photo-container ${previewErrors.includes(field.id) ? 'error' : ''}`}>
-                      <label className="top-photo-label">{field.label} {field.required && <span style={{color:'#ef4444'}}>*</span>}</label>
-                      <input 
-                        type="file" 
-                        accept="image/*"
-                        id={`preview-file-${field.id}`}
-                        style={{display:'none'}}
-                        onChange={(e) => {
-                          const file = e.target.files[0];
-                          if (file) {
-                             const reader = new FileReader();
-                             reader.onloadend = async () => {
-                               const compressed = await compressImage(reader.result);
-                               setPreviewData({...previewData, [field.id]: compressed});
-                               setPreviewErrors(prev => prev.filter(id => id !== field.id));
-                             };
-                             reader.readAsDataURL(file);
-                          }
-                        }}
-                      />
-                      {!previewData[field.id] ? (
-                        <div className="mock-file-input top-center-uploader" onClick={() => document.getElementById(`preview-file-${field.id}`).click()}>
-                          <span>📷 Click to Upload Photo</span>
-                        </div>
-                      ) : (
-                        <div className="preview-image-centered-container">
-                          <img src={previewData[field.id]} alt="Preview" className="preview-uploaded-img" />
-                          <button className="change-preview-img-btn" onClick={() => document.getElementById(`preview-file-${field.id}`).click()}>Change Photo</button>
-                        </div>
-                      )}
-                    </div>
-                  ))}
-
-                  {/* OTHER DYNAMIC FIELDS */}
-                  {formSchema?.filter(f => f.type !== 'file').map(field => (
-                    <div className={`form-group ${previewErrors.includes(field.id) ? 'error' : ''}`} key={field.id}>
-                      <label>
-                        {field.label} {field.required && <span style={{color:'#ef4444'}}>*</span>}
-                      </label>
-                      {field.type === 'select' ? (
-                        <select 
-                          value={previewData[field.id] || ''} 
-                          onChange={(e) => {
-                            setPreviewData({...previewData, [field.id]: e.target.value});
-                            setPreviewErrors(prev => prev.filter(id => id !== field.id));
-                          }}
-                        >
-                          <option value="">Select option...</option>
-                          {field.options?.map(opt => <option key={opt}>{opt}</option>)}
-                        </select>
-                      ) : field.type === 'fullname' ? (
-                        <div style={{display:'flex', flexDirection:'column', gap:'8px'}}>
-                           <input 
-                            type="text" 
-                            placeholder="First Name" 
-                            value={previewData[field.id]?.firstName || ''}
-                            onChange={(e) => {
-                               setPreviewData({...previewData, [field.id]: {...(previewData[field.id] || {}), firstName: e.target.value}});
-                               setPreviewErrors(prev => prev.filter(id => id !== field.id));
-                            }}
-                           />
-                           <input 
-                            type="text" 
-                            placeholder="Middle Name" 
-                            value={previewData[field.id]?.middleName || ''}
-                            onChange={(e) => {
-                               setPreviewData({...previewData, [field.id]: {...(previewData[field.id] || {}), middleName: e.target.value}});
-                               setPreviewErrors(prev => prev.filter(id => id !== field.id));
-                            }}
-                           />
-                           <input 
-                            type="text" 
-                            placeholder="Surname" 
-                            value={previewData[field.id]?.lastName || ''}
-                            onChange={(e) => {
-                               setPreviewData({...previewData, [field.id]: {...(previewData[field.id] || {}), lastName: e.target.value}});
-                               setPreviewErrors(prev => prev.filter(id => id !== field.id));
-                            }}
-                           />
-                        </div>
-                      ) : field.type === 'address' ? (
-                        <textarea 
-                          placeholder="Type address..." 
-                          style={{height:'80px', width:'100%', padding:'10px', borderRadius:'6px', border:'1px solid #cbd5e1'}}
-                          value={previewData[field.id] || ''}
-                          onChange={(e) => {
-                            setPreviewData({...previewData, [field.id]: e.target.value});
-                            setPreviewErrors(prev => prev.filter(id => id !== field.id));
-                          }}
-                        />
-                      ) : field.type === 'tel_in' ? (
-                        <div style={{display:'flex', gap:'5px'}}>
-                          <span style={{padding:'10px', background:'#f1f5f9', border:'1px solid #cbd5e1', borderRadius:'6px', fontWeight:'700'}}>+91</span>
-                          <input 
-                            type="tel" 
-                            placeholder="10-digit number" 
-                            style={{flex:1}} 
-                            value={previewData[field.id] || ''}
-                            onChange={(e) => {
-                              setPreviewData({...previewData, [field.id]: e.target.value.replace(/\D/g, '').slice(0, 10)});
-                              setPreviewErrors(prev => prev.filter(id => id !== field.id));
-                            }}
-                          />
-                        </div>
-                      ) : (
-                        <input 
-                          type={field.type === 'email' ? 'email' : (field.type || 'text')} 
-                          placeholder={`Enter ${field.label}`} 
-                          value={previewData[field.id] || ''}
-                          onChange={(e) => {
-                            setPreviewData({...previewData, [field.id]: e.target.value});
-                            setPreviewErrors(prev => prev.filter(id => id !== field.id));
-                          }}
-                        />
-                      )}
-                    </div>
-                  ))}
-
-                  <button className="auth-submit-btn" onClick={() => {
-                    const errors = [];
-                    // Check primary mobile
-                    if (!previewData.primary_phone) errors.push('primary_phone');
-                    
-                    formSchema.forEach(f => {
-                      if (f.required) {
-                        const val = previewData[f.id];
-                        if (!val) {
-                          errors.push(f.id);
-                        } else if (f.type === 'fullname') {
-                          if (!val.firstName || !val.lastName) errors.push(f.id);
-                        }
-                      }
-                    });
-
-                    if (errors.length > 0) {
-                      setPreviewErrors(errors);
-                      // Get labels of missing fields to help the user identify them
-                      const missingLabels = [];
-                      if (errors.includes('primary_phone')) missingLabels.push('Primary Mobile Number');
-                      formSchema.forEach(f => {
-                        if (errors.includes(f.id)) missingLabels.push(f.label);
-                      });
-                      alert(`⚠️ Missing Required Fields:\n- ${missingLabels.join('\n- ')}`);
-                    } else {
-                      alert('✅ Form Valid! Testing successful. Closing preview...');
-                      setShowPreview(false);
-                      setPreviewData({});
-                      setPreviewErrors([]);
-                    }
-                  }}>Complete Registration (Preview)</button>
+                <div style={{background:'#f8fafc', padding:'20px', borderRadius:'12px', border:'1px solid #e2e8f0'}}>
+                  <DynamicForm 
+                    schema={builderMode === 'registration' ? formSchema : eduFormSchema}
+                    data={previewData}
+                    setData={setPreviewData}
+                    onSubmit={() => alert('✅ Preview Submission Successful!')}
+                    submitText="Test Submit"
+                  />
                 </div>
               </div>
             </div>
@@ -1223,4 +983,4 @@ export default function SuperAdminPanel({ config, setConfig, syncStatus, assets,
       </div>
     </div>
   );
-};
+}

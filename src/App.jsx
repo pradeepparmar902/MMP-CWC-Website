@@ -7,6 +7,7 @@ import Navigation from './components/Navigation';
 import ContentArea from './components/ContentArea';
 import AdminPanel from './components/AdminPanel';
 import SuperAdminPanel from './components/SuperAdminPanel';
+import EduVerify from './components/EduVerify';
 import { useAuth } from './context/AuthContext';
 import AuthModal from './components/AuthModal';
 import AccessWall from './components/AccessWall';
@@ -19,6 +20,7 @@ const DEFAULT_NAV_ITEMS = [
   { id: 'meghpush', label: 'MeghPush (News)', color: '#F59E0B', visible: true, isProtected: false, icon: '📰' },
   { id: 'election', label: 'Election Card', color: '#6366F1', visible: true, isProtected: true, icon: '🆔' },
   { id: 'samaj', label: 'Samaj Jog Sandesh', color: '#8B5CF6', visible: true, isProtected: false, icon: '🤝' },
+  { id: 'edu_verify', label: 'Edu Verify', color: '#8B5CF6', visible: true, isProtected: true, icon: '📋' },
   { id: 'admin', label: 'Admin', color: '#374151', visible: true, isProtected: true, icon: '⚙️' }
 ];
 
@@ -36,7 +38,15 @@ const DEFAULT_BANNER_CONFIG = {
 };
 
 function App() {
-  const { isAdmin, isSuperAdmin, userStatus, forceAdmin, logout } = useAuth();
+  const { 
+    isAdmin, 
+    isSuperAdmin, 
+    isEduAdmin, 
+    isSamajAdmin, 
+    userStatus, 
+    forceAdmin, 
+    logout 
+  } = useAuth();
   const [showAuthModal, setShowAuthModal] = useState(false);
   const [activeSection, setActiveSection] = useState('home');
   const [isCloudLoaded, setIsCloudLoaded] = useState(false);
@@ -63,14 +73,20 @@ function App() {
     
     const parsed = JSON.parse(saved);
   
-    // Migration and initialization for new properties
-    const migratedItems = (parsed.navItems || DEFAULT_NAV_ITEMS).map(item => {
-      const defaultItem = DEFAULT_NAV_ITEMS.find(d => d.id === item.id);
-      return { 
-        ...item, 
-        icon: item.icon || defaultItem?.icon || '📍',
-        isProtected: item.isProtected ?? item.protected ?? false 
-      };
+    // 🛡️ ENHANCED MIGRATION: Ensure NEW items (like edu_verify) are added even if they aren't in localStorage
+    const existingItems = parsed.navItems || [];
+    const migratedItems = DEFAULT_NAV_ITEMS.map(defaultItem => {
+      const existing = existingItems.find(e => e.id === defaultItem.id);
+      if (existing) {
+        return {
+          ...defaultItem,
+          ...existing,
+          // Always take protection and icon from default if missing
+          icon: existing.icon || defaultItem.icon,
+          isProtected: existing.isProtected ?? defaultItem.isProtected
+        };
+      }
+      return defaultItem;
     });
 
     return {
@@ -95,16 +111,18 @@ function App() {
             const mergedNavItems = cloudData.navItems || prev.navItems || DEFAULT_NAV_ITEMS;
             
             // Apply protected status only to 'admin' section if missing
-            const finalizedNavItems = mergedNavItems.map(item => {
-              const defaultItem = DEFAULT_NAV_ITEMS.find(d => d.id === item.id);
-              let newItem = { 
-                ...item,
-                icon: item.icon || defaultItem?.icon || '📍'
-              };
-              if (item.id === 'admin') {
-                newItem.isProtected = true;
+            // 🛡️ CLOUD MIGRATION: Ensure NEW items are added even if not in cloud config
+            const finalizedNavItems = DEFAULT_NAV_ITEMS.map(defaultItem => {
+              const cloudItem = mergedNavItems.find(i => i.id === defaultItem.id);
+              if (cloudItem) {
+                return {
+                  ...defaultItem,
+                  ...cloudItem,
+                  icon: cloudItem.icon || defaultItem.icon,
+                  isProtected: cloudItem.isProtected ?? defaultItem.isProtected
+                };
               }
-              return newItem;
+              return defaultItem;
             });
 
             return {
@@ -220,7 +238,7 @@ function App() {
         />
         {activeSection === 'admin' ? (
           /* ADMIN TAB GUARD: Only for Staff/Seniors */
-          isSuperAdmin ? (
+          isSuperAdmin || isEduAdmin || isSamajAdmin ? (
             <>
               <SuperAdminPanel 
                 config={bannerConfig} 
@@ -247,8 +265,19 @@ function App() {
               sectionLabel="Management Portal" 
               onLoginClick={() => setShowAuthModal(true)} 
             />
-          )
-        ) : (
+            )
+          ) : activeSection === 'edu_verify' ? (
+            /* EDU VERIFY: Only for staff */
+            isSuperAdmin || isEduAdmin ? (
+               <EduVerify />
+            ) : (
+              <AccessWall 
+                type="admin-only" 
+                sectionLabel="Verification Portal" 
+                onLoginClick={() => setShowAuthModal(true)} 
+              />
+            )
+          ) : (
           /* PUBLIC & PROTECTED CONTENT SECTIONS */
           (() => {
             const activeItem = bannerConfig.navItems.find(i => i.id === activeSection);

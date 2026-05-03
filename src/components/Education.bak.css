@@ -1,0 +1,153 @@
+.edu-container {
+  max-width: 800px;
+  margin: 40px auto;
+  padding: 0 20px;
+  animation: fadeIn 0.5s ease-out;
+}
+
+.edu-header {
+  text-align: center;
+  margin-bottom: 40px;
+}
+
+.edu-header h1 {
+  font-size: 32px;
+  color: #1e293b;
+  margin-bottom: 12px;
+  letter-spacing: -0.025em;
+}
+
+.edu-header p {
+  color: #64748b;
+  font-size: 16px;
+  line-height: 1.6;
+}
+
+.edu-form-wrapper {
+  background: white;
+  padding: 40px;
+  border-radius: 16px;
+  box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.1);
+  border: 1px solid #f1f5f9;
+}
+
+.edu-loading {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 100px 0;
+  color: #64748b;
+}
+
+.edu-success-card {
+  background: white;
+  padding: 60px 40px;
+  border-radius: 20px;
+  text-align: center;
+  box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1);
+  border: 1px solid #e2e8f0;
+}
+
+.success-icon {
+  font-size: 64px;
+  margin-bottom: 24px;
+}
+
+.edu-success-card h2 {
+  font-size: 28px;
+  color: #1e293b;
+  margin-bottom: 16px;
+}
+
+.edu-success-card p {
+  color: #64748b;
+  margin-bottom: 8px;
+}
+
+.new-submission-btn,
+.edit-submission-btn,
+.reset-admin-form {
+  margin-top: 20px;
+  background: #f1f5f9;
+  color: #475569;
+  border: 1px solid #cbd5e1;
+  padding: 12px 24px;
+  border-radius: 8px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.2s;
+  width: 100%;
+}
+
+.new-submission-btn:hover,
+.edit-submission-btn:hover,
+.reset-admin-form:hover {
+  background: #e2e8f0;
+  border-color: #94a3b8;
+}
+
+.reset-admin-form {
+  background: #3b82f6;
+  color: white;
+  border: none;
+  margin-top: 30px;
+}
+
+.reset-admin-form:hover {
+  background: #2563eb;
+}
+
+.submission-summary {
+  background: #f8fafc;
+  padding: 15px;
+  border-radius: 12px;
+  margin: 20px 0;
+  text-align: left;
+  border: 1px solid #e2e8f0;
+}
+
+.submission-summary p {
+  font-size: 14px;
+  margin-bottom: 5px !important;
+}
+
+.submission-note {
+  font-size: 11px;
+  color: #94a3b8 !important;
+  margin-top: 20px;
+}
+
+.no-form-alert {
+  padding: 40px;
+  text-align: center;
+  background: #fff7ed;
+  border: 1px dashed #fb923c;
+  border-radius: 12px;
+  color: #9a3412;
+}
+
+.edu-privacy-note {
+  margin-top: 30px;
+  text-align: center;
+  padding: 15px;
+  background: #f0fdf4;
+  border-radius: 10px;
+  border: 1px solid #dcfce7;
+  font-size: 13px;
+  color: #166534;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@media (max-width: 600px) {
+  .edu-form-wrapper {
+    padding: 25px;
+  }
+  .edu-header h1 {
+    font-size: 24px;
+  }
+}
