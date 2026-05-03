@@ -36,6 +36,7 @@ export default function Education() {
   const [searchTerm, setSearchTerm] = useState('');
   const [isEditable, setIsEditable] = useState(true);
   const [viewMode, setViewMode] = useState('form'); // 'form' or 'success'
+  const [isModalOpen, setIsModalOpen] = useState(false);
 
   // 1. Initial Load: Form Schema & Submissions List
   useEffect(() => {
@@ -98,10 +99,6 @@ export default function Education() {
       const snap = await getDocs(q);
       const list = snap.docs.map(d => ({ id: d.id, ...d.data() }));
       setAllSubmissions(list);
-
-      if (!isAdmin && list.length > 0 && !submissionId) {
-        loadSubmission(list[0]);
-      }
     } catch (error) {
       console.error("Fetch Error:", error);
       // Fallback query without orderBy if index is missing
@@ -132,6 +129,7 @@ export default function Education() {
     setSubmissionId(sub.id);
     setIsEditable((sub.isLocked !== true && sub.status !== 'Approved') || isAdmin);
     setViewMode('form');
+    setIsModalOpen(true);
   };
 
   const handleNewEntry = () => {
@@ -139,6 +137,7 @@ export default function Education() {
     setSubmissionId(null);
     setIsEditable(true);
     setViewMode('form');
+    setIsModalOpen(true);
   };
 
   const handleSubmit = async () => {
@@ -193,7 +192,8 @@ export default function Education() {
       }
 
       await fetchSubmissions(); // Refresh list
-      setViewMode('success');
+      alert("Form Saved Successfully");
+      setIsModalOpen(false);
     } catch (error) {
       console.error("Submit Error:", error);
       alert("Failed to save.");
@@ -280,41 +280,48 @@ export default function Education() {
         </div>
       </aside>
 
-      {/* PANEL 3: MAIN CONTENT AREA */}
+      {/* PANEL 3: MAIN CONTENT AREA (Now freed up for other content) */}
       <main className="edu-main-content">
-        {viewMode === 'success' ? (
-          <div className="edu-success-view">
-             <div className="success-banner">✅ Success</div>
-             <h2>Form Saved Successfully</h2>
-             <p>The information for <strong>{formData.studentName}</strong> has been synced.</p>
-             <div className="success-actions">
-               <button onClick={() => setViewMode('form')}>View/Edit Again</button>
-               {isAdmin && <button className="primary" onClick={handleNewEntry}>Submit Another</button>}
-             </div>
+        <div className="edu-info-feed">
+          <div className="edu-feed-header">
+            <span className="feed-icon">📰</span>
+            <h2>Education News & Updates</h2>
           </div>
-        ) : (
-          <div className="edu-form-container">
-            <div className="form-header">
-              <h2>{submissionId ? (formData.status || 'Pending') : 'New Enrollment'}</h2>
-              <p>Form ID: {submissionId ? (allSubmissions.find(s => s.id === submissionId)?.formId) : 'New'}</p>
-            </div>
-            
-            <div className="form-body">
-              <DynamicForm 
-                schema={schema}
-                data={formData}
-                setData={setFormData}
-                onSubmit={handleSubmit}
-                loading={loading}
-                submitText={submissionId ? "Save Changes" : "Submit Entry"}
-                showSubmit={isEditable}
-                readOnly={!isEditable}
-              />
-              {!isEditable && <div className="locked-notice">🔒 This record is locked for editing.</div>}
-            </div>
+          <div className="feed-content">
+            <p>Welcome to the Mumbai Meghwal Panchayat Education Portal.</p>
+            <p>This space is reserved for the latest educational announcements, scholarship details, career guidance, and community updates.</p>
           </div>
-        )}
+        </div>
       </main>
+
+      {/* FORM MODAL */}
+      {isModalOpen && (
+        <div className="edu-modal-overlay">
+          <div className="edu-modal-content">
+            <button className="edu-modal-close" onClick={() => setIsModalOpen(false)}>✕</button>
+            <div className="edu-form-container">
+              <div className="form-header">
+                <h2>{submissionId ? (formData.status || 'Pending') : 'New Enrollment'}</h2>
+                <p>Form ID: {submissionId ? (allSubmissions.find(s => s.id === submissionId)?.formId) : 'New'}</p>
+              </div>
+              
+              <div className="form-body">
+                <DynamicForm 
+                  schema={schema}
+                  data={formData}
+                  setData={setFormData}
+                  onSubmit={handleSubmit}
+                  loading={loading}
+                  submitText={submissionId ? "Save Changes" : "Submit Entry"}
+                  showSubmit={isEditable}
+                  readOnly={!isEditable}
+                />
+                {!isEditable && <div className="locked-notice">🔒 This record is locked for editing.</div>}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
