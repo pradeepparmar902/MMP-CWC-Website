@@ -1,6 +1,7 @@
 import { getDirectUrl, getOpenUrl } from '../utils/assetUtils';
 import SamajJogSandesh from './SamajJogSandesh';
 import Education from './Education';
+import SectionPage from './SectionPage';
 import './ContentArea.css';
 
 const SECTION_MAP = {
@@ -35,6 +36,24 @@ export default function ContentArea({ activeSection, assets = [], language }) {
         <SamajJogSandesh lang={language} />
       ) : activeSection === 'education' ? (
         <Education />
+      ) : activeSection === 'matrimony' ? (
+        <SectionPage
+          collectionName="matrimony_posts"
+          bilingual={true}
+          adminRoles={['isSuperAdmin']}
+        />
+      ) : activeSection === 'meghpush' ? (
+        <SectionPage
+          collectionName="meghpush_posts"
+          bilingual={true}
+          adminRoles={['isSuperAdmin']}
+        />
+      ) : activeSection === 'election' ? (
+        <SectionPage
+          collectionName="election_posts"
+          bilingual={true}
+          adminRoles={['isSuperAdmin']}
+        />
       ) : sectionAssets.length > 0 ? (
         <div className="content-assets-grid">
           {sectionAssets.map(asset => (

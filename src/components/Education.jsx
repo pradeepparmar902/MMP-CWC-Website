@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
+import SectionPage from './SectionPage';
 import { useAuth } from '../context/AuthContext';
 import { 
   doc, 
@@ -281,18 +282,13 @@ export default function Education() {
         </div>
       </aside>
 
-      {/* PANEL 3: MAIN CONTENT AREA (Now freed up for other content) */}
+      {/* PANEL 3: MAIN CONTENT AREA - Education News Feed */}
       <main className="edu-main-content">
-        <div className="edu-info-feed">
-          <div className="edu-feed-header">
-            <span className="feed-icon">📰</span>
-            <h2>Education News & Updates</h2>
-          </div>
-          <div className="feed-content">
-            <p>Welcome to the Mumbai Meghwal Panchayat Education Portal.</p>
-            <p>This space is reserved for the latest educational announcements, scholarship details, career guidance, and community updates.</p>
-          </div>
-        </div>
+        <SectionPage
+          collectionName="edu_announcements"
+          bilingual={false}
+          adminRoles={['isEduAdmin', 'isSuperAdmin']}
+        />
       </main>
 
       {/* FORM MODAL */}
