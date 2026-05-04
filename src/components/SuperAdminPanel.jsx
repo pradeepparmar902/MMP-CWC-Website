@@ -1016,8 +1016,10 @@ export default function SuperAdminPanel({ config, setConfig, syncStatus, assets,
                                      if (!mNo) return <div className="no-mno-warning" style={{color:'#ef4444', background:'#fef2f2', padding:'12px', borderRadius:'6px', fontSize:'14px'}}>⚠️ <strong>Warning:</strong> User did not provide a Membership Number. Manual validation required.</div>;
                                      
                                      // Case-insensitive search across all registry rows for the membership ID
+                                     const normalize = (s) => s.toString().toLowerCase().replace(/[^a-z0-9]/g, '');
+                                     const mNoNorm = normalize(mNo);
                                      const match = registryData.find(row => 
-                                       Object.values(row).some(v => v && v.toString().toLowerCase().trim() === mNo.toString().toLowerCase().trim())
+                                       Object.values(row).some(v => v && normalize(v) === mNoNorm)
                                      );
 
                                      if (match) {
