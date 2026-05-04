@@ -825,11 +825,22 @@ export default function SuperAdminPanel({ config, setConfig, syncStatus, assets,
                                        return (
                                          <div className="registry-match-card" style={{background:'#fff1f2', border:'1px solid #fecaca', padding:'20px', borderRadius:'10px', color:'#991b1b'}}>
                                            <div style={{fontWeight:'700', fontSize: '15px', marginBottom:'10px'}}>❌ NO REGISTRY MATCH FOUND</div>
-                                           <p style={{fontSize:'14px', lineHeight:'1.5'}}>
+                                           <p style={{fontSize:'14px', lineHeight:'1.5', marginBottom:'15px'}}>
                                              The provided profile data was not found in the official election database records. 
-                                             This could mean the ID is incorrect or the user is not in the system. 
-                                             <strong>Please verify identity before approving.</strong>
                                            </p>
+                                           
+                                           <div style={{background:'rgba(0,0,0,0.05)', padding:'10px', borderRadius:'6px', fontSize:'12px', border:'1px solid rgba(0,0,0,0.1)'}}>
+                                             <div style={{fontWeight:'bold', marginBottom:'5px', color:'#475569'}}>DEBUG INFO (Search Targets):</div>
+                                             <ul style={{margin:'0', paddingLeft:'15px', color:'#64748b'}}>
+                                               <li>Registry Records Loaded: {registryData.length}</li>
+                                               <li>Searching for values: {userValues.join(', ') || 'None found'}</li>
+                                               <li>Normalized forms: {userValuesNorm.join(', ') || 'None'}</li>
+                                             </ul>
+                                             <div style={{marginTop:'5px', fontSize:'11px', color:'#94a3b8'}}>
+                                               If the ID you see above is NOT in your Registry Spreadsheet, this error is correct.
+                                             </div>
+                                           </div>
+
                                          </div>
                                        );
                                      })()}
@@ -1047,11 +1058,22 @@ export default function SuperAdminPanel({ config, setConfig, syncStatus, assets,
                                      return (
                                        <div className="registry-match-card" style={{background:'#fff1f2', border:'1px solid #fecaca', padding:'20px', borderRadius:'10px', color:'#991b1b'}}>
                                          <div style={{fontWeight:'700', fontSize: '15px', marginBottom:'10px'}}>❌ NO REGISTRY MATCH FOUND</div>
-                                         <p style={{fontSize:'14px', lineHeight:'1.5'}}>
+                                         <p style={{fontSize:'14px', lineHeight:'1.5', marginBottom:'15px'}}>
                                            The provided profile data was not found in the official election database records. 
-                                           This could mean the ID is incorrect or the user is not in the system. 
-                                           <strong>Please verify identity before approving.</strong>
                                          </p>
+                                         
+                                         <div style={{background:'rgba(0,0,0,0.05)', padding:'10px', borderRadius:'6px', fontSize:'12px', border:'1px solid rgba(0,0,0,0.1)'}}>
+                                           <div style={{fontWeight:'bold', marginBottom:'5px', color:'#475569'}}>DEBUG INFO (Search Targets):</div>
+                                           <ul style={{margin:'0', paddingLeft:'15px', color:'#64748b'}}>
+                                             <li>Registry Records Loaded: {registryData.length}</li>
+                                             <li>Searching for values: {userValues.join(', ') || 'None found'}</li>
+                                             <li>Normalized forms: {userValuesNorm.join(', ') || 'None'}</li>
+                                           </ul>
+                                           <div style={{marginTop:'5px', fontSize:'11px', color:'#94a3b8'}}>
+                                             If the ID you see above is NOT in your Registry Spreadsheet, this error is correct.
+                                           </div>
+                                         </div>
+
                                        </div>
                                      );
                                    })()}
