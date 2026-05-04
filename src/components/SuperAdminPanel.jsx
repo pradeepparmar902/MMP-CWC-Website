@@ -795,16 +795,20 @@ export default function SuperAdminPanel({ config, setConfig, syncStatus, assets,
                                        // Robust search: ignore special characters, spaces, and casing
                                        const normalize = (s) => s.toString().toLowerCase().replace(/[^a-z0-9]/g, '');
                                        const mNoNorm = normalize(mNo);
-                                       const match = registryData.find(row => 
-                                         Object.values(row).some(v => v && normalize(v) === mNoNorm)
-                                       );
+                                       const userValues = [user.membershipNo, user.profile?.membershipNo, ...Object.values(user.profile || {})].filter(v => v && v.toString().length > 4); 
+                                      const userValuesNorm = userValues.map(v => normalize(v));
+                                      const match = registryData.find(row => {
+                                        const rowValuesNorm = Object.values(row).map(v => v ? normalize(v) : '');
+                                        return userValuesNorm.some(uv => uv && rowValuesNorm.includes(uv));
+                                      });
+                                      const displayId = user.membershipNo || user.profile?.membershipNo || "Profile Data";
 
                                        if (match) {
                                          return (
                                            <div className="registry-match-card" style={{background:'#f0fdf4', border:'1px solid #bcf0da', padding:'20px', borderRadius:'10px'}}>
                                              <div style={{color:'#166534', fontWeight:'700', fontSize: '15px', marginBottom:'15px', display:'flex', justifyContent:'space-between', borderBottom: '1px solid #bcf0da', paddingBottom: '10px'}}>
                                                <span>✅ OFFICIAL REGISTRY MATCH FOUND</span>
-                                               <span>Member ID: {mNo}</span>
+                                               <span>Match Target: {displayId}</span>
                                              </div>
                                              <div style={{display:'grid', gridTemplateColumns:'repeat(auto-fit, minmax(180px, 1fr))', gap:'20px'}}>
                                                {Object.entries(match).map(([k, v]) => (
@@ -827,7 +831,7 @@ export default function SuperAdminPanel({ config, setConfig, syncStatus, assets,
                                          <div className="registry-match-card" style={{background:'#fff1f2', border:'1px solid #fecaca', padding:'20px', borderRadius:'10px', color:'#991b1b'}}>
                                            <div style={{fontWeight:'700', fontSize: '15px', marginBottom:'10px'}}>❌ NO REGISTRY MATCH FOUND</div>
                                            <p style={{fontSize:'14px', lineHeight:'1.5'}}>
-                                             The Membership ID "<strong>{mNo}</strong>" was not found in the official election database records. 
+                                             The provided profile data was not found in the official election database records. 
                                              This could mean the ID is incorrect or the user is not in the system. 
                                              <strong>Please verify identity before approving.</strong>
                                            </p>
@@ -1018,16 +1022,20 @@ export default function SuperAdminPanel({ config, setConfig, syncStatus, assets,
                                      // Case-insensitive search across all registry rows for the membership ID
                                      const normalize = (s) => s.toString().toLowerCase().replace(/[^a-z0-9]/g, '');
                                      const mNoNorm = normalize(mNo);
-                                     const match = registryData.find(row => 
-                                       Object.values(row).some(v => v && normalize(v) === mNoNorm)
-                                     );
+                                     const userValues = [user.membershipNo, user.profile?.membershipNo, ...Object.values(user.profile || {})].filter(v => v && v.toString().length > 4); 
+                                      const userValuesNorm = userValues.map(v => normalize(v));
+                                      const match = registryData.find(row => {
+                                        const rowValuesNorm = Object.values(row).map(v => v ? normalize(v) : '');
+                                        return userValuesNorm.some(uv => uv && rowValuesNorm.includes(uv));
+                                      });
+                                      const displayId = user.membershipNo || user.profile?.membershipNo || "Profile Data";
 
                                      if (match) {
                                        return (
                                          <div className="registry-match-card" style={{background:'#f0fdf4', border:'1px solid #bcf0da', padding:'20px', borderRadius:'10px'}}>
                                            <div style={{color:'#166534', fontWeight:'700', fontSize: '15px', marginBottom:'15px', display:'flex', justifyContent:'space-between', borderBottom: '1px solid #bcf0da', paddingBottom: '10px'}}>
                                              <span>✅ OFFICIAL REGISTRY MATCH FOUND</span>
-                                             <span>Member ID: {mNo}</span>
+                                             <span>Match Target: {displayId}</span>
                                            </div>
                                            <div style={{display:'grid', gridTemplateColumns:'repeat(auto-fit, minmax(180px, 1fr))', gap:'20px'}}>
                                              {Object.entries(match).map(([k, v]) => (
@@ -1050,7 +1058,7 @@ export default function SuperAdminPanel({ config, setConfig, syncStatus, assets,
                                        <div className="registry-match-card" style={{background:'#fff1f2', border:'1px solid #fecaca', padding:'20px', borderRadius:'10px', color:'#991b1b'}}>
                                          <div style={{fontWeight:'700', fontSize: '15px', marginBottom:'10px'}}>❌ NO REGISTRY MATCH FOUND</div>
                                          <p style={{fontSize:'14px', lineHeight:'1.5'}}>
-                                           The Membership ID "<strong>{mNo}</strong>" was not found in the official election database records. 
+                                           The provided profile data was not found in the official election database records. 
                                            This could mean the ID is incorrect or the user is not in the system. 
                                            <strong>Please verify identity before approving.</strong>
                                          </p>
