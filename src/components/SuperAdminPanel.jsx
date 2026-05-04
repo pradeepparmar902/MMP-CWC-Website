@@ -789,14 +789,42 @@ export default function SuperAdminPanel({ config, setConfig, syncStatus, assets,
                                      {isRegistryLoading ? (
                                        <div className="loading-check">Searching official election registry...</div>
                                      ) : (() => {
-                                       const normalize = (s) => s.toString().toLowerCase().replace(/[^a-z0-9]/g, '');
-                                       const userValues = [user.membershipNo, user.profile?.membershipNo, ...Object.values(user.profile || {})].filter(v => v && v.toString().length > 4); 
-                                      const userValuesNorm = userValues.map(v => normalize(v));
-                                      const match = registryData.find(row => {
-                                        const rowValuesNorm = Object.values(row).map(v => v ? normalize(v) : '');
-                                        return userValuesNorm.some(uv => uv && rowValuesNorm.includes(uv));
-                                      });
-                                      const displayId = user.membershipNo || user.profile?.membershipNo || "Profile Data";
+                                        // Recursively extract all strings from an object
+                                        const getAllValues = (obj) => {
+                                          let values = [];
+                                          if (!obj) return values;
+                                          for (const val of Object.values(obj)) {
+                                            if (typeof val === 'string' || typeof val === 'number') {
+                                              values.push(val.toString());
+                                            } else if (typeof val === 'object') {
+                                              values = values.concat(getAllValues(val));
+                                            }
+                                          }
+                                          return values;
+                                        };
+
+                                        const normalize = (s) => s.toString().toLowerCase().replace(/[^a-z0-9]/g, '');
+                                        
+                                        // Deep Cross-Check: Look at ALL data points
+                                        const userValues = [
+                                          user.membershipNo,
+                                          user.profile?.membershipNo,
+                                          user.fullName,
+                                          user.name,
+                                          user.email,
+                                          user.phoneNumber,
+                                          ...getAllValues(user.profile)
+                                        ].filter(v => v && v.toString().length > 3); 
+                                        
+                                        const userValuesNorm = [...new Set(userValues.map(v => normalize(v)))];
+                                        
+                                        const match = registryData.find(row => {
+                                          const rowValuesNorm = Object.values(row).map(v => v ? normalize(v) : '');
+                                          // Match if any user value is in this row
+                                          return userValuesNorm.some(uv => uv && rowValuesNorm.some(rv => rv === uv || (uv.length > 8 && rv.includes(uv)) || (rv.length > 8 && uv.includes(rv))));
+                                        });
+
+                                        const displayId = user.membershipNo || user.profile?.membershipNo || user.fullName || "Profile Data";
 
                                        if (match) {
                                          return (
@@ -1016,20 +1044,48 @@ export default function SuperAdminPanel({ config, setConfig, syncStatus, assets,
                                        disabled={isRegistryLoading}
                                      >
                                        {isRegistryLoading ? 'Refreshing...' : 'Refresh Registry'}
-                                     </button>
+                                    </button>
                                    </div>
 
                                    {isRegistryLoading ? (
                                      <div className="loading-check">Searching official election registry...</div>
                                    ) : (() => {
-                                     const normalize = (s) => s.toString().toLowerCase().replace(/[^a-z0-9]/g, '');
-                                     const userValues = [user.membershipNo, user.profile?.membershipNo, ...Object.values(user.profile || {})].filter(v => v && v.toString().length > 4); 
-                                      const userValuesNorm = userValues.map(v => normalize(v));
+                                      // Recursively extract all strings from an object
+                                      const getAllValues = (obj) => {
+                                        let values = [];
+                                        if (!obj) return values;
+                                        for (const val of Object.values(obj)) {
+                                          if (typeof val === 'string' || typeof val === 'number') {
+                                            values.push(val.toString());
+                                          } else if (typeof val === 'object') {
+                                            values = values.concat(getAllValues(val));
+                                          }
+                                        }
+                                        return values;
+                                      };
+
+                                      const normalize = (s) => s.toString().toLowerCase().replace(/[^a-z0-9]/g, '');
+                                      
+                                      // Deep Cross-Check: Look at ALL data points (Robust search)
+                                      const userValues = [
+                                        user.membershipNo,
+                                        user.profile?.membershipNo,
+                                        user.fullName,
+                                        user.name,
+                                        user.email,
+                                        user.phoneNumber,
+                                        ...getAllValues(user.profile)
+                                      ].filter(v => v && v.toString().length > 3); 
+                                      
+                                      const userValuesNorm = [...new Set(userValues.map(v => normalize(v)))];
+                                      
                                       const match = registryData.find(row => {
                                         const rowValuesNorm = Object.values(row).map(v => v ? normalize(v) : '');
-                                        return userValuesNorm.some(uv => uv && rowValuesNorm.includes(uv));
+                                        // Match if any user value is in this row (allow partial matches for long strings)
+                                        return userValuesNorm.some(uv => uv && rowValuesNorm.some(rv => rv === uv || (uv.length > 8 && rv.includes(uv)) || (rv.length > 8 && uv.includes(rv))));
                                       });
-                                      const displayId = user.membershipNo || user.profile?.membershipNo || "Profile Data";
+
+                                      const displayId = user.membershipNo || user.profile?.membershipNo || user.fullName || "Profile Data";
 
                                      if (match) {
                                        return (
