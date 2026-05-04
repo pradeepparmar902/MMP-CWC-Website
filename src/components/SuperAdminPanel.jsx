@@ -57,6 +57,8 @@ export default function SuperAdminPanel({ config, setConfig, syncStatus, assets,
   const [registryUrl, setRegistryUrl] = useState('');
   const [isSavingRegistryUrl, setIsSavingRegistryUrl] = useState(false);
   const [registrySearch, setRegistrySearch] = useState('');
+  const [usersSearch, setUsersSearch] = useState('');
+  const [approvalsSearch, setApprovalsSearch] = useState('');
   // 🗑️ Delete Requests State
   const [deleteRequests, setDeleteRequests] = useState([]);
 
@@ -584,21 +586,54 @@ export default function SuperAdminPanel({ config, setConfig, syncStatus, assets,
                   <p>Users who register will appear here.</p>
                 </div>
               ) : (
-                <div className="access-table-wrapper">
-                  <table className="access-table">
-                    <thead>
-                      <tr>
-                        <th>Expand</th>
-                        {formSchema.map(field => (
-                          <th key={field.id}>{field.label.replace('Emal', 'Email')}</th>
-                        ))}
-                        <th>Phone</th>
-                        <th>Status</th>
-                        <th>Actions</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {allUsers.map(user => (
+              <div style={{display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:'15px'}}>
+                <h3 style={{fontSize:'16px', color:'#1e293b', margin:0}}>👥 System Users ({allUsers.length})</h3>
+                <div className="search-box" style={{width:'300px'}}>
+                  <input 
+                    type="text"
+                    placeholder="🔍 Search users (Name, Phone, ID...)"
+                    value={usersSearch}
+                    onChange={(e) => setUsersSearch(e.target.value)}
+                    style={{width:'100%', padding:'10px 15px', borderRadius:'20px', border:'1px solid #e2e8f0', fontSize:'14px'}}
+                  />
+                </div>
+              </div>
+
+              {(() => {
+                const normalize = (s) => s.toString().toLowerCase().replace(/[^a-z0-9]/g, '');
+                const searchNorm = normalize(usersSearch);
+                const filtered = allUsers.filter(u => {
+                  if (!usersSearch) return true;
+                  if (normalize(u.phone || '').includes(searchNorm)) return true;
+                  if (u.membershipNo && normalize(u.membershipNo).includes(searchNorm)) return true;
+                  if (u.profile) {
+                    return Object.values(u.profile).some(v => v && normalize(v).includes(searchNorm));
+                  }
+                  return false;
+                });
+
+                if (filtered.length === 0) return (
+                  <div className="empty-state" style={{padding:'40px'}}>
+                    <p>No users match your search "<strong>{usersSearch}</strong>"</p>
+                  </div>
+                );
+
+                return (
+                  <div className="access-table-wrapper">
+                    <table className="access-table">
+                      <thead>
+                        <tr>
+                          <th>Expand</th>
+                          {formSchema.map(field => (
+                            <th key={field.id}>{field.label.replace('Emal', 'Email')}</th>
+                          ))}
+                          <th>Phone</th>
+                          <th>Status</th>
+                          <th>Actions</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {filtered.map(user => (
                         <React.Fragment key={user.uid}>
                           <tr className={expandedUser === user.uid ? 'row-expanded' : ''}>
                              <td data-label="Expand" className="page-label">
@@ -756,9 +791,11 @@ export default function SuperAdminPanel({ config, setConfig, syncStatus, assets,
                                        const mNo = user.membershipNo || user.profile?.membershipNo;
                                        if (!mNo) return <div className="no-mno-warning" style={{color:'#ef4444', background:'#fef2f2', padding:'12px', borderRadius:'6px', fontSize:'14px'}}>⚠️ <strong>Warning:</strong> User did not provide a Membership Number. Manual validation required.</div>;
                                        
-                                       // Case-insensitive search across all registry rows for the membership ID
+                                       // Robust search: ignore special characters, spaces, and casing
+                                       const normalize = (s) => s.toString().toLowerCase().replace(/[^a-z0-9]/g, '');
+                                       const mNoNorm = normalize(mNo);
                                        const match = registryData.find(row => 
-                                         Object.values(row).some(v => v && v.toString().toLowerCase().trim() === mNo.toString().toLowerCase().trim())
+                                         Object.values(row).some(v => v && normalize(v) === mNoNorm)
                                        );
 
                                        if (match) {
@@ -801,12 +838,13 @@ export default function SuperAdminPanel({ config, setConfig, syncStatus, assets,
                               </td>
                             </tr>
                           )}
-                        </React.Fragment>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              )}
+                          </React.Fragment>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                );
+              })()}
             </div>
           );
         })()}
@@ -827,21 +865,54 @@ export default function SuperAdminPanel({ config, setConfig, syncStatus, assets,
                 <p>All registration requests have been processed.</p>
               </div>
             ) : (
-              <div className="approvals-table-wrapper">
-                <table className="approvals-table">
-                  <thead>
-                    <tr>
-                      <th>Details</th>
-                      {formSchema.map(field => (
-                         <th key={field.id}>{field.label.replace('Emal', 'Email')}</th>
-                      ))}
-                      <th>Base Phone</th>
-                      <th>Reg. Date</th>
-                      <th>Actions</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {pendingUsers.map(user => (
+            <div style={{display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:'15px'}}>
+              <h3 style={{fontSize:'16px', color:'#1e293b', margin:0}}>📋 Pending Requests ({pendingUsers.length})</h3>
+              <div className="search-box" style={{width:'300px'}}>
+                <input 
+                  type="text"
+                  placeholder="🔍 Search requests (Name, Phone, ID...)"
+                  value={approvalsSearch}
+                  onChange={(e) => setApprovalsSearch(e.target.value)}
+                  style={{width:'100%', padding:'10px 15px', borderRadius:'20px', border:'1px solid #e2e8f0', fontSize:'14px'}}
+                />
+              </div>
+            </div>
+
+            {(() => {
+              const normalize = (s) => s.toString().toLowerCase().replace(/[^a-z0-9]/g, '');
+              const searchNorm = normalize(approvalsSearch);
+              const filtered = pendingUsers.filter(u => {
+                if (!approvalsSearch) return true;
+                if (normalize(u.phone || '').includes(searchNorm)) return true;
+                if (u.membershipNo && normalize(u.membershipNo).includes(searchNorm)) return true;
+                if (u.profile) {
+                  return Object.values(u.profile).some(v => v && normalize(v).includes(searchNorm));
+                }
+                return false;
+              });
+
+              if (filtered.length === 0) return (
+                <div className="empty-state" style={{padding:'40px'}}>
+                  <p>No pending requests match your search "<strong>{approvalsSearch}</strong>"</p>
+                </div>
+              );
+
+              return (
+                <div className="approvals-table-wrapper">
+                  <table className="approvals-table">
+                    <thead>
+                      <tr>
+                        <th>Details</th>
+                        {formSchema.map(field => (
+                           <th key={field.id}>{field.label.replace('Emal', 'Email')}</th>
+                        ))}
+                        <th>Base Phone</th>
+                        <th>Reg. Date</th>
+                        <th>Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {filtered.map(user => (
                       <React.Fragment key={user.uid}>
                         <tr className={expandedUser === user.uid ? 'row-expanded' : ''}>
                           <td data-label="Expand">
@@ -990,122 +1061,134 @@ export default function SuperAdminPanel({ config, setConfig, syncStatus, assets,
                   </tbody>
                 </table>
               </div>
-            )}
-          </div>
-        )}
+            );
+          })()}
+        </div>
+      )}
 
-        {(activeTab === 'registry' && isCwcSuper) && (
-          <div className="registry-view">
-            <div className="view-header" style={{display:'flex', justifyContent:'space-between', alignItems:'flex-end'}}>
-              <div>
-                <h2>🗳️ Election Registry Management</h2>
-                <p>Configure the official member database used for registration cross-checks.</p>
+      {(activeTab === 'registry' && isCwcSuper) && (
+        <div className="registry-view">
+          <div className="view-header" style={{display:'flex', justifyContent:'space-between', alignItems:'flex-end'}}>
+            <div>
+              <h2>🗳️ Election Registry Management</h2>
+              <p>Configure the official member database used for registration cross-checks.</p>
+            </div>
+            <button 
+              className={`refresh-registry-btn ${isRegistryLoading ? 'spinning' : ''}`}
+              onClick={fetchRegistry}
+              disabled={isRegistryLoading}
+              style={{padding:'10px 20px', fontSize:'13px'}}
+            >
+              {isRegistryLoading ? 'Syncing...' : '🔄 Sync with Google Sheets'}
+            </button>
+          </div>
+
+          <div className="registry-config-card" style={{background:'#f8fafc', padding:'25px', borderRadius:'12px', border:'1px solid #e2e8f0', marginBottom:'30px'}}>
+            <h3 style={{fontSize:'16px', marginBottom:'15px', color:'#1e293b'}}>🔗 Registry Source Configuration</h3>
+            <div style={{display:'flex', gap:'15px'}}>
+              <div style={{flex:1}}>
+                <label style={{display:'block', fontSize:'12px', fontWeight:'700', color:'#64748b', marginBottom:'8px'}}>Google Sheet CSV URL (Published to Web)</label>
+                <input 
+                  type="text"
+                  className="manual-input"
+                  placeholder="https://docs.google.com/spreadsheets/d/.../pub?output=csv"
+                  value={registryUrl}
+                  onChange={(e) => setRegistryUrl(e.target.value)}
+                  style={{width:'100%', padding:'12px', borderRadius:'8px', border:'1px solid #cbd5e1'}}
+                />
               </div>
               <button 
-                className={`refresh-registry-btn ${isRegistryLoading ? 'spinning' : ''}`}
-                onClick={fetchRegistry}
-                disabled={isRegistryLoading}
-                style={{padding:'10px 20px', fontSize:'13px'}}
+                className="add-now-btn"
+                onClick={async () => {
+                  setIsSavingRegistryUrl(true);
+                  try {
+                    await setDoc(doc(db, 'site_settings', 'election_config'), { sheetUrl: registryUrl }, { merge: true });
+                    alert("✅ Registry URL updated!");
+                    fetchRegistry();
+                  } catch (e) { alert("❌ Failed: " + e.message); }
+                  finally { setIsSavingRegistryUrl(false); }
+                }}
+                disabled={isSavingRegistryUrl}
+                style={{alignSelf: 'flex-end', height: '42px', padding: '0 25px'}}
               >
-                {isRegistryLoading ? 'Syncing...' : '🔄 Sync with Google Sheets'}
+                {isSavingRegistryUrl ? 'Saving...' : 'Save URL'}
               </button>
             </div>
+          </div>
 
-            <div className="registry-config-card" style={{background:'#f8fafc', padding:'25px', borderRadius:'12px', border:'1px solid #e2e8f0', marginBottom:'30px'}}>
-              <h3 style={{fontSize:'16px', marginBottom:'15px', color:'#1e293b'}}>🔗 Registry Source Configuration</h3>
-              <div style={{display:'flex', gap:'15px'}}>
-                <div style={{flex:1}}>
-                  <label style={{display:'block', fontSize:'12px', fontWeight:'700', color:'#64748b', marginBottom:'8px'}}>Google Sheet CSV URL (Published to Web)</label>
-                  <input 
-                    type="text"
-                    className="manual-input"
-                    placeholder="https://docs.google.com/spreadsheets/d/.../pub?output=csv"
-                    value={registryUrl}
-                    onChange={(e) => setRegistryUrl(e.target.value)}
-                    style={{width:'100%', padding:'12px', borderRadius:'8px', border:'1px solid #cbd5e1'}}
-                  />
-                </div>
-                <button 
-                  className="add-now-btn"
-                  disabled={isSavingRegistryUrl}
-                  onClick={async () => {
-                    setIsSavingRegistryUrl(true);
-                    try {
-                      await setDoc(doc(db, 'site_settings', 'election_config'), { sheetUrl: registryUrl });
-                      await fetchRegistry();
-                      alert('✅ Registry URL updated and synced!');
-                    } catch(e) { alert('❌ Failed to save URL'); }
-                    setIsSavingRegistryUrl(false);
-                  }}
-                  style={{height:'46px'}}
-                >
-                  {isSavingRegistryUrl ? 'Saving...' : 'Save & Sync'}
-                </button>
+          <div className="registry-explorer" style={{background:'#fff', borderRadius:'12px', border:'1px solid #e2e8f0', overflow:'hidden'}}>
+            <div style={{padding:'20px', borderBottom:'1px solid #e2e8f0', display:'flex', justifyContent:'space-between', alignItems:'center'}}>
+              <h3 style={{fontSize:'16px', margin:0}}>📑 All Election Cards Registry</h3>
+              <div className="search-box" style={{width:'300px'}}>
+                <input 
+                  type="text"
+                  placeholder="🔍 Search registry (Name, ID, Phone...)"
+                  value={registrySearch}
+                  onChange={(e) => setRegistrySearch(e.target.value)}
+                  style={{width:'100%', padding:'10px 15px', borderRadius:'20px', border:'1px solid #e2e8f0', fontSize:'14px'}}
+                />
               </div>
-              <p style={{fontSize:'12px', color:'#64748b', marginTop:'10px'}}>
-                💡 <strong>How to get this:</strong> In Google Sheets, go to <b>File &gt; Share &gt; Publish to web</b>. Select <b>Entire Document</b> and <b>Comma-separated values (.csv)</b>, then copy the link.
-              </p>
             </div>
 
-            <div className="registry-data-explorer">
-              <div style={{display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:'15px'}}>
-                <h3 style={{fontSize:'16px', color:'#1e293b', margin:0}}>📊 Registry Records ({registryData.length})</h3>
-                <div className="search-box" style={{width:'300px'}}>
-                  <input 
-                    type="text"
-                    placeholder="🔍 Search registry (Name, ID, Phone...)"
-                    value={registrySearch}
-                    onChange={(e) => setRegistrySearch(e.target.value)}
-                    style={{width:'100%', padding:'10px 15px', borderRadius:'20px', border:'1px solid #e2e8f0', fontSize:'14px'}}
-                  />
-                </div>
+            {isRegistryLoading ? (
+              <div className="sap-loader" style={{padding:'50px'}}>Loading registry data...</div>
+            ) : registryData.length === 0 ? (
+              <div className="empty-state" style={{padding:'50px'}}>
+                <div className="empty-icon">📭</div>
+                <h3>Registry is empty</h3>
+                <p>Check the URL above or click Sync to fetch data.</p>
               </div>
+            ) : (
+              <div className="access-table-wrapper" style={{maxHeight:'600px', overflowY:'auto'}}>
+                <table className="access-table">
+                  <thead style={{position:'sticky', top:0, zIndex:10}}>
+                    <tr>
+                      {registryData.length > 0 && Object.keys(registryData[0]).map(key => (
+                        <th key={key}>{key}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {(() => {
+                      const normalize = (s) => s.toString().toLowerCase().replace(/[^a-z0-9]/g, '');
+                      const searchNorm = normalize(registrySearch);
+                      const filtered = registryData.filter(row => {
+                        if (!registrySearch) return true;
+                        return Object.values(row).some(val => 
+                          val && normalize(val.toString()).includes(searchNorm)
+                        );
+                      });
 
-              {registryData.length === 0 ? (
-                <div className="empty-state" style={{padding:'40px'}}>
-                  <p>No registry data loaded. Please configure a valid Sheet URL above.</p>
-                </div>
-              ) : (
-                <div className="access-table-wrapper" style={{maxHeight:'600px', overflowY:'auto'}}>
-                  <table className="access-table">
-                    <thead style={{position:'sticky', top:0, zIndex:10}}>
-                      <tr>
-                        {registryData.length > 0 && Object.keys(registryData[0]).map(key => (
-                          <th key={key}>{key}</th>
-                        ))}
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {registryData
-                        .filter(row => {
-                          if (!registrySearch) return true;
-                          return Object.values(row).some(val => 
-                            val && val.toString().toLowerCase().includes(registrySearch.toLowerCase())
-                          );
-                        })
-                        .slice(0, 100) // Performance: only show first 100
-                        .map((row, idx) => (
-                          <tr key={idx}>
-                            {Object.values(row).map((val, i) => (
-                              <td key={i} style={{fontSize:'13px'}}>{val}</td>
-                            ))}
-                          </tr>
-                        ))
-                      }
-                      {registryData.length > 100 && (
+                      if (filtered.length === 0) return (
                         <tr>
-                          <td colSpan={Object.keys(registryData[0]).length} style={{textAlign:'center', padding:'20px', color:'#64748b', fontStyle:'italic'}}>
-                            Showing first 100 records. Use search to find specific members.
+                          <td colSpan={Object.keys(registryData[0]).length} style={{textAlign:'center', padding:'40px', color:'#64748b'}}>
+                            No registry records match your search "<strong>{registrySearch}</strong>"
                           </td>
                         </tr>
-                      )}
-                    </tbody>
-                  </table>
-                </div>
-              )}
-            </div>
+                      );
+
+                      return filtered.slice(0, 100).map((row, idx) => (
+                        <tr key={idx}>
+                          {Object.values(row).map((val, i) => (
+                            <td key={i} style={{fontSize:'13px'}}>{val}</td>
+                          ))}
+                        </tr>
+                      ));
+                    })()}
+                    {registryData.length > 100 && (
+                      <tr>
+                        <td colSpan={Object.keys(registryData[0]).length} style={{textAlign:'center', padding:'20px', color:'#64748b', fontStyle:'italic'}}>
+                          Showing first 100 matches. Use search to find specific members.
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            )}
           </div>
-        )}
+        </div>
+      )}
 
         {activeTab === 'config' && (
           <div className="config-view">
