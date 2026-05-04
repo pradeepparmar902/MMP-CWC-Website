@@ -586,20 +586,21 @@ export default function SuperAdminPanel({ config, setConfig, syncStatus, assets,
                   <p>Users who register will appear here.</p>
                 </div>
               ) : (
-              <div style={{display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:'15px'}}>
-                <h3 style={{fontSize:'16px', color:'#1e293b', margin:0}}>👥 System Users ({allUsers.length})</h3>
-                <div className="search-box" style={{width:'300px'}}>
-                  <input 
-                    type="text"
-                    placeholder="🔍 Search users (Name, Phone, ID...)"
-                    value={usersSearch}
-                    onChange={(e) => setUsersSearch(e.target.value)}
-                    style={{width:'100%', padding:'10px 15px', borderRadius:'20px', border:'1px solid #e2e8f0', fontSize:'14px'}}
-                  />
-                </div>
-              </div>
+                <React.Fragment>
+                  <div style={{display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:'15px'}}>
+                    <h3 style={{fontSize:'16px', color:'#1e293b', margin:0}}>👥 System Users ({allUsers.length})</h3>
+                    <div className="search-box" style={{width:'300px'}}>
+                      <input 
+                        type="text"
+                        placeholder="🔍 Search users (Name, Phone, ID...)"
+                        value={usersSearch}
+                        onChange={(e) => setUsersSearch(e.target.value)}
+                        style={{width:'100%', padding:'10px 15px', borderRadius:'20px', border:'1px solid #e2e8f0', fontSize:'14px'}}
+                      />
+                    </div>
+                  </div>
 
-              {(() => {
+                  {(() => {
                 const normalize = (s) => s.toString().toLowerCase().replace(/[^a-z0-9]/g, '');
                 const searchNorm = normalize(usersSearch);
                 const filtered = allUsers.filter(u => {
@@ -845,9 +846,11 @@ export default function SuperAdminPanel({ config, setConfig, syncStatus, assets,
                   </div>
                 );
               })()}
-            </div>
-          );
-        })()}
+                </React.Fragment>
+            )}
+          </div>
+        );
+      })()}
 
         {(activeTab === 'approvals' && isCwcSuper) && (
           <div className="approvals-view">
@@ -865,20 +868,21 @@ export default function SuperAdminPanel({ config, setConfig, syncStatus, assets,
                 <p>All registration requests have been processed.</p>
               </div>
             ) : (
-            <div style={{display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:'15px'}}>
-              <h3 style={{fontSize:'16px', color:'#1e293b', margin:0}}>📋 Pending Requests ({pendingUsers.length})</h3>
-              <div className="search-box" style={{width:'300px'}}>
-                <input 
-                  type="text"
-                  placeholder="🔍 Search requests (Name, Phone, ID...)"
-                  value={approvalsSearch}
-                  onChange={(e) => setApprovalsSearch(e.target.value)}
-                  style={{width:'100%', padding:'10px 15px', borderRadius:'20px', border:'1px solid #e2e8f0', fontSize:'14px'}}
-                />
-              </div>
-            </div>
+              <React.Fragment>
+                <div style={{display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:'15px'}}>
+                  <h3 style={{fontSize:'16px', color:'#1e293b', margin:0}}>📋 Pending Requests ({pendingUsers.length})</h3>
+                  <div className="search-box" style={{width:'300px'}}>
+                    <input 
+                      type="text"
+                      placeholder="🔍 Search requests (Name, Phone, ID...)"
+                      value={approvalsSearch}
+                      onChange={(e) => setApprovalsSearch(e.target.value)}
+                      style={{width:'100%', padding:'10px 15px', borderRadius:'20px', border:'1px solid #e2e8f0', fontSize:'14px'}}
+                    />
+                  </div>
+                </div>
 
-            {(() => {
+                {(() => {
               const normalize = (s) => s.toString().toLowerCase().replace(/[^a-z0-9]/g, '');
               const searchNorm = normalize(approvalsSearch);
               const filtered = pendingUsers.filter(u => {
@@ -1063,8 +1067,10 @@ export default function SuperAdminPanel({ config, setConfig, syncStatus, assets,
               </div>
             );
           })()}
-        </div>
-      )}
+              </React.Fragment>
+            )}
+          </div>
+        )}
 
       {(activeTab === 'registry' && isCwcSuper) && (
         <div className="registry-view">
