@@ -789,12 +789,7 @@ export default function SuperAdminPanel({ config, setConfig, syncStatus, assets,
                                      {isRegistryLoading ? (
                                        <div className="loading-check">Searching official election registry...</div>
                                      ) : (() => {
-                                       const mNo = user.membershipNo || user.profile?.membershipNo;
-                                       if (!mNo) return <div className="no-mno-warning" style={{color:'#ef4444', background:'#fef2f2', padding:'12px', borderRadius:'6px', fontSize:'14px'}}>⚠️ <strong>Warning:</strong> User did not provide a Membership Number. Manual validation required.</div>;
-                                       
-                                       // Robust search: ignore special characters, spaces, and casing
                                        const normalize = (s) => s.toString().toLowerCase().replace(/[^a-z0-9]/g, '');
-                                       const mNoNorm = normalize(mNo);
                                        const userValues = [user.membershipNo, user.profile?.membershipNo, ...Object.values(user.profile || {})].filter(v => v && v.toString().length > 4); 
                                       const userValuesNorm = userValues.map(v => normalize(v));
                                       const match = registryData.find(row => {
@@ -1016,12 +1011,7 @@ export default function SuperAdminPanel({ config, setConfig, syncStatus, assets,
                                    {isRegistryLoading ? (
                                      <div className="loading-check">Searching official election registry...</div>
                                    ) : (() => {
-                                     const mNo = user.membershipNo || user.profile?.membershipNo;
-                                     if (!mNo) return <div className="no-mno-warning" style={{color:'#ef4444', background:'#fef2f2', padding:'12px', borderRadius:'6px', fontSize:'14px'}}>⚠️ <strong>Warning:</strong> User did not provide a Membership Number. Manual validation required.</div>;
-                                     
-                                     // Case-insensitive search across all registry rows for the membership ID
                                      const normalize = (s) => s.toString().toLowerCase().replace(/[^a-z0-9]/g, '');
-                                     const mNoNorm = normalize(mNo);
                                      const userValues = [user.membershipNo, user.profile?.membershipNo, ...Object.values(user.profile || {})].filter(v => v && v.toString().length > 4); 
                                       const userValuesNorm = userValues.map(v => normalize(v));
                                       const match = registryData.find(row => {
