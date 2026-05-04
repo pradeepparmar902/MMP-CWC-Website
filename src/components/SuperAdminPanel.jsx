@@ -176,8 +176,25 @@ export default function SuperAdminPanel({ config, setConfig, syncStatus, assets,
     }
   };
 
+  // 2. Real-time listener for registry configuration and data
   useEffect(() => {
-    fetchRegistry();
+    const unsub = onSnapshot(doc(db, 'site_settings', 'election_config'), (snapshot) => {
+      if (snapshot.exists()) {
+        const data = snapshot.data();
+        setRegistryUrl(data.sheetUrl || '');
+        if (data.sheetUrl) {
+          fetch(data.sheetUrl)
+            .then(res => res.text())
+            .then(csvText => {
+              const { rows } = parseCSV(csvText);
+              setRegistryData(rows);
+              console.log(`✅ Auto-loaded ${rows.length} registry records.`);
+            })
+            .catch(err => console.error("Auto-fetch registry failed:", err));
+        }
+      }
+    });
+    return unsub;
   }, []);
 
   /** Parse a published Google Sheet CSV string into array of row objects */
@@ -860,14 +877,18 @@ export default function SuperAdminPanel({ config, setConfig, syncStatus, assets,
                                            <div style={{background:'rgba(0,0,0,0.05)', padding:'10px', borderRadius:'6px', fontSize:'12px', border:'1px solid rgba(0,0,0,0.1)'}}>
                                              <div style={{fontWeight:'bold', marginBottom:'5px', color:'#475569'}}>DEBUG INFO (Search Targets):</div>
                                              <ul style={{margin:'0', paddingLeft:'15px', color:'#64748b'}}>
-                                               <li>Registry Records Loaded: {registryData.length}</li>
+                                               <li style={{color: registryData.length === 0 ? '#ef4444' : 'inherit', fontWeight: registryData.length === 0 ? 'bold' : 'normal'}}>
+                                                 Registry Records Loaded: {registryData.length} {registryData.length === 0 && "(Spreadsheet link might be broken or not public)"}
+                                               </li>
+                                               <li style={{wordBreak:'break-all', fontSize:'10px'}}>Registry URL: {registryUrl || 'None set'}</li>
                                                <li>Searching for values: {userValues.join(', ') || 'None found'}</li>
                                                <li>Normalized forms: {userValuesNorm.join(', ') || 'None'}</li>
                                              </ul>
                                              <div style={{marginTop:'5px', fontSize:'11px', color:'#94a3b8'}}>
-                                               If the ID you see above is NOT in your Registry Spreadsheet, this error is correct.
+                                               If "Records Loaded" is 0, the registry connection is broken. Check your Google Sheet "Publish to Web" settings.
                                              </div>
                                            </div>
+
 
                                          </div>
                                        );
@@ -1121,14 +1142,18 @@ export default function SuperAdminPanel({ config, setConfig, syncStatus, assets,
                                          <div style={{background:'rgba(0,0,0,0.05)', padding:'10px', borderRadius:'6px', fontSize:'12px', border:'1px solid rgba(0,0,0,0.1)'}}>
                                            <div style={{fontWeight:'bold', marginBottom:'5px', color:'#475569'}}>DEBUG INFO (Search Targets):</div>
                                            <ul style={{margin:'0', paddingLeft:'15px', color:'#64748b'}}>
-                                             <li>Registry Records Loaded: {registryData.length}</li>
+                                             <li style={{color: registryData.length === 0 ? '#ef4444' : 'inherit', fontWeight: registryData.length === 0 ? 'bold' : 'normal'}}>
+                                               Registry Records Loaded: {registryData.length} {registryData.length === 0 && "(Spreadsheet link might be broken or not public)"}
+                                             </li>
+                                             <li style={{wordBreak:'break-all', fontSize:'10px'}}>Registry URL: {registryUrl || 'None set'}</li>
                                              <li>Searching for values: {userValues.join(', ') || 'None found'}</li>
                                              <li>Normalized forms: {userValuesNorm.join(', ') || 'None'}</li>
                                            </ul>
                                            <div style={{marginTop:'5px', fontSize:'11px', color:'#94a3b8'}}>
-                                             If the ID you see above is NOT in your Registry Spreadsheet, this error is correct.
+                                             If "Records Loaded" is 0, the registry connection is broken. Check your Google Sheet "Publish to Web" settings.
                                            </div>
                                          </div>
+
 
                                        </div>
                                      );
