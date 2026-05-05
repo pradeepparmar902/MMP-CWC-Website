@@ -887,7 +887,16 @@ export default function SuperAdminPanel({ config, setConfig, syncStatus, assets,
                                              <div style={{marginTop:'5px', fontSize:'11px', color:'#94a3b8'}}>
                                                If "Records Loaded" is 0, the registry connection is broken. Check your Google Sheet "Publish to Web" settings.
                                              </div>
+                                             {registryUrl === '' && (
+                                               <button 
+                                                 onClick={(e) => { e.stopPropagation(); setActiveTab('registry'); }}
+                                                 style={{marginTop:'10px', width:'100%', padding:'8px', background:'#ef4444', color:'white', border:'none', borderRadius:'4px', cursor:'pointer', fontWeight:'bold'}}
+                                               >
+                                                 ⚙️ SET REGISTRY URL NOW
+                                               </button>
+                                             )}
                                            </div>
+
 
 
                                          </div>
@@ -1152,7 +1161,16 @@ export default function SuperAdminPanel({ config, setConfig, syncStatus, assets,
                                            <div style={{marginTop:'5px', fontSize:'11px', color:'#94a3b8'}}>
                                              If "Records Loaded" is 0, the registry connection is broken. Check your Google Sheet "Publish to Web" settings.
                                            </div>
+                                           {registryUrl === '' && (
+                                             <button 
+                                               onClick={(e) => { e.stopPropagation(); setActiveTab('registry'); }}
+                                               style={{marginTop:'10px', width:'100%', padding:'8px', background:'#ef4444', color:'white', border:'none', borderRadius:'4px', cursor:'pointer', fontWeight:'bold'}}
+                                             >
+                                               ⚙️ SET REGISTRY URL NOW
+                                             </button>
+                                           )}
                                          </div>
+
 
 
                                        </div>
