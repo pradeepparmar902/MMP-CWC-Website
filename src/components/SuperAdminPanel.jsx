@@ -154,37 +154,41 @@ export default function SuperAdminPanel({ config, setConfig, syncStatus, assets,
     return unsubscribe;
   }, []);
 
-  const fetchRegistry = async () => {
+  const fetchRegistry = async (overrideUrl = null) => {
     setIsRegistryLoading(true);
     try {
-      const docSnap = await getDoc(doc(db, 'site_settings', 'election_config'));
-      if (docSnap.exists()) {
-        const data = docSnap.data();
-        let url = data.sheetUrl || '';
-        
+      let url = overrideUrl;
+      
+      if (!url) {
+        const docSnap = await getDoc(doc(db, 'site_settings', 'election_config'));
+        if (docSnap.exists()) {
+          url = docSnap.data().sheetUrl || '';
+        }
+      }
+
+      if (url) {
         // 🛠️ Auto-Fix: If saved URL is the wrong format, fix it on the fly
         if (url.includes('/pubhtml')) {
           url = url.replace('/pubhtml', '/pub?output=csv');
         }
         
         setRegistryUrl(url);
-        if (url) {
-          const response = await fetch(url);
-          const text = await response.text();
-          
-          // Detect if we actually got HTML (error) instead of CSV
-          if (text.includes('<!DOCTYPE html>') || text.includes('<html')) {
-            throw new Error("The link provided is an HTML page, not a CSV file. Make sure you selected 'CSV' when publishing.");
-          }
-
-          const { rows } = parseCSV(text);
-          setRegistryData(rows);
-          console.log(`✅ Loaded ${rows.length} registry records for validation.`);
+        const response = await fetch(url);
+        const text = await response.text();
+        
+        // Detect if we actually got HTML (error) instead of CSV
+        if (text.includes('<!DOCTYPE html>') || text.includes('<html')) {
+          setRegistryData([]); // Clear bad data
+          throw new Error("The link provided is an HTML page, not a CSV file. Make sure you selected 'CSV' when publishing.");
         }
+
+        const { rows } = parseCSV(text);
+        setRegistryData(rows);
+        console.log(`✅ Loaded ${rows.length} registry records for validation.`);
       }
     } catch (e) {
       console.error("Registry fetch failed:", e);
-      // We don't alert here to avoid spamming, but the UI shows "Records Loaded: 0"
+      alert("❌ Registry Error: " + e.message);
     } finally {
       setIsRegistryLoading(false);
     }
@@ -1255,7 +1259,8 @@ export default function SuperAdminPanel({ config, setConfig, syncStatus, assets,
                       updatedAt: new Date().toISOString()
                     }, { merge: true });
                     alert("✅ Registry URL updated and auto-corrected to CSV format!");
-                    fetchRegistry();
+                    // Force fetch with the NEW URL immediately to avoid stale read
+                    fetchRegistry(finalUrl);
                   } catch (e) { 
                     console.error("Save failed:", e);
                     alert("❌ Failed to save: " + e.message + "\n\nMake sure you are logged in as the master admin."); 
