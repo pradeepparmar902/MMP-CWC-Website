@@ -160,17 +160,31 @@ export default function SuperAdminPanel({ config, setConfig, syncStatus, assets,
       const docSnap = await getDoc(doc(db, 'site_settings', 'election_config'));
       if (docSnap.exists()) {
         const data = docSnap.data();
-        setRegistryUrl(data.sheetUrl || '');
-        if (data.sheetUrl) {
-          const response = await fetch(data.sheetUrl);
-          const csvText = await response.text();
-          const { rows } = parseCSV(csvText);
+        let url = data.sheetUrl || '';
+        
+        // 🛠️ Auto-Fix: If saved URL is the wrong format, fix it on the fly
+        if (url.includes('/pubhtml')) {
+          url = url.replace('/pubhtml', '/pub?output=csv');
+        }
+        
+        setRegistryUrl(url);
+        if (url) {
+          const response = await fetch(url);
+          const text = await response.text();
+          
+          // Detect if we actually got HTML (error) instead of CSV
+          if (text.includes('<!DOCTYPE html>') || text.includes('<html')) {
+            throw new Error("The link provided is an HTML page, not a CSV file. Make sure you selected 'CSV' when publishing.");
+          }
+
+          const { rows } = parseCSV(text);
           setRegistryData(rows);
           console.log(`✅ Loaded ${rows.length} registry records for validation.`);
         }
       }
     } catch (e) {
       console.error("Registry fetch failed:", e);
+      // We don't alert here to avoid spamming, but the UI shows "Records Loaded: 0"
     } finally {
       setIsRegistryLoading(false);
     }
@@ -1227,19 +1241,35 @@ export default function SuperAdminPanel({ config, setConfig, syncStatus, assets,
               <button 
                 className="add-now-btn"
                 onClick={async () => {
+                  let finalUrl = registryUrl.trim();
+                  // 🛠️ Auto-Fix: Convert /pubhtml to ?output=csv
+                  if (finalUrl.includes('/pubhtml')) {
+                    finalUrl = finalUrl.replace('/pubhtml', '/pub?output=csv');
+                    setRegistryUrl(finalUrl);
+                  }
+
                   setIsSavingRegistryUrl(true);
                   try {
-                    await setDoc(doc(db, 'site_settings', 'election_config'), { sheetUrl: registryUrl }, { merge: true });
-                    alert("✅ Registry URL updated!");
+                    await setDoc(doc(db, 'site_settings', 'election_config'), { 
+                      sheetUrl: finalUrl,
+                      updatedAt: new Date().toISOString()
+                    }, { merge: true });
+                    alert("✅ Registry URL updated and auto-corrected to CSV format!");
                     fetchRegistry();
-                  } catch (e) { alert("❌ Failed: " + e.message); }
-                  finally { setIsSavingRegistryUrl(false); }
+                  } catch (e) { 
+                    console.error("Save failed:", e);
+                    alert("❌ Failed to save: " + e.message + "\n\nMake sure you are logged in as the master admin."); 
+                  }
+                  finally { 
+                    setIsSavingRegistryUrl(false); 
+                  }
                 }}
                 disabled={isSavingRegistryUrl}
                 style={{alignSelf: 'flex-end', height: '42px', padding: '0 25px'}}
               >
                 {isSavingRegistryUrl ? 'Saving...' : 'Save URL'}
               </button>
+
             </div>
           </div>
 
