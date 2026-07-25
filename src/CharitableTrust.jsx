@@ -6032,10 +6032,53 @@ function AdminEvents({ mob, C, setC, auth }) {
                   <input type="text" list="event-tags-list" value={ev.tag} onChange={e=>updateItem(i,"tag",e.target.value)} style={{width:"100%",padding:"6px",borderRadius:6,border:"1px solid var(--bd)",fontSize:".85rem",fontFamily:"inherit"}}/>
                 </div>
                 <div style={{gridColumn:"1/-1"}}>
-                  <label style={{fontSize:".7rem",color:"var(--mu)",fontWeight:600}}>Registration Section (For grouping bulk registrations)</label>
-                  <select value={ev.section || "Default"} onChange={e=>updateItem(i,"section",e.target.value)} style={{width:"100%",padding:"6px",borderRadius:6,border:"1px solid var(--bd)",fontSize:".85rem",fontFamily:"inherit"}}>
+                  <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:4}}>
+                    <label style={{fontSize:".7rem",color:"var(--mu)",fontWeight:600}}>Registration Section (For grouping bulk registrations)</label>
+                    <button 
+                      type="button"
+                      onClick={() => {
+                        const name = prompt("Enter new Registration Section name (e.g. Education 2026):");
+                        if (name && name.trim()) {
+                          const cleanName = name.trim();
+                          const existing = draft.eventSections || [];
+                          if (!existing.includes(cleanName)) {
+                            upd("eventSections", [...existing, cleanName]);
+                          }
+                          updateItem(i, "section", cleanName);
+                        }
+                      }}
+                      style={{background:"none",border:"none",color:"var(--dt)",fontSize:".72rem",fontWeight:700,cursor:"pointer",padding:0,textDecoration:"underline"}}
+                    >
+                      + Add New Section
+                    </button>
+                  </div>
+                  <select 
+                    value={ev.section || "Default"} 
+                    onChange={e => {
+                      if (e.target.value === "__NEW__") {
+                        const name = prompt("Enter new Registration Section name (e.g. Education 2026):");
+                        if (name && name.trim()) {
+                          const cleanName = name.trim();
+                          const existing = draft.eventSections || [];
+                          if (!existing.includes(cleanName)) {
+                            upd("eventSections", [...existing, cleanName]);
+                          }
+                          updateItem(i, "section", cleanName);
+                        }
+                      } else {
+                        updateItem(i, "section", e.target.value);
+                      }
+                    }} 
+                    style={{width:"100%",padding:"6px",borderRadius:6,border:"1px solid var(--bd)",fontSize:".85rem",fontFamily:"inherit",background:"white"}}
+                  >
                     <option value="Default">Default Section</option>
-                    {(C.eventSections||[]).map(s => <option key={s} value={s}>{s}</option>)}
+                    {Array.from(new Set([
+                      ...(draft.eventSections || []),
+                      ...(draft.events || []).map(e => e.section).filter(Boolean)
+                    ])).filter(s => s !== "Default").map(s => (
+                      <option key={s} value={s}>{s}</option>
+                    ))}
+                    <option value="__NEW__">+ Create New Section...</option>
                   </select>
                 </div>
                 <div style={{gridColumn:"1/-1"}}>
@@ -9754,7 +9797,12 @@ function AdminRegistrations({ mob, C, setC, auth }) {
             <h2 style={{fontFamily:"'Playfair Display',serif",color:"var(--dt)",margin:0,fontSize:"1.25rem",fontWeight:700}}>Event Registrations</h2>
             
             <div style={{display:"flex",gap:4,background:"#E9ECEF",padding:3,borderRadius:20}}>
-              {["All", "Default", ...(C.eventSections || [])].map(sec => {
+              {Array.from(new Set([
+                "All", 
+                "Default", 
+                ...(C.eventSections || []), 
+                ...(C.events || []).map(e => e.section).filter(Boolean)
+              ])).map(sec => {
                 const isSelected = selectedSection === sec;
                 return (
                   <button key={sec} onClick={()=>setSelectedSection(sec)} style={{
