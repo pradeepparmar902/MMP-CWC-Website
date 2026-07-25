@@ -4126,7 +4126,7 @@ function Admin({ C, setC, setPage, auth, onLogout, onShowLogin }) {
           {tab==="overview"  && hasAccess.includes("overview") && <Overview mob={mob} C={C} auth={auth}/>}
           {tab==="donations" && hasAccess.includes("donations") && <Donations mob={mob} auth={auth} C={C}/>}
           {tab==="events"    && hasAccess.includes("events") && <AdminEvents mob={mob} C={C} setC={setC} auth={auth}/>}
-          {tab==="registrations" && hasAccess.includes("registrations") && <AdminRegistrations mob={mob} C={C} auth={auth}/>}
+          {tab==="registrations" && hasAccess.includes("registrations") && <AdminRegistrations mob={mob} C={C} setC={setC} auth={auth}/>}
           {tab==="volunteers"&& hasAccess.includes("volunteers") && <Volunteers mob={mob} auth={auth} C={C}/>}
           {tab==="meritlist" && hasAccess.includes("meritlist") && <AdminMeritList mob={mob} C={C} auth={auth}/>}
           {tab==="inviteletters" && hasAccess.includes("inviteletters") && <AdminInviteLetters mob={mob} C={C} auth={auth}/>}
@@ -8419,7 +8419,218 @@ function VerificationModal({ viewing, setViewing, allRegs, saveVerification, C }
   );
 }
 
-function AdminRegistrations({ mob, C, auth }) {
+function AdminRegistrations({ mob, C, setC, auth }) {
+
+  const [bulkGroup, setBulkGroup] = useState("");
+  const [applyingBulkGroup, setApplyingBulkGroup] = useState(false);
+  const [showSerialModal, setShowSerialModal] = useState(false);
+  const [serialPrefix, setSerialPrefix] = useState("");
+  const [serialStart, setSerialStart] = useState(1);
+  const [sortLevels, setSortLevels] = useState([{ col: "", val: [], dir: "asc" }]);
+  const [applyingSerial, setApplyingSerial] = useState(false);
+  const [selectedPreset, setSelectedPreset] = useState("");
+
+  const saveToFb = async (newC) => {
+    try {
+      await fbSave(newC, auth?.idToken);
+      if(setC) setC(newC);
+    } catch(e) {
+      alert("Error saving: " + e.message);
+    }
+  };
+
+  const handleApplyBulkGroup = async () => {
+    const gName = bulkGroup.trim();
+    if (!gName) {
+      alert("Please enter a group name to apply.");
+      return;
+    }
+    if (filteredRegs.length === 0) {
+      alert("No registrations are currently filtered.");
+      return;
+    }
+    if (!window.confirm(`Are you sure you want to apply the group "${gName}" to all ${filteredRegs.length} currently filtered registrations?`)) return;
+    
+    setApplyingBulkGroup(true);
+    let successCount = 0;
+    try {
+      for (const r of filteredRegs) {
+        const cleanData = { ...r, Group: gName };
+        delete cleanData.id; delete cleanData._submittedAt;
+        await fbUpdateRegistration(r.id, cleanData, auth?.idToken);
+        setRegs(prev => prev.map(x => x.id === r.id ? { ...x, Group: gName } : x));
+        successCount++;
+      }
+      alert(`Successfully grouped ${successCount} registrations under "${gName}"!`);
+      setBulkGroup("");
+    } catch (e) {
+      alert(`Error after grouping ${successCount} registrations: ` + e.message);
+    }
+    setApplyingBulkGroup(false);
+  };
+
+  const handleSavePreset = async (overwriteName = null) => {
+    let pName = overwriteName;
+    if (typeof overwriteName !== "string") pName = null;
+    if (!pName) {
+      pName = prompt("Enter a name for this Serial Number Preset:");
+      if (!pName) return;
+    }
+    
+    const preset = {
+      name: pName,
+      prefix: serialPrefix,
+      levels: sortLevels
+    };
+    
+    const existing = C.serialPresets || [];
+    const newPresets = [...existing.filter(p => p.name !== pName), preset];
+    
+    await saveToFb({ ...C, serialPresets: newPresets });
+    setSelectedPreset(pName);
+    alert(`Preset "${pName}" saved successfully!`);
+  };
+
+  const handleLoadPreset = (pName) => {
+    setSelectedPreset(pName);
+    if (!pName) {
+      setSerialPrefix("");
+      setSortLevels([{ col: "", val: [], dir: "asc" }]);
+      return;
+    }
+    const preset = (C.serialPresets || []).find(p => p.name === pName);
+    if (preset) {
+      setSerialPrefix(preset.prefix || "");
+      if (preset.levels) setSortLevels(preset.levels);
+      else {
+        const arr = [];
+        if (preset.l1 && preset.l1.col) arr.push(preset.l1);
+        if (preset.l2 && preset.l2.col) arr.push(preset.l2);
+        if (preset.l3 && preset.l3.col) arr.push(preset.l3);
+        if (arr.length === 0) arr.push({ col: "", val: [], dir: "asc" });
+        setSortLevels(arr);
+      }
+    }
+  };
+
+  const handleApplySerialNumbers = async () => {
+    if (filteredRegs.length === 0) return alert("No registrations to assign numbers to.");
+    
+    let targetRegs = filteredRegs.filter(r => r.Status === "Approved" || r.status === "Approved");
+    const filterLevels = sortLevels.filter(l => l.col && l.val && l.val.length > 0);
+    if (filterLevels.length > 0) {
+      targetRegs = targetRegs.filter(r => {
+        for (const level of filterLevels) {
+          const rVal = String(r[level.col] || "").trim();
+          if (!level.val.includes(rVal)) return false;
+        }
+        return true;
+      });
+    }
+
+    if (targetRegs.length === 0) {
+      return alert("No registrations match the selected value filters.");
+    }
+    
+    if (!window.confirm(`Are you sure you want to assign serial numbers to ${targetRegs.length} students?`)) return;
+    
+    setApplyingSerial(true);
+    
+    const sorted = targetRegs.sort((a, b) => {
+      const activeLevels = sortLevels.filter(l => l.col);
+      for (const level of activeLevels) {
+        let valA = String(a[level.col] || "").trim();
+        let valB = String(b[level.col] || "").trim();
+        
+        if (level.val && level.val.length > 0) {
+          const idxA = level.val.indexOf(valA);
+          const idxB = level.val.indexOf(valB);
+          
+          if (idxA !== -1 && idxB !== -1) {
+             if (idxA !== idxB) return level.dir === "asc" ? idxA - idxB : idxB - idxA;
+             continue;
+          }
+          if (idxA !== -1) return level.dir === "asc" ? -1 : 1;
+          if (idxB !== -1) return level.dir === "asc" ? 1 : -1;
+        }
+        
+        const numA = parseFloat(valA);
+        const numB = parseFloat(valB);
+        
+        let cmp = 0;
+        if (!isNaN(numA) && !isNaN(numB)) {
+          cmp = numA - numB;
+        } else {
+          cmp = valA.toLowerCase().localeCompare(valB.toLowerCase());
+        }
+        
+        if (cmp !== 0) {
+          return level.dir === "asc" ? cmp : -cmp;
+        }
+      }
+      return 0;
+    });
+
+    let successCount = 0;
+    try {
+      let currentNum = Number(serialStart) || 1;
+      for (const r of sorted) {
+        const serialStr = serialPrefix ? `${serialPrefix}dots${currentNum}` : `${currentNum}`;
+        const cleanData = { ...r, "Serial Number": serialStr };
+        delete cleanData.id; delete cleanData._submittedAt;
+        
+        await fbUpdateRegistration(r.id, cleanData, auth?.idToken);
+        setRegs(prev => prev.map(x => x.id === r.id ? { ...x, "Serial Number": serialStr } : x));
+        
+        currentNum++;
+        successCount++;
+      }
+      alert(`Successfully assigned serial numbers to ${successCount} registrations!`);
+      setShowSerialModal(false);
+    } catch (e) {
+      alert(`Error after assigning ${successCount} serial numbers: ` + e.message);
+    }
+    setApplyingSerial(false);
+  };
+
+  const handleResetSerialNumbers = async () => {
+    let validRegs = [...filteredRegs];
+    const filterLevels = sortLevels.filter(l => l.col && l.val && l.val.length > 0);
+    if (filterLevels.length > 0) {
+      validRegs = validRegs.filter(r => {
+        for (const level of filterLevels) {
+          const rVal = String(r[level.col] || "").trim();
+          if (!level.val.includes(rVal)) return false;
+        }
+        return true;
+      });
+    }
+
+    if (validRegs.length === 0) return alert("No registrations match the selected value filters.");
+    
+    if (!window.confirm(`Are you sure you want to completely clear the serial numbers from ${validRegs.length} students?`)) return;
+    
+    setApplyingSerial(true);
+    let successCount = 0;
+    try {
+      for (const r of validRegs) {
+        if (!r["Serial Number"]) continue;
+        
+        const cleanData = { ...r };
+        delete cleanData["Serial Number"];
+        delete cleanData.id; 
+        delete cleanData._submittedAt;
+        
+        await fbUpdateRegistration(r.id, { "Serial Number": null }, auth?.idToken);
+        setRegs(prev => prev.map(x => x.id === r.id ? { ...x, "Serial Number": "" } : x));
+        successCount++;
+      }
+      alert(`Successfully cleared serial numbers from ${successCount} registrations.`);
+    } catch (e) {
+      alert(`Error after clearing ${successCount} serial numbers: ` + e.message);
+    }
+    setApplyingSerial(false);
+  };
 
   const [regs, setRegs] = useState([]);
   const [selectedSection, setSelectedSection] = useState("All");
@@ -8664,6 +8875,31 @@ function AdminRegistrations({ mob, C, auth }) {
           <button onClick={handleExportCSV} className="bt" style={{padding:"8px 16px",borderRadius:8,fontSize:".85rem",fontWeight:600,display:"flex",alignItems:"center",gap:8,whiteSpace:"nowrap",boxShadow:"0 2px 8px rgba(0,0,0,0.15)"}}>
             <span>📥</span> Export to CSV
           </button>
+          
+          <div style={{display:"flex",alignItems:"center",gap:6,borderLeft:"1px solid var(--bd)",paddingLeft:12}}>
+            {(() => {
+              const existingGroups = [...new Set(regs.map(r => r.Group).filter(Boolean))];
+              return (
+                <datalist id="group-suggestions">
+                  {existingGroups.map(g => <option key={g} value={g} />)}
+                </datalist>
+              );
+            })()}
+            <input 
+              type="text" 
+              list="group-suggestions"
+              placeholder="Bulk Group Name..." 
+              value={bulkGroup}
+              onChange={e=>setBulkGroup(e.target.value)}
+              style={{padding:"8px 12px",borderRadius:8,border:"1px solid var(--bd)",fontSize:".85rem",width:150,outline:"none",fontFamily:"inherit"}}
+            />
+            <button onClick={handleApplyBulkGroup} disabled={applyingBulkGroup} style={{padding:"8px 16px",borderRadius:8,fontSize:".85rem",fontWeight:600,display:"flex",alignItems:"center",gap:6,background:"var(--dt)",color:"white",border:"none",cursor:applyingBulkGroup?"wait":"pointer",boxShadow:"0 2px 8px rgba(0,0,0,0.1)",whiteSpace:"nowrap"}}>
+              {applyingBulkGroup ? "Applying..." : "Apply Group"}
+            </button>
+          </div>
+          <button onClick={() => setShowSerialModal(true)} style={{padding:"8px 16px",borderRadius:8,fontSize:".85rem",fontWeight:600,display:"flex",alignItems:"center",gap:6,background:"white",border:"1px solid var(--bd)",color:"var(--dt)",cursor:"pointer",boxShadow:"0 2px 8px rgba(0,0,0,0.05)",whiteSpace:"nowrap"}}>
+            # Generate Serial Numbers
+          </button>
         </div>
       </div>
 
@@ -8847,6 +9083,193 @@ function AdminRegistrations({ mob, C, auth }) {
 
       {viewing && (
         <VerificationModal viewing={viewing} setViewing={setViewing} allRegs={regs} saveVerification={saveVerification} C={C} />
+      )}
+
+      {showSerialModal && (
+        <div style={{position:"fixed",top:0,left:0,right:0,bottom:0,background:"rgba(0,0,0,0.5)",zIndex:100000,display:"flex",alignItems:"center",justifyContent:"center",padding:16}}>
+          <div style={{background:"white",padding:"24px",borderRadius:12,width:"100%",maxWidth:500,maxHeight:"90vh",overflowY:"auto",boxShadow:"0 10px 40px rgba(0,0,0,0.2)"}}>
+            <h3 style={{marginTop:0,color:"var(--dt)",marginBottom:16}}>Generate Serial Numbers</h3>
+            
+            <div style={{display:"flex",gap:8,marginBottom:20,alignItems:"center",background:"#f9f9f9",padding:12,borderRadius:8}}>
+              <label style={{fontSize:".85rem",fontWeight:600}}>Preset:</label>
+              <select value={selectedPreset} onChange={e=>handleLoadPreset(e.target.value)} style={{flex:1,padding:"6px",borderRadius:6,border:"1px solid #CCC",fontSize:".85rem"}}>
+                <option value="">-- Custom --</option>
+                {(C.serialPresets || []).map(p => <option key={p.name} value={p.name}>{p.name}</option>)}
+              </select>
+              {selectedPreset && (
+                <button onClick={() => handleSavePreset(selectedPreset)} style={{padding:"6px 12px",background:"#4CAF50",color:"white",border:"none",borderRadius:6,fontSize:".8rem",cursor:"pointer"}}>Save</button>
+              )}
+              <button onClick={() => handleSavePreset()} style={{padding:"6px 12px",background:"var(--dt)",color:"white",border:"none",borderRadius:6,fontSize:".8rem",cursor:"pointer"}}>Save As...</button>
+            </div>
+            
+            {(() => {
+              let maxUsedNumber = 0;
+              const filterLevelsUI = sortLevels.filter(l => l.col && l.val && l.val.length > 0);
+              const matchingRegs = (filterLevelsUI.length > 0) ? regs.filter(r => {
+                for (const level of filterLevelsUI) {
+                  if (!level.val.includes(String(r[level.col] || "").trim())) return false;
+                }
+                return true;
+              }) : regs;
+              
+              matchingRegs.forEach(r => {
+                const sn = r["Serial Number"];
+                if (sn) {
+                  if (serialPrefix && !String(sn).startsWith(serialPrefix)) return;
+                  const match = String(sn).match(/\d+$/);
+                  if (match) {
+                    const num = parseInt(match[0], 10);
+                    if (num > maxUsedNumber) maxUsedNumber = num;
+                  }
+                }
+              });
+
+              return (
+                <div style={{display:"flex",gap:12,marginBottom:16}}>
+                  <div style={{flex:1}}>
+                    <label style={{display:"block",fontSize:".8rem",fontWeight:600,marginBottom:4}}>Prefix (Optional)</label>
+                    <input value={serialPrefix} onChange={e=>setSerialPrefix(e.target.value)} placeholder="e.g. Graduate-" style={{width:"100%",padding:"8px",borderRadius:6,border:"1px solid #CCC",boxSizing:"border-box",fontSize:"9rem"}} />
+                  </div>
+                  <div style={{width:100}}>
+                    <label style={{display:"block",fontSize:".8rem",fontWeight:600,marginBottom:4}}>Start Num</label>
+                    <input type="number" value={serialStart} onChange={e=>setSerialStart(e.target.value)} style={{width:"100%",padding:"8px",borderRadius:6,border:"1px solid #CCC",boxSizing:"border-box",fontSize:"9rem"}} />
+                    <div style={{fontSize:".7rem",color:"#888",marginTop:4,textAlign:"right"}}>Last: {maxUsedNumber || "None"}</div>
+                  </div>
+                </div>
+              );
+            })()}
+            
+            <p style={{fontSize:".85rem",color:"#666",marginBottom:8}}>Sort order before assigning numbers (Optional):</p>
+            {sortLevels.map((level, i) => {
+              const uVals = level.col ? getUniqueValues(level.col) : [];
+              return (
+                <div key={i} style={{display:"flex",gap:8,marginBottom:12,alignItems:"flex-start",background:"#fafafa",padding:12,borderRadius:8,border:"1px solid #E0E0E0"}}>
+                  <div style={{fontSize:".8rem",fontWeight:600,width:80,marginTop:8}}>Level {i+1}</div>
+                  
+                  <div style={{flex:1,display:"flex",flexDirection:"column",gap:8}}>
+                    <div style={{display:"flex",gap:8}}>
+                      <select value={level.col} onChange={e=>{
+                        const newLevels = [...sortLevels];
+                        newLevels[i] = {...newLevels[i], col: e.target.value, val: []};
+                        setSortLevels(newLevels);
+                      }} style={{flex:1,padding:"6px",borderRadius:4,border:"1px solid #CCC",fontSize:".85rem"}}>
+                        <option value="">-- None --</option>
+                        {allKeys.filter(k => !sortLevels.some((sl, slIdx) => slIdx !== i && sl.col === k)).map(k => <option key={k} value={k}>{k}</option>)}
+                      </select>
+                      <select value={level.dir} onChange={e=>{
+                        const newLevels = [...sortLevels];
+                        newLevels[i] = {...newLevels[i], dir: e.target.value};
+                        setSortLevels(newLevels);
+                      }} style={{width:80,padding:"6px",borderRadius:4,border:"1px solid #CCC",fontSize:".85rem"}}>
+                        <option value="asc">A-Z / 0-9</option>
+                        <option value="desc">Z-A / 9-0</option>
+                      </select>
+                      {sortLevels.length > 1 && (
+                        <button onClick={()=>{
+                          const newLevels = [...sortLevels];
+                          newLevels.splice(i, 1);
+                          setSortLevels(newLevels);
+                        }} style={{padding:"4px 8px",background:"#FEF0EF",color:"#C0392B",border:"1px solid #F5B8B8",borderRadius:4,cursor:"pointer",fontSize:".85rem"}}>✕</button>
+                      )}
+                    </div>
+                    
+                    {level.col && (
+                      <div style={{display:"flex",flexDirection:"column",gap:4}}>
+                        <div style={{display:"flex",gap:8}}>
+                          <select value="" onChange={e=>{
+                            if(!e.target.value) return;
+                            const newLevels = [...sortLevels];
+                            if(!newLevels[i].val.includes(e.target.value)) {
+                              newLevels[i].val = [...newLevels[i].val, e.target.value];
+                              setSortLevels(newLevels);
+                            }
+                          }} style={{width:"100%",padding:"6px",borderRadius:4,border:"1px dashed #CCC",fontSize:".8rem",color:"#666"}}>
+                            <option value="">+ Add custom value to target & order...</option>
+                            {uVals.filter(uv => !level.val.includes(uv)).map(uv => <option key={uv} value={uv}>{uv}</option>)}
+                          </select>
+                        </div>
+                        {level.val.length > 0 && (
+                          <div style={{display:"flex",flexDirection:"column",gap:4,marginTop:4}}>
+                            {level.val.map((v, vIdx) => (
+                              <div key={v} style={{display:"flex",alignItems:"center",gap:6,background:"white",padding:"4px 8px",borderRadius:4,border:"1px solid #E0E0E0",fontSize:".8rem"}}>
+                                <span style={{fontWeight:600,color:"#999",width:20}}>{vIdx+1}.</span>
+                                <span style={{flex:1}}>{v}</span>
+                                <div style={{display:"flex",gap:2}}>
+                                  <button onClick={()=>{
+                                    if(vIdx===0) return;
+                                    const newLevels = [...sortLevels];
+                                    const arr = [...newLevels[i].val];
+                                    [arr[vIdx-1], arr[vIdx]] = [arr[vIdx], arr[vIdx-1]];
+                                    newLevels[i].val = arr;
+                                    setSortLevels(newLevels);
+                                  }} disabled={vIdx===0} style={{padding:"2px 6px",cursor:vIdx===0?"not-allowed":"pointer",border:"none",background:"#EEE",borderRadius:2}}>↑</button>
+                                  <button onClick={()=>{
+                                    if(vIdx===level.val.length-1) return;
+                                    const newLevels = [...sortLevels];
+                                    const arr = [...newLevels[i].val];
+                                    [arr[vIdx], arr[vIdx+1]] = [arr[vIdx+1], arr[vIdx]];
+                                    newLevels[i].val = arr;
+                                    setSortLevels(newLevels);
+                                  }} disabled={vIdx===level.val.length-1} style={{padding:"2px 6px",cursor:vIdx===level.val.length-1?"not-allowed":"pointer",border:"none",background:"#EEE",borderRadius:2}}>↓</button>
+                                  <button onClick={()=>{
+                                    const newLevels = [...sortLevels];
+                                    newLevels[i].val = newLevels[i].val.filter((_, idx) => idx !== vIdx);
+                                    setSortLevels(newLevels);
+                                  }} style={{padding:"2px 6px",cursor:"pointer",border:"none",background:"#FEF0EF",color:"#C0392B",borderRadius:2,marginLeft:4}}>✕</button>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+            <button onClick={()=>{
+              setSortLevels([...sortLevels, {col:"",val:[],dir:"asc"}]);
+            }} style={{padding:"6px 12px",background:"#f5f5f5",border:"1px dashed #CCC",borderRadius:6,fontSize:".85rem",cursor:"pointer",width:"100%",color:"#666"}}>
+              + Add Sort Level
+            </button>
+            
+            {(() => {
+              let validRegs = filteredRegs.filter(r => r.Status === "Approved" || r.status === "Approved");
+              let targetLen = validRegs.length;
+              
+              let allRegs = [...filteredRegs];
+              let allLen = allRegs.length;
+
+              const fLevels = sortLevels.filter(l => l.col && l.val && l.val.length > 0);
+              if (fLevels.length > 0) {
+                targetLen = validRegs.filter(r => {
+                  for (const level of fLevels) {
+                    if (!level.val.includes(String(r[level.col] || "").trim())) return false;
+                  }
+                  return true;
+                }).length;
+
+                allLen = allRegs.filter(r => {
+                  for (const level of fLevels) {
+                    if (!level.val.includes(String(r[level.col] || "").trim())) return false;
+                  }
+                  return true;
+                }).length;
+              }
+              return (
+                <div style={{display:"flex",gap:12,marginTop:24}}>
+                  <button onClick={handleApplySerialNumbers} disabled={applyingSerial || targetLen === 0} style={{flex:1,background:(applyingSerial || targetLen === 0)?"var(--mu)":"var(--dt)",color:"white",padding:"10px",borderRadius:6,border:"none",fontWeight:700,cursor:(applyingSerial || targetLen === 0)?"not-allowed":"pointer"}}>
+                    {applyingSerial ? "Applying..." : `Apply to ${targetLen} Rows (Approved Only)`}
+                  </button>
+                  <button onClick={handleResetSerialNumbers} disabled={applyingSerial || allLen === 0} style={{padding:"10px 16px",background:"#FEF0EF",color:"#C0392B",border:"1px solid #F5B8B8",borderRadius:6,cursor:applyingSerial?"wait":"pointer",fontWeight:600}} title="Clear all serial numbers from the matched rows (regardless of status)">
+                    Clear Numbers
+                  </button>
+                  <button onClick={()=>setShowSerialModal(false)} style={{padding:"10px 16px",background:"#EEE",border:"none",borderRadius:6,cursor:"pointer",fontWeight:600}}>Cancel</button>
+                </div>
+              );
+            })()}
+          </div>
+        </div>
       )}
 
 
