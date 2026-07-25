@@ -36,7 +36,17 @@ fetch('./config.json')
     }
   })
   .then(async config => {
-    window.FIREBASE_CONFIG = config;
+    const envApiKey = import.meta.env.VITE_FIREBASE_API_KEY;
+    const envProjectId = import.meta.env.VITE_FIREBASE_PROJECT_ID;
+    const envBucket = import.meta.env.VITE_FIREBASE_STORAGE_BUCKET;
+
+    const mergedConfig = {
+      apiKey: (envApiKey && envApiKey.trim()) || config.apiKey || "",
+      projectId: (envProjectId && envProjectId.trim()) || config.projectId || "",
+      bucket: (envBucket && envBucket.trim()) || config.bucket || ""
+    };
+
+    window.FIREBASE_CONFIG = mergedConfig;
     const { default: App } = await import('./App.jsx');
     createRoot(document.getElementById('root')).render(
       <StrictMode>
