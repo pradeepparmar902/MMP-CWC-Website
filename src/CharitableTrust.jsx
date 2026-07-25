@@ -1261,6 +1261,7 @@ function Events({ C, lang, globalAuthToken, globalProfile, onPublicLogin }) {
   // Auth State
   const [authStep, setAuthStep] = useState(0); // 0 = login/register, 1 = form
   const [mobile, setMobile] = useState("");
+  const [countryCode, setCountryCode] = useState("+91");
 
   const [regName, setRegName] = useState("");
   const [regAddress, setRegAddress] = useState("");
@@ -1352,7 +1353,9 @@ function Events({ C, lang, globalAuthToken, globalProfile, onPublicLogin }) {
     
     setSubmitting(true); setAuthError("");
     try {
-      const phoneNumber = `+91${mobile.replace(/\D/g, '').slice(-10)}`;
+      const cleanNum = mobile.replace(/\D/g, '').slice(-10);
+      if (cleanNum.length < 10) { setAuthError("Please enter a valid 10-digit mobile number"); return; }
+      const phoneNumber = `${countryCode}${cleanNum}`;
       const appVerifier = window.recaptchaVerifierEvent;
       const result = await signInWithPhoneNumber(fbAuth, phoneNumber, appVerifier);
       setConfirmationResult(result);
@@ -1378,17 +1381,18 @@ function Events({ C, lang, globalAuthToken, globalProfile, onPublicLogin }) {
       setAuthToken(idToken); // Temp save for profile creation
       
       const pData = await fbFetchUserProfile(user.uid, idToken);
+      const fullMobile = `${countryCode} ${mobile.replace(/\D/g, '').slice(-10)}`;
       if (pData && pData.name && pData.address) {
         // Profile exists, proceed to form
         if (onPublicLogin) onPublicLogin(idToken, pData);
         setAuthStep(1);
         
-        const newForm = {...formData, "Submitted By": pData.name || mobile};
+        const newForm = {...formData, "Submitted By": pData.name || fullMobile};
         const formSpec = getForm(selectedEvent?.event?.formId);
         formSpec.fields.forEach(f => {
           const fKey = f.label?.trim() || "Field";
           const kLow = fKey.toLowerCase();
-          if (f.type === 'tel' || kLow.includes('mobile') || kLow.includes('phone')) newForm[fKey] = pData.mobile || mobile;
+          if (f.type === 'tel' || kLow.includes('mobile') || kLow.includes('phone')) newForm[fKey] = pData.mobile || fullMobile;
           if (kLow.includes('name') && !kLow.includes('event')) newForm[fKey] = pData.name || "";
           if (kLow.includes('address')) newForm[fKey] = pData.address || "";
           if (kLow.includes('gender') || kLow === 'sex') newForm[fKey] = pData.gender || "";
@@ -1418,7 +1422,8 @@ function Events({ C, lang, globalAuthToken, globalProfile, onPublicLogin }) {
       const user = fbAuth.currentUser;
       if (!user) throw new Error("Not authenticated");
       
-      let profileData = { name: regName, address: regAddress, gender: regGender, mobile: mobile, photoUrl: pUrl };
+      const fullMobile = `${countryCode} ${mobile.replace(/\D/g, '').slice(-10)}`;
+      let profileData = { name: regName, address: regAddress, gender: regGender, mobile: fullMobile, photoUrl: pUrl };
       
       await fbUpdateProfile(authToken, regName, pUrl).catch(()=>null);
       await fbSaveUserProfile(user.uid, profileData, authToken).catch(()=>null);
@@ -1426,7 +1431,7 @@ function Events({ C, lang, globalAuthToken, globalProfile, onPublicLogin }) {
       if (onPublicLogin) onPublicLogin(authToken, profileData);
       setAuthStep(1);
       // Auto-fill form
-      const newForm = {...formData, "Submitted By": profileData.name || mobile};
+      const newForm = {...formData, "Submitted By": profileData.name || fullMobile};
       const formSpec = getForm(selectedEvent?.event?.formId);
       formSpec.fields.forEach(f => {
         const fKey = f.label?.trim() || "Field";
@@ -1583,7 +1588,36 @@ function Events({ C, lang, globalAuthToken, globalProfile, onPublicLogin }) {
                     <form onSubmit={e=>handleSendOtp(e)} style={{display:"flex",flexDirection:"column",gap:12}}>
                       <div>
                         <label style={{display:"block",fontSize:".7rem",fontWeight:600,color:"var(--dt)",marginBottom:4}}>Mobile Number <span style={{color:"red"}}>*</span></label>
-                        <input type="tel" required value={mobile} onChange={e=>setMobile(e.target.value)} style={{width:"100%",padding:"10px 12px",borderRadius:8,border:"1px solid #CCC",fontFamily:"inherit",fontSize:".85rem", background:"#FAFAFA", transition:"all 0.2s", outline:"none"}} placeholder="e.g. 9876543210" onFocus={e=>e.target.style.borderColor="var(--dt)"} onBlur={e=>e.target.style.borderColor="#CCC"}/>
+                        <div style={{display:"flex", gap:8}}>
+                          <select 
+                            value={countryCode} 
+                            onChange={e=>setCountryCode(e.target.value)} 
+                            style={{padding:"10px 8px", borderRadius:8, border:"1px solid #CCC", fontSize:".85rem", background:"#FAFAFA", outline:"none", cursor:"pointer", width: 85, boxSizing: "border-box"}}
+                            onFocus={e=>e.target.style.borderColor="var(--dt)"}
+                            onBlur={e=>e.target.style.borderColor="#CCC"}
+                          >
+                            <option value="+91">+91 (IN)</option>
+                            <option value="+1">+1 (US)</option>
+                            <option value="+44">+44 (UK)</option>
+                            <option value="+971">+971 (AE)</option>
+                            <option value="+966">+966 (SA)</option>
+                            <option value="+61">+61 (AU)</option>
+                            <option value="+65">+65 (SG)</option>
+                          </select>
+                          <input 
+                            type="tel" 
+                            required 
+                            value={mobile} 
+                            onChange={e=>{
+                              const val = e.target.value.replace(/\D/g, "").slice(0, 10);
+                              setMobile(val);
+                            }} 
+                            style={{flex:1, padding:"10px 12px", borderRadius:8, border:"1px solid #CCC", fontFamily:"inherit", fontSize:".85rem", background:"#FAFAFA", transition:"all 0.2s", outline:"none", boxSizing:"border-box"}} 
+                            placeholder="10-digit number" 
+                            onFocus={e=>e.target.style.borderColor="var(--dt)"} 
+                            onBlur={e=>e.target.style.borderColor="#CCC"}
+                          />
+                        </div>
                       </div>
                       <button type="submit" className="bs" style={{width:"100%",padding:"12px",borderRadius:8,fontWeight:700,marginTop:8,opacity:submitting?0.7:1, fontSize:".9rem", boxShadow:"0 4px 14px rgba(0,0,0,0.15)", cursor:"pointer", border:"none", color:"white"}} disabled={submitting}>
                         {submitting ? "Processing..." : "Send OTP"}
@@ -1739,6 +1773,63 @@ function Events({ C, lang, globalAuthToken, globalProfile, onPublicLogin }) {
                                 <span style={{fontSize:".75rem",color:"var(--mu)"}}>{f.type === 'image' ? 'JPG, PNG, etc.' : 'PDF, DOC, etc.'}</span>
                               </div>
                             )}
+                          </div>
+                        ) : (f.type === 'tel' || fKey.toLowerCase().includes("phone") || fKey.toLowerCase().includes("mobile")) ? (
+                          <div style={{display:"flex", gap:8}}>
+                            {(() => {
+                              const rawVal = formData[fKey] || "";
+                              let currentCode = "+91";
+                              let currentNum = "";
+                              
+                              if (rawVal.startsWith("+")) {
+                                const spaceIdx = rawVal.indexOf(" ");
+                                if (spaceIdx !== -1) {
+                                  currentCode = rawVal.substring(0, spaceIdx);
+                                  currentNum = rawVal.substring(spaceIdx + 1).replace(/\D/g, "");
+                                } else {
+                                  if (rawVal.startsWith("+91") && rawVal.length > 3) {
+                                    currentCode = "+91";
+                                    currentNum = rawVal.substring(3).replace(/\D/g, "");
+                                  } else {
+                                    currentNum = rawVal.replace(/\D/g, "");
+                                  }
+                                }
+                              } else {
+                                currentNum = rawVal.replace(/\D/g, "");
+                              }
+                              
+                              return (
+                                <>
+                                  <select 
+                                    value={currentCode} 
+                                    onChange={e=>{
+                                      const nextCode = e.target.value;
+                                      setFormData({...formData, [fKey]: `${nextCode} ${currentNum}`});
+                                    }} 
+                                    style={{padding:"10px 8px", borderRadius:8, border:"1px solid var(--bd)", fontSize:".9rem", background:"white", outline:"none", cursor:"pointer", width: 85, boxSizing: "border-box"}}
+                                  >
+                                    <option value="+91">+91 (IN)</option>
+                                    <option value="+1">+1 (US)</option>
+                                    <option value="+44">+44 (UK)</option>
+                                    <option value="+971">+971 (AE)</option>
+                                    <option value="+966">+966 (SA)</option>
+                                    <option value="+61">+61 (AU)</option>
+                                    <option value="+65">+65 (SG)</option>
+                                  </select>
+                                  <input 
+                                    type="tel" 
+                                    required={f.required} 
+                                    value={currentNum} 
+                                    onChange={e=>{
+                                      const val = e.target.value.replace(/\D/g, "").slice(0, 10);
+                                      setFormData({...formData, [fKey]: `${currentCode} ${val}`});
+                                    }} 
+                                    style={{flex:1, padding:"10px", borderRadius:8, border:"1px solid var(--bd)", fontFamily:"inherit", fontSize:".9rem", boxSizing: "border-box"}} 
+                                    placeholder="10-digit number"
+                                  />
+                                </>
+                              );
+                            })()}
                           </div>
                         ) : (
                           <input type={f.type} required={f.required} value={formData[fKey]||""} onChange={e=>setFormData({...formData, [fKey]:e.target.value})} style={{width:"100%",padding:"10px",borderRadius:8,border:"1px solid var(--bd)",fontFamily:"inherit",fontSize:".9rem"}}/>
@@ -7518,6 +7609,7 @@ function Public({ C, lang, setLang, setPage, auth, onShowLogin }) {
 function UserLoginModal({ onClose, onPublicLogin }) {
   const [isLoginMode, setIsLoginMode] = useState(true);
   const [mobile, setMobile] = useState("");
+  const [countryCode, setCountryCode] = useState("+91");
   const [otp, setOtp] = useState("");
   const [otpSent, setOtpSent] = useState(false);
   const [confirmationResult, setConfirmationResult] = useState(null);
@@ -7533,7 +7625,8 @@ function UserLoginModal({ onClose, onPublicLogin }) {
 
   const handleSendOtp = async (e) => {
     e.preventDefault();
-    if (!mobile || mobile.length < 10) { setAuthError("Please enter a valid 10-digit mobile number"); return; }
+    const cleanNum = mobile.replace(/\D/g, '').slice(-10);
+    if (cleanNum.length < 10) { setAuthError("Please enter a valid 10-digit mobile number"); return; }
     if (!isLoginMode && (!regName || !regAddress || !regGender || !regEmail)) { setAuthError("Please fill out Name, Email, Address, and Gender."); return; }
     
     if (!fbAuth) {
@@ -7563,7 +7656,7 @@ function UserLoginModal({ onClose, onPublicLogin }) {
     
     setSubmitting(true); setAuthError("");
     try {
-      const phoneNumber = `+91${mobile.replace(/\D/g, '').slice(-10)}`;
+      const phoneNumber = `${countryCode}${cleanNum}`;
       const appVerifier = window.recaptchaVerifierLogin;
       const result = await signInWithPhoneNumber(fbAuth, phoneNumber, appVerifier);
       setConfirmationResult(result);
@@ -7586,7 +7679,8 @@ function UserLoginModal({ onClose, onPublicLogin }) {
       const user = result.user;
       const idToken = await user.getIdToken();
       
-      let profileData = { name: regName, email: regEmail, address: regAddress, gender: regGender, mobile: mobile, photoUrl: "" };
+      const fullMobile = `${countryCode} ${mobile.replace(/\D/g, '').slice(-10)}`;
+      let profileData = { name: regName, email: regEmail, address: regAddress, gender: regGender, mobile: fullMobile, photoUrl: "" };
       
       if (!isLoginMode) {
         if (regImageFile) {
@@ -7622,10 +7716,33 @@ function UserLoginModal({ onClose, onPublicLogin }) {
         
         {!otpSent ? (
         <form onSubmit={handleSendOtp} style={{display:"flex",flexDirection:"column",gap:16,textAlign:"left"}}>
-          <div style={{display:"flex",gap:12,flexDirection:mob?"column":"row"}}>
-            <div style={{flex:1}}>
-              <label style={{fontSize:".75rem",fontWeight:700,color:"var(--dt)",marginBottom:6,display:"block"}}>📱 Mobile Number *</label>
-              <input type="tel" value={mobile} onChange={e=>setMobile(e.target.value)} required style={{width:"100%",padding:"10px 14px",borderRadius:12,border:"1px solid var(--bd)",fontSize:".9rem",outline:"none",background:"#F8F9FA",transition:"all .2s"}} placeholder="10-digit number"/>
+          <div>
+            <label style={{fontSize:".75rem",fontWeight:700,color:"var(--dt)",marginBottom:6,display:"block"}}>📱 Mobile Number *</label>
+            <div style={{display:"flex", gap:8}}>
+              <select 
+                value={countryCode} 
+                onChange={e=>setCountryCode(e.target.value)} 
+                style={{padding:"10px 8px", borderRadius:12, border:"1px solid var(--bd)", fontSize:".9rem", background:"#F8F9FA", outline:"none", cursor:"pointer", width: 85, boxSizing: "border-box"}}
+              >
+                <option value="+91">+91 (IN)</option>
+                <option value="+1">+1 (US)</option>
+                <option value="+44">+44 (UK)</option>
+                <option value="+971">+971 (AE)</option>
+                <option value="+966">+966 (SA)</option>
+                <option value="+61">+61 (AU)</option>
+                <option value="+65">+65 (SG)</option>
+              </select>
+              <input 
+                type="tel" 
+                value={mobile} 
+                onChange={e=>{
+                  const val = e.target.value.replace(/\D/g, "").slice(0, 10);
+                  setMobile(val);
+                }} 
+                required 
+                style={{flex:1, padding:"10px 14px", borderRadius:12, border:"1px solid var(--bd)", fontSize:".9rem", outline:"none", background:"#F8F9FA", transition:"all .2s", boxSizing: "border-box"}} 
+                placeholder="10-digit number"
+              />
             </div>
           </div>
           
@@ -10518,7 +10635,59 @@ function DashboardProfile({ globalProfile, globalAuthToken, mob }) {
           </div>
           <div>
             <label style={{display:"block",fontSize:".8rem",fontWeight:700,color:"var(--mu)",marginBottom:6}}>Mobile Number</label>
-            <input type="text" value={data.mobile} onChange={e=>setData({...data,mobile:e.target.value})} style={{width:"100%",padding:12,borderRadius:8,border:"1px solid var(--bd)",fontSize:"1rem"}}/>
+            {(() => {
+              const rawVal = data.mobile || "";
+              let currentCode = "+91";
+              let currentNum = "";
+              
+              if (rawVal.startsWith("+")) {
+                const spaceIdx = rawVal.indexOf(" ");
+                if (spaceIdx !== -1) {
+                  currentCode = rawVal.substring(0, spaceIdx);
+                  currentNum = rawVal.substring(spaceIdx + 1).replace(/\D/g, "");
+                } else {
+                  if (rawVal.startsWith("+91") && rawVal.length > 3) {
+                    currentCode = "+91";
+                    currentNum = rawVal.substring(3).replace(/\D/g, "");
+                  } else {
+                    currentNum = rawVal.replace(/\D/g, "");
+                  }
+                }
+              } else {
+                currentNum = rawVal.replace(/\D/g, "");
+              }
+              
+              return (
+                <div style={{display:"flex", gap:8}}>
+                  <select 
+                    value={currentCode} 
+                    onChange={e=>{
+                      const nextCode = e.target.value;
+                      setData({...data, mobile: `${nextCode} ${currentNum}`});
+                    }} 
+                    style={{padding:12, borderRadius:8, border:"1px solid var(--bd)", fontSize:"1rem", background:"white", outline:"none", cursor:"pointer", width: 85, boxSizing: "border-box"}}
+                  >
+                    <option value="+91">+91 (IN)</option>
+                    <option value="+1">+1 (US)</option>
+                    <option value="+44">+44 (UK)</option>
+                    <option value="+971">+971 (AE)</option>
+                    <option value="+966">+966 (SA)</option>
+                    <option value="+61">+61 (AU)</option>
+                    <option value="+65">+65 (SG)</option>
+                  </select>
+                  <input 
+                    type="text" 
+                    value={currentNum} 
+                    onChange={e=>{
+                      const val = e.target.value.replace(/\D/g, "").slice(0, 10);
+                      setData({...data, mobile: `${currentCode} ${val}`});
+                    }} 
+                    style={{flex:1, padding:12, borderRadius:8, border:"1px solid var(--bd)", fontSize:"1rem", boxSizing: "border-box"}} 
+                    placeholder="10-digit number"
+                  />
+                </div>
+              );
+            })()}
           </div>
           <div>
             <label style={{display:"block",fontSize:".8rem",fontWeight:700,color:"var(--mu)",marginBottom:6}}>Email Address</label>
