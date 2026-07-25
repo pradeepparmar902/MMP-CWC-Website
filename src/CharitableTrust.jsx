@@ -4016,6 +4016,58 @@ function ContentEditor({ C, setC, setPage, auth, hasAccess, master }) {
                   <BlurInput className="ci" value={ev.tagGu||""} onCommit={v=>upd(`events.${i}.tagGu`,v)} placeholder="Gujarati Category"/>
                 </div>
               </div>
+
+              <div className="cf" style={{gridColumn:"1/-1", marginTop: 8}}>
+                <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:4}}>
+                  <label className="cl" style={{fontSize:".8rem",fontWeight:700}}>Registration Section (For grouping bulk registrations)</label>
+                  <button 
+                    type="button"
+                    onClick={() => {
+                      const name = prompt("Enter new Registration Section name (e.g. Education 2026):");
+                      if (name && name.trim()) {
+                        const cleanName = name.trim();
+                        const existing = draft.eventSections || [];
+                        if (!existing.includes(cleanName)) {
+                          upd("eventSections", [...existing, cleanName]);
+                        }
+                        upd(`events.${i}.section`, cleanName);
+                      }
+                    }}
+                    style={{background:"none",border:"none",color:"var(--dt)",fontSize:".75rem",fontWeight:700,cursor:"pointer",padding:0,textDecoration:"underline"}}
+                  >
+                    + Add New Section
+                  </button>
+                </div>
+                <select 
+                  className="ci" 
+                  value={ev.section || "Default"} 
+                  onChange={e => {
+                    if (e.target.value === "__NEW__") {
+                      const name = prompt("Enter new Registration Section name (e.g. Education 2026):");
+                      if (name && name.trim()) {
+                        const cleanName = name.trim();
+                        const existing = draft.eventSections || [];
+                        if (!existing.includes(cleanName)) {
+                          upd("eventSections", [...existing, cleanName]);
+                        }
+                        upd(`events.${i}.section`, cleanName);
+                      }
+                    } else {
+                      upd(`events.${i}.section`, e.target.value);
+                    }
+                  }} 
+                  style={{width:"100%",padding:"8px 12px",borderRadius:8,border:"1px solid var(--bd)",fontSize:".85rem",fontFamily:"inherit",background:"white"}}
+                >
+                  <option value="Default">Default Section</option>
+                  {Array.from(new Set([
+                    ...(draft.eventSections || []),
+                    ...(draft.events || []).map(e => e.section).filter(Boolean)
+                  ])).filter(s => s !== "Default").map(s => (
+                    <option key={s} value={s}>{s}</option>
+                  ))}
+                  <option value="__NEW__">+ Create New Section...</option>
+                </select>
+              </div>
             </div>
           </div>
         ))}
