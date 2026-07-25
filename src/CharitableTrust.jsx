@@ -823,8 +823,33 @@ function Hero({ C, lang }) {
             </div>
           )}
           {h.showImage && h.image && (
-            <div style={{width:"100%",borderRadius:16,overflow:"hidden",boxShadow:"0 12px 30px rgba(0,0,0,0.3)"}}>
-              <img src={h.image} alt="Campaign" style={{width:"100%",display:"block",objectFit:"cover"}} />
+            <div style={{
+              width:"100%",
+              borderRadius:16,
+              overflow:"hidden",
+              background: h?.imageBg === "white" ? "white" : h?.imageBg === "glass" ? "rgba(255,255,255,0.15)" : "transparent",
+              backdropFilter: h?.imageBg === "glass" ? "blur(10px)" : "none",
+              border: h?.imageBg && h?.imageBg !== "transparent" ? "1px solid rgba(255,255,255,0.2)" : "none",
+              boxShadow: h?.imageBg && h?.imageBg !== "transparent" ? "0 12px 30px rgba(0,0,0,0.2)" : "none",
+              display:"flex",
+              alignItems:"center",
+              justifyContent:"center",
+              padding: (h?.imageFit || "contain") === "contain" && h?.imageBg && h?.imageBg !== "transparent" ? 16 : 0
+            }}>
+              <img 
+                src={h.image} 
+                alt="Campaign Image" 
+                style={{
+                  maxWidth:"100%",
+                  maxHeight: h?.imageMaxHeight || 380,
+                  height:"auto",
+                  width: (h?.imageFit || "contain") === "cover" ? "100%" : "auto",
+                  objectFit: h?.imageFit || "contain",
+                  borderRadius:12,
+                  display:"block",
+                  margin:"0 auto"
+                }} 
+              />
             </div>
           )}
           {h.showRegBtn && (
@@ -3604,17 +3629,57 @@ function ContentEditor({ C, setC, setPage, auth, hasAccess, master }) {
             </div>
           </div>
           {draft.hero.showImage && (
-            <div style={{marginBottom: 24, marginLeft: 20}}>
+            <div style={{marginBottom: 24, marginLeft: 20, display:"flex", flexDirection:"column", gap:14, background:"#F9FAFB", padding:16, borderRadius:12, border:"1px solid var(--bd)"}}>
               <div style={{display:"flex", alignItems:"flex-end", gap:8}}>
                 <div style={{flex:1}}>
-                  <F label="Image URL (Or upload)" path="hero.image" hint="Paste image URL here"/>
+                  <F label="Image URL (Or upload PNG/JPEG)" path="hero.image" hint="Paste image URL or click Upload"/>
                 </div>
                 <div style={{marginBottom: 16}}>
                   <input id="hero-img-upload" type="file" accept="image/*" style={{display:"none"}} onChange={handleHeroImageUpload} />
                   <label htmlFor="hero-img-upload" style={{display:"inline-block",background:"var(--dt)",color:"white",padding:"10px 16px",borderRadius:8,fontSize:".85rem",cursor:"pointer",fontWeight:600}}>
-                    {uploading ? "Uploading..." : "Upload"}
+                    {uploading ? "Uploading..." : "Upload File"}
                   </label>
                 </div>
+              </div>
+
+              <div style={{display:"grid", gridTemplateColumns:"1fr 1fr", gap:16}}>
+                <div>
+                  <label style={{display:"block",fontSize:".85rem",fontWeight:600,color:"var(--dt)",marginBottom:6}}>Image Fit & Aspect Ratio</label>
+                  <select 
+                    value={draft.hero.imageFit || "contain"} 
+                    onChange={(e)=>upd("hero.imageFit", e.target.value)} 
+                    style={{width:"100%",padding:"8px 12px",borderRadius:8,border:"1px solid var(--bd)",fontSize:".85rem",background:"white"}}
+                  >
+                    <option value="contain">Fit / Preserve Quality (Best for PNG & Logos)</option>
+                    <option value="cover">Cover / Fill Container (Crops edges)</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label style={{display:"block",fontSize:".85rem",fontWeight:600,color:"var(--dt)",marginBottom:6}}>Image Card Background</label>
+                  <select 
+                    value={draft.hero.imageBg || "transparent"} 
+                    onChange={(e)=>upd("hero.imageBg", e.target.value)} 
+                    style={{width:"100%",padding:"8px 12px",borderRadius:8,border:"1px solid var(--bd)",fontSize:".85rem",background:"white"}}
+                  >
+                    <option value="transparent">Transparent (Borderless)</option>
+                    <option value="white">Solid White Card</option>
+                    <option value="glass">Glassmorphism Backdrop</option>
+                  </select>
+                </div>
+              </div>
+
+              <div>
+                <label style={{display:"block",fontSize:".85rem",fontWeight:600,color:"var(--dt)",marginBottom:6}}>Max Display Height ({draft.hero.imageMaxHeight || 380}px)</label>
+                <input 
+                  type="range" 
+                  min="150" 
+                  max="600" 
+                  step="10" 
+                  value={draft.hero.imageMaxHeight || 380} 
+                  onChange={(e)=>upd("hero.imageMaxHeight", parseInt(e.target.value))} 
+                  style={{width:"100%"}}
+                />
               </div>
             </div>
           )}
