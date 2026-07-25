@@ -7085,6 +7085,16 @@ function UserEditRegistrationModal({ reg, onClose, onSave, authToken, C }) {
   const ev = C?.events?.find(e => e.title === evName || e.id === reg.eventId || e.titleGu === evName);
   const formObj = C?.forms?.find(f => f.id === ev?.formId || f.id === reg.formId);
 
+  // System keys that should never be editable inputs by the user
+  const systemKeys = [
+    "id", "_submittedAt", "timestamp", "Status", "status", "Remarks", "remarks", "AdminRemarks", 
+    "Event Name", "Event", "eventName", "eventTitle", "eventId", "submitterMob", "Submitted By", 
+    "Transaction ID", "transactionId", "transaction_id", "Updated By", "updatedBy", "updated_by", "UpdatedBy",
+    "certificateReleased", "certificateHold", "inviteLetterReleased", "inviteLetterHold", 
+    "groupName", "Group Name", "serialNumber", "Serial Number",
+    "certViewDate", "certDownloadDate", "inviteViewDate", "inviteDownloadDate", "inviteLetterViewed", "inviteLetterDownloaded"
+  ];
+
   const renderedKeys = new Set();
   const fieldsToRender = [];
 
@@ -7108,7 +7118,7 @@ function UserEditRegistrationModal({ reg, onClose, onSave, authToken, C }) {
       }
 
       const fKey = (f.dataKey || f.label)?.trim();
-      if (fKey) {
+      if (fKey && !systemKeys.includes(fKey)) {
         renderedKeys.add(fKey);
         if (shouldShow) {
           fieldsToRender.push({
@@ -7122,9 +7132,6 @@ function UserEditRegistrationModal({ reg, onClose, onSave, authToken, C }) {
       }
     });
   }
-
-  // Any extra keys present on the registration object not explicitly in formObj schema
-  const systemKeys = ["id", "_submittedAt", "timestamp", "Status", "status", "Remarks", "remarks", "AdminRemarks", "Event Name", "Event", "eventName", "eventTitle", "eventId", "submitterMob", "Submitted By"];
   Object.keys(reg).forEach(k => {
     if (!k.startsWith('_') && !systemKeys.includes(k) && !renderedKeys.has(k)) {
       fieldsToRender.push({
@@ -7150,6 +7157,21 @@ function UserEditRegistrationModal({ reg, onClose, onSave, authToken, C }) {
           <div style={{background:"#FFF3E0",border:"1px solid #FFE0B2",padding:"12px 16px",borderRadius:8,color:"#E65100",fontSize:".85rem",marginBottom:8}}>
             <strong>Admin Remarks:</strong> {reg.Remarks || reg.AdminRemarks || "Please update your information and resubmit."}
           </div>
+
+          {(reg['Transaction ID'] || reg.transactionId || reg['Updated By'] || reg.updatedBy) && (
+            <div style={{display:"flex",gap:16,flexWrap:"wrap",background:"#F8F9FA",padding:"10px 14px",borderRadius:8,border:"1px solid var(--bd)",fontSize:".8rem"}}>
+              {(reg['Transaction ID'] || reg.transactionId) && (
+                <div style={{color:"var(--mu)"}}>
+                  Transaction ID: <strong style={{color:"var(--dt)",fontFamily:"monospace"}}>{reg['Transaction ID'] || reg.transactionId}</strong> 🔒 (Read-only)
+                </div>
+              )}
+              {(reg['Updated By'] || reg.updatedBy) && (
+                <div style={{color:"var(--mu)"}}>
+                  Updated By: <strong style={{color:"var(--dt)"}}>{reg['Updated By'] || reg.updatedBy}</strong> 🔒 (Read-only)
+                </div>
+              )}
+            </div>
+          )}
 
           {fieldsToRender.map(f => {
             const k = f.key;
