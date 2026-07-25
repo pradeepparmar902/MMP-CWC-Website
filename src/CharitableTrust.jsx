@@ -9521,10 +9521,52 @@ function AdminRegistrations({ mob, C, setC, auth }) {
     }
   };
 
-  // 1. Gather all unique dynamic field keys
+  // 2. Filter registrations based on search query
+  const filteredRegs = regs.filter(r => {
+    if(!r) return false;
+    
+    // Group section filter
+    const ev = C.events?.find(e => e.title === r.eventTitle || e.title === r.eventName || e.title === r.eventId);
+    const evSection = ev?.section || "Default";
+    if (selectedSection !== "All") {
+      if (selectedSection === "Default") {
+        if (evSection !== "Default" && evSection !== "") return false;
+      } else {
+        if (evSection !== selectedSection) return false;
+      }
+    }
+    
+    // 1. Global search
+    if(searchQuery) {
+      const q = searchQuery.toLowerCase();
+      if (!Object.values(r).some(val => String(val).toLowerCase().includes(q))) return false;
+    }
+    
+    // 2. Column filters
+    for (const [colKey, filterVal] of Object.entries(columnFilters)) {
+      if(!filterVal) continue;
+      
+      let rVal = "";
+      if(colKey === "Date") { try { if(r._submittedAt) rVal = new Date(r._submittedAt).toLocaleString(); } catch(e){} }
+      else if(colKey === "Event") rVal = r.eventName || r.eventTitle || r.eventId || "Unknown Event";
+      else if(colKey === "Status") rVal = r['Status'] || "Pending";
+      else if(colKey === "Transaction ID") rVal = r['Transaction ID'] || "-";
+      else if(colKey === "Updated By") rVal = r['Updated By'] || "-";
+      else rVal = r[colKey] || "-";
+      
+      if(!String(rVal).toLowerCase().includes(filterVal.toLowerCase())) return false;
+    }
+    
+    return true;
+  });
+
+  
+  // 1. Gather dynamic field keys strictly for the active section/filters
   const ignoreKeys = ['id', 'eventId', 'eventTitle', 'eventName', '_submittedAt', 'Transaction ID', 'Status', 'Remarks', 'Updated By'];
   const allKeysSet = new Set();
-  regs.forEach(r => {
+  
+  const targetRegsForKeys = (filteredRegs && filteredRegs.length > 0) ? filteredRegs : regs;
+  targetRegsForKeys.forEach(r => {
     if(!r) return;
     Object.keys(r).forEach(k => {
       if (!ignoreKeys.includes(k) && !k.startsWith('_')) {
@@ -9565,45 +9607,6 @@ function AdminRegistrations({ mob, C, setC, auth }) {
     });
     return Array.from(vals).sort();
   };
-
-  // 2. Filter registrations based on search query
-  const filteredRegs = regs.filter(r => {
-    if(!r) return false;
-    
-    // Group section filter
-    const ev = C.events?.find(e => e.title === r.eventTitle || e.title === r.eventName || e.title === r.eventId);
-    const evSection = ev?.section || "Default";
-    if (selectedSection !== "All") {
-      if (selectedSection === "Default") {
-        if (evSection !== "Default" && evSection !== "") return false;
-      } else {
-        if (evSection !== selectedSection) return false;
-      }
-    }
-    
-    // 1. Global search
-    if(searchQuery) {
-      const q = searchQuery.toLowerCase();
-      if (!Object.values(r).some(val => String(val).toLowerCase().includes(q))) return false;
-    }
-    
-    // 2. Column filters
-    for (const [colKey, filterVal] of Object.entries(columnFilters)) {
-      if(!filterVal) continue;
-      
-      let rVal = "";
-      if(colKey === "Date") { try { if(r._submittedAt) rVal = new Date(r._submittedAt).toLocaleString(); } catch(e){} }
-      else if(colKey === "Event") rVal = r.eventName || r.eventTitle || r.eventId || "Unknown Event";
-      else if(colKey === "Status") rVal = r['Status'] || "Pending";
-      else if(colKey === "Transaction ID") rVal = r['Transaction ID'] || "-";
-      else if(colKey === "Updated By") rVal = r['Updated By'] || "-";
-      else rVal = r[colKey] || "-";
-      
-      if(!String(rVal).toLowerCase().includes(filterVal.toLowerCase())) return false;
-    }
-    
-    return true;
-  });
 
   const handleExportCSV = () => {
     if(filteredRegs.length === 0) return;
