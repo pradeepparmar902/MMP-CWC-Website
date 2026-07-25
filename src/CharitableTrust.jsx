@@ -10750,6 +10750,17 @@ function AdminCertificates({ mob, C, auth }) {
           </div>
         </div>
       )}
+      {/* Bulk Download Selection Modal */}
+      <BulkSelectionModal 
+        isOpen={showSelectModal} 
+        onClose={() => setShowSelectModal(false)} 
+        title="Select Certificates to Download" 
+        items={filteredRegs} 
+        actionLabel="Download Selected ZIP" 
+        onConfirm={executeBulkDownload} 
+        isProcessing={downloadingBulk} 
+        progress={downloadProgress} 
+      />
     </div>
   );
 }
@@ -11490,6 +11501,17 @@ function AdminInviteLetters({ mob, C, auth }) {
           </div>
         </div>
       )}
+      {/* Bulk Download & Envelope Print Selection Modal */}
+      <BulkSelectionModal 
+        isOpen={Boolean(bulkSelectMode)} 
+        onClose={() => setBulkSelectMode(null)} 
+        title={bulkSelectMode === "letters" ? "Select Invite Letters to Download" : "Select Address Envelopes to Print"} 
+        items={filteredRegs} 
+        actionLabel={bulkSelectMode === "letters" ? "Download Selected ZIP" : "Print Selected Envelopes"} 
+        onConfirm={list => { if(bulkSelectMode === "letters") executeBulkDownloadLetters(list); else executeBulkDownloadEnvelopes(list); }} 
+        isProcessing={downloadingBulk || downloadingEnvelopes} 
+        progress={downloadProgress} 
+      />
     </div>
   );
 }
