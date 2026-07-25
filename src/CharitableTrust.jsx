@@ -4503,14 +4503,11 @@ function Admin({ C, setC, setPage, auth, onLogout, onShowLogin }) {
           <button onClick={()=>setOpen(true)} style={{position:"fixed",top:16,left:16,zIndex:100,background:"white",border:"1px solid var(--bd)",borderRadius:8,width:40,height:40,cursor:"pointer",fontSize:"1.2rem",boxShadow:"0 2px 8px rgba(0,0,0,0.1)",display:"flex",alignItems:"center",justifyContent:"center"}}>☰</button>
         )}
         <div style={{padding:mob?"60px 16px 16px":"24px"}}>
-          <div style={{display:"flex",justify:"space-between",alignItems:"center",marginBottom:16,flexWrap:"wrap",gap:12,paddingBottom:12,borderBottom:"1px solid var(--bd)"}}>
-            <div>
-               <h2 style={{fontFamily:"'Playfair Display',serif",color:"var(--dt)",margin:0,fontSize:"1.4rem"}}>Trust Admin Portal</h2>
-               <div style={{fontSize:".8rem",color:"var(--mu)"}}>Logged in as: {auth?.email}</div>
-            </div>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10,paddingBottom:6,borderBottom:"1px solid var(--bd)",fontSize:".8rem",color:"var(--mu)"}}>
+            <div>Logged in as: <strong style={{color:"var(--dt)"}}>{auth?.email}</strong></div>
             <button 
               onClick={() => setIsHelpOpen(!isHelpOpen)} 
-              style={{padding:"8px 16px",borderRadius:20,background:isHelpOpen?"var(--sf)":"var(--dt)",color:"white",border:"none",fontWeight:600,fontSize:".85rem",cursor:"pointer",display:"flex",alignItems:"center",gap:6,boxShadow:"0 2px 8px rgba(0,0,0,0.15)",transition:"all 0.2s"}}
+              style={{padding:"4px 12px",borderRadius:16,background:isHelpOpen?"var(--sf)":"var(--dt)",color:"white",border:"none",fontWeight:600,fontSize:".78rem",cursor:"pointer",display:"flex",alignItems:"center",gap:6,boxShadow:"0 2px 6px rgba(0,0,0,0.1)",transition:"all 0.2s"}}
             >
               📘 Admin Field Guide {isHelpOpen ? "✕" : ""}
             </button>
@@ -9213,6 +9210,7 @@ function AdminRegistrations({ mob, C, setC, auth }) {
   const [sortLevels, setSortLevels] = useState([{ col: "", val: [], dir: "asc" }]);
   const [applyingSerial, setApplyingSerial] = useState(false);
   const [selectedPreset, setSelectedPreset] = useState("");
+  const [showBulkTools, setShowBulkTools] = useState(false);
 
   const saveToFb = async (newC) => {
     try {
@@ -9646,73 +9644,83 @@ function AdminRegistrations({ mob, C, setC, auth }) {
 
   return (
     <div style={{padding:mob?"16px":"32px",width:"100%",boxSizing:"border-box"}}>
-      <div style={{display:"flex",flexDirection:mob?"column":"row",justifyContent:"space-between",alignItems:mob?"flex-start":"center",marginBottom:16,gap:16}}>
-        <h2 style={{fontFamily:"'Playfair Display',serif",color:"var(--dt)",margin:0}}>Event Registrations</h2>
-        <div style={{display:"flex",flexWrap:"wrap",gap:12,width:mob?"100%":"auto"}}>
-          <input 
-            type="text" 
-            placeholder="Search registrations..." 
-            value={searchQuery}
-            onChange={e=>setSearchQuery(e.target.value)}
-            style={{padding:"8px 12px",borderRadius:8,border:"1px solid var(--bd)",fontSize:".85rem",flex:1,minWidth:220,outline:"none",fontFamily:"inherit"}}
-          />
-          <button onClick={handleRefresh} disabled={refreshing} style={{padding:"8px 16px",borderRadius:8,fontSize:".85rem",fontWeight:600,display:"flex",alignItems:"center",gap:6,background:"white",border:"1px solid var(--bd)",color:"var(--dt)",cursor:refreshing?"wait":"pointer",boxShadow:"0 2px 8px rgba(0,0,0,0.05)",whiteSpace:"nowrap"}}>
-            {refreshing ? "..." : "↻"} Refresh
-          </button>
-          <button onClick={handleExportCSV} className="bt" style={{padding:"8px 16px",borderRadius:8,fontSize:".85rem",fontWeight:600,display:"flex",alignItems:"center",gap:8,whiteSpace:"nowrap",boxShadow:"0 2px 8px rgba(0,0,0,0.15)"}}>
-            <span>📥</span> Export to CSV
-          </button>
-        </div>
-      </div>
+      <div style={{display:"flex",flexDirection:"column",gap:10,marginBottom:12}}>
+        {/* Compact Single Control Row */}
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:12}}>
+          
+          {/* Left: Title + Section Pills Inline */}
+          <div style={{display:"flex",alignItems:"center",gap:12,flexWrap:"wrap"}}>
+            <h2 style={{fontFamily:"'Playfair Display',serif",color:"var(--dt)",margin:0,fontSize:"1.25rem",fontWeight:700}}>Event Registrations</h2>
+            
+            <div style={{display:"flex",gap:4,background:"#E9ECEF",padding:3,borderRadius:20}}>
+              {["All", "Default", ...(C.eventSections || [])].map(sec => {
+                const isSelected = selectedSection === sec;
+                return (
+                  <button key={sec} onClick={()=>setSelectedSection(sec)} style={{
+                    padding:"4px 12px", borderRadius:16, border:"none",
+                    background:isSelected?"var(--dt)":"transparent", color:isSelected?"white":"var(--tm2)",
+                    fontSize:".78rem", fontWeight:isSelected?700:500, cursor:"pointer", transition:"all 0.2s"
+                  }}>
+                    {sec === "Default" ? "Default Section" : sec === "All" ? "All Groups" : sec}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
 
-      <div style={{background:"#F9FAFB",border:"1px solid var(--bd)",borderRadius:12,padding:"12px 16px",marginBottom:20,display:"flex",flexDirection:mob?"column":"row",justifyContent:"space-between",alignItems:mob?"stretch":"center",gap:16}}>
-        <div style={{display:"flex",alignItems:"center",gap:8}}>
-          <span style={{fontSize:"1.1rem"}}>⚡</span>
-          <span style={{fontSize:".9rem",fontWeight:600,color:"var(--dt)"}}>Bulk Operations ({filteredRegs.length} rows filtered)</span>
-        </div>
-        <div style={{display:"flex",flexDirection:mob?"column":"row",alignItems:mob?"stretch":"center",gap:16,flexWrap:"wrap"}}>
-          <div style={{display:"flex",alignItems:"center",gap:6}}>
-            {(() => {
-              const existingGroups = [...new Set(regs.map(r => r.Group).filter(Boolean))];
-              return (
-                <datalist id="group-suggestions">
-                  {existingGroups.map(g => <option key={g} value={g} />)}
-                </datalist>
-              );
-            })()}
+          {/* Right: Search + Refresh + Export + Bulk Tools Toggle */}
+          <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
             <input 
               type="text" 
-              list="group-suggestions"
-              placeholder="Bulk Group Name..." 
-              value={bulkGroup}
-              onChange={e=>setBulkGroup(e.target.value)}
-              style={{padding:"8px 12px",borderRadius:8,border:"1px solid var(--bd)",fontSize:".85rem",width:150,outline:"none",fontFamily:"inherit"}}
+              placeholder="Search..." 
+              value={searchQuery}
+              onChange={e=>setSearchQuery(e.target.value)}
+              style={{padding:"6px 12px",borderRadius:8,border:"1px solid var(--bd)",fontSize:".82rem",width:160,outline:"none",fontFamily:"inherit"}}
             />
-            <button onClick={handleApplyBulkGroup} disabled={applyingBulkGroup} style={{padding:"8px 16px",borderRadius:8,fontSize:".85rem",fontWeight:600,background:"var(--dt)",color:"white",border:"none",cursor:applyingBulkGroup?"wait":"pointer",boxShadow:"0 2px 8px rgba(0,0,0,0.1)",whiteSpace:"nowrap"}}>
-              {applyingBulkGroup ? "Applying..." : "Apply Group Name"}
+            <button onClick={handleRefresh} disabled={refreshing} style={{padding:"6px 12px",borderRadius:8,fontSize:".8rem",fontWeight:600,display:"flex",alignItems:"center",gap:4,background:"white",border:"1px solid var(--bd)",color:"var(--dt)",cursor:refreshing?"wait":"pointer",whiteSpace:"nowrap"}}>
+              {refreshing ? "..." : "↻"} Refresh
+            </button>
+            <button onClick={handleExportCSV} className="bt" style={{padding:"6px 12px",borderRadius:8,fontSize:".8rem",fontWeight:600,display:"flex",alignItems:"center",gap:4,whiteSpace:"nowrap"}}>
+              <span>📥</span> Export CSV
+            </button>
+            <button onClick={() => setShowBulkTools(!showBulkTools)} style={{padding:"6px 12px",borderRadius:8,fontSize:".8rem",fontWeight:600,display:"flex",alignItems:"center",gap:4,background:showBulkTools?"#E8650A":"#F5F5F5",color:showBulkTools?"white":"var(--dt)",border:"1px solid var(--bd)",cursor:"pointer",whiteSpace:"nowrap"}}>
+              ⚡ Bulk Tools {showBulkTools ? "▲" : "▼"}
             </button>
           </div>
-          {!mob && <div style={{width:"1px",height:"24px",background:"var(--bd)"}} />}
-          <button onClick={() => setShowSerialModal(true)} style={{padding:"8px 16px",borderRadius:8,fontSize:".85rem",fontWeight:600,display:"flex",alignItems:"center",gap:6,background:"white",border:"1px solid var(--bd)",color:"var(--dt)",cursor:"pointer",boxShadow:"0 2px 8px rgba(0,0,0,0.05)",whiteSpace:"nowrap"}}>
-            🔢 Generate Serial Numbers
-          </button>
         </div>
-      </div>
 
-      {/* Group/Section Tabs */}
-      <div style={{display:"flex", gap:8, marginBottom:20, flexWrap:"wrap", borderBottom:"1px solid var(--bd)", paddingBottom:12}}>
-        {["All", "Default", ...(C.eventSections || [])].map(sec => {
-          const isSelected = selectedSection === sec;
-          return (
-            <button key={sec} onClick={()=>setSelectedSection(sec)} style={{
-              padding:"8px 16px", borderRadius:20, border:isSelected?"none":"1px solid var(--bd)",
-              background:isSelected?"var(--dt)":"white", color:isSelected?"white":"var(--mu)",
-              fontSize:".85rem", fontWeight:600, cursor:"pointer", transition:"all 0.2s"
-            }}>
-              {sec === "Default" ? "Default Section" : sec === "All" ? "All Groups" : sec}
-            </button>
-          );
-        })}
+        {/* Collapsible Bulk Tools Strip */}
+        {showBulkTools && (
+          <div style={{background:"#FFF4EC",border:"1px solid #FFE0B2",borderRadius:10,padding:"8px 14px",display:"flex",alignItems:"center",justifyContent:"space-between",flexWrap:"wrap",gap:10}}>
+            <div style={{fontSize:".8rem",fontWeight:700,color:"#E8650A",display:"flex",alignItems:"center",gap:6}}>
+              ⚡ Bulk Operations ({filteredRegs.length} rows filtered)
+            </div>
+            <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
+              {(() => {
+                const existingGroups = [...new Set(regs.map(r => r.Group).filter(Boolean))];
+                return (
+                  <datalist id="group-suggestions">
+                    {existingGroups.map(g => <option key={g} value={g} />)}
+                  </datalist>
+                );
+              })()}
+              <input 
+                type="text" 
+                list="group-suggestions"
+                placeholder="Bulk Group Name..." 
+                value={bulkGroup}
+                onChange={e=>setBulkGroup(e.target.value)}
+                style={{padding:"6px 10px",borderRadius:6,border:"1px solid var(--bd)",fontSize:".8rem",width:150,outline:"none",fontFamily:"inherit"}}
+              />
+              <button onClick={handleApplyBulkGroup} disabled={applyingBulkGroup} style={{padding:"6px 12px",borderRadius:6,fontSize:".8rem",fontWeight:600,background:"var(--dt)",color:"white",border:"none",cursor:applyingBulkGroup?"wait":"pointer",whiteSpace:"nowrap"}}>
+                {applyingBulkGroup ? "Applying..." : "Apply Group Name"}
+              </button>
+              <button onClick={() => setShowSerialModal(true)} style={{padding:"6px 12px",borderRadius:6,fontSize:".8rem",fontWeight:600,display:"flex",alignItems:"center",gap:4,background:"white",border:"1px solid var(--bd)",color:"var(--dt)",cursor:"pointer",whiteSpace:"nowrap"}}>
+                🔢 Generate Serials
+              </button>
+            </div>
+          </div>
+        )}
       </div>
 
       {loading ? <p>Loading registrations...</p> : (
