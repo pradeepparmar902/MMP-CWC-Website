@@ -9137,11 +9137,11 @@ function AdminRegistrations({ mob, C, setC, auth }) {
                 <div style={{display:"flex",gap:12,marginBottom:16}}>
                   <div style={{flex:1}}>
                     <label style={{display:"block",fontSize:".8rem",fontWeight:600,marginBottom:4}}>Prefix (Optional)</label>
-                    <input value={serialPrefix} onChange={e=>setSerialPrefix(e.target.value)} placeholder="e.g. Graduate-" style={{width:"100%",padding:"8px",borderRadius:6,border:"1px solid #CCC",boxSizing:"border-box",fontSize:"9rem"}} />
+                    <input value={serialPrefix} onChange={e=>setSerialPrefix(e.target.value)} placeholder="e.g. Graduate-" style={{width:"100%",padding:"8px",borderRadius:6,border:"1px solid #CCC",boxSizing:"border-box",fontSize:"0.9rem"}} />
                   </div>
                   <div style={{width:100}}>
                     <label style={{display:"block",fontSize:".8rem",fontWeight:600,marginBottom:4}}>Start Num</label>
-                    <input type="number" value={serialStart} onChange={e=>setSerialStart(e.target.value)} style={{width:"100%",padding:"8px",borderRadius:6,border:"1px solid #CCC",boxSizing:"border-box",fontSize:"9rem"}} />
+                    <input type="number" value={serialStart} onChange={e=>setSerialStart(e.target.value)} style={{width:"100%",padding:"8px",borderRadius:6,border:"1px solid #CCC",boxSizing:"border-box",fontSize:"0.9rem"}} />
                     <div style={{fontSize:".7rem",color:"#888",marginTop:4,textAlign:"right"}}>Last: {maxUsedNumber || "None"}</div>
                   </div>
                 </div>
