@@ -10452,17 +10452,19 @@ function AdminCertificates({ mob, C, auth }) {
   const [downloadProgress, setDownloadProgress] = useState(0);
   const [showSelectModal, setShowSelectModal] = useState(false);
 
-  const handleBulkDownload = async () => {
+  const handleBulkDownload = () => {
     if (filteredRegs.length === 0) return alert("No certificates available to download.");
-    if (!window.confirm(`Generate and download a ZIP file containing ${filteredRegs.length} certificates?`)) return;
-    
+    setShowSelectModal(true);
+  };
+
+  const executeBulkDownload = async (targetList) => {
     setDownloadingBulk(true);
     setDownloadProgress(0);
     const zip = new JSZip();
     let count = 0;
     
     try {
-      for (const r of filteredRegs) {
+      for (const r of targetList) {
         const evName = r.eventName || r.eventTitle || r.eventId || "Unknown Event";
         const ev = certEvents.find(e => e.id === r.eventId || e.title === evName || e.titleGu === evName);
         if (!ev) continue;
@@ -10484,6 +10486,7 @@ function AdminCertificates({ mob, C, auth }) {
       link.href = URL.createObjectURL(zipBlob);
       link.download = `Certificates_${new Date().getTime()}.zip`;
       link.click();
+      setShowSelectModal(false);
     } catch (e) {
       alert("Error during bulk download: " + e.message);
     }
@@ -11041,12 +11044,14 @@ function AdminInviteLetters({ mob, C, auth }) {
 
   const handleBulkDownloadEnvelopes = () => {
     if (filteredRegs.length === 0) return alert("No registrations available for envelopes.");
-    if (!window.confirm(`Generate and download envelopes for ${filteredRegs.length} registrants?`)) return;
-    
+    setBulkSelectMode("envelopes");
+  };
+
+  const executeBulkDownloadEnvelopes = (targetList) => {
     setDownloadingEnvelopes(true);
     try {
       const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'dl' });
-      filteredRegs.forEach((r, index) => {
+      targetList.forEach((r, index) => {
         if (index > 0) doc.addPage();
         
         doc.setFont("helvetica", "bold");
@@ -11077,16 +11082,19 @@ function AdminInviteLetters({ mob, C, auth }) {
       });
       
       doc.save(`Envelopes_${new Date().getTime()}.pdf`);
+      setBulkSelectMode(null);
     } catch (e) {
       alert("Error generating envelopes: " + e.message);
     }
     setDownloadingEnvelopes(false);
   };
 
-  const handleBulkDownload = async () => {
+  const handleBulkDownload = () => {
     if (filteredRegs.length === 0) return alert("No invite letters available to download.");
-    if (!window.confirm(`Generate and download a ZIP file containing ${filteredRegs.length} invite letters?`)) return;
-    
+    setBulkSelectMode("letters");
+  };
+
+  const executeBulkDownloadLetters = async (targetList) => {
     setDownloadingBulk(true);
     setDownloadProgress(0);
     const zip = new JSZip();
@@ -11096,7 +11104,7 @@ function AdminInviteLetters({ mob, C, auth }) {
       const ev = inviteEvents.find(e => e.id === selectedEventId);
       if (!ev) throw new Error("Active event not found.");
       
-      for (const r of filteredRegs) {
+      for (const r of targetList) {
         const fieldsData = {...r};
         const sName = fieldsData["Full Name"] || fieldsData["Name"] || fieldsData["Participant Name"] || "Student";
         
@@ -11114,6 +11122,7 @@ function AdminInviteLetters({ mob, C, auth }) {
       link.href = URL.createObjectURL(zipBlob);
       link.download = `Invite_Letters_${new Date().getTime()}.zip`;
       link.click();
+      setBulkSelectMode(null);
     } catch (e) {
       alert("Error during bulk download: " + e.message);
     }
