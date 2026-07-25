@@ -7053,7 +7053,7 @@ function UserLoginModal({ onClose, onPublicLogin }) {
 
 // ── USER DASHBOARD ────────────────────────────────────────────────────────────
 
-function UserEditRegistrationModal({ reg, onClose, onSave, authToken }) {
+function UserEditRegistrationModal({ reg, onClose, onSave, authToken, C }) {
   const [formData, setFormData] = useState({ ...reg });
   const [saving, setSaving] = useState(false);
   const [uploadingFields, setUploadingFields] = useState({});
@@ -7080,13 +7080,69 @@ function UserEditRegistrationModal({ reg, onClose, onSave, authToken }) {
     setSaving(false);
   };
 
-  const keys = Object.keys(reg).filter(k => !["id", "_submittedAt", "timestamp", "Status", "status", "Remarks", "remarks", "AdminRemarks", "Event Name", "Event", "eventName", "eventTitle", "eventId"].includes(k) && !k.startsWith('_'));
+  // Find event and form schema
+  const evName = reg.eventName || reg.eventTitle || reg.eventId || reg["Event Name"] || reg["Event"];
+  const ev = C?.events?.find(e => e.title === evName || e.id === reg.eventId || e.titleGu === evName);
+  const formObj = C?.forms?.find(f => f.id === ev?.formId || f.id === reg.formId);
+
+  const renderedKeys = new Set();
+  const fieldsToRender = [];
+
+  if (formObj && formObj.fields) {
+    formObj.fields.forEach((f) => {
+      let shouldShow = true;
+      let logicRules = [];
+      if (f.logicRules && f.logicRules.length > 0) {
+        logicRules = f.logicRules.filter(r => r.dependsOn && r.dependsValue);
+      } else if (f.dependsOn && f.dependsValue) {
+        logicRules = [{ dependsOn: f.dependsOn, dependsValue: f.dependsValue }];
+      }
+      
+      if (logicRules.length > 0) {
+        shouldShow = logicRules.some(rule => {
+          const parentField = formObj.fields.find(ff => ff.label === rule.dependsOn);
+          const parentKey = parentField ? (parentField.dataKey || parentField.label)?.trim() : rule.dependsOn;
+          const parentVal = formData[parentKey];
+          return parentVal === rule.dependsValue;
+        });
+      }
+
+      const fKey = (f.dataKey || f.label)?.trim();
+      if (fKey) {
+        renderedKeys.add(fKey);
+        if (shouldShow) {
+          fieldsToRender.push({
+            key: fKey,
+            label: f.label || fKey,
+            type: f.type || 'text',
+            options: f.options,
+            required: f.required
+          });
+        }
+      }
+    });
+  }
+
+  // Any extra keys present on the registration object not explicitly in formObj schema
+  const systemKeys = ["id", "_submittedAt", "timestamp", "Status", "status", "Remarks", "remarks", "AdminRemarks", "Event Name", "Event", "eventName", "eventTitle", "eventId", "submitterMob", "Submitted By"];
+  Object.keys(reg).forEach(k => {
+    if (!k.startsWith('_') && !systemKeys.includes(k) && !renderedKeys.has(k)) {
+      fieldsToRender.push({
+        key: k,
+        label: k,
+        type: 'text'
+      });
+    }
+  });
 
   return (
     <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.7)",zIndex:99999,display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
-      <div style={{background:"white",width:"100%",maxWidth:600,maxHeight:"90vh",borderRadius:12,display:"flex",flexDirection:"column",overflow:"hidden",boxShadow:"0 24px 48px rgba(0,0,0,0.2)"}}>
+      <div style={{background:"white",width:"100%",maxWidth:650,maxHeight:"90vh",borderRadius:12,display:"flex",flexDirection:"column",overflow:"hidden",boxShadow:"0 24px 48px rgba(0,0,0,0.2)"}}>
         <div style={{padding:"16px 24px",background:"var(--dt)",color:"white",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-          <h3 style={{margin:0,fontSize:"1.1rem",fontWeight:700}}>Edit Registration: {reg.eventName || reg.eventTitle || "Event"}</h3>
+          <div>
+            <h3 style={{margin:0,fontSize:"1.1rem",fontWeight:700}}>Edit Registration: {evName || "Event"}</h3>
+            <div style={{fontSize:".75rem",opacity:0.8,marginTop:2}}>Form ID: {reg.id}</div>
+          </div>
           <button onClick={onClose} style={{background:"none",border:"none",color:"white",fontSize:"1.5rem",cursor:"pointer"}}>✕</button>
         </div>
         <div style={{padding:"24px",overflowY:"auto",flex:1,display:"flex",flexDirection:"column",gap:16}}>
@@ -7095,32 +7151,68 @@ function UserEditRegistrationModal({ reg, onClose, onSave, authToken }) {
             <strong>Admin Remarks:</strong> {reg.Remarks || reg.AdminRemarks || "Please update your information and resubmit."}
           </div>
 
-          {keys.map(k => {
-            const val = formData[k] || "";
+          {fieldsToRender.map(f => {
+            const k = f.key;
+            const val = formData[k] !== undefined && formData[k] !== null ? formData[k] : "";
             const isLink = typeof val === 'string' && val.startsWith('http');
+            const opts = Array.isArray(f.options) ? f.options : (typeof f.options === 'string' ? f.options.split(',').map(s=>s.trim()).filter(Boolean) : []);
+
             return (
               <div key={k} style={{display:"flex",flexDirection:"column",gap:6}}>
-                <label style={{fontSize:".8rem",fontWeight:600,color:"var(--dt)"}}>{k}</label>
-                {isLink ? (
-                  <div style={{border:"1px dashed var(--bd)",padding:12,borderRadius:8,background:"#FAFAFA",display:"flex",alignItems:"center",justifyContent:"space-between"}}>
-                    <a href={val} target="_blank" rel="noreferrer" style={{fontSize:".8rem",color:"var(--sf)",textDecoration:"underline",maxWidth:"60%",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>View Current Document</a>
+                <label style={{fontSize:".85rem",fontWeight:600,color:"var(--dt)"}}>
+                  {f.label} {f.required && <span style={{color:"red"}}>*</span>}
+                </label>
+
+                {(f.type === 'dropdown' || f.type === 'select') && opts.length > 0 ? (
+                  <select 
+                    value={val} 
+                    onChange={e => handleTextChange(k, e.target.value)} 
+                    style={{padding:"10px",borderRadius:6,border:"1px solid var(--bd)",fontSize:".9rem",fontFamily:"inherit",background:"white"}}
+                  >
+                    <option value="">-- Select {f.label} --</option>
+                    {opts.map((opt, oi) => (
+                      <option key={oi} value={opt}>{opt}</option>
+                    ))}
+                  </select>
+                ) : f.type === 'textarea' ? (
+                  <textarea 
+                    value={val} 
+                    onChange={e => handleTextChange(k, e.target.value)} 
+                    rows={3}
+                    style={{padding:"10px",borderRadius:6,border:"1px solid var(--bd)",fontSize:".9rem",fontFamily:"inherit",resize:"vertical"}} 
+                  />
+                ) : f.type === 'file' || f.type === 'image' || isLink ? (
+                  <div style={{border:"1px dashed var(--bd)",padding:12,borderRadius:8,background:"#FAFAFA",display:"flex",alignItems:"center",justifyContent:"space-between",flexWrap:"wrap",gap:8}}>
+                    {isLink ? (
+                      <a href={val} target="_blank" rel="noreferrer" style={{fontSize:".8rem",color:"var(--sf)",textDecoration:"underline",maxWidth:"60%",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>📎 Current File / Document</a>
+                    ) : (
+                      <span style={{fontSize:".8rem",color:"var(--mu)"}}>No file uploaded</span>
+                    )}
                     <div style={{position:"relative"}}>
-                      <button style={{padding:"6px 12px",background:"white",border:"1px solid var(--bd)",borderRadius:6,fontSize:".75rem",cursor:"pointer",fontWeight:600}}>
+                      <button type="button" style={{padding:"6px 12px",background:"white",border:"1px solid var(--bd)",borderRadius:6,fontSize:".75rem",cursor:"pointer",fontWeight:600}}>
                         {uploadingFields[k] ? "Uploading..." : "Upload Replacement"}
                       </button>
                       <input type="file" onChange={e => handleFileUpload(e, k)} style={{position:"absolute",inset:0,opacity:0,cursor:"pointer"}} disabled={uploadingFields[k]} />
                     </div>
                   </div>
                 ) : (
-                  <input type="text" value={val} onChange={e => handleTextChange(k, e.target.value)} style={{padding:"10px",borderRadius:6,border:"1px solid var(--bd)",fontSize:".9rem",fontFamily:"inherit"}} />
+                  <input 
+                    type={f.type === 'number' ? 'number' : f.type === 'date' ? 'date' : 'text'} 
+                    value={val} 
+                    onChange={e => handleTextChange(k, e.target.value)} 
+                    style={{padding:"10px",borderRadius:6,border:"1px solid var(--bd)",fontSize:".9rem",fontFamily:"inherit"}} 
+                  />
                 )}
               </div>
             );
           })}
         </div>
-        <div style={{padding:"16px 24px",background:"#FAFAFA",borderTop:"1px solid var(--bd)",display:"flex",justifyContent:"flex-end",gap:12}}>
-          <button onClick={onClose} style={{padding:"10px 16px",borderRadius:6,background:"white",border:"1px solid var(--bd)",color:"var(--mu)",cursor:"pointer",fontWeight:600}}>Cancel</button>
-          <button onClick={handleSubmit} disabled={saving} style={{padding:"10px 24px",borderRadius:6,background:"var(--dt)",color:"white",border:"none",cursor:"pointer",fontWeight:700}}>{saving ? "Saving..." : "Save & Resubmit"}</button>
+        <div style={{padding:"16px 24px",background:"#FAFAFA",borderTop:"1px solid var(--bd)",display:"flex",justify:"space-between",alignItems:"center"}}>
+          <div style={{fontSize:".75rem",color:"var(--mu)"}}>ID: <strong style={{fontFamily:"monospace"}}>{reg.id}</strong> (Form ID preserved)</div>
+          <div style={{display:"flex",gap:12}}>
+            <button onClick={onClose} style={{padding:"10px 16px",borderRadius:6,background:"white",border:"1px solid var(--bd)",color:"var(--mu)",cursor:"pointer",fontWeight:600}}>Cancel</button>
+            <button onClick={handleSubmit} disabled={saving} style={{padding:"10px 24px",borderRadius:6,background:"var(--dt)",color:"white",border:"none",cursor:"pointer",fontWeight:700}}>{saving ? "Resubmitting..." : "Save & Resubmit"}</button>
+          </div>
         </div>
       </div>
     </div>
@@ -7873,6 +7965,7 @@ function UserDashboard({ C, globalProfile, globalAuthToken, onClose }) {
           onClose={() => setEditingReg(null)} 
           onSave={handleSaveResubmission}
           authToken={globalAuthToken}
+                  C={C}
         />
       )}
       
