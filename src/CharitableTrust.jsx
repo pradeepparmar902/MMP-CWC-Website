@@ -8859,15 +8859,15 @@ function AdminRegistrations({ mob, C, setC, auth }) {
 
   return (
     <div style={{padding:mob?"16px":"32px",width:"100%",boxSizing:"border-box"}}>
-      <div style={{display:"flex",flexDirection:mob?"column":"row",justifyContent:"space-between",alignItems:mob?"flex-start":"center",marginBottom:20,gap:16}}>
+      <div style={{display:"flex",flexDirection:mob?"column":"row",justifyContent:"space-between",alignItems:mob?"flex-start":"center",marginBottom:16,gap:16}}>
         <h2 style={{fontFamily:"'Playfair Display',serif",color:"var(--dt)",margin:0}}>Event Registrations</h2>
-        <div style={{display:"flex",gap:12,width:mob?"100%":"auto"}}>
+        <div style={{display:"flex",flexWrap:"wrap",gap:12,width:mob?"100%":"auto"}}>
           <input 
             type="text" 
             placeholder="Search registrations..." 
             value={searchQuery}
             onChange={e=>setSearchQuery(e.target.value)}
-            style={{padding:"8px 12px",borderRadius:8,border:"1px solid var(--bd)",fontSize:".85rem",flex:1,minWidth:250,outline:"none",fontFamily:"inherit"}}
+            style={{padding:"8px 12px",borderRadius:8,border:"1px solid var(--bd)",fontSize:".85rem",flex:1,minWidth:220,outline:"none",fontFamily:"inherit"}}
           />
           <button onClick={handleRefresh} disabled={refreshing} style={{padding:"8px 16px",borderRadius:8,fontSize:".85rem",fontWeight:600,display:"flex",alignItems:"center",gap:6,background:"white",border:"1px solid var(--bd)",color:"var(--dt)",cursor:refreshing?"wait":"pointer",boxShadow:"0 2px 8px rgba(0,0,0,0.05)",whiteSpace:"nowrap"}}>
             {refreshing ? "..." : "↻"} Refresh
@@ -8875,8 +8875,16 @@ function AdminRegistrations({ mob, C, setC, auth }) {
           <button onClick={handleExportCSV} className="bt" style={{padding:"8px 16px",borderRadius:8,fontSize:".85rem",fontWeight:600,display:"flex",alignItems:"center",gap:8,whiteSpace:"nowrap",boxShadow:"0 2px 8px rgba(0,0,0,0.15)"}}>
             <span>📥</span> Export to CSV
           </button>
-          
-          <div style={{display:"flex",alignItems:"center",gap:6,borderLeft:"1px solid var(--bd)",paddingLeft:12}}>
+        </div>
+      </div>
+
+      <div style={{background:"#F9FAFB",border:"1px solid var(--bd)",borderRadius:12,padding:"12px 16px",marginBottom:20,display:"flex",flexDirection:mob?"column":"row",justifyContent:"space-between",alignItems:mob?"stretch":"center",gap:16}}>
+        <div style={{display:"flex",alignItems:"center",gap:8}}>
+          <span style={{fontSize:"1.1rem"}}>⚡</span>
+          <span style={{fontSize:".9rem",fontWeight:600,color:"var(--dt)"}}>Bulk Operations ({filteredRegs.length} rows filtered)</span>
+        </div>
+        <div style={{display:"flex",flexDirection:mob?"column":"row",alignItems:mob?"stretch":"center",gap:16,flexWrap:"wrap"}}>
+          <div style={{display:"flex",alignItems:"center",gap:6}}>
             {(() => {
               const existingGroups = [...new Set(regs.map(r => r.Group).filter(Boolean))];
               return (
@@ -8893,12 +8901,13 @@ function AdminRegistrations({ mob, C, setC, auth }) {
               onChange={e=>setBulkGroup(e.target.value)}
               style={{padding:"8px 12px",borderRadius:8,border:"1px solid var(--bd)",fontSize:".85rem",width:150,outline:"none",fontFamily:"inherit"}}
             />
-            <button onClick={handleApplyBulkGroup} disabled={applyingBulkGroup} style={{padding:"8px 16px",borderRadius:8,fontSize:".85rem",fontWeight:600,display:"flex",alignItems:"center",gap:6,background:"var(--dt)",color:"white",border:"none",cursor:applyingBulkGroup?"wait":"pointer",boxShadow:"0 2px 8px rgba(0,0,0,0.1)",whiteSpace:"nowrap"}}>
-              {applyingBulkGroup ? "Applying..." : "Apply Group"}
+            <button onClick={handleApplyBulkGroup} disabled={applyingBulkGroup} style={{padding:"8px 16px",borderRadius:8,fontSize:".85rem",fontWeight:600,background:"var(--dt)",color:"white",border:"none",cursor:applyingBulkGroup?"wait":"pointer",boxShadow:"0 2px 8px rgba(0,0,0,0.1)",whiteSpace:"nowrap"}}>
+              {applyingBulkGroup ? "Applying..." : "Apply Group Name"}
             </button>
           </div>
+          {!mob && <div style={{width:"1px",height:"24px",background:"var(--bd)"}} />}
           <button onClick={() => setShowSerialModal(true)} style={{padding:"8px 16px",borderRadius:8,fontSize:".85rem",fontWeight:600,display:"flex",alignItems:"center",gap:6,background:"white",border:"1px solid var(--bd)",color:"var(--dt)",cursor:"pointer",boxShadow:"0 2px 8px rgba(0,0,0,0.05)",whiteSpace:"nowrap"}}>
-            # Generate Serial Numbers
+            🔢 Generate Serial Numbers
           </button>
         </div>
       </div>
