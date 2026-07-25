@@ -7187,58 +7187,56 @@ function UserDashboard({ C, globalProfile, globalAuthToken, onClose }) {
     await generateReceiptPDF(r, C, 'download');
   };
 
-  useEffect(() => {
-    setSubTab("For Me");
-  }, [activeTab]);
+  const fetchMyRegs = async () => {
+    try {
+      setLoading(true);
+      const allRegs = await fbFetchRegistrations(globalAuthToken);
+      const mobileToMatch = String(globalProfile.mobile || globalProfile['Mobile Number'] || "").trim();
+      const nameToMatch = String(globalProfile.name || globalProfile['Full Name'] || "").trim().toLowerCase();
+      
+      const mine = [];
+      allRegs.forEach(r => {
+        const rMobile = String(r["Mobile Number"] || r.mobile || "").trim();
+        const rName = String(r["Submitted By"] || r.name || r["Full Name"] || "").trim().toLowerCase();
+        const sMob = String(r.submitterMob || "").trim();
+        
+        if ((mobileToMatch && rMobile === mobileToMatch) || (nameToMatch && rName === nameToMatch) || sMob === mobileToMatch) {
+          mine.push(r);
+        }
+      });
+      
+      setRegs(mine);
+    } catch(e) { console.error(e); }
+    setLoading(false);
+  };
+
+  const fetchMyDonations = async () => {
+    try {
+      setLoading(true);
+      const allDons = await fbFetchDonations(globalAuthToken);
+      const mobileToMatch = String(globalProfile.mobile || globalProfile['Mobile Number'] || "").trim();
+      const nameToMatch = String(globalProfile.name || globalProfile['Full Name'] || "").trim().toLowerCase();
+      
+      const mine = [];
+      allDons.forEach(r => {
+        const rMobile = String(r.mobile || r.phone || "").trim();
+        const rName = String(r.name || r.donor || "").trim().toLowerCase();
+        const sMob = String(r.submitterMob || "").trim();
+        
+        if ((mobileToMatch && rMobile === mobileToMatch) || (nameToMatch && rName === nameToMatch) || sMob === mobileToMatch) {
+          mine.push(r);
+        }
+      });
+      
+      setMyDonations(mine);
+    } catch(e) { console.error(e); }
+    setLoading(false);
+  };
 
   useEffect(() => {
-    const fetchMyRegs = async () => {
-      try {
-        const allRegs = await fbFetchRegistrations(globalAuthToken);
-        const mobileToMatch = String(globalProfile.mobile || globalProfile['Mobile Number'] || "").trim();
-        const nameToMatch = String(globalProfile.name || globalProfile['Full Name'] || "").trim().toLowerCase();
-        
-        const mine = [];
-        allRegs.forEach(r => {
-          const rMobile = String(r["Mobile Number"] || r.mobile || "").trim();
-          const rName = String(r["Submitted By"] || r.name || r["Full Name"] || "").trim().toLowerCase();
-          const sMob = String(r.submitterMob || "").trim();
-          
-          if ((mobileToMatch && rMobile === mobileToMatch) || (nameToMatch && rName === nameToMatch) || sMob === mobileToMatch) {
-            mine.push(r);
-          }
-        });
-        
-        setRegs(mine);
-      } catch(e) { console.error(e); }
-      setLoading(false);
-    };
-    
-    const fetchMyDonations = async () => {
-      try {
-        const allDons = await fbFetchDonations(globalAuthToken);
-        const mobileToMatch = String(globalProfile.mobile || globalProfile['Mobile Number'] || "").trim();
-        const nameToMatch = String(globalProfile.name || globalProfile['Full Name'] || "").trim().toLowerCase();
-        
-        const mine = [];
-        allDons.forEach(r => {
-          const rMobile = String(r.mobile || r.phone || "").trim();
-          const rName = String(r.name || r.donor || "").trim().toLowerCase();
-          const sMob = String(r.submitterMob || "").trim();
-          
-          if ((mobileToMatch && rMobile === mobileToMatch) || (nameToMatch && rName === nameToMatch) || sMob === mobileToMatch) {
-            mine.push(r);
-          }
-        });
-        
-        setMyDonations(mine);
-      } catch(e) { console.error(e); }
-      setLoading(false);
-    };
-
     if (globalAuthToken && globalProfile) {
-      if (activeTab === "Registrations" || activeTab === "Awards") { setLoading(true); fetchMyRegs(); }
-      else if (activeTab === "Receipts") { setLoading(true); fetchMyDonations(); }
+      if (activeTab === "Registrations" || activeTab === "Awards" || activeTab === "Invites") { fetchMyRegs(); }
+      else if (activeTab === "Receipts") { fetchMyDonations(); }
     }
   }, [globalAuthToken, globalProfile, activeTab]);
 
@@ -7265,6 +7263,9 @@ function UserDashboard({ C, globalProfile, globalAuthToken, onClose }) {
             <div style={{fontSize:mob?".7rem":".8rem",opacity:.8,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{globalProfile.name || globalProfile['Full Name']} • {globalProfile.mobile || globalProfile['Mobile Number']}</div>
           </div>
           <div style={{display:"flex",gap:6,flexShrink:0}}>
+            <button onClick={()=>{ fetchMyRegs(); fetchMyDonations(); }} style={{background:"rgba(255,255,255,.15)",border:"none",borderRadius:8,width:mob?32:36,height:mob?32:36,cursor:"pointer",fontSize:mob?".9rem":"1.1rem",color:"white",display:"flex",alignItems:"center",justifyContent:"center",transition:"all .2s"}} title="Refresh Data"
+              onMouseEnter={e=>e.currentTarget.style.background="rgba(255,255,255,.25)"}
+              onMouseLeave={e=>e.currentTarget.style.background="rgba(255,255,255,.15)"}>🔄</button>
             <button onClick={()=>setIsFullScreen(!isFullScreen)} style={{background:"rgba(255,255,255,.15)",border:"none",borderRadius:8,width:mob?32:36,height:mob?32:36,cursor:"pointer",fontSize:mob?".9rem":"1.1rem",color:"white",display:"flex",alignItems:"center",justifyContent:"center",transition:"all .2s"}} title={isFullScreen?"Exit Fullscreen":"Fullscreen"}
               onMouseEnter={e=>e.currentTarget.style.background="rgba(255,255,255,.25)"}
               onMouseLeave={e=>e.currentTarget.style.background="rgba(255,255,255,.15)"}>{isFullScreen ? "🗗" : "🗖"}</button>
@@ -7311,9 +7312,14 @@ function UserDashboard({ C, globalProfile, globalAuthToken, onClose }) {
             {activeTab === "Registrations" && (
               <>
                 <h3 style={{fontFamily:"'Playfair Display',serif",fontSize:"1.3rem",color:"var(--dt)",marginBottom:16,fontWeight:700}}>My Event Registrations</h3>
-                <div style={{display:"flex",gap:8,marginBottom:16}}>
-                  <button onClick={() => setSubTab("For Me")} style={{padding:"8px 16px",borderRadius:20,border:"none",background:subTab==="For Me"?"var(--dt)":"#E9ECEF",color:subTab==="For Me"?"white":"var(--tm2)",fontWeight:600,cursor:"pointer",transition:"all 0.2s"}}>For Me</button>
-                  <button onClick={() => setSubTab("For Others")} style={{padding:"8px 16px",borderRadius:20,border:"none",background:subTab==="For Others"?"var(--dt)":"#E9ECEF",color:subTab==="For Others"?"white":"var(--tm2)",fontWeight:600,cursor:"pointer",transition:"all 0.2s"}}>For Others</button>
+                <div style={{display:"flex",justify:"space-between",alignItems:"center",marginBottom:16,flexWrap:"wrap",gap:8}}>
+                  <div style={{display:"flex",gap:8}}>
+                    <button onClick={() => setSubTab("For Me")} style={{padding:"8px 16px",borderRadius:20,border:"none",background:subTab==="For Me"?"var(--dt)":"#E9ECEF",color:subTab==="For Me"?"white":"var(--tm2)",fontWeight:600,cursor:"pointer",transition:"all 0.2s"}}>For Me</button>
+                    <button onClick={() => setSubTab("For Others")} style={{padding:"8px 16px",borderRadius:20,border:"none",background:subTab==="For Others"?"var(--dt)":"#E9ECEF",color:subTab==="For Others"?"white":"var(--tm2)",fontWeight:600,cursor:"pointer",transition:"all 0.2s"}}>For Others</button>
+                  </div>
+                  <button onClick={() => { fetchMyRegs(); fetchMyDonations(); }} style={{padding:"6px 14px",borderRadius:8,border:"1px solid var(--bd)",background:"white",color:"var(--dt)",fontSize:".85rem",fontWeight:600,cursor:"pointer",display:"flex",alignItems:"center",gap:6,boxShadow:"0 2px 4px rgba(0,0,0,0.02)"}}>
+                    🔄 Refresh
+                  </button>
                 </div>
                 {(() => {
                   const mobileToMatch = String(globalProfile.mobile || globalProfile['Mobile Number'] || "").trim();
@@ -7424,9 +7430,14 @@ function UserDashboard({ C, globalProfile, globalAuthToken, onClose }) {
             {activeTab === "Receipts" && (
               <>
                 <h3 style={{fontFamily:"'Playfair Display',serif",fontSize:"1.3rem",color:"var(--dt)",marginBottom:16,fontWeight:700}}>My Donations & Receipts</h3>
-                <div style={{display:"flex",gap:8,marginBottom:16}}>
-                  <button onClick={() => setSubTab("For Me")} style={{padding:"8px 16px",borderRadius:20,border:"none",background:subTab==="For Me"?"var(--dt)":"#E9ECEF",color:subTab==="For Me"?"white":"var(--tm2)",fontWeight:600,cursor:"pointer",transition:"all 0.2s"}}>For Me</button>
-                  <button onClick={() => setSubTab("For Others")} style={{padding:"8px 16px",borderRadius:20,border:"none",background:subTab==="For Others"?"var(--dt)":"#E9ECEF",color:subTab==="For Others"?"white":"var(--tm2)",fontWeight:600,cursor:"pointer",transition:"all 0.2s"}}>For Others</button>
+                <div style={{display:"flex",justify:"space-between",alignItems:"center",marginBottom:16,flexWrap:"wrap",gap:8}}>
+                  <div style={{display:"flex",gap:8}}>
+                    <button onClick={() => setSubTab("For Me")} style={{padding:"8px 16px",borderRadius:20,border:"none",background:subTab==="For Me"?"var(--dt)":"#E9ECEF",color:subTab==="For Me"?"white":"var(--tm2)",fontWeight:600,cursor:"pointer",transition:"all 0.2s"}}>For Me</button>
+                    <button onClick={() => setSubTab("For Others")} style={{padding:"8px 16px",borderRadius:20,border:"none",background:subTab==="For Others"?"var(--dt)":"#E9ECEF",color:subTab==="For Others"?"white":"var(--tm2)",fontWeight:600,cursor:"pointer",transition:"all 0.2s"}}>For Others</button>
+                  </div>
+                  <button onClick={() => { fetchMyRegs(); fetchMyDonations(); }} style={{padding:"6px 14px",borderRadius:8,border:"1px solid var(--bd)",background:"white",color:"var(--dt)",fontSize:".85rem",fontWeight:600,cursor:"pointer",display:"flex",alignItems:"center",gap:6,boxShadow:"0 2px 4px rgba(0,0,0,0.02)"}}>
+                    🔄 Refresh
+                  </button>
                 </div>
                 {(() => {
                   const mobileToMatch = String(globalProfile.mobile || globalProfile['Mobile Number'] || "").trim();
@@ -7507,9 +7518,14 @@ function UserDashboard({ C, globalProfile, globalAuthToken, onClose }) {
             {activeTab === "Awards" && (
               <>
                 <h3 style={{fontFamily:"'Playfair Display',serif",fontSize:"1.3rem",color:"var(--dt)",marginBottom:16,fontWeight:700}}>My Education Awards</h3>
-                <div style={{display:"flex",gap:8,marginBottom:16}}>
-                  <button onClick={() => setSubTab("For Me")} style={{padding:"8px 16px",borderRadius:20,border:"none",background:subTab==="For Me"?"var(--dt)":"#E9ECEF",color:subTab==="For Me"?"white":"var(--tm2)",fontWeight:600,cursor:"pointer",transition:"all 0.2s"}}>For Me</button>
-                  <button onClick={() => setSubTab("For Others")} style={{padding:"8px 16px",borderRadius:20,border:"none",background:subTab==="For Others"?"var(--dt)":"#E9ECEF",color:subTab==="For Others"?"white":"var(--tm2)",fontWeight:600,cursor:"pointer",transition:"all 0.2s"}}>For Others</button>
+                <div style={{display:"flex",justify:"space-between",alignItems:"center",marginBottom:16,flexWrap:"wrap",gap:8}}>
+                  <div style={{display:"flex",gap:8}}>
+                    <button onClick={() => setSubTab("For Me")} style={{padding:"8px 16px",borderRadius:20,border:"none",background:subTab==="For Me"?"var(--dt)":"#E9ECEF",color:subTab==="For Me"?"white":"var(--tm2)",fontWeight:600,cursor:"pointer",transition:"all 0.2s"}}>For Me</button>
+                    <button onClick={() => setSubTab("For Others")} style={{padding:"8px 16px",borderRadius:20,border:"none",background:subTab==="For Others"?"var(--dt)":"#E9ECEF",color:subTab==="For Others"?"white":"var(--tm2)",fontWeight:600,cursor:"pointer",transition:"all 0.2s"}}>For Others</button>
+                  </div>
+                  <button onClick={() => { fetchMyRegs(); fetchMyDonations(); }} style={{padding:"6px 14px",borderRadius:8,border:"1px solid var(--bd)",background:"white",color:"var(--dt)",fontSize:".85rem",fontWeight:600,cursor:"pointer",display:"flex",alignItems:"center",gap:6,boxShadow:"0 2px 4px rgba(0,0,0,0.02)"}}>
+                    🔄 Refresh
+                  </button>
                 </div>
                 {(() => {
                   const mobileToMatch = String(globalProfile.mobile || globalProfile['Mobile Number'] || "").trim();
@@ -7609,7 +7625,7 @@ function UserDashboard({ C, globalProfile, globalAuthToken, onClose }) {
                                         delete cleanData.id; delete cleanData._submittedAt;
                                         await fbUpdateRegistration(a.reg.id, cleanData, globalAuthToken);
                                       }
-                                      await generateCertificatePDF(a.ev, fieldsData, sName, 'cert', 'url');
+                                      const url = await generateCertificatePDF(a.ev, fieldsData, sName, 'cert', 'url'); if(url) setPreviewFile({ url, type: 'pdf', title: `Certificate - ${sName}` });
                                     } catch(err) {
                                       alert(err.message);
                                     }
@@ -7661,9 +7677,14 @@ function UserDashboard({ C, globalProfile, globalAuthToken, onClose }) {
             {activeTab === "Invites" && (
               <>
                 <h3 style={{fontFamily:"'Playfair Display',serif",fontSize:"1.3rem",color:"#D2691E",marginBottom:16,fontWeight:700}}>My Special Invites</h3>
-                <div style={{display:"flex",gap:8,marginBottom:16}}>
-                  <button onClick={() => setSubTab("For Me")} style={{padding:"8px 16px",borderRadius:20,border:"none",background:subTab==="For Me"?"#D2691E":"#E9ECEF",color:subTab==="For Me"?"white":"var(--tm2)",fontWeight:600,cursor:"pointer",transition:"all 0.2s"}}>For Me</button>
-                  <button onClick={() => setSubTab("For Others")} style={{padding:"8px 16px",borderRadius:20,border:"none",background:subTab==="For Others"?"#D2691E":"#E9ECEF",color:subTab==="For Others"?"white":"var(--tm2)",fontWeight:600,cursor:"pointer",transition:"all 0.2s"}}>For Others</button>
+                <div style={{display:"flex",justify:"space-between",alignItems:"center",marginBottom:16,flexWrap:"wrap",gap:8}}>
+                  <div style={{display:"flex",gap:8}}>
+                    <button onClick={() => setSubTab("For Me")} style={{padding:"8px 16px",borderRadius:20,border:"none",background:subTab==="For Me"?"var(--dt)":"#E9ECEF",color:subTab==="For Me"?"white":"var(--tm2)",fontWeight:600,cursor:"pointer",transition:"all 0.2s"}}>For Me</button>
+                    <button onClick={() => setSubTab("For Others")} style={{padding:"8px 16px",borderRadius:20,border:"none",background:subTab==="For Others"?"var(--dt)":"#E9ECEF",color:subTab==="For Others"?"white":"var(--tm2)",fontWeight:600,cursor:"pointer",transition:"all 0.2s"}}>For Others</button>
+                  </div>
+                  <button onClick={() => { fetchMyRegs(); fetchMyDonations(); }} style={{padding:"6px 14px",borderRadius:8,border:"1px solid var(--bd)",background:"white",color:"var(--dt)",fontSize:".85rem",fontWeight:600,cursor:"pointer",display:"flex",alignItems:"center",gap:6,boxShadow:"0 2px 4px rgba(0,0,0,0.02)"}}>
+                    🔄 Refresh
+                  </button>
                 </div>
                 {(() => {
                   const mobileToMatch = String(globalProfile.mobile || globalProfile['Mobile Number'] || "").trim();
@@ -7763,7 +7784,7 @@ function UserDashboard({ C, globalProfile, globalAuthToken, onClose }) {
                                         delete cleanData.id; delete cleanData._submittedAt;
                                         await fbUpdateRegistration(a.reg.id, cleanData, globalAuthToken);
                                       }
-                                      await generateCertificatePDF(a.ev, fieldsData, sName, 'invite', 'url');
+                                      const url = await generateCertificatePDF(a.ev, fieldsData, sName, 'invite', 'url'); if(url) setPreviewFile({ url, type: 'pdf', title: `Invite Letter - ${sName}` });
                                     } catch(err) {
                                       alert(err.message);
                                     }
@@ -7821,6 +7842,31 @@ function UserDashboard({ C, globalProfile, globalAuthToken, onClose }) {
           </div>
         </div>
       </div>
+      {previewFile && (
+        <div style={{position:"fixed", inset:0, background:"rgba(0,0,0,0.65)", zIndex:99999, display:"flex", alignItems:"center", justifyContent:"center", padding: "4vh 4vw"}} onClick={() => setPreviewFile(null)}>
+          <div style={{background:"white", borderRadius: 16, width:"100%", maxWidth: 900, height:"100%", display:"flex", flexDirection:"column", overflow:"hidden", boxShadow:"0 20px 40px rgba(0,0,0,0.4)"}} onClick={e => e.stopPropagation()}>
+            <div style={{padding:"16px 24px", display:"flex", justifyContent:"space-between", alignItems:"center", borderBottom:"1px solid var(--bd)", background:"#F8F9FA"}}>
+              <h3 style={{fontWeight:700, fontSize:"1.2rem", color:"var(--dt)", margin:0}}>{previewFile.title || 'Document Preview'}</h3>
+              <div style={{display:"flex",alignItems:"center",gap:16}}>
+                {previewFile.type !== 'image' && (
+                  <a href={previewFile.url} target="_blank" rel="noreferrer" style={{color:"var(--sf)",fontSize:".9rem",textDecoration:"underline",fontWeight:600}}>Open externally</a>
+                )}
+                <button onClick={()=>setPreviewFile(null)} style={{background:"#E8EAED", border:"none", color:"var(--dt)", cursor:"pointer", fontSize:"1.4rem", width:36, height:36, borderRadius:"50%", display:"flex", alignItems:"center", justifyContent:"center", fontWeight:"bold"}}>&times;</button>
+              </div>
+            </div>
+            <div style={{flex:1,overflow:"hidden",display:"flex",alignItems:"center",justifyContent:"center",background:"#525659"}}>
+               {previewFile.type === 'image' ? (
+                 <img src={previewFile.url} alt="Preview" style={{maxWidth:"100%",maxHeight:"75vh",objectFit:"contain",borderRadius:8,boxShadow:"0 4px 12px rgba(0,0,0,0.2)"}} />
+               ) : (
+                 <object data={previewFile.url} type="application/pdf" style={{width:"100%",height:"100%",border:"none"}}>
+                   <iframe src={previewFile.url} style={{width:"100%",height:"100%",border:"none"}} title="Document Preview" />
+                 </object>
+               )}
+            </div>
+          </div>
+        </div>
+      )}
+
       {editingReg && (
         <UserEditRegistrationModal 
           reg={editingReg} 
