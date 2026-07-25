@@ -9522,6 +9522,7 @@ function AdminRegistrations({ mob, C, setC, auth }) {
   // 2. Filter registrations based on search query
   const filteredRegs = regs.filter(r => {
     if(!r) return false;
+    if (r.isGlobalGuest || r.isSpecialGuest || r.globalGuestId || r.formId === "global_guest_directory" || r.formId === "global_guest_directory_import") return false;
     
     // Group section filter
     const ev = C.events?.find(e => e.title === r.eventTitle || e.title === r.eventName || e.title === r.eventId);
@@ -10417,7 +10418,7 @@ function AdminCertificates({ mob, C, auth }) {
 
   const certEvents = (C.events || []).filter(e => {
     if (e.issueCertificates === true || e.issueCertificates === "true") return true;
-    return regs.some(r => r.Status === "Approved" && (r.eventId === e.id || r.eventName === e.title || r.eventTitle === e.title));
+    return regs.some(r => !r.isGlobalGuest && !r.isSpecialGuest && !r.globalGuestId && r.formId !== "global_guest_directory" && r.formId !== "global_guest_directory_import" && r.Status === "Approved" && (r.eventId === e.id || r.eventName === e.title || r.eventTitle === e.title));
   });
   const certEventIds = certEvents.map(e => e.id);
   const certEventTitles = certEvents.map(e => e.title);
@@ -10426,6 +10427,7 @@ function AdminCertificates({ mob, C, auth }) {
   const activeEvent = certEvents.find(e => e.id === selectedEventId) || {};
 
   const certRegs = regs.filter(r => {
+    if (r.isGlobalGuest || r.isSpecialGuest || r.globalGuestId || r.formId === "global_guest_directory" || r.formId === "global_guest_directory_import") return false;
     if (r.Status !== "Approved") return false;
     let evName = r.eventName || r.eventTitle || r.eventId;
     return r.eventId === selectedEventId || evName === activeEvent.title || evName === activeEvent.titleGu;
