@@ -11,7 +11,17 @@ import { marked } from "marked";
 import DOMPurify from "dompurify";
 
 // ── FIREBASE CONFIG ───────────────────────────────────────────────────────────
-const getFB = () => window.FIREBASE_CONFIG || {};
+const getFB = () => {
+  const envApiKey = import.meta.env.VITE_FIREBASE_API_KEY;
+  const envProjectId = import.meta.env.VITE_FIREBASE_PROJECT_ID;
+  const envBucket = import.meta.env.VITE_FIREBASE_STORAGE_BUCKET;
+
+  return {
+    apiKey: (envApiKey && envApiKey.trim()) || window.FIREBASE_CONFIG?.apiKey || "AIzaSyD8S_dRHVNlmUnRV-AfOXocqR0EoPUh8k4",
+    projectId: (envProjectId && envProjectId.trim()) || window.FIREBASE_CONFIG?.projectId || "vdiyagohilcharitable",
+    bucket: (envBucket && envBucket.trim()) || window.FIREBASE_CONFIG?.bucket || "vdiyagohilcharitable.firebasestorage.app"
+  };
+};
 const FS_URL  = () => `https://firestore.googleapis.com/v1/projects/${getFB().projectId}/databases/(default)/documents/content/main`;
 const AUTH_URL= () => `https://identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key=${getFB().apiKey}`;
 const STG_URL = () => `https://firebasestorage.googleapis.com/v0/b/${getFB().bucket}/o`;
@@ -19,7 +29,7 @@ const STG_URL = () => `https://firebasestorage.googleapis.com/v0/b/${getFB().buc
 let fbApp = null;
 let fbAuth = null;
 try {
-  const initFB = window.FIREBASE_CONFIG || {};
+  const initFB = getFB();
   if (initFB.apiKey && initFB.apiKey.trim().length > 0 && initFB.apiKey.trim() !== "1") {
     fbApp = initializeApp({
       apiKey: initFB.apiKey.trim(),
