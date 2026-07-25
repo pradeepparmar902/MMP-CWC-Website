@@ -841,9 +841,9 @@ function Hero({ C, lang }) {
                 alt="Campaign Image" 
                 style={{
                   maxWidth:"100%",
-                  maxHeight: h?.imageMaxHeight || 380,
+                  width: h?.imageWidth ? `${h.imageWidth}px` : "320px",
+                  maxHeight: h?.imageMaxHeight || 420,
                   height:"auto",
-                  width: (h?.imageFit || "contain") === "cover" ? "100%" : "auto",
                   objectFit: h?.imageFit || "contain",
                   borderRadius:12,
                   display:"block",
@@ -3669,17 +3669,32 @@ function ContentEditor({ C, setC, setPage, auth, hasAccess, master }) {
                 </div>
               </div>
 
-              <div>
-                <label style={{display:"block",fontSize:".85rem",fontWeight:600,color:"var(--dt)",marginBottom:6}}>Max Display Height ({draft.hero.imageMaxHeight || 380}px)</label>
-                <input 
-                  type="range" 
-                  min="150" 
-                  max="600" 
-                  step="10" 
-                  value={draft.hero.imageMaxHeight || 380} 
-                  onChange={(e)=>upd("hero.imageMaxHeight", parseInt(e.target.value))} 
-                  style={{width:"100%"}}
-                />
+              <div style={{display:"grid", gridTemplateColumns:"1fr 1fr", gap:16}}>
+                <div>
+                  <label style={{display:"block",fontSize:".85rem",fontWeight:600,color:"var(--dt)",marginBottom:6}}>Image Width ({draft.hero.imageWidth || 320}px)</label>
+                  <input 
+                    type="range" 
+                    min="80" 
+                    max="700" 
+                    step="10" 
+                    value={draft.hero.imageWidth || 320} 
+                    onChange={(e)=>upd("hero.imageWidth", parseInt(e.target.value))} 
+                    style={{width:"100%"}}
+                  />
+                </div>
+
+                <div>
+                  <label style={{display:"block",fontSize:".85rem",fontWeight:600,color:"var(--dt)",marginBottom:6}}>Max Display Height ({draft.hero.imageMaxHeight || 420}px)</label>
+                  <input 
+                    type="range" 
+                    min="150" 
+                    max="700" 
+                    step="10" 
+                    value={draft.hero.imageMaxHeight || 420} 
+                    onChange={(e)=>upd("hero.imageMaxHeight", parseInt(e.target.value))} 
+                    style={{width:"100%"}}
+                  />
+                </div>
               </div>
             </div>
           )}
