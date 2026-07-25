@@ -5,7 +5,7 @@ import JSZip from "jszip";
 import * as XLSX from "xlsx";
 import ReactQuill from "react-quill-new";
 import "react-quill-new/dist/quill.snow.css";
-import { initializeApp } from "firebase/app";
+import { initializeApp, getApp, getApps } from "firebase/app";
 import { getAuth, RecaptchaVerifier, signInWithPhoneNumber, sendPasswordResetEmail } from "firebase/auth";
 import { marked } from "marked";
 import DOMPurify from "dompurify";
@@ -31,15 +31,23 @@ let fbAuth = null;
 try {
   const initFB = getFB();
   if (initFB.apiKey && initFB.apiKey.trim().length > 0 && initFB.apiKey.trim() !== "1") {
-    fbApp = initializeApp({
-      apiKey: initFB.apiKey.trim(),
-      projectId: initFB.projectId?.trim(),
-      authDomain: `${initFB.projectId?.trim()}.firebaseapp.com`
-    });
+    if (getApps().length === 0) {
+      fbApp = initializeApp({
+        apiKey: initFB.apiKey.trim(),
+        projectId: initFB.projectId?.trim(),
+        authDomain: `${initFB.projectId?.trim()}.firebaseapp.com`
+      });
+    } else {
+      fbApp = getApp();
+    }
     fbAuth = getAuth(fbApp);
   }
 } catch (e) {
   console.warn("Firebase could not be initialized:", e);
+  try {
+    fbApp = getApp();
+    fbAuth = getAuth(fbApp);
+  } catch (err) {}
 }
 
 // ── FIREBASE HELPERS ──────────────────────────────────────────────────────────
@@ -1317,6 +1325,21 @@ function Events({ C, lang, globalAuthToken, globalProfile, onPublicLogin }) {
     e.preventDefault();
     if (!mobile || mobile.length < 10) { setAuthError("Please enter a valid 10-digit mobile number"); return; }
     
+    if (!fbAuth) {
+      try {
+        const initFB = getFB();
+        fbApp = getApps().length === 0 ? initializeApp({
+          apiKey: initFB.apiKey.trim(),
+          projectId: initFB.projectId?.trim(),
+          authDomain: `${initFB.projectId?.trim()}.firebaseapp.com`
+        }) : getApp();
+        fbAuth = getAuth(fbApp);
+      } catch (err) {
+        setAuthError("Failed to initialize Firebase Auth: " + err.message);
+        return;
+      }
+    }
+
     if (!window.recaptchaVerifierEvent) {
       try {
         window.recaptchaVerifierEvent = new RecaptchaVerifier(fbAuth, 'recaptcha-container-event', {
@@ -7513,6 +7536,21 @@ function UserLoginModal({ onClose, onPublicLogin }) {
     if (!mobile || mobile.length < 10) { setAuthError("Please enter a valid 10-digit mobile number"); return; }
     if (!isLoginMode && (!regName || !regAddress || !regGender || !regEmail)) { setAuthError("Please fill out Name, Email, Address, and Gender."); return; }
     
+    if (!fbAuth) {
+      try {
+        const initFB = getFB();
+        fbApp = getApps().length === 0 ? initializeApp({
+          apiKey: initFB.apiKey.trim(),
+          projectId: initFB.projectId?.trim(),
+          authDomain: `${initFB.projectId?.trim()}.firebaseapp.com`
+        }) : getApp();
+        fbAuth = getAuth(fbApp);
+      } catch (err) {
+        setAuthError("Failed to initialize Firebase Auth: " + err.message);
+        return;
+      }
+    }
+
     if (!window.recaptchaVerifierLogin) {
       try {
         window.recaptchaVerifierLogin = new RecaptchaVerifier(fbAuth, 'recaptcha-container-login', {
@@ -8649,6 +8687,21 @@ function LoginScreen({ C, onLogin, onSkip }) {
       return;
     }
     setErr(""); setLoading(true);
+    if (!fbAuth) {
+      try {
+        const initFB = getFB();
+        fbApp = getApps().length === 0 ? initializeApp({
+          apiKey: initFB.apiKey.trim(),
+          projectId: initFB.projectId?.trim(),
+          authDomain: `${initFB.projectId?.trim()}.firebaseapp.com`
+        }) : getApp();
+        fbAuth = getAuth(fbApp);
+      } catch (err) {
+        setErr("Failed to initialize Firebase: " + err.message);
+        setLoading(false);
+        return;
+      }
+    }
     try {
       await sendPasswordResetEmail(fbAuth, email);
       setErr("✅ A password reset link has been sent to your email. Please check your inbox.");
