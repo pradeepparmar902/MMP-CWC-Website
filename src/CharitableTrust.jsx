@@ -9491,6 +9491,7 @@ function AdminCertificates({ mob, C, auth }) {
   const [regs, setRegs] = useState([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [selectedEventId, setSelectedEventId] = useState(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [previewCertUrl, setPreviewCertUrl] = useState(null);
   const [previewCertRegId, setPreviewCertRegId] = useState(null);
@@ -9619,15 +9620,20 @@ function AdminCertificates({ mob, C, auth }) {
     }
   };
 
-  const certEvents = (C.events || []).filter(e => e.issueCertificates === true || e.issueCertificates === "true");
+  const certEvents = (C.events || []).filter(e => {
+    if (e.issueCertificates === true || e.issueCertificates === "true") return true;
+    return regs.some(r => r.Status === "Approved" && (r.eventId === e.id || r.eventName === e.title || r.eventTitle === e.title));
+  });
   const certEventIds = certEvents.map(e => e.id);
   const certEventTitles = certEvents.map(e => e.title);
   const certEventTitlesGu = certEvents.map(e => e.titleGu);
 
+  const activeEvent = certEvents.find(e => e.id === selectedEventId) || {};
+
   const certRegs = regs.filter(r => {
     if (r.Status !== "Approved") return false;
     let evName = r.eventName || r.eventTitle || r.eventId;
-    return certEventIds.includes(r.eventId) || certEventTitles.includes(evName) || certEventTitlesGu.includes(evName);
+    return r.eventId === selectedEventId || evName === activeEvent.title || evName === activeEvent.titleGu;
   });
 
   const filteredRegs = certRegs.filter(r => {
@@ -9636,13 +9642,52 @@ function AdminCertificates({ mob, C, auth }) {
     return Object.values(r).some(v => String(v).toLowerCase().includes(q));
   });
 
+  if (!selectedEventId) {
+    return (
+      <div style={{padding:mob?"16px":"32px",width:"100%",boxSizing:"border-box"}}>
+         <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:24,flexDirection:mob?"column":"row",gap:16}}>
+           <div>
+             <h2 style={{fontFamily:"'Playfair Display',serif",color:"var(--dt)",margin:0}}>Certificate Workspaces</h2>
+             <p style={{fontSize:".85rem",color:"var(--mu)",marginTop:4}}>Select an event below to manage its certificates.</p>
+           </div>
+         </div>
+         
+         <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(280px,1fr))",gap:20,marginTop:24}}>
+             {certEvents.map(ev => {
+                 const count = regs.filter(r => {
+                     if(r.Status !== "Approved") return false;
+                     let evName = r.eventName || r.eventTitle || r.eventId;
+                     return r.eventId === ev.id || evName === ev.title || evName === ev.titleGu;
+                 }).length;
+                 return (
+                     <div key={ev.id} onClick={() => setSelectedEventId(ev.id)} style={{background:"white",border:"1px solid var(--bd)",borderRadius:12,padding:24,cursor:"pointer",boxShadow:"0 4px 12px rgba(0,0,0,0.04)",transition:"transform 0.2s, box-shadow 0.2s"}} onMouseEnter={e=>{e.currentTarget.style.transform="translateY(-4px)"; e.currentTarget.style.boxShadow="0 8px 24px rgba(0,0,0,0.08)"}} onMouseLeave={e=>{e.currentTarget.style.transform="none"; e.currentTarget.style.boxShadow="0 4px 12px rgba(0,0,0,0.04)"}}>
+                          <div style={{fontSize:"2.5rem",marginBottom:12}}>🎓</div>
+                          <h3 style={{margin:"0 0 8px 0",color:"#333"}}>{ev.title || "Unnamed Event"}</h3>
+                          <p style={{margin:0,fontSize:".85rem",color:"var(--mu)"}}>{count} approved registrants</p>
+                     </div>
+                 );
+             })}
+             {certEvents.length === 0 && (
+                 <p style={{color:"var(--mu)"}}>No events have Certificates enabled yet. Enable them in Content Editor {">"} Events.</p>
+             )}
+         </div>
+      </div>
+    );
+  }
+
   return (
     <div style={{display:"flex",width:"100%"}}>
       <div style={{flex: previewCertUrl ? 2 : 1, padding:mob?"16px":"32px",width:"100%",boxSizing:"border-box",overflowX:"hidden"}}>
+        <div style={{marginBottom: 16}}>
+           <button onClick={() => {setSelectedEventId(null); setPreviewCertUrl(null);}} style={{background:"transparent",border:"none",color:"var(--dt)",cursor:"pointer",fontWeight:600,display:"flex",alignItems:"center",gap:6,padding:0}}>
+               ← Back to Workspaces
+           </button>
+        </div>
+        
         <div style={{display:"flex",flexDirection:mob?"column":"row",justifyContent:"space-between",alignItems:mob?"flex-start":"center",marginBottom:20,gap:16}}>
           <div>
             <h2 style={{fontFamily:"'Playfair Display',serif",color:"var(--dt)",margin:0}}>Certificate Console</h2>
-            <p style={{fontSize:".85rem",color:"var(--mu)",marginTop:4}}>Manage and release certificates for approved registrations.</p>
+            <p style={{fontSize:".85rem",color:"var(--mu)",marginTop:4}}>Manage and release certificates for: <strong>{activeEvent.title}</strong></p>
           </div>
           <div style={{display:"flex",gap:12,width:mob?"100%":"auto",flexWrap:"wrap"}}>
             <input type="text" placeholder="Search students..." value={searchQuery} onChange={e=>setSearchQuery(e.target.value)} style={{padding:"8px 12px",borderRadius:8,border:"1px solid var(--bd)",fontSize:".85rem",flex:1,minWidth:200,outline:"none",fontFamily:"inherit"}} />
