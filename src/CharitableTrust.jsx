@@ -4153,9 +4153,14 @@ const ADMIN_MANUAL_DATA = {
   }
 };
 
-function AdminManualSidePanel({ activeTab, isOpen, onClose }) {
+function AdminManualSidePanel({ activeTab, isOpen, onClose, master, C, setC, auth }) {
   const [selectedTopic, setSelectedTopic] = useState(activeTab || "registrations");
   const [searchQuery, setSearchQuery] = useState("");
+  const [editingNoteIndex, setEditingNoteIndex] = useState(null);
+  const [isAddingNote, setIsAddingNote] = useState(false);
+  const [noteTitle, setNoteTitle] = useState("");
+  const [noteDesc, setNoteDesc] = useState("");
+  const [savingNote, setSavingNote] = useState(false);
 
   useEffect(() => {
     if (activeTab && ADMIN_MANUAL_DATA[activeTab]) {
@@ -4166,9 +4171,65 @@ function AdminManualSidePanel({ activeTab, isOpen, onClose }) {
   if (!isOpen) return null;
 
   const currentData = ADMIN_MANUAL_DATA[selectedTopic] || ADMIN_MANUAL_DATA.registrations;
+  const customNotes = (C?.customManualNotes && C.customManualNotes[selectedTopic]) || [];
+
+  const handleSaveCustomNote = async () => {
+    if (!noteTitle.trim() || !noteDesc.trim()) {
+      alert("Please provide both a title and description for the guideline.");
+      return;
+    }
+    setSavingNote(true);
+    try {
+      let updatedTopicNotes = [...customNotes];
+      if (editingNoteIndex !== null) {
+        updatedTopicNotes[editingNoteIndex] = { title: noteTitle.trim(), desc: noteDesc.trim(), updatedAt: new Date().toISOString(), updatedBy: auth?.email };
+      } else {
+        updatedTopicNotes.push({ title: noteTitle.trim(), desc: noteDesc.trim(), createdAt: new Date().toISOString(), createdBy: auth?.email });
+      }
+
+      const newC = {
+        ...C,
+        customManualNotes: {
+          ...(C?.customManualNotes || {}),
+          [selectedTopic]: updatedTopicNotes
+        }
+      };
+
+      if (setC) setC(newC);
+      if (auth?.idToken) await fbSave(newC, auth.idToken);
+
+      setIsAddingNote(false);
+      setEditingNoteIndex(null);
+      setNoteTitle("");
+      setNoteDesc("");
+      alert("Custom guideline saved successfully! It will now be visible to all admins.");
+    } catch(err) {
+      alert("Failed to save guideline: " + err.message);
+    } finally {
+      setSavingNote(false);
+    }
+  };
+
+  const handleDeleteCustomNote = async (idx) => {
+    if (!window.confirm("Are you sure you want to delete this Super Admin guideline?")) return;
+    try {
+      const updatedTopicNotes = customNotes.filter((_, i) => i !== idx);
+      const newC = {
+        ...C,
+        customManualNotes: {
+          ...(C?.customManualNotes || {}),
+          [selectedTopic]: updatedTopicNotes
+        }
+      };
+      if (setC) setC(newC);
+      if (auth?.idToken) await fbSave(newC, auth.idToken);
+    } catch(err) {
+      alert("Failed to delete guideline: " + err.message);
+    }
+  };
 
   return (
-    <div style={{position:"fixed",top:0,right:0,bottom:0,width:380,background:"white",boxShadow:"-8px 0 32px rgba(0,0,0,0.15)",zIndex:9999,display:"flex",flexDirection:"column",borderLeft:"1px solid var(--bd)",transition:"transform 0.3s ease"}}>
+    <div style={{position:"fixed",top:0,right:0,bottom:0,width:390,background:"white",boxShadow:"-8px 0 32px rgba(0,0,0,0.15)",zIndex:9999,display:"flex",flexDirection:"column",borderLeft:"1px solid var(--bd)",transition:"transform 0.3s ease"}}>
       
       {/* Panel Header */}
       <div style={{padding:"20px",background:"linear-gradient(135deg, #1e3a8a, #312e81)",color:"white",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
@@ -4209,6 +4270,80 @@ function AdminManualSidePanel({ activeTab, isOpen, onClose }) {
             <span>{currentData.icon}</span> {currentData.title}
           </h4>
           <p style={{margin:0,fontSize:".82rem",color:"#1E3A8A",lineHeight:1.4}}>{currentData.purpose}</p>
+        </div>
+
+        {/* Super Admin Custom Guidelines Section */}
+        <div style={{background:"#FFFBEB",border:"1px solid #FCD34D",borderRadius:10,padding:14,display:"flex",flexDirection:"column",gap:10}}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+            <h4 style={{margin:0,color:"#B45309",fontSize:".9rem",fontWeight:700,display:"flex",alignItems:"center",gap:6}}>
+              📌 Super Admin Custom Guidelines ({customNotes.length})
+            </h4>
+            {master && !isAddingNote && (
+              <button 
+                onClick={() => { setIsAddingNote(true); setEditingNoteIndex(null); setNoteTitle(""); setNoteDesc(""); }} 
+                style={{padding:"4px 10px",borderRadius:6,background:"#D97706",color:"white",border:"none",fontSize:".75rem",fontWeight:600,cursor:"pointer"}}
+              >
+                ➕ Add Guideline
+              </button>
+            )}
+          </div>
+
+          {/* Add / Edit Form for Super Admin */}
+          {master && isAddingNote && (
+            <div style={{background:"white",border:"1px solid #FCD34D",borderRadius:8,padding:12,display:"flex",flexDirection:"column",gap:8,marginTop:4}}>
+              <div style={{fontSize:".8rem",fontWeight:700,color:"#B45309"}}>{editingNoteIndex !== null ? "Edit Guideline" : "Add New Guideline"}</div>
+              <input 
+                type="text" 
+                placeholder="Guideline Title (e.g. Document Verification Policy)" 
+                value={noteTitle} 
+                onChange={e => setNoteTitle(e.target.value)} 
+                style={{padding:"8px",borderRadius:6,border:"1px solid var(--bd)",fontSize:".8rem"}} 
+              />
+              <textarea 
+                placeholder="Detailed instructions for regular admins..." 
+                value={noteDesc} 
+                onChange={e => setNoteDesc(e.target.value)} 
+                rows={3} 
+                style={{padding:"8px",borderRadius:6,border:"1px solid var(--bd)",fontSize:".8rem",fontFamily:"inherit",resize:"vertical"}} 
+              />
+              <div style={{display:"flex",gap:8,justifyContent:"flex-end",marginTop:4}}>
+                <button onClick={() => { setIsAddingNote(false); setEditingNoteIndex(null); }} style={{padding:"6px 12px",borderRadius:6,background:"white",border:"1px solid var(--bd)",fontSize:".75rem",cursor:"pointer"}}>Cancel</button>
+                <button onClick={handleSaveCustomNote} disabled={savingNote} style={{padding:"6px 14px",borderRadius:6,background:"#B45309",color:"white",border:"none",fontSize:".75rem",fontWeight:700,cursor:"pointer"}}>{savingNote ? "Saving..." : "Save Guideline"}</button>
+              </div>
+            </div>
+          )}
+
+          {/* List of Custom Notes */}
+          {customNotes.length === 0 && !isAddingNote ? (
+            <div style={{fontSize:".78rem",color:"#D97706",fontStyle:"italic"}}>
+              {master ? "No custom guidelines added for this module yet. Click 'Add Guideline' above to add instructions for your team." : "No additional custom guidelines issued by Super Admin for this module."}
+            </div>
+          ) : (
+            customNotes.map((note, idx) => (
+              <div key={idx} style={{background:"white",borderRadius:8,border:"1px solid #FDE68A",padding:10,display:"flex",flexDirection:"column",gap:4}}>
+                <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start"}}>
+                  <div style={{fontWeight:700,fontSize:".82rem",color:"#92400E"}}>📌 {note.title}</div>
+                  {master && (
+                    <div style={{display:"flex",gap:6}}>
+                      <button 
+                        onClick={() => { setEditingNoteIndex(idx); setNoteTitle(note.title); setNoteDesc(note.desc); setIsAddingNote(true); }} 
+                        style={{background:"none",border:"none",color:"#B45309",fontSize:".75rem",cursor:"pointer",padding:0,textDecoration:"underline",fontWeight:600}}
+                      >
+                        Edit
+                      </button>
+                      <button 
+                        onClick={() => handleDeleteCustomNote(idx)} 
+                        style={{background:"none",border:"none",color:"#C0392B",fontSize:".75rem",cursor:"pointer",padding:0,textDecoration:"underline",fontWeight:600}}
+                      >
+                        Delete
+                      </button>
+                    </div>
+                  )}
+                </div>
+                <div style={{fontSize:".78rem",color:"#78350F",lineHeight:1.4}}>{note.desc}</div>
+              </div>
+            ))
+          )}
         </div>
 
         {currentData.sections.map((sec, idx) => {
@@ -4404,7 +4539,7 @@ function Admin({ C, setC, setPage, auth, onLogout, onShowLogin }) {
           {tab==="access"    && hasAccess.includes("access") && <AdminAccess C={C} setC={setC} master={master} auth={auth}/>}
           {tab==="profile"   && hasAccess.includes("profile") && <AdminProfile auth={auth} mob={mob} adminProfile={adminProfile} setAdminProfile={setAdminProfile}/>}
         
-          <AdminManualSidePanel activeTab={tab} isOpen={isHelpOpen} onClose={() => setIsHelpOpen(false)} /></div>
+          <AdminManualSidePanel activeTab={tab} isOpen={isHelpOpen} onClose={() => setIsHelpOpen(false)} master={master} C={C} setC={setC} auth={auth} /></div>
       </div>
     </div>
   );
