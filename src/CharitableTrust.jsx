@@ -12322,6 +12322,32 @@ export default function App() {
     }).catch(() => setFbState("ready")); // fall back to defaults
   }, []);
 
+  // ── Dynamically update document title and favicon ───────────────────────
+  useEffect(() => {
+    if (C && C.trust) {
+      if (C.trust.name) {
+        document.title = C.trust.name;
+      }
+      if (C.trust.logo && C.trust.logo.url) {
+        let link = document.querySelector("link[rel~='icon']");
+        if (!link) {
+          link = document.createElement('link');
+          link.rel = 'icon';
+          document.getElementsByTagName('head')[0].appendChild(link);
+        }
+        link.href = C.trust.logo.url;
+
+        let appleLink = document.querySelector("link[rel='apple-touch-icon']");
+        if (!appleLink) {
+          appleLink = document.createElement('link');
+          appleLink.rel = 'apple-touch-icon';
+          document.getElementsByTagName('head')[0].appendChild(appleLink);
+        }
+        appleLink.href = C.trust.logo.url;
+      }
+    }
+  }, [C?.trust?.name, C?.trust?.logo?.url]);
+
   // ── Admin access — always open, login optional ───────────────────────────
   const goAdmin = () => setPage("admin");
 
