@@ -10283,6 +10283,163 @@ function DashboardProfile({ globalProfile, globalAuthToken, mob }) {
   );
 }
 
+function BulkSelectionModal({ isOpen, onClose, title, items = [], actionLabel = "Download", onConfirm, isProcessing, progress = 0 }) {
+  const [selectedIds, setSelectedIds] = useState([]);
+  const [filterQuery, setFilterQuery] = useState("");
+
+  useEffect(() => {
+    if (isOpen && items.length > 0) {
+      setSelectedIds(items.map(r => r.id));
+      setFilterQuery("");
+    }
+  }, [isOpen, items]);
+
+  if (!isOpen) return null;
+
+  const filteredItems = items.filter(r => {
+    if (!filterQuery) return true;
+    const q = filterQuery.toLowerCase();
+    const name = (r["Full Name"] || r["Name"] || r["Participant Name"] || "").toLowerCase();
+    const mob = (r["Mobile Number"] || r["Mobile"] || "").toLowerCase();
+    const serial = (r["Serial Number"] || r["Transaction ID"] || "").toLowerCase();
+    return name.includes(q) || mob.includes(q) || serial.includes(q);
+  });
+
+  const allSelected = filteredItems.length > 0 && filteredItems.every(r => selectedIds.includes(r.id));
+
+  const toggleSelectAll = () => {
+    if (allSelected) {
+      const filteredSet = new Set(filteredItems.map(r => r.id));
+      setSelectedIds(prev => prev.filter(id => !filteredSet.has(id)));
+    } else {
+      const combined = new Set([...selectedIds, ...filteredItems.map(r => r.id)]);
+      setSelectedIds(Array.from(combined));
+    }
+  };
+
+  const toggleItem = (id) => {
+    setSelectedIds(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
+  };
+
+  const handleConfirm = () => {
+    const selectedList = items.filter(r => selectedIds.includes(r.id));
+    if (selectedList.length === 0) return alert("Please select at least one record.");
+    onConfirm(selectedList);
+  };
+
+  return (
+    <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.5)",zIndex:9999,display:"flex",alignItems:"center",justifyContent:"center",padding:16}}>
+      <div style={{background:"white",borderRadius:16,width:"100%",maxWidth:600,maxHeight:"85vh",display:"flex",flexDirection:"column",boxShadow:"0 20px 40px rgba(0,0,0,0.2)",overflow:"hidden"}}>
+        
+        {/* Header */}
+        <div style={{padding:"16px 20px",background:"var(--dt)",color:"white",display:"flex",justify:"space-between",alignItems:"center"}}>
+          <div>
+            <h3 style={{margin:0,fontSize:"1.1rem",fontWeight:700}}>{title}</h3>
+            <div style={{fontSize:".78rem",opacity:0.8,marginTop:2}}>Select or unselect items for batch action</div>
+          </div>
+          <button onClick={onClose} disabled={isProcessing} style={{background:"rgba(255,255,255,0.15)",border:"none",color:"white",width:30,height:30,borderRadius:6,fontSize:"1.1rem",cursor:isProcessing?"not-allowed":"pointer"}}>✕</button>
+        </div>
+
+        {/* Toolbar & Search */}
+        <div style={{padding:"12px 20px",background:"#F8F9FA",borderBottom:"1px solid var(--bd)",display:"flex",alignItems:"center",justify:"space-between",gap:12,flexWrap:"wrap"}}>
+          <label style={{display:"flex",alignItems:"center",gap:8,fontSize:".85rem",fontWeight:600,cursor:"pointer",userSelect:"none"}}>
+            <input 
+              type="checkbox" 
+              checked={allSelected} 
+              onChange={toggleSelectAll} 
+              disabled={isProcessing} 
+              style={{width:16,height:16,cursor:"pointer"}} 
+            />
+            <span>Select / Deselect All ({selectedIds.length} of {items.length} selected)</span>
+          </label>
+
+          <input 
+            type="text" 
+            placeholder="🔍 Filter list by name/mobile..." 
+            value={filterQuery} 
+            onChange={e => setFilterQuery(e.target.value)} 
+            disabled={isProcessing}
+            style={{padding:"6px 12px",borderRadius:8,border:"1px solid var(--bd)",fontSize:".82rem",outline:"none",width:200}} 
+          />
+        </div>
+
+        {/* Scrollable Items List */}
+        <div style={{flex:1,padding:"10px 20px",overflowY:"auto",display:"flex",flexDirection:"column",gap:6}}>
+          {filteredItems.length === 0 ? (
+            <div style={{textAlign:"center",padding:30,color:"var(--mu)",fontSize:".85rem"}}>No matching records found.</div>
+          ) : (
+            filteredItems.map(r => {
+              const isChecked = selectedIds.includes(r.id);
+              const name = r["Full Name"] || r["Name"] || r["Participant Name"] || "Guest/Student";
+              const subDetail = r["Mobile Number"] || r["Mobile"] || r["Email"] || r["Address"] || "";
+              const serial = r["Serial Number"] || r["Transaction ID"] || "";
+
+              return (
+                <div 
+                  key={r.id} 
+                  onClick={() => !isProcessing && toggleItem(r.id)} 
+                  style={{
+                    display:"flex",alignItems:"center",gap:12,padding:"10px 12px",borderRadius:8,
+                    border: isChecked ? "1px solid #BFDBFE" : "1px solid #E5E7EB",
+                    background: isChecked ? "#EFF6FF" : "white",
+                    cursor: isProcessing ? "not-allowed" : "pointer",
+                    transition: "all 0.15s ease"
+                  }}
+                >
+                  <input 
+                    type="checkbox" 
+                    checked={isChecked} 
+                    onChange={() => {}} 
+                    disabled={isProcessing}
+                    style={{width:18,height:18,cursor:"pointer",flexShrink:0}} 
+                  />
+                  <div style={{flex:1,minWidth:0}}>
+                    <div style={{fontWeight:600,fontSize:".85rem",color:"var(--dt)",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>
+                      {name}
+                    </div>
+                    <div style={{fontSize:".75rem",color:"var(--mu)",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>
+                      {subDetail} {serial ? " • Serial: " + serial : ""}
+                    </div>
+                  </div>
+                  <span style={{fontSize:".7rem",fontWeight:700,background:"#DEF7EC",color:"#03543F",padding:"2px 8px",borderRadius:12}}>
+                    Approved
+                  </span>
+                </div>
+              );
+            })
+          )}
+        </div>
+
+        {/* Processing Indicator */}
+        {isProcessing && (
+          <div style={{padding:"8px 20px",background:"#FFF4EC",borderTop:"1px solid #FFE0B2",fontSize:".8rem",color:"#E8650A",fontWeight:600,display:"flex",alignItems:"center",gap:8}}>
+            <span>⏳ Processing... ({progress} of {selectedIds.length} completed)</span>
+          </div>
+        )}
+
+        {/* Footer Actions */}
+        <div style={{padding:"14px 20px",background:"#F9FAFB",borderTop:"1px solid var(--bd)",display:"flex",justify:"flex-end",gap:10}}>
+          <button onClick={onClose} disabled={isProcessing} style={{padding:"8px 16px",borderRadius:8,background:"white",border:"1px solid var(--bd)",fontSize:".85rem",cursor:isProcessing?"not-allowed":"pointer"}}>
+            Cancel
+          </button>
+          <button 
+            onClick={handleConfirm} 
+            disabled={isProcessing || selectedIds.length === 0} 
+            style={{
+              padding:"8px 18px",borderRadius:8,background:"var(--sf)",color:"white",border:"none",
+              fontSize:".85rem",fontWeight:600,cursor:(isProcessing || selectedIds.length === 0)?"not-allowed":"pointer",
+              opacity:(isProcessing || selectedIds.length === 0)?0.6:1
+            }}
+          >
+            {isProcessing ? "Processing..." : actionLabel + " (" + selectedIds.length + ")"}
+          </button>
+        </div>
+
+      </div>
+    </div>
+  );
+}
+
 function AdminCertificates({ mob, C, auth }) {
   const [regs, setRegs] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -10293,6 +10450,7 @@ function AdminCertificates({ mob, C, auth }) {
   const [previewCertRegId, setPreviewCertRegId] = useState(null);
   const [downloadingBulk, setDownloadingBulk] = useState(false);
   const [downloadProgress, setDownloadProgress] = useState(0);
+  const [showSelectModal, setShowSelectModal] = useState(false);
 
   const handleBulkDownload = async () => {
     if (filteredRegs.length === 0) return alert("No certificates available to download.");
@@ -10619,6 +10777,7 @@ function AdminInviteLetters({ mob, C, auth }) {
   const [downloadProgress, setDownloadProgress] = useState(0);
   const [downloadingEnvelopes, setDownloadingEnvelopes] = useState(false);
   const [releasingAll, setReleasingAll] = useState(false);
+  const [bulkSelectMode, setBulkSelectMode] = useState(null);
 
   const globalGuests = regs.filter(r => r.isGlobalGuest === true);
 
