@@ -10787,11 +10787,10 @@ function AdminInviteLetters({ mob, C, auth }) {
   const inviteEvents = (C.events || []).filter(e => e.issueInviteLetters === true || e.issueInviteLetters === "true");
 
   const inviteRegs = regs.filter(r => {
-    if (r.Status !== "Approved") return false;
     if (!selectedEventId) return false;
-    let evName = r.eventName || r.eventTitle || r.eventId;
     const ev = inviteEvents.find(e => e.id === selectedEventId);
     if (!ev) return false;
+    let evName = r.eventName || r.eventTitle || r.eventId;
     return r.eventId === ev.id || evName === ev.title || evName === ev.titleGu;
   });
 
