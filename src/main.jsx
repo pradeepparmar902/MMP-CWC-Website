@@ -1,7 +1,7 @@
 import React, { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import './index.css'
-import './index.css'
+import App from './App.jsx'
 
 class ErrorBoundary extends React.Component {
   constructor(props) {
@@ -26,42 +26,22 @@ class ErrorBoundary extends React.Component {
   }
 }
 
-fetch('./config.json')
-  .then(res => res.text())
-  .then(text => {
-    try {
-      return text ? JSON.parse(text) : {};
-    } catch(e) {
-      return {};
-    }
-  })
-  .then(async config => {
-    const envApiKey = import.meta.env.VITE_FIREBASE_API_KEY;
-    const envProjectId = import.meta.env.VITE_FIREBASE_PROJECT_ID;
-    const envBucket = import.meta.env.VITE_FIREBASE_STORAGE_BUCKET;
+// ── Single Source of Truth for Firebase Config (.env) ───────────────────────
+const envApiKey = import.meta.env.VITE_FIREBASE_API_KEY;
+const envProjectId = import.meta.env.VITE_FIREBASE_PROJECT_ID;
+const envBucket = import.meta.env.VITE_FIREBASE_STORAGE_BUCKET;
 
-    const mergedConfig = {
-      apiKey: (envApiKey && envApiKey.trim()) || config.apiKey || "",
-      projectId: (envProjectId && envProjectId.trim()) || config.projectId || "",
-      bucket: (envBucket && envBucket.trim()) || config.bucket || ""
-    };
+// Set global window.FIREBASE_CONFIG from .env (with fallback)
+window.FIREBASE_CONFIG = {
+  apiKey: (envApiKey && envApiKey.trim()) || "AIzaSyD8S_dRHVNlmUnRV-AfOXocqR0EoPUh8k4",
+  projectId: (envProjectId && envProjectId.trim()) || "vdiyagohilcharitable",
+  bucket: (envBucket && envBucket.trim()) || "vdiyagohilcharitable.firebasestorage.app"
+};
 
-    window.FIREBASE_CONFIG = mergedConfig;
-    const { default: App } = await import('./App.jsx');
-    createRoot(document.getElementById('root')).render(
-      <StrictMode>
-        <ErrorBoundary>
-          <App />
-        </ErrorBoundary>
-      </StrictMode>,
-    );
-  })
-  .catch(err => {
-    document.getElementById('root').innerHTML = `
-      <div style="padding: 40px; font-family: sans-serif; color: #333;">
-        <h1 style="color: red;">Configuration Error</h1>
-        <p>Failed to load /config.json. Please ensure the file exists and is valid JSON.</p>
-        <pre style="background: #f4f4f4; padding: 20px;">${err.message}</pre>
-      </div>
-    `;
-  });
+createRoot(document.getElementById('root')).render(
+  <StrictMode>
+    <ErrorBoundary>
+      <App />
+    </ErrorBoundary>
+  </StrictMode>
+);
