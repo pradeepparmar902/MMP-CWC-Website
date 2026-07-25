@@ -4007,6 +4007,258 @@ const ANAV = [
   {id:"profile",icon:"👤",label:"My Profile"},
 {id: "meritlist", label: "Reports & Lists", icon: "📑"}, {id: "inviteletters", label: "Invite Letters", icon: "📩"}, {id: "certificates", label: "Certificates", icon: "🎓"}];
 
+const ADMIN_MANUAL_DATA = {
+  registrations: {
+    title: "Event Registrations Console",
+    icon: "📋",
+    purpose: "Review, approve, or request info updates for incoming event registrants, manage bulk group assignments, and generate preset serial numbers.",
+    sections: [
+      {
+        heading: "⚡ Bulk Operations Toolbar",
+        items: [
+          { name: "Update Group Name", desc: "Select multiple registrants using checkboxes and assign them to a named group (e.g., 'Group A', 'VVIP Guest'). Group names appear on certificates and exports." },
+          { name: "Generate Serial Numbers", desc: "Generates sequential serial numbers (e.g., VG-001, VG-002) for selected registrants using a customizable prefix and starting index." },
+          { name: "Reset Serials", desc: "Clears assigned serial numbers from selected registrants if you need to re-number them." },
+          { name: "Save Preset / Load Preset", desc: "Saves current serial numbering configuration into memory for quick reuse across events." }
+        ]
+      },
+      {
+        heading: "Status Workflow & Impact",
+        items: [
+          { name: "Approved Status", desc: "Impact: Unlocks eligibility for Education Awards (Certificates) and Special Invites. Registrant becomes visible in Certificate and Invite Letter Workspaces." },
+          { name: "Needs Info Status", desc: "Impact: Unlocks the '✏️ Edit & Resubmit' form on the user's dashboard portal. The user can correct form fields (dropdowns, files, text) while the Form ID & Transaction ID remain 100% frozen and preserved." },
+          { name: "Disapproved Status", desc: "Impact: Prevents certificate/invite issuance. Registrant sees status updated in their user portal." }
+        ]
+      },
+      {
+        heading: "Appear / Disappear Rules",
+        items: [
+          { name: "Table Rows", desc: "Filtered dynamically by Search Query, Status filter, and Event selector. Registrants only appear here if submitted via the event registration form." }
+        ]
+      }
+    ]
+  },
+  certificates: {
+    title: "Certificate Workspaces Console",
+    icon: "🎓",
+    purpose: "Manage certificate issuance, preview generated PDFs, and control certificate release/hold status for approved event participants.",
+    sections: [
+      {
+        heading: "Workspaces Dashboard",
+        items: [
+          { name: "Event Workspace Cards", desc: "Shows event title and total approved registrants eligible for certificates. Click any workspace card to enter its certificate console." }
+        ]
+      },
+      {
+        heading: "Certificate Controls",
+        items: [
+          { name: "Release Certificate", desc: "Impact: Makes the Certificate PDF viewable and downloadable on the student's My Portal dashboard under Education Awards." },
+          { name: "Hold Certificate", desc: "Impact: Temporarily hides certificate download button on student's portal (e.g. pending verification of marksheet)." },
+          { name: "👁 Preview Certificate", desc: "Generates live PDF preview overlaid directly on the admin screen without navigating away." }
+        ]
+      },
+      {
+        heading: "Appear / Disappear Rules",
+        items: [
+          { name: "Workspace Card Appearance", desc: "An event workspace card appears if 'Enable / Issue Certificates' is checked in Event Settings OR if approved registrants exist for that event." },
+          { name: "Student Eligibility", desc: "Only registrants with 'Approved' status appear in the Certificate workspace." }
+        ]
+      }
+    ]
+  },
+  inviteletters: {
+    title: "Invite Letters & Envelopes Console",
+    icon: "💌",
+    purpose: "Manage formal event invitation letters, special guest lists, and print batch address envelope labels for physical mailing.",
+    sections: [
+      {
+        heading: "Toolbar & Actions",
+        items: [
+          { name: "🌐 Global Contact List", desc: "Add special guest invites manually or bulk upload from Excel/CSV (Name, Mobile, Address, Designation). Guests added here receive invite letters without completing event registration." },
+          { name: "🖨️ Print Address Envelopes", desc: "Generates printable envelope sheet containing Name, Address, and Mobile for all invites formatted for standard envelope sizes." },
+          { name: "Release / Hold Invite Letter", desc: "Controls whether the invitation letter PDF is visible in the guest's My Portal under Special Invites." }
+        ]
+      },
+      {
+        heading: "Appear / Disappear Rules",
+        items: [
+          { name: "Workspace Cards", desc: "Appears for events where 'Enable / Issue Invite Letters' is checked in Event settings." },
+          { name: "Invitees List", desc: "Includes both Approved event registrants AND Global Contact List guest imports." }
+        ]
+      }
+    ]
+  },
+  content: {
+    title: "Content Editor & Form Builder",
+    icon: "🎨",
+    purpose: "Configure trust website pages, manage event details, build dynamic registration form fields, and set up conditional dropdown logic.",
+    sections: [
+      {
+        heading: "Event Settings & Radio Toggles",
+        items: [
+          { name: "Enable / Issue Certificates (Radio/Toggle)", desc: "Impact: When checked, creates a Certificate Workspace for this event and enables certificate generation." },
+          { name: "Enable / Issue Invite Letters (Radio/Toggle)", desc: "Impact: When checked, creates an Invite Letter Workspace for this event and enables letter generation." }
+        ]
+      },
+      {
+        heading: "Form Field Dependencies (logicRules)",
+        items: [
+          { name: "Parent-Child Dropdowns", desc: "Define fields that only appear when a specific option is chosen in a parent field (e.g. 'Standard' dropdown appearing only if 'Student' is selected)." },
+          { name: "Field Types", desc: "Supports Text, Number, Date, Dropdown, Textarea, and File/Document upload fields." }
+        ]
+      }
+    ]
+  },
+  donations: {
+    title: "Donations & Receipts Console",
+    icon: "🧾",
+    purpose: "Verify offline and online donations, issue 80G tax exemption receipts, and view payment histories.",
+    sections: [
+      {
+        heading: "Verification & Receipts",
+        items: [
+          { name: "Verify Donation", desc: "Impact: Generates 80G Tax Receipt PDF and makes it downloadable in donor's My Portal under Payment Receipts." },
+          { name: "Download Receipt PDF", desc: "Downloads official signed tax receipt for record-keeping." }
+        ]
+      }
+    ]
+  },
+  meritlist: {
+    title: "Merit List Generator",
+    icon: "🏆",
+    purpose: "Calculate student marks/percentages and rank candidates for education awards and scholarships.",
+    sections: [
+      {
+        heading: "Ranking Controls",
+        items: [
+          { name: "Calculate Ranks", desc: "Sorts approved student submissions by percentage/marks and generates merit rank lists." },
+          { name: "Export Merit List", desc: "Downloads clean Excel/CSV file of ranked candidates for committee review." }
+        ]
+      }
+    ]
+  },
+  access: {
+    title: "Access Control & Permissions",
+    icon: "🔐",
+    purpose: "Manage admin roles, assign section permissions to sub-admins, and view security logs.",
+    sections: [
+      {
+        heading: "Role Management",
+        items: [
+          { name: "Master Admin", desc: "Has full access to all sections, settings, and permission assignment." },
+          { name: "Sub-Admin Permissions", desc: "Toggle specific module permissions (e.g. Registrations only, Certificates only) per email account." }
+        ]
+      }
+    ]
+  }
+};
+
+function AdminManualSidePanel({ activeTab, isOpen, onClose }) {
+  const [selectedTopic, setSelectedTopic] = useState(activeTab || "registrations");
+  const [searchQuery, setSearchQuery] = useState("");
+
+  useEffect(() => {
+    if (activeTab && ADMIN_MANUAL_DATA[activeTab]) {
+      setSelectedTopic(activeTab);
+    }
+  }, [activeTab]);
+
+  if (!isOpen) return null;
+
+  const currentData = ADMIN_MANUAL_DATA[selectedTopic] || ADMIN_MANUAL_DATA.registrations;
+
+  return (
+    <div style={{position:"fixed",top:0,right:0,bottom:0,width:380,background:"white",boxShadow:"-8px 0 32px rgba(0,0,0,0.15)",zIndex:9999,display:"flex",flexDirection:"column",borderLeft:"1px solid var(--bd)",transition:"transform 0.3s ease"}}>
+      
+      {/* Panel Header */}
+      <div style={{padding:"20px",background:"linear-gradient(135deg, #1e3a8a, #312e81)",color:"white",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+        <div>
+          <h3 style={{margin:0,fontSize:"1.1rem",fontWeight:700,display:"flex",alignItems:"center",gap:8}}>
+            📘 Admin Field Guide
+          </h3>
+          <p style={{margin:"4px 0 0 0",fontSize:".75rem",opacity:0.8}}>User manual & functionality reference</p>
+        </div>
+        <button onClick={onClose} style={{background:"rgba(255,255,255,0.15)",border:"none",color:"white",width:32,height:32,borderRadius:8,fontSize:"1.2rem",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center"}}>✕</button>
+      </div>
+
+      {/* Selector & Search */}
+      <div style={{padding:"16px",background:"#F8F9FA",borderBottom:"1px solid var(--bd)",display:"flex",flexDirection:"column",gap:12}}>
+        <div>
+          <label style={{fontSize:".75rem",fontWeight:700,color:"var(--mu)",textTransform:"uppercase",display:"block",marginBottom:4}}>Select Module:</label>
+          <select value={selectedTopic} onChange={e => setSelectedTopic(e.target.value)} style={{width:"100%",padding:"8px 12px",borderRadius:8,border:"1px solid var(--bd)",fontSize:".85rem",fontFamily:"inherit",background:"white"}}>
+            {Object.keys(ADMIN_MANUAL_DATA).map(key => (
+              <option key={key} value={key}>{ADMIN_MANUAL_DATA[key].icon} {ADMIN_MANUAL_DATA[key].title}</option>
+            ))}
+          </select>
+        </div>
+        <input 
+          type="text" 
+          placeholder="🔍 Search buttons, fields, impacts..." 
+          value={searchQuery} 
+          onChange={e => setSearchQuery(e.target.value)} 
+          style={{padding:"8px 12px",borderRadius:8,border:"1px solid var(--bd)",fontSize:".85rem",fontFamily:"inherit",outline:"none"}} 
+        />
+      </div>
+
+      {/* Manual Content */}
+      <div style={{flex:1,padding:"20px",overflowY:"auto",display:"flex",flexDirection:"column",gap:20}}>
+        
+        {/* Module Purpose Header */}
+        <div style={{background:"#EFF6FF",border:"1px solid #BFDBFE",borderRadius:10,padding:14}}>
+          <h4 style={{margin:"0 0 6px 0",color:"#1E40AF",fontSize:".95rem",display:"flex",alignItems:"center",gap:6}}>
+            <span>{currentData.icon}</span> {currentData.title}
+          </h4>
+          <p style={{margin:0,fontSize:".82rem",color:"#1E3A8A",lineHeight:1.4}}>{currentData.purpose}</p>
+        </div>
+
+        {currentData.sections.map((sec, idx) => {
+          const filteredItems = sec.items.filter(item => {
+            if (!searchQuery) return true;
+            const q = searchQuery.toLowerCase();
+            return item.name.toLowerCase().includes(q) || item.desc.toLowerCase().includes(q);
+          });
+
+          if (filteredItems.length === 0) return null;
+
+          return (
+            <div key={idx} style={{display:"flex",flexDirection:"column",gap:10}}>
+              <h5 style={{margin:0,fontSize:".85rem",fontWeight:700,color:"var(--dt)",borderBottom:"2px solid var(--sf)",paddingBottom:4,textTransform:"uppercase",letterSpacing:.5}}>
+                {sec.heading}
+              </h5>
+              
+              <div style={{display:"flex",flexDirection:"column",gap:10}}>
+                {filteredItems.map((item, i2) => (
+                  <div key={i2} style={{background:"white",border:"1px solid var(--bd)",borderRadius:8,padding:12,boxShadow:"0 2px 4px rgba(0,0,0,0.02)"}}>
+                    <div style={{fontWeight:700,fontSize:".85rem",color:"var(--dt)",marginBottom:4,display:"flex",alignItems:"center",gap:6}}>
+                      🔹 {item.name}
+                    </div>
+                    <div style={{fontSize:".8rem",color:"var(--tm2)",lineHeight:1.4}}>
+                      {item.desc}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          );
+        })}
+
+        {searchQuery && !currentData.sections.some(s => s.items.some(i => i.name.toLowerCase().includes(searchQuery.toLowerCase()) || i.desc.toLowerCase().includes(searchQuery.toLowerCase()))) && (
+          <div style={{textAlign:"center",padding:20,color:"var(--mu)",fontSize:".85rem"}}>
+            No matching topics found for "{searchQuery}". Try selecting another module above.
+          </div>
+        )}
+
+      </div>
+      
+      {/* Footer */}
+      <div style={{padding:"12px 20px",background:"#FAFAFA",borderTop:"1px solid var(--bd)",fontSize:".75rem",color:"var(--mu)",textAlign:"center"}}>
+        Vidya Gohil Charitable Trust • Admin Field Guide v2.0
+      </div>
+
+    </div>
+  );
+}
+
 function Admin({ C, setC, setPage, auth, onLogout, onShowLogin }) {
   const isMasterAdmin = (email) => ["admin@vidyagohiltrust.org", "pradeepparmar902@yahoo.com"].includes(email?.toLowerCase());
   const master = auth?.email ? isMasterAdmin(auth.email) : false;
@@ -4018,6 +4270,7 @@ function Admin({ C, setC, setPage, auth, onLogout, onShowLogin }) {
   }
 
   const visibleNav = ANAV.filter(item => hasAccess.includes(item.id));
+  const [isHelpOpen, setIsHelpOpen] = useState(false);
   const [tab, setTab] = useState(visibleNav.length > 0 ? visibleNav[0].id : "");
   const [open, setOpen] = useState(true);
   const [adminProfile, setAdminProfile] = useState(null);
@@ -4115,6 +4368,19 @@ function Admin({ C, setC, setPage, auth, onLogout, onShowLogin }) {
           <button onClick={()=>setOpen(true)} style={{position:"fixed",top:16,left:16,zIndex:100,background:"white",border:"1px solid var(--bd)",borderRadius:8,width:40,height:40,cursor:"pointer",fontSize:"1.2rem",boxShadow:"0 2px 8px rgba(0,0,0,0.1)",display:"flex",alignItems:"center",justifyContent:"center"}}>☰</button>
         )}
         <div style={{padding:mob?"60px 16px 16px":"24px"}}>
+          <div style={{display:"flex",justify:"space-between",alignItems:"center",marginBottom:16,flexWrap:"wrap",gap:12,paddingBottom:12,borderBottom:"1px solid var(--bd)"}}>
+            <div>
+               <h2 style={{fontFamily:"'Playfair Display',serif",color:"var(--dt)",margin:0,fontSize:"1.4rem"}}>Trust Admin Portal</h2>
+               <div style={{fontSize:".8rem",color:"var(--mu)"}}>Logged in as: {auth?.email}</div>
+            </div>
+            <button 
+              onClick={() => setIsHelpOpen(!isHelpOpen)} 
+              style={{padding:"8px 16px",borderRadius:20,background:isHelpOpen?"var(--sf)":"var(--dt)",color:"white",border:"none",fontWeight:600,fontSize:".85rem",cursor:"pointer",display:"flex",alignItems:"center",gap:6,boxShadow:"0 2px 8px rgba(0,0,0,0.15)",transition:"all 0.2s"}}
+            >
+              📘 Admin Field Guide {isHelpOpen ? "✕" : ""}
+            </button>
+          </div>
+          
           {visibleNav.length === 0 && (
             <div style={{textAlign:"center",padding:40,color:"var(--mu)",background:"white",borderRadius:12}}>
               <h2 style={{fontSize:"1.5rem",color:"#C0392B",marginBottom:10}}>Access Denied</h2>
@@ -4137,7 +4403,8 @@ function Admin({ C, setC, setPage, auth, onLogout, onShowLogin }) {
           {tab==="settings"  && hasAccess.includes("settings") && <Settings mob={mob} C={C} setC={setC} auth={auth} setPage={setPage} hasAccess={hasAccess} master={master}/>}
           {tab==="access"    && hasAccess.includes("access") && <AdminAccess C={C} setC={setC} master={master} auth={auth}/>}
           {tab==="profile"   && hasAccess.includes("profile") && <AdminProfile auth={auth} mob={mob} adminProfile={adminProfile} setAdminProfile={setAdminProfile}/>}
-        </div>
+        
+          <AdminManualSidePanel activeTab={tab} isOpen={isHelpOpen} onClose={() => setIsHelpOpen(false)} /></div>
       </div>
     </div>
   );
