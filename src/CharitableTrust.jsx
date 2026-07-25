@@ -7311,15 +7311,39 @@ function UserDashboard({ C, globalProfile, globalAuthToken, onClose }) {
             {activeTab === "Registrations" && (
               <>
                 <h3 style={{fontFamily:"'Playfair Display',serif",fontSize:"1.3rem",color:"var(--dt)",marginBottom:16,fontWeight:700}}>My Event Registrations</h3>
-                {loading ? (
-                  <div style={{textAlign:"center",padding:40,color:"var(--mu)"}}>Loading your registrations...</div>
-                ) : regs.length === 0 ? (
-                  <div style={{background:"white",padding:"40px 20px",borderRadius:16,textAlign:"center",border:"1px solid var(--bd)"}}>
-                    <div style={{fontSize:"3rem",marginBottom:12}}>📅</div>
-                    <div style={{fontWeight:600,color:"var(--dt)",fontSize:"1.1rem",marginBottom:6}}>No Registrations Found</div>
-                    <div style={{color:"var(--mu)",fontSize:".85rem"}}>You haven't registered for any events yet.</div>
-                  </div>
-                ) : (
+                <div style={{display:"flex",gap:8,marginBottom:16}}>
+                  <button onClick={() => setSubTab("For Me")} style={{padding:"8px 16px",borderRadius:20,border:"none",background:subTab==="For Me"?"var(--dt)":"#E9ECEF",color:subTab==="For Me"?"white":"var(--tm2)",fontWeight:600,cursor:"pointer",transition:"all 0.2s"}}>For Me</button>
+                  <button onClick={() => setSubTab("For Others")} style={{padding:"8px 16px",borderRadius:20,border:"none",background:subTab==="For Others"?"var(--dt)":"#E9ECEF",color:subTab==="For Others"?"white":"var(--tm2)",fontWeight:600,cursor:"pointer",transition:"all 0.2s"}}>For Others</button>
+                </div>
+                {(() => {
+                  const mobileToMatch = String(globalProfile.mobile || globalProfile['Mobile Number'] || "").trim();
+                  const nameToMatch = String(globalProfile.name || globalProfile['Full Name'] || "").trim().toLowerCase();
+                  
+                  const filteredRegs = regs.filter(r => {
+                    const rMobile = String(r["Mobile Number"] || r.mobile || r.phone || "").trim();
+                    const rName = String(r["Submitted By"] || r.name || r["Full Name"] || "").trim().toLowerCase();
+                    const sMob = String(r.submitterMob || "").trim();
+                    
+                    if (subTab === "For Me") {
+                      return rMobile === mobileToMatch || (!rMobile && (sMob === mobileToMatch || rName === nameToMatch));
+                    } else {
+                      if (rMobile && rMobile !== mobileToMatch) {
+                        if (sMob === mobileToMatch) return true;
+                        if (!sMob && rName === nameToMatch) return true;
+                      }
+                      return false;
+                    }
+                  });
+
+                  if (loading) return <div style={{textAlign:"center",padding:40,color:"var(--mu)"}}>Loading your registrations...</div>;
+                  if (filteredRegs.length === 0) return (
+                    <div style={{background:"white",padding:"40px 20px",borderRadius:16,textAlign:"center",border:"1px solid var(--bd)"}}>
+                      <div style={{fontSize:"3rem",marginBottom:12}}>📅</div>
+                      <div style={{fontWeight:600,color:"var(--dt)",fontSize:"1.1rem",marginBottom:6}}>No Registrations Found</div>
+                      <div style={{color:"var(--mu)",fontSize:".85rem"}}>You have no registrations {subTab === "For Me" ? "for yourself" : "for others"}.</div>
+                    </div>
+                  );
+                  return (
                   <div style={{background:"white",borderRadius:12,border:"1px solid var(--bd)",boxShadow:"0 4px 12px rgba(0,0,0,.02)",overflowX:"auto"}}>
                     <table style={{width:"100%",borderCollapse:"collapse",fontSize:".85rem",minWidth:800}}>
                       <thead style={{background:"var(--dt)",color:"white"}}>
@@ -7337,7 +7361,7 @@ function UserDashboard({ C, globalProfile, globalAuthToken, onClose }) {
                         </tr>
                       </thead>
                       <tbody>
-                        {regs.map((r, i) => {
+                        {filteredRegs.map((r, i) => {
                           const sc = getStatusColor(r.Status || r.status || "Pending");
                           const rowKeys = Array.from(new Set(regs.flatMap(r => Object.keys(r))))
                             .filter(k => !["id", "_submittedAt", "timestamp", "Status", "status", "Remarks", "remarks", "AdminRemarks", "Event Name", "Event", "eventName", "eventTitle", "eventId"].includes(k));
@@ -7392,22 +7416,47 @@ function UserDashboard({ C, globalProfile, globalAuthToken, onClose }) {
                       </tbody>
                     </table>
                   </div>
-                )}
+                  );
+                })()}
               </>
             )}
 
             {activeTab === "Receipts" && (
               <>
                 <h3 style={{fontFamily:"'Playfair Display',serif",fontSize:"1.3rem",color:"var(--dt)",marginBottom:16,fontWeight:700}}>My Donations & Receipts</h3>
-                {loading ? (
-                  <div style={{textAlign:"center",padding:40,color:"var(--mu)"}}>Loading your donations...</div>
-                ) : myDonations.length === 0 ? (
-                  <div style={{background:"white",padding:"40px 20px",borderRadius:16,textAlign:"center",border:"1px solid var(--bd)"}}>
-                    <div style={{fontSize:"3rem",marginBottom:12}}>🧾</div>
-                    <div style={{fontWeight:600,color:"var(--dt)",fontSize:"1.1rem",marginBottom:6}}>No Donations Found</div>
-                    <div style={{color:"var(--mu)",fontSize:".85rem"}}>We couldn't find any verified donations linked to your profile.</div>
-                  </div>
-                ) : (
+                <div style={{display:"flex",gap:8,marginBottom:16}}>
+                  <button onClick={() => setSubTab("For Me")} style={{padding:"8px 16px",borderRadius:20,border:"none",background:subTab==="For Me"?"var(--dt)":"#E9ECEF",color:subTab==="For Me"?"white":"var(--tm2)",fontWeight:600,cursor:"pointer",transition:"all 0.2s"}}>For Me</button>
+                  <button onClick={() => setSubTab("For Others")} style={{padding:"8px 16px",borderRadius:20,border:"none",background:subTab==="For Others"?"var(--dt)":"#E9ECEF",color:subTab==="For Others"?"white":"var(--tm2)",fontWeight:600,cursor:"pointer",transition:"all 0.2s"}}>For Others</button>
+                </div>
+                {(() => {
+                  const mobileToMatch = String(globalProfile.mobile || globalProfile['Mobile Number'] || "").trim();
+                  const nameToMatch = String(globalProfile.name || globalProfile['Full Name'] || "").trim().toLowerCase();
+                  
+                  const filteredDonations = myDonations.filter(r => {
+                    const rMobile = String(r.mobile || r.phone || r["Mobile Number"] || "").trim();
+                    const rName = String(r.name || r.donor || "").trim().toLowerCase();
+                    const sMob = String(r.submitterMob || "").trim();
+                    
+                    if (subTab === "For Me") {
+                      return rMobile === mobileToMatch || (!rMobile && (sMob === mobileToMatch || rName === nameToMatch));
+                    } else {
+                      if (rMobile && rMobile !== mobileToMatch) {
+                        if (sMob === mobileToMatch) return true;
+                        if (!sMob && rName === nameToMatch) return true;
+                      }
+                      return false;
+                    }
+                  });
+
+                  if (loading) return <div style={{textAlign:"center",padding:40,color:"var(--mu)"}}>Loading your donations...</div>;
+                  if (filteredDonations.length === 0) return (
+                    <div style={{background:"white",padding:"40px 20px",borderRadius:16,textAlign:"center",border:"1px solid var(--bd)"}}>
+                      <div style={{fontSize:"3rem",marginBottom:12}}>🧾</div>
+                      <div style={{fontWeight:600,color:"var(--dt)",fontSize:"1.1rem",marginBottom:6}}>No Donations Found</div>
+                      <div style={{color:"var(--mu)",fontSize:".85rem"}}>We couldn't find any verified donations {subTab === "For Me" ? "for yourself" : "for others"}.</div>
+                    </div>
+                  );
+                  return (
                   <div style={{background:"white",borderRadius:12,border:"1px solid var(--bd)",boxShadow:"0 4px 12px rgba(0,0,0,.02)",overflowX:"auto"}}>
                     <table style={{width:"100%",borderCollapse:"collapse",fontSize:".85rem",minWidth:600}}>
                       <thead style={{background:"var(--dt)",color:"white"}}>
@@ -7420,7 +7469,7 @@ function UserDashboard({ C, globalProfile, globalAuthToken, onClose }) {
                         </tr>
                       </thead>
                       <tbody>
-                        {myDonations.map((r, i) => {
+                        {filteredDonations.map((r, i) => {
                           const sc = getStatusColor(r.Status || r.status || "Pending");
                           const isVerified = (r.Status || r.status || "").toLowerCase().includes("verifi") || (r.Status || r.status || "").toLowerCase().includes("approv") || (r.Status || r.status || "").toLowerCase().includes("success") || r.status === "Verified";
                           
@@ -7450,26 +7499,38 @@ function UserDashboard({ C, globalProfile, globalAuthToken, onClose }) {
                       </tbody>
                     </table>
                   </div>
-                )}
+                  );
+                })()}
               </>
             )}
-
 
             {activeTab === "Awards" && (
               <>
                 <h3 style={{fontFamily:"'Playfair Display',serif",fontSize:"1.3rem",color:"var(--dt)",marginBottom:16,fontWeight:700}}>My Education Awards</h3>
-                {` + subtabs_ui.strip() + `}
+                <div style={{display:"flex",gap:8,marginBottom:16}}>
+                  <button onClick={() => setSubTab("For Me")} style={{padding:"8px 16px",borderRadius:20,border:"none",background:subTab==="For Me"?"var(--dt)":"#E9ECEF",color:subTab==="For Me"?"white":"var(--tm2)",fontWeight:600,cursor:"pointer",transition:"all 0.2s"}}>For Me</button>
+                  <button onClick={() => setSubTab("For Others")} style={{padding:"8px 16px",borderRadius:20,border:"none",background:subTab==="For Others"?"var(--dt)":"#E9ECEF",color:subTab==="For Others"?"white":"var(--tm2)",fontWeight:600,cursor:"pointer",transition:"all 0.2s"}}>For Others</button>
+                </div>
                 {(() => {
                   const mobileToMatch = String(globalProfile.mobile || globalProfile['Mobile Number'] || "").trim();
+                  const nameToMatch = String(globalProfile.name || globalProfile['Full Name'] || "").trim().toLowerCase();
+
                   const approvedRegs = regs.filter(r => {
                     const isVerified = (r.Status || r.status || "").toLowerCase().includes("verifi") || (r.Status || r.status || "").toLowerCase().includes("approv") || (r.Status || r.status || "").toLowerCase().includes("success");
                     if (!isVerified) return false;
                     
-                    const rMobile = String(r["Mobile Number"] || r.mobile || "").trim();
+                    const rMobile = String(r["Mobile Number"] || r.mobile || r.phone || "").trim();
+                    const rName = String(r["Submitted By"] || r.name || r["Full Name"] || "").trim().toLowerCase();
+                    const sMob = String(r.submitterMob || "").trim();
+                    
                     if (subTab === "For Me") {
-                       return rMobile === mobileToMatch || (!r.submitterMob && rMobile !== mobileToMatch && rMobile !== "");
+                      return rMobile === mobileToMatch || (!rMobile && (sMob === mobileToMatch || rName === nameToMatch));
                     } else {
-                       return rMobile !== mobileToMatch && String(r.submitterMob || "").trim() === mobileToMatch;
+                      if (rMobile && rMobile !== mobileToMatch) {
+                        if (sMob === mobileToMatch) return true;
+                        if (!sMob && rName === nameToMatch) return true;
+                      }
+                      return false;
                     }
                   });
                   
@@ -7480,7 +7541,7 @@ function UserDashboard({ C, globalProfile, globalAuthToken, onClose }) {
                       if (r.eventId && e.id === r.eventId) return true;
                       return false;
                     });
-                    if (ev) return { reg: r, ev };
+                    if (ev && (ev.issueCertificates === true || ev.issueCertificates === "true") && r.certificateReleased && !r.certificateHold) return { reg: r, ev };
                     return null;
                   }).filter(Boolean);
                   
@@ -7507,7 +7568,6 @@ function UserDashboard({ C, globalProfile, globalAuthToken, onClose }) {
                           }
                         }
                         const sName = extractedName || a.reg["Submitted By"] || globalProfile.name || "Student";
-                        const downloading = false;
                         return (
                           <div key={i} style={{background:"white",borderRadius:12,border:"1px solid var(--bd)",overflow:"hidden",boxShadow:"0 4px 12px rgba(0,0,0,.04)",display:"flex",flexDirection:"column"}}>
                             {a.ev.certBgUrl ? (
@@ -7528,14 +7588,13 @@ function UserDashboard({ C, globalProfile, globalAuthToken, onClose }) {
                                 <div style={{fontSize:".7rem",color:"var(--mu)",fontWeight:600,textTransform:"uppercase"}}>Awarded To</div>
                                 <div style={{fontSize:".95rem",fontWeight:700,color:"var(--dt)"}}>{sName}</div>
                               </div>
-                              {!a.ev.issueCertificates && (
-                                <div style={{padding:"8px 12px",background:"#FEF0EF",color:"#C0392B",borderRadius:6,fontSize:".75rem",fontWeight:600,marginTop:4}}>
-                                  ⚠️ Not Issued Yet. Admin has not checked "Enable / Issue Certificates".
-                                </div>
-                              )}
+                              <div style={{marginTop: 4}}>
+                                <div style={{fontSize:".7rem",color:"var(--mu)",fontWeight:600,textTransform:"uppercase"}}>Transaction ID</div>
+                                <div style={{fontSize:".85rem",fontWeight:600,color:"var(--dt)",fontFamily:"monospace"}}>{a.reg['Transaction ID'] || a.reg.id || "N/A"}</div>
+                              </div>
                               <div style={{marginTop:"auto", display:"flex", gap:8, width:"100%"}}>
                                 <button 
-                                  disabled={!a.ev.certBgUrl || !a.ev.issueCertificates}
+                                  disabled={!a.ev.certBgUrl}
                                   onClick={async (e) => {
                                     const btn = e.currentTarget;
                                     const orig = btn.innerHTML;
@@ -7545,19 +7604,24 @@ function UserDashboard({ C, globalProfile, globalAuthToken, onClose }) {
                                       const evtName = a.ev.title || "Event";
                                       const evtDate = a.ev.date ? `${a.ev.date} ${a.ev.month}` : "2025";
                                       const fieldsData = { "Event Name": evtName, "Date": evtDate, ...a.reg };
-                                      await generateCertificatePDF(a.ev, fieldsData, sName, true);
+                                      if (globalAuthToken) {
+                                        const cleanData = { ...a.reg, certViewDate: new Date().toISOString() };
+                                        delete cleanData.id; delete cleanData._submittedAt;
+                                        await fbUpdateRegistration(a.reg.id, cleanData, globalAuthToken);
+                                      }
+                                      await generateCertificatePDF(a.ev, fieldsData, sName, 'cert', 'url');
                                     } catch(err) {
                                       alert(err.message);
                                     }
                                     btn.disabled = false;
                                     btn.innerHTML = orig;
                                   }} 
-                                  style={{flex:1, padding:"10px",borderRadius:8,background:(!a.ev.certBgUrl || !a.ev.issueCertificates) ? "#ccc" : "#f5f5f5",color:(!a.ev.certBgUrl || !a.ev.issueCertificates) ? "white" : "var(--dt)",border:"1px solid " + ((!a.ev.certBgUrl || !a.ev.issueCertificates) ? "#ccc" : "var(--dt)"),fontWeight:600,cursor:(!a.ev.certBgUrl || !a.ev.issueCertificates) ? "not-allowed" : "pointer",display:"flex",justifyContent:"center",alignItems:"center"}}
+                                  style={{flex:1, padding:"10px",borderRadius:8,background:(!a.ev.certBgUrl) ? "#ccc" : "#f5f5f5",color:(!a.ev.certBgUrl) ? "white" : "var(--dt)",border:"1px solid " + ((!a.ev.certBgUrl) ? "#ccc" : "var(--dt)"),fontWeight:600,cursor:(!a.ev.certBgUrl) ? "not-allowed" : "pointer",display:"flex",justifyContent:"center",alignItems:"center"}}
                                 >
                                   👁 Preview
                                 </button>
                                 <button 
-                                  disabled={!a.ev.certBgUrl || !a.ev.issueCertificates}
+                                  disabled={!a.ev.certBgUrl}
                                   onClick={async (e) => {
                                     const btn = e.currentTarget;
                                     const orig = btn.innerHTML;
@@ -7567,14 +7631,19 @@ function UserDashboard({ C, globalProfile, globalAuthToken, onClose }) {
                                       const evtName = a.ev.title || "Event";
                                       const evtDate = a.ev.date ? `${a.ev.date} ${a.ev.month}` : "2025";
                                       const fieldsData = { "Event Name": evtName, "Date": evtDate, ...a.reg };
-                                      await generateCertificatePDF(a.ev, fieldsData, sName, false);
+                                      if (globalAuthToken && !a.reg.certDownloadDate) {
+                                        const cleanData = { ...a.reg, certDownloadDate: new Date().toISOString() };
+                                        delete cleanData.id; delete cleanData._submittedAt;
+                                        await fbUpdateRegistration(a.reg.id, cleanData, globalAuthToken);
+                                      }
+                                      await generateCertificatePDF(a.ev, fieldsData, sName, 'cert', 'download');
                                     } catch(err) {
                                       alert(err.message);
                                     }
                                     btn.disabled = false;
                                     btn.innerHTML = orig;
                                   }} 
-                                  style={{flex:1, padding:"10px",borderRadius:8,background:(!a.ev.certBgUrl || !a.ev.issueCertificates) ? "#ccc" : "var(--dt)",color:"white",border:"none",fontWeight:600,cursor:(!a.ev.certBgUrl || !a.ev.issueCertificates) ? "not-allowed" : "pointer",display:"flex",justifyContent:"center",alignItems:"center",boxShadow:"0 2px 6px rgba(0,0,0,0.15)"}}
+                                  style={{flex:1, padding:"10px",borderRadius:8,background:(!a.ev.certBgUrl) ? "#ccc" : "var(--dt)",color:"white",border:"none",fontWeight:600,cursor:(!a.ev.certBgUrl) ? "not-allowed" : "pointer",display:"flex",justifyContent:"center",alignItems:"center",boxShadow:"0 2px 6px rgba(0,0,0,0.15)"}}
                                 >
                                   ⬇ Download
                                 </button>
@@ -7589,7 +7658,159 @@ function UserDashboard({ C, globalProfile, globalAuthToken, onClose }) {
               </>
             )}
 
-            {activeTab !== "Registrations" && activeTab !== "Receipts" && activeTab !== "Awards" && (
+            {activeTab === "Invites" && (
+              <>
+                <h3 style={{fontFamily:"'Playfair Display',serif",fontSize:"1.3rem",color:"#D2691E",marginBottom:16,fontWeight:700}}>My Special Invites</h3>
+                <div style={{display:"flex",gap:8,marginBottom:16}}>
+                  <button onClick={() => setSubTab("For Me")} style={{padding:"8px 16px",borderRadius:20,border:"none",background:subTab==="For Me"?"#D2691E":"#E9ECEF",color:subTab==="For Me"?"white":"var(--tm2)",fontWeight:600,cursor:"pointer",transition:"all 0.2s"}}>For Me</button>
+                  <button onClick={() => setSubTab("For Others")} style={{padding:"8px 16px",borderRadius:20,border:"none",background:subTab==="For Others"?"#D2691E":"#E9ECEF",color:subTab==="For Others"?"white":"var(--tm2)",fontWeight:600,cursor:"pointer",transition:"all 0.2s"}}>For Others</button>
+                </div>
+                {(() => {
+                  const mobileToMatch = String(globalProfile.mobile || globalProfile['Mobile Number'] || "").trim();
+                  const nameToMatch = String(globalProfile.name || globalProfile['Full Name'] || "").trim().toLowerCase();
+                  
+                  const approvedRegs = regs.filter(r => {
+                    const isVerified = (r.Status || r.status || "").toLowerCase().includes("verifi") || (r.Status || r.status || "").toLowerCase().includes("approv") || (r.Status || r.status || "").toLowerCase().includes("success");
+                    if (!isVerified) return false;
+                    
+                    const rMobile = String(r["Mobile Number"] || r.mobile || r.phone || "").trim();
+                    const rName = String(r["Submitted By"] || r.name || r["Full Name"] || "").trim().toLowerCase();
+                    const sMob = String(r.submitterMob || "").trim();
+                    
+                    if (subTab === "For Me") {
+                      return rMobile === mobileToMatch || (!rMobile && (sMob === mobileToMatch || rName === nameToMatch));
+                    } else {
+                      if (rMobile && rMobile !== mobileToMatch) {
+                        if (sMob === mobileToMatch) return true;
+                        if (!sMob && rName === nameToMatch) return true;
+                      }
+                      return false;
+                    }
+                  });
+
+                  const invs = approvedRegs.map(r => {
+                    const rEvName = (r.eventName || r.eventTitle || r["Event Name"] || r["Event"] || "").trim().toLowerCase();
+                    const ev = (C.events || []).find(e => {
+                      if (rEvName && e.title && e.title.trim().toLowerCase() === rEvName) return true;
+                      if (r.eventId && e.id === r.eventId) return true;
+                      return false;
+                    });
+                    if (ev && (ev.issueInviteLetters === true || ev.issueInviteLetters === "true") && r.inviteLetterReleased && !r.inviteLetterHold) return { reg: r, ev };
+                    return null;
+                  }).filter(Boolean);
+                  
+                  if (loading) return <div style={{textAlign:"center",padding:40,color:"var(--mu)"}}>Loading invites...</div>;
+                  if (invs.length === 0) return (
+                    <div style={{background:"white",padding:"60px 20px",borderRadius:16,textAlign:"center",border:"1px solid var(--bd)",height:"100%",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center"}}>
+                      <div style={{fontSize:"3.5rem",marginBottom:16}}>💌</div>
+                      <div style={{fontWeight:700,color:"#D2691E",fontSize:"1.3rem",marginBottom:8,fontFamily:"'Playfair Display',serif"}}>No Invites {subTab}</div>
+                      <div style={{color:"var(--mu)",fontSize:".9rem",maxWidth:300}}>Special invite letters will appear here once your registrations are approved and letters are released.</div>
+                    </div>
+                  );
+                  
+                  return (
+                    <div style={{display:"grid",gridTemplateColumns:mob?"1fr":"repeat(auto-fill, minmax(280px, 1fr))",gap:16}}>
+                      {invs.map((a, i) => {
+                        let extractedName = "";
+                        if (a.reg) {
+                          for (const key of Object.keys(a.reg)) {
+                            const kLow = key.toLowerCase().trim();
+                            if (kLow.includes("name") && !kLow.includes("event")) {
+                              extractedName = a.reg[key];
+                              if (extractedName) break;
+                            }
+                          }
+                        }
+                        const sName = extractedName || a.reg["Participant Name"] || a.reg["Full Name"] || a.reg["Name"] || "Student";
+                        return (
+                          <div key={i} style={{background:"white",borderRadius:12,border:"1px solid var(--bd)",overflow:"hidden",display:"flex",flexDirection:"column",boxShadow:"0 4px 12px rgba(0,0,0,0.04)",transition:"transform 0.2s"}} onMouseEnter={e=>e.currentTarget.style.transform="translateY(-4px)"} onMouseLeave={e=>e.currentTarget.style.transform="none"}>
+                            {a.ev.inviteBgUrl ? (
+                              <div style={{height:140,backgroundImage:`url(${a.ev.inviteBgUrl})`,backgroundSize:"cover",backgroundPosition:"center",position:"relative",borderBottom:"1px solid var(--bd)"}}>
+                                 <div style={{position:"absolute",inset:0,background:"linear-gradient(to top, rgba(0,0,0,0.8), transparent)"}}/>
+                                 <div style={{position:"absolute",bottom:12,left:16,right:16,color:"white"}}>
+                                   <div style={{fontSize:".7rem",opacity:.9,textTransform:"uppercase",letterSpacing:1,fontWeight:600,marginBottom:4}}>Invite Letter</div>
+                                   <div style={{fontSize:"1rem",fontWeight:700,fontFamily:"'Playfair Display',serif",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{a.ev.title}</div>
+                                 </div>
+                              </div>
+                            ) : (
+                              <div style={{height:140,background:"#FDF5E6",position:"relative",borderBottom:"1px solid var(--bd)",display:"flex",alignItems:"center",justifyContent:"center",padding:20,textAlign:"center"}}>
+                                <div style={{color:"#8B4513",fontSize:".8rem",fontWeight:600}}>⚠️ Missing Background Image. Admin needs to configure the invite template.</div>
+                              </div>
+                            )}
+                            <div style={{padding:16,display:"flex",flexDirection:"column",gap:12,flex:1}}>
+                              <div>
+                                <div style={{fontSize:".7rem",color:"var(--mu)",fontWeight:600,textTransform:"uppercase"}}>Invited Participant</div>
+                                <div style={{fontSize:".95rem",fontWeight:700,color:"#D2691E"}}>{sName}</div>
+                              </div>
+                              <div style={{marginTop: 4}}>
+                                <div style={{fontSize:".7rem",color:"var(--mu)",fontWeight:600,textTransform:"uppercase"}}>Transaction ID</div>
+                                <div style={{fontSize:".85rem",fontWeight:600,color:"var(--dt)",fontFamily:"monospace"}}>{a.reg['Transaction ID'] || a.reg.id || "N/A"}</div>
+                              </div>
+                              <div style={{marginTop:"auto", display:"flex", gap:8, width:"100%"}}>
+                                <button 
+                                  disabled={!a.ev.inviteBgUrl}
+                                  onClick={async (e) => {
+                                    const btn = e.currentTarget;
+                                    const orig = btn.innerHTML;
+                                    btn.disabled = true;
+                                    btn.innerText = "...";
+                                    try {
+                                      const evtName = a.ev.title || "Event";
+                                      const evtDate = a.ev.date ? `${a.ev.date} ${a.ev.month}` : "2025";
+                                      const fieldsData = { "Event Name": evtName, "Date": evtDate, ...a.reg };
+                                      if (globalAuthToken) {
+                                        const cleanData = { ...a.reg, inviteLetterViewed: true, inviteViewDate: new Date().toISOString() };
+                                        delete cleanData.id; delete cleanData._submittedAt;
+                                        await fbUpdateRegistration(a.reg.id, cleanData, globalAuthToken);
+                                      }
+                                      await generateCertificatePDF(a.ev, fieldsData, sName, 'invite', 'url');
+                                    } catch(err) {
+                                      alert(err.message);
+                                    }
+                                    btn.disabled = false;
+                                    btn.innerHTML = orig;
+                                  }} 
+                                  style={{flex:1, padding:"10px",borderRadius:8,background:(!a.ev.inviteBgUrl) ? "#ccc" : "#f5f5f5",color:(!a.ev.inviteBgUrl) ? "white" : "#D2691E",border:"1px solid " + ((!a.ev.inviteBgUrl) ? "#ccc" : "#D2691E"),fontWeight:600,cursor:(!a.ev.inviteBgUrl) ? "not-allowed" : "pointer",display:"flex",justifyContent:"center",alignItems:"center"}}
+                                >
+                                  👁 Preview
+                                </button>
+                                <button 
+                                  disabled={!a.ev.inviteBgUrl}
+                                  onClick={async (e) => {
+                                    const btn = e.currentTarget;
+                                    const orig = btn.innerHTML;
+                                    btn.disabled = true;
+                                    btn.innerText = "...";
+                                    try {
+                                      const evtName = a.ev.title || "Event";
+                                      const evtDate = a.ev.date ? `${a.ev.date} ${a.ev.month}` : "2025";
+                                      const fieldsData = { "Event Name": evtName, "Date": evtDate, ...a.reg };
+                                      if (globalAuthToken && !a.reg.inviteLetterDownloaded) {
+                                        const cleanData = { ...a.reg, inviteLetterDownloaded: true, inviteDownloadDate: new Date().toISOString() };
+                                        delete cleanData.id; delete cleanData._submittedAt;
+                                        await fbUpdateRegistration(a.reg.id, cleanData, globalAuthToken);
+                                      }
+                                      await generateCertificatePDF(a.ev, fieldsData, sName, 'invite', 'download');
+                                    } catch(err) {
+                                      alert(err.message);
+                                    }
+                                    btn.disabled = false;
+                                    btn.innerHTML = orig;
+                                  }} 
+                                  style={{flex:1, padding:"10px",borderRadius:8,background:(!a.ev.inviteBgUrl) ? "#ccc" : "#D2691E",color:"white",border:"none",fontWeight:600,cursor:(!a.ev.inviteBgUrl) ? "not-allowed" : "pointer",display:"flex",justifyContent:"center",alignItems:"center",boxShadow:"0 2px 6px rgba(0,0,0,0.15)"}}
+                                >
+                                  ⬇ Download
+                                </button>
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  );
+                })()}
+              </>
+            )}{activeTab !== "Registrations" && activeTab !== "Receipts" && activeTab !== "Awards" && activeTab !== "Invites" && activeTab !== "Profile" && (
               <div style={{background:"white",padding:"60px 20px",borderRadius:16,textAlign:"center",border:"1px solid var(--bd)",height:"100%",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center"}}>
                 <div style={{fontSize:"3.5rem",marginBottom:16}}>{tabs.find(t=>t.id===activeTab)?.icon}</div>
                 <div style={{fontWeight:700,color:"var(--dt)",fontSize:"1.3rem",marginBottom:8,fontFamily:"'Playfair Display',serif"}}>No New {tabs.find(t=>t.id===activeTab)?.label}</div>
