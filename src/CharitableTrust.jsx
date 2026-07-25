@@ -788,9 +788,14 @@ function Navbar({ C, lang, setLang, setPage, auth, onShowLogin, globalProfile, o
 // ── HERO ──────────────────────────────────────────────────────────────────────
 function Hero({ C, lang }) {
   const w = useW(); const mob = w < 768; const h = C.hero;
+  const isTopBannerShown = (h?.showTopBanner === true || h?.showTopBanner === "true") && Boolean(h?.topBanner);
+  const isStatsShown = h?.showStats !== false && h?.showStats !== "false" && h?.showStats !== 0;
+  const isImageShown = (h?.showImage === true || h?.showImage === "true") && Boolean(h?.image);
+  const isRegBtnShown = h?.showRegBtn === true || h?.showRegBtn === "true";
+
   return (
     <section id="home" className="hbg" style={{minHeight:mob?"auto":"88vh",display:"flex",flexDirection:"column",justifyContent:"center",position:"relative",paddingBottom:mob?60:80, ...(h?.bgCss ? {background: h.bgCss} : {})}}>
-      {h?.showTopBanner && h?.topBanner && (
+      {isTopBannerShown && (
         <div style={{width:"100%",maxWidth:1200,margin:"0 auto",padding:mob?"20px 20px 0":"20px 32px 0",display:"flex",justifyContent:"center",zIndex:2}}>
            <img src={h.topBanner} alt="Top Banner" style={{width:"100%", height:h?.topBannerHeight || 250, objectFit:"contain"}} />
         </div>
@@ -814,7 +819,7 @@ function Hero({ C, lang }) {
           </div>
         </div>
         <div style={{display:"flex",flexDirection:"column",gap:24}}>
-          {h.showStats !== false && (
+          {isStatsShown && (
             <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
               {C.stats.map((s,i)=><div key={i} className="sb" style={{borderRadius:16,padding:mob?"20px 16px":"26px 22px",textAlign:"center"}}>
                 <div style={{fontFamily:"'Playfair Display',serif",fontSize:mob?"1.6rem":"2rem",fontWeight:700,color:"#F9A14E",marginBottom:6}}>{s.num}</div>
@@ -822,7 +827,7 @@ function Hero({ C, lang }) {
               </div>)}
             </div>
           )}
-          {h.showImage && h.image && (
+          {isImageShown && (
             <div style={{
               width:"100%",
               borderRadius:16,
@@ -854,7 +859,7 @@ function Hero({ C, lang }) {
               />
             </div>
           )}
-          {h.showRegBtn && (
+          {isRegBtnShown && (
             <div style={{textAlign:"center"}}>
               <a href={(h.regBtnLink === "external" ? h.regBtnExternal : h.regBtnLink) || "#events"} 
                  onClick={(e) => {
