@@ -6092,9 +6092,9 @@ function AdminEvents({ mob, C, setC, auth }) {
                         const name = prompt("Enter new Registration Section name (e.g. Education 2026):");
                         if (name && name.trim()) {
                           const cleanName = name.trim();
-                          const existing = draft.eventSections || [];
-                          if (!existing.includes(cleanName)) {
-                            upd("eventSections", [...existing, cleanName]);
+                          const existing = C?.eventSections || [];
+                          if (!existing.includes(cleanName) && setC) {
+                            setC(prev => ({ ...prev, eventSections: [...(prev?.eventSections || []), cleanName] }));
                           }
                           updateItem(i, "section", cleanName);
                         }
@@ -6111,9 +6111,9 @@ function AdminEvents({ mob, C, setC, auth }) {
                         const name = prompt("Enter new Registration Section name (e.g. Education 2026):");
                         if (name && name.trim()) {
                           const cleanName = name.trim();
-                          const existing = draft.eventSections || [];
-                          if (!existing.includes(cleanName)) {
-                            upd("eventSections", [...existing, cleanName]);
+                          const existing = C?.eventSections || [];
+                          if (!existing.includes(cleanName) && setC) {
+                            setC(prev => ({ ...prev, eventSections: [...(prev?.eventSections || []), cleanName] }));
                           }
                           updateItem(i, "section", cleanName);
                         }
@@ -6125,8 +6125,8 @@ function AdminEvents({ mob, C, setC, auth }) {
                   >
                     <option value="Default">Default Section</option>
                     {Array.from(new Set([
-                      ...(draft.eventSections || []),
-                      ...(draft.events || []).map(e => e.section).filter(Boolean)
+                      ...(C?.eventSections || []),
+                      ...(items || []).map(e => e.section).filter(Boolean)
                     ])).filter(s => s !== "Default").map(s => (
                       <option key={s} value={s}>{s}</option>
                     ))}
