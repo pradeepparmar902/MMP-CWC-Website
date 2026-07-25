@@ -2,6 +2,7 @@ import { QRCodeCanvas } from "qrcode.react";
 import { useState, useEffect, useRef, createContext, useContext } from "react";
 import { jsPDF } from "jspdf";
 import JSZip from "jszip";
+import * as XLSX from "xlsx";
 import ReactQuill from "react-quill-new";
 import "react-quill-new/dist/quill.snow.css";
 import { initializeApp } from "firebase/app";
@@ -9324,11 +9325,286 @@ function AdminInviteLetters({ mob, C, auth }) {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
+  const [selectedEventId, setSelectedEventId] = useState(null);
+
+  // Global guest modals
+  const [showGlobalGuestsModal, setShowGlobalGuestsModal] = useState(false);
+  const [showImportGuestModal, setShowImportGuestModal] = useState(false);
+  const [guestForm, setGuestForm] = useState({ fullName: "", mobile: "", email: "", address: "", designation: "" });
+  const [addingGuest, setAddingGuest] = useState(false);
+
+  // Field mapping
+  const [showMappingModal, setShowMappingModal] = useState(false);
+  const [mappingForm, setMappingForm] = useState({ fullName: "", designation: "", mobile: "", email: "", address: "" });
+  const [savingMapping, setSavingMapping] = useState(false);
+
+  // Preview & bulk actions
   const [previewCertUrl, setPreviewCertUrl] = useState(null);
   const [previewCertRegId, setPreviewCertRegId] = useState(null);
   const [downloadingBulk, setDownloadingBulk] = useState(false);
   const [downloadProgress, setDownloadProgress] = useState(0);
   const [downloadingEnvelopes, setDownloadingEnvelopes] = useState(false);
+  const [releasingAll, setReleasingAll] = useState(false);
+
+  const globalGuests = regs.filter(r => r.isGlobalGuest === true);
+
+  const inviteEvents = (C.events || []).filter(e => e.issueInviteLetters === true || e.issueInviteLetters === "true");
+
+  const inviteRegs = regs.filter(r => {
+    if (r.Status !== "Approved") return false;
+    if (!selectedEventId) return false;
+    let evName = r.eventName || r.eventTitle || r.eventId;
+    const ev = inviteEvents.find(e => e.id === selectedEventId);
+    if (!ev) return false;
+    return r.eventId === ev.id || evName === ev.title || evName === ev.titleGu;
+  });
+
+  const filteredRegs = inviteRegs.filter(r => {
+    if (!searchQuery) return true;
+    const q = searchQuery.toLowerCase();
+    return Object.values(r).some(v => String(v).toLowerCase().includes(q));
+  });
+
+  const fetchRegs = async () => {
+    try {
+      const d = await fbFetchRegistrations(auth?.idToken);
+      setRegs(d || []);
+    } catch(e) {
+      console.error(e);
+    }
+  };
+
+  useEffect(() => {
+    fetchRegs().finally(() => setLoading(false));
+  }, []);
+
+  const handleRefresh = async () => {
+    setRefreshing(true);
+    await fetchRegs();
+    setRefreshing(false);
+  };
+
+  const handleAddGlobalGuest = async (e) => {
+    e.preventDefault();
+    if (!guestForm.fullName) return alert("Full Name is required.");
+    
+    setAddingGuest(true);
+    const newGlobalGuest = {
+      "Full Name": guestForm.fullName,
+      "Participant Name": guestForm.fullName,
+      "Name": guestForm.fullName,
+      "Mobile": guestForm.mobile,
+      "Mobile Number": guestForm.mobile,
+      "Email": guestForm.email,
+      "Address": guestForm.address,
+      "Designation": guestForm.designation,
+      "Organization": guestForm.designation,
+      isGlobalGuest: true,
+      _submittedAt: Date.now(),
+      formId: "global_guest_directory"
+    };
+
+    try {
+      await fbSubmitRegistration(newGlobalGuest, auth?.idToken);
+      alert("Global guest added to directory!");
+      setGuestForm({ fullName: "", mobile: "", email: "", address: "", designation: "" });
+      fetchRegs();
+    } catch (err) {
+      alert("Error adding global guest: " + err.message);
+    }
+    setAddingGuest(false);
+  };
+
+  const fileInputRef = useRef(null);
+  const [uploadingExcel, setUploadingExcel] = useState(false);
+
+  const handleExcelUpload = async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    setUploadingExcel(true);
+    try {
+      const data = await file.arrayBuffer();
+      const workbook = XLSX.read(data, { type: "array" });
+      const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
+      const rows = XLSX.utils.sheet_to_json(firstSheet);
+      
+      let successCount = 0;
+      for (const row of rows) {
+        const fullName = row["Full Name"] || row["Name"] || row["Participant Name"] || "";
+        if (!fullName) continue;
+
+        const mobile = row["Mobile"] || row["Mobile Number"] || row["Phone"] || "";
+        const email = row["Email"] || row["Email Address"] || "";
+        const designation = row["Designation"] || row["Organization"] || row["Company"] || "";
+        const address = row["Address"] || row["Location"] || "";
+
+        const newGlobalGuest = {
+          "Full Name": fullName,
+          "Participant Name": fullName,
+          "Name": fullName,
+          "Mobile": mobile,
+          "Mobile Number": mobile,
+          "Email": email,
+          "Address": address,
+          "Designation": designation,
+          "Organization": designation,
+          isGlobalGuest: true,
+          _submittedAt: Date.now(),
+          formId: "global_guest_directory_import"
+        };
+        await fbSubmitRegistration(newGlobalGuest, auth?.idToken);
+        successCount++;
+      }
+      alert(`Successfully imported ${successCount} global guests from Excel!`);
+      fetchRegs();
+    } catch (err) {
+      alert("Error reading Excel file: " + err.message);
+    }
+    setUploadingExcel(false);
+    if (fileInputRef.current) fileInputRef.current.value = "";
+  };
+
+  const handleImportGlobalGuest = async (globalGuest) => {
+    const ev = inviteEvents.find(ev => ev.id === selectedEventId);
+    if (!ev) return alert("Please select a valid event workspace.");
+
+    // Check if already imported
+    const alreadyImported = regs.find(r => r.globalGuestId === globalGuest.id && r.eventId === ev.id);
+    if (alreadyImported) return alert("Guest already imported to this event!");
+
+    const newEventGuest = {
+      ...globalGuest,
+      eventId: ev.id,
+      eventName: ev.title || "Unknown Event",
+      eventTitle: ev.title || "Unknown Event",
+      Status: "Approved",
+      isSpecialGuest: true,
+      globalGuestId: globalGuest.id, // link to original
+      _submittedAt: Date.now()
+    };
+    
+    // Apply field mappings if they exist
+    if (ev.guestMapping) {
+      if (ev.guestMapping.fullName) newEventGuest[ev.guestMapping.fullName] = globalGuest["Full Name"];
+      if (ev.guestMapping.designation) newEventGuest[ev.guestMapping.designation] = globalGuest.Designation;
+      if (ev.guestMapping.mobile) newEventGuest[ev.guestMapping.mobile] = globalGuest.Mobile;
+      if (ev.guestMapping.email) newEventGuest[ev.guestMapping.email] = globalGuest.Email;
+      if (ev.guestMapping.address) newEventGuest[ev.guestMapping.address] = globalGuest.Address;
+    }
+
+    // Remove global flags
+    delete newEventGuest.isGlobalGuest;
+    delete newEventGuest.id;
+
+    try {
+      await fbSubmitRegistration(newEventGuest, auth?.idToken);
+      alert("Guest imported successfully!");
+      fetchRegs();
+    } catch (err) {
+      alert("Error importing guest: " + err.message);
+    }
+  };
+
+  const handleDeleteGlobalGuest = async (g) => {
+    if(!window.confirm(`Delete ${g["Full Name"]} from the global directory? This won't remove them from events they were already imported to.`)) return;
+    try {
+       await fbUpdateRegistration(g.id, { isGlobalGuest: false, deletedGuest: true }, auth?.idToken);
+       alert("Guest removed from directory.");
+       fetchRegs();
+    } catch(err) {
+       alert("Error removing guest: " + err.message);
+    }
+  };
+
+  const handleSaveMapping = async (e) => {
+    e.preventDefault();
+    if (!selectedEventId) return;
+    
+    setSavingMapping(true);
+    try {
+      const newC = JSON.parse(JSON.stringify(C));
+      if(!newC.events) newC.events = [];
+      const evIndex = newC.events.findIndex(e => e.id === selectedEventId);
+      if (evIndex === -1) throw new Error("Event not found in C.events");
+      
+      newC.events[evIndex].guestMapping = { ...mappingForm };
+      await fbSave(newC, auth?.idToken);
+      
+      // Mutate local C so the change takes effect immediately without a reload
+      const localEv = C.events?.find(e => e.id === selectedEventId);
+      if (localEv) localEv.guestMapping = { ...mappingForm };
+      
+      alert("Field mapping saved! Any future imports to this event will use these field names.");
+      setShowMappingModal(false);
+    } catch (err) {
+      alert("Error saving mapping: " + err.message);
+    }
+    setSavingMapping(false);
+  };
+
+  const toggleRelease = async (r) => {
+    const newVal = !r.inviteificateReleased;
+    setRegs(prev => prev.map(x => x.id === r.id ? { ...x, inviteificateReleased: newVal } : x));
+    try {
+      const cleanData = { ...r, inviteificateReleased: newVal };
+      delete cleanData.id; delete cleanData._submittedAt;
+      await fbUpdateRegistration(r.id, cleanData, auth?.idToken);
+    } catch (e) {
+      alert("Failed to update status: " + e.message);
+      fetchRegs();
+    }
+  };
+
+  const toggleHold = async (r) => {
+    const newVal = !r.inviteLetterHold;
+    setRegs(prev => prev.map(x => x.id === r.id ? { ...x, inviteLetterHold: newVal } : x));
+    try {
+      const cleanData = { ...r, inviteLetterHold: newVal };
+      delete cleanData.id; delete cleanData._submittedAt;
+      await fbUpdateRegistration(r.id, cleanData, auth?.idToken);
+    } catch (e) {
+      alert("Failed to update hold status: " + e.message);
+      fetchRegs();
+    }
+  };
+
+  const handleReleaseAll = async () => {
+    const unreleased = filteredRegs.filter(r => !r.inviteificateReleased && !r.inviteLetterHold);
+    if (unreleased.length === 0) {
+      alert("All visible invite letters are already released or on hold!");
+      return;
+    }
+    if (!window.confirm(`Are you sure you want to release ${unreleased.length} invite letters?`)) return;
+    
+    setReleasingAll(true);
+    let successCount = 0;
+    try {
+      for (const r of unreleased) {
+        const cleanData = { ...r, inviteificateReleased: true };
+        delete cleanData.id; delete cleanData._submittedAt;
+        await fbUpdateRegistration(r.id, cleanData, auth?.idToken);
+        setRegs(prev => prev.map(x => x.id === r.id ? { ...x, inviteificateReleased: true } : x));
+        successCount++;
+      }
+      alert(`Successfully released ${successCount} invite letters!`);
+    } catch (e) {
+      alert(`Error after releasing ${successCount} invite letters: ` + e.message);
+    }
+    setReleasingAll(false);
+  };
+
+  const handlePreview = async (r, ev) => {
+    const fieldsData = {...r};
+    const sName = fieldsData["Full Name"] || fieldsData["Name"] || fieldsData["Participant Name"] || "Student";
+    try {
+      const url = await generateCertificatePDF(ev, fieldsData, sName, 'invite', 'url');
+      setPreviewCertUrl(url);
+      setPreviewCertRegId(r.id);
+    } catch (e) {
+      alert("Error generating invite letter: " + e.message);
+    }
+  };
 
   const handleBulkDownloadEnvelopes = () => {
     if (filteredRegs.length === 0) return alert("No registrations available for envelopes.");
@@ -9384,11 +9660,10 @@ function AdminInviteLetters({ mob, C, auth }) {
     let count = 0;
     
     try {
+      const ev = inviteEvents.find(e => e.id === selectedEventId);
+      if (!ev) throw new Error("Active event not found.");
+      
       for (const r of filteredRegs) {
-        const evName = r.eventName || r.eventTitle || r.eventId || "Unknown Event";
-        const ev = inviteEvents.find(e => e.id === r.eventId || e.title === evName || e.titleGu === evName);
-        if (!ev) continue;
-        
         const fieldsData = {...r};
         const sName = fieldsData["Full Name"] || fieldsData["Name"] || fieldsData["Participant Name"] || "Student";
         
@@ -9412,117 +9687,159 @@ function AdminInviteLetters({ mob, C, auth }) {
     setDownloadingBulk(false);
   };
 
-  const fetchRegs = async () => {
-    try {
-      const d = await fbFetchRegistrations(auth?.idToken);
-      setRegs(d || []);
-    } catch(e) {
-      console.error(e);
-    }
-  };
+  const renderGlobalGuestsModal = () => (
+    <div style={{position:"fixed",top:0,left:0,right:0,bottom:0,background:"rgba(0,0,0,0.5)",zIndex:9999,display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
+      <div style={{background:"white",borderRadius:12,padding:32,width:"100%",maxWidth:800,maxHeight:"90vh",overflowY:"auto",boxShadow:"0 20px 40px rgba(0,0,0,0.2)"}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:24}}>
+           <div>
+             <h2 style={{fontFamily:"'Playfair Display',serif",color:"var(--dt)",marginTop:0,marginBottom:4}}>Global Special Guests</h2>
+             <p style={{fontSize:".85rem",color:"var(--mu)",margin:0}}>Add guests here once, and import them to any event.</p>
+           </div>
+           <button onClick={()=>setShowGlobalGuestsModal(false)} style={{background:"none",border:"none",fontSize:"1.5rem",cursor:"pointer"}}>×</button>
+        </div>
 
-  useEffect(() => {
-    fetchRegs().finally(() => setLoading(false));
-  }, []);
+        <div style={{display:"flex",gap:24,flexDirection:mob?"column":"row"}}>
+          <div style={{flex:1}}>
+            <h3 style={{fontSize:"1rem",borderBottom:"1px solid var(--bd)",paddingBottom:8,marginBottom:16}}>Add New Guest</h3>
+            <form onSubmit={handleAddGlobalGuest} style={{display:"flex",flexDirection:"column",gap:16}}>
+              <div>
+                <label style={{display:"block",fontSize:".85rem",fontWeight:600,marginBottom:6}}>Full Name (Required)</label>
+                <input required type="text" value={guestForm.fullName} onChange={e=>setGuestForm({...guestForm, fullName: e.target.value})} style={{width:"100%",padding:"8px 12px",borderRadius:8,border:"1px solid var(--bd)",boxSizing:"border-box",fontFamily:"inherit"}} />
+              </div>
+              <div>
+                <label style={{display:"block",fontSize:".85rem",fontWeight:600,marginBottom:6}}>Designation / Organization</label>
+                <input type="text" value={guestForm.designation} onChange={e=>setGuestForm({...guestForm, designation: e.target.value})} style={{width:"100%",padding:"8px 12px",borderRadius:8,border:"1px solid var(--bd)",boxSizing:"border-box",fontFamily:"inherit"}} />
+              </div>
+              <div style={{display:"flex",gap:16}}>
+                <div style={{flex:1}}>
+                  <label style={{display:"block",fontSize:".85rem",fontWeight:600,marginBottom:6}}>Mobile</label>
+                  <input type="text" value={guestForm.mobile} onChange={e=>setGuestForm({...guestForm, mobile: e.target.value})} style={{width:"100%",padding:"8px 12px",borderRadius:8,border:"1px solid var(--bd)",boxSizing:"border-box",fontFamily:"inherit"}} />
+                </div>
+                <div style={{flex:1}}>
+                  <label style={{display:"block",fontSize:".85rem",fontWeight:600,marginBottom:6}}>Email</label>
+                  <input type="email" value={guestForm.email} onChange={e=>setGuestForm({...guestForm, email: e.target.value})} style={{width:"100%",padding:"8px 12px",borderRadius:8,border:"1px solid var(--bd)",boxSizing:"border-box",fontFamily:"inherit"}} />
+                </div>
+              </div>
+              <div>
+                <label style={{display:"block",fontSize:".85rem",fontWeight:600,marginBottom:6}}>Address</label>
+                <textarea rows="2" value={guestForm.address} onChange={e=>setGuestForm({...guestForm, address: e.target.value})} style={{width:"100%",padding:"8px 12px",borderRadius:8,border:"1px solid var(--bd)",boxSizing:"border-box",fontFamily:"inherit"}}></textarea>
+              </div>
+              <button type="submit" disabled={addingGuest} style={{padding:"10px 20px",borderRadius:8,border:"none",background:"var(--dt)",color:"white",cursor:addingGuest?"wait":"pointer",fontWeight:600,marginTop:8}}>
+                {addingGuest ? "Saving..." : "Add to Directory"}
+              </button>
+            </form>
 
-  const handleRefresh = async () => {
-    setRefreshing(true);
-    await fetchRegs();
-    setRefreshing(false);
-  };
+            <div style={{marginTop:24,borderTop:"1px solid var(--bd)",paddingTop:16}}>
+              <label style={{display:"block",fontSize:".85rem",fontWeight:600,marginBottom:8}}>Import from Excel (.xlsx/.xls)</label>
+              <input type="file" ref={fileInputRef} accept=".xlsx,.xls" onChange={handleExcelUpload} style={{display:"none"}} />
+              <button onClick={() => fileInputRef.current?.click()} disabled={uploadingExcel} style={{width:"100%",padding:"10px",borderRadius:8,background:"#F5F5F5",color:"var(--dt)",border:"1px solid var(--bd)",fontWeight:600,cursor:uploadingExcel?"wait":"pointer"}}>
+                {uploadingExcel ? "Uploading..." : "📂 Upload Excel File"}
+              </button>
+            </div>
+          </div>
 
-  const toggleRelease = async (r) => {
-    const newVal = !r.inviteificateReleased;
-    setRegs(prev => prev.map(x => x.id === r.id ? { ...x, inviteificateReleased: newVal } : x));
-    try {
-      const cleanData = { ...r, inviteificateReleased: newVal };
-      delete cleanData.id; delete cleanData._submittedAt;
-      await fbUpdateRegistration(r.id, cleanData, auth?.idToken);
-    } catch (e) {
-      alert("Failed to update status: " + e.message);
-      fetchRegs();
-    }
-  };
+          <div style={{flex:1.5,borderLeft:mob?"none":"1px solid var(--bd)",paddingLeft:mob?0:24}}>
+            <h3 style={{fontSize:"1rem",borderBottom:"1px solid var(--bd)",paddingBottom:8,marginBottom:16}}>Directory List</h3>
+            <div style={{display:"flex",flexDirection:"column",gap:12,maxHeight:400,overflowY:"auto",paddingRight:8}}>
+              {globalGuests.map(g => (
+                <div key={g.id} style={{padding:12,border:"1px solid #eee",borderRadius:8,background:"#fafafa",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+                   <div>
+                     <div style={{fontWeight:600,color:"#333"}}>{g["Full Name"]}</div>
+                     <div style={{fontSize:".8rem",color:"var(--mu)"}}>{g.Designation || "No Designation"} {g.Mobile ? `• ${g.Mobile}` : ""}</div>
+                   </div>
+                   <button onClick={()=>handleDeleteGlobalGuest(g)} style={{background:"none",border:"none",color:"#991B1B",fontSize:".8rem",cursor:"pointer",textDecoration:"underline"}}>Remove</button>
+                </div>
+              ))}
+              {globalGuests.length === 0 && <div style={{color:"var(--mu)",fontSize:".9rem"}}>Directory is empty.</div>}
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
 
-  const [releasingAll, setReleasingAll] = useState(false);
+  let availableFields = [];
+  if (selectedEventId) {
+    const ev = inviteEvents.find(e => e.id === selectedEventId);
+    const keys = new Set(Object.keys(ev?.inviteMap || {}));
+    const evRegs = regs.filter(r => r && r.eventId === selectedEventId);
+    evRegs.forEach(r => {
+      if (r) Object.keys(r).forEach(k => keys.add(k));
+    });
+    availableFields = Array.from(keys).filter(k => !['id', 'eventId', 'Status', 'isGlobalGuest', '_submittedAt', 'eventName', 'eventTitle', 'globalGuestId', 'deletedGuest', 'inviteLetterReleased', 'inviteLetterHold', 'inviteLetterViewed', 'inviteLetterDownloaded', 'viewedOn', 'downloadedOn', 'inviteViewDate', 'inviteDownloadDate', 'inviteificateReleased'].includes(k));
+    availableFields.sort();
+  }
 
-  const toggleHold = async (r) => {
-    const newVal = !r.inviteLetterHold;
-    setRegs(prev => prev.map(x => x.id === r.id ? { ...x, inviteLetterHold: newVal } : x));
-    try {
-      const cleanData = { ...r, inviteLetterHold: newVal };
-      delete cleanData.id; delete cleanData._submittedAt;
-      await fbUpdateRegistration(r.id, cleanData, auth?.idToken);
-    } catch (e) {
-      alert("Failed to update hold status: " + e.message);
-      fetchRegs();
-    }
-  };
+  if (!selectedEventId) {
+    return (
+      <div style={{padding:mob?"16px":"32px",width:"100%",boxSizing:"border-box"}}>
+         <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:24,flexDirection:mob?"column":"row",gap:16}}>
+           <div>
+             <h2 style={{fontFamily:"'Playfair Display',serif",color:"var(--dt)",margin:0}}>Invite Letters Workspaces</h2>
+             <p style={{fontSize:".85rem",color:"var(--mu)",marginTop:4}}>Select an event below to manage its invite letters.</p>
+           </div>
+           <button onClick={() => setShowGlobalGuestsModal(true)} style={{padding:"10px 16px",borderRadius:8,fontSize:".85rem",fontWeight:600,display:"flex",alignItems:"center",gap:8,background:"white",border:"1px solid var(--dt)",color:"var(--dt)",cursor:"pointer",boxShadow:"0 2px 8px rgba(0,0,0,0.05)"}}>
+             <span style={{fontSize:"1.2rem"}}>👥</span> Manage Special Guests Directory ({globalGuests.length})
+           </button>
+         </div>
+         
+         <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(280px,1fr))",gap:20,marginTop:24}}>
+             {inviteEvents.map(ev => {
+                 const count = regs.filter(r => {
+                     if(r.Status !== "Approved") return false;
+                     let evName = r.eventName || r.eventTitle || r.eventId;
+                     return r.eventId === ev.id || evName === ev.title || evName === ev.titleGu;
+                 }).length;
+                 return (
+                     <div key={ev.id} onClick={() => setSelectedEventId(ev.id)} style={{background:"white",border:"1px solid var(--bd)",borderRadius:12,padding:24,cursor:"pointer",boxShadow:"0 4px 12px rgba(0,0,0,0.04)",transition:"transform 0.2s, box-shadow 0.2s"}} onMouseEnter={e=>{e.currentTarget.style.transform="translateY(-4px)"; e.currentTarget.style.boxShadow="0 8px 24px rgba(0,0,0,0.08)"}} onMouseLeave={e=>{e.currentTarget.style.transform="none"; e.currentTarget.style.boxShadow="0 4px 12px rgba(0,0,0,0.04)"}}>
+                          <div style={{fontSize:"2.5rem",marginBottom:12}}>💌</div>
+                          <h3 style={{margin:"0 0 8px 0",color:"#333"}}>{ev.title || "Unnamed Event"}</h3>
+                          <p style={{margin:0,fontSize:".85rem",color:"var(--mu)"}}>{count} approved registrants</p>
+                     </div>
+                 );
+             })}
+             {inviteEvents.length === 0 && (
+                 <p style={{color:"var(--mu)"}}>No events have Invite Letters enabled yet. Enable them in Content Editor {">"} Events.</p>
+             )}
+         </div>
 
-  const handleReleaseAll = async () => {
-    const unreleased = filteredRegs.filter(r => !r.inviteificateReleased && !r.inviteLetterHold);
-    if (unreleased.length === 0) {
-      alert("All visible invite letters are already released or on hold!");
-      return;
-    }
-    if (!window.confirm(`Are you sure you want to release ${unreleased.length} invite letters?`)) return;
-    
-    setReleasingAll(true);
-    let successCount = 0;
-    try {
-      for (const r of unreleased) {
-        const cleanData = { ...r, inviteificateReleased: true };
-        delete cleanData.id; delete cleanData._submittedAt;
-        await fbUpdateRegistration(r.id, cleanData, auth?.idToken);
-        setRegs(prev => prev.map(x => x.id === r.id ? { ...x, inviteificateReleased: true } : x));
-        successCount++;
-      }
-      alert(`Successfully released ${successCount} invite letters!`);
-    } catch (e) {
-      alert(`Error after releasing ${successCount} invite letters: ` + e.message);
-    }
-    setReleasingAll(false);
-  };
+         {/* Global Guests Modal */}
+         {showGlobalGuestsModal && renderGlobalGuestsModal()}
+      </div>
+    );
+  }
 
-  const handlePreview = async (r, ev) => {
-    const fieldsData = {...r};
-    const sName = fieldsData["Full Name"] || fieldsData["Name"] || fieldsData["Participant Name"] || "Student";
-    try {
-      const url = await generateCertificatePDF(ev, fieldsData, sName, 'invite', 'url');
-      setPreviewCertUrl(url);
-      setPreviewCertRegId(r.id);
-    } catch (e) {
-      alert("Error generating invite letter: " + e.message);
-    }
-  };
-
-  const inviteEvents = (C.events || []).filter(e => e.issueInviteLetters === true || e.issueInviteLetters === "true");
-  const inviteEventIds = inviteEvents.map(e => e.id);
-  const inviteEventTitles = inviteEvents.map(e => e.title);
-  const inviteEventTitlesGu = inviteEvents.map(e => e.titleGu);
-
-  const inviteRegs = regs.filter(r => {
-    if (r.Status !== "Approved") return false;
-    let evName = r.eventName || r.eventTitle || r.eventId;
-    return inviteEventIds.includes(r.eventId) || inviteEventTitles.includes(evName) || inviteEventTitlesGu.includes(evName);
-  });
-
-  const filteredRegs = inviteRegs.filter(r => {
-    if (!searchQuery) return true;
-    const q = searchQuery.toLowerCase();
-    return Object.values(r).some(v => String(v).toLowerCase().includes(q));
-  });
+  const activeEvent = inviteEvents.find(e => e.id === selectedEventId) || {};
 
   return (
     <div style={{display:"flex",width:"100%"}}>
       <div style={{flex: previewCertUrl ? 2 : 1, padding:mob?"16px":"32px",width:"100%",boxSizing:"border-box",overflowX:"hidden"}}>
-        <div style={{display:"flex",flexDirection:mob?"column":"row",justifyContent:"space-between",alignItems:mob?"flex-start":"center",marginBottom:20,gap:16}}>
+        <div style={{marginBottom: 16}}>
+           <button onClick={() => {setSelectedEventId(null); setPreviewCertUrl(null);}} style={{background:"transparent",border:"none",color:"var(--dt)",cursor:"pointer",fontWeight:600,display:"flex",alignItems:"center",gap:6,padding:0}}>
+               ← Back to Workspaces
+           </button>
+        </div>
+        <div style={{display:"flex",flexDirection:mob?"column":"row",justifyContent:"space-between",alignItems:"flex-start",marginBottom:20,gap:16}}>
           <div>
             <h2 style={{fontFamily:"'Playfair Display',serif",color:"var(--dt)",margin:0}}>Invite Letters Console</h2>
-            <p style={{fontSize:".85rem",color:"var(--mu)",marginTop:4}}>Manage and release inviteLetters for approved registrations.</p>
+            <p style={{fontSize:".85rem",color:"var(--mu)",marginTop:4}}>Manage and release invite letters for: <strong>{activeEvent.title}</strong></p>
           </div>
           <div style={{display:"flex",gap:12,width:mob?"100%":"auto",flexWrap:"wrap"}}>
-            <input type="text" placeholder="Search students..." value={searchQuery} onChange={e=>setSearchQuery(e.target.value)} style={{padding:"8px 12px",borderRadius:8,border:"1px solid var(--bd)",fontSize:".85rem",flex:1,minWidth:200,outline:"none",fontFamily:"inherit"}} />
+            <button onClick={() => setShowImportGuestModal(true)} style={{padding:"8px 16px",borderRadius:8,fontSize:".85rem",fontWeight:600,display:"flex",alignItems:"center",gap:6,background:"white",border:"1px solid var(--bd)",color:"var(--dt)",cursor:"pointer",boxShadow:"0 2px 8px rgba(0,0,0,0.05)",whiteSpace:"nowrap"}}>
+              + Import Special Guest
+            </button>
+            <button onClick={() => {
+              setMappingForm({
+                fullName: activeEvent?.guestMapping?.fullName || "Full Name",
+                designation: activeEvent?.guestMapping?.designation || "Designation",
+                mobile: activeEvent?.guestMapping?.mobile || "Mobile",
+                email: activeEvent?.guestMapping?.email || "Email",
+                address: activeEvent?.guestMapping?.address || "Address"
+              });
+              setShowMappingModal(true);
+            }} style={{padding:"8px 16px",borderRadius:8,fontSize:".85rem",fontWeight:600,display:"flex",alignItems:"center",gap:6,background:"white",border:"1px solid var(--bd)",color:"var(--dt)",cursor:"pointer",boxShadow:"0 2px 8px rgba(0,0,0,0.05)",whiteSpace:"nowrap"}}>
+              ⚙️ Field Mapping
+            </button>
             <button onClick={handleRefresh} disabled={refreshing || releasingAll || downloadingBulk || downloadingEnvelopes} style={{padding:"8px 16px",borderRadius:8,fontSize:".85rem",fontWeight:600,display:"flex",alignItems:"center",gap:6,background:"white",border:"1px solid var(--bd)",color:"var(--dt)",cursor:(refreshing || releasingAll || downloadingBulk || downloadingEnvelopes)?"wait":"pointer",boxShadow:"0 2px 8px rgba(0,0,0,0.05)",whiteSpace:"nowrap"}}>
               {refreshing ? "..." : "↻"} Refresh
             </button>
@@ -9536,6 +9853,10 @@ function AdminInviteLetters({ mob, C, auth }) {
               {downloadingEnvelopes ? "Generating Envelopes..." : "✉️ Print Envelopes"}
             </button>
           </div>
+        </div>
+
+        <div style={{marginBottom: 16, display: "flex", gap: 12}}>
+          <input type="text" placeholder="Search students/guests..." value={searchQuery} onChange={e=>setSearchQuery(e.target.value)} style={{padding:"8px 12px",borderRadius:8,border:"1px solid var(--bd)",fontSize:".85rem",width:"100%",maxWidth:300,outline:"none",fontFamily:"inherit"}} />
         </div>
 
         {loading ? <p>Loading inviteLetters...</p> : (
@@ -9627,11 +9948,110 @@ function AdminInviteLetters({ mob, C, auth }) {
           </div>
         </div>
       )}
+
+      {/* Global Guests Modal */}
+      {showGlobalGuestsModal && renderGlobalGuestsModal()}
+
+      {/* Import Special Guest Modal */}
+      {showImportGuestModal && (
+        <div style={{position:"fixed",top:0,left:0,right:0,bottom:0,background:"rgba(0,0,0,0.5)",zIndex:9999,display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
+          <div style={{background:"white",borderRadius:12,padding:32,width:"100%",maxWidth:600,maxHeight:"90vh",overflowY:"auto",boxShadow:"0 20px 40px rgba(0,0,0,0.2)"}}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:24}}>
+               <div>
+                 <h2 style={{fontFamily:"'Playfair Display',serif",color:"var(--dt)",marginTop:0,marginBottom:4}}>Import Special Guest</h2>
+                 <p style={{fontSize:".85rem",color:"var(--mu)",margin:0}}>Select a guest from the Global Directory to add to this event.</p>
+               </div>
+               <button onClick={()=>setShowImportGuestModal(false)} style={{background:"none",border:"none",fontSize:"1.5rem",cursor:"pointer"}}>×</button>
+            </div>
+
+            <div style={{display:"flex",flexDirection:"column",gap:12}}>
+              {globalGuests.map(g => {
+                const alreadyImported = regs.find(r => r.globalGuestId === g.id && r.eventId === selectedEventId);
+                return (
+                  <div key={g.id} style={{padding:16,border:"1px solid var(--bd)",borderRadius:8,display:"flex",justifyContent:"space-between",alignItems:"center",background:alreadyImported?"#f9f9f9":"white"}}>
+                     <div>
+                       <div style={{fontWeight:600,color:"#333",opacity:alreadyImported?0.6:1}}>{g["Full Name"]}</div>
+                       <div style={{fontSize:".8rem",color:"var(--mu)",opacity:alreadyImported?0.6:1}}>{g.Designation || "No Designation"} {g.Mobile ? `• ${g.Mobile}` : ""}</div>
+                     </div>
+                     <button 
+                       disabled={alreadyImported}
+                       onClick={()=>handleImportGlobalGuest(g)} 
+                       style={{padding:"6px 16px",borderRadius:6,border:"none",background:alreadyImported?"#ddd":"var(--dt)",color:alreadyImported?"#888":"white",fontWeight:600,cursor:alreadyImported?"default":"pointer"}}>
+                       {alreadyImported ? "Imported ✓" : "Import"}
+                     </button>
+                  </div>
+                );
+              })}
+              {globalGuests.length === 0 && (
+                <div style={{padding:32,textAlign:"center",background:"#f9f9f9",borderRadius:8,border:"1px dashed var(--bd)"}}>
+                  <p style={{color:"var(--mu)"}}>No guests found in the Global Directory.</p>
+                  <button onClick={()=>{setShowImportGuestModal(false); setSelectedEventId(null); setTimeout(()=>setShowGlobalGuestsModal(true), 100);}} style={{padding:"8px 16px",background:"white",border:"1px solid var(--bd)",borderRadius:6,cursor:"pointer",fontWeight:600,marginTop:12}}>
+                     Go to Directory
+                  </button>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Field Mapping Modal */}
+      {showMappingModal && (
+        <div style={{position:"fixed",top:0,left:0,right:0,bottom:0,background:"rgba(0,0,0,0.5)",zIndex:9999,display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
+          <div style={{background:"white",borderRadius:12,padding:32,width:"100%",maxWidth:500,maxHeight:"90vh",overflowY:"auto",boxShadow:"0 20px 40px rgba(0,0,0,0.2)"}}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:24}}>
+               <div>
+                 <h2 style={{fontFamily:"'Playfair Display',serif",color:"var(--dt)",marginTop:0,marginBottom:4}}>Event Field Mapping</h2>
+                 <p style={{fontSize:".85rem",color:"var(--mu)",margin:0}}>Map Global Guest fields to this event's letter template fields.</p>
+               </div>
+               <button onClick={()=>setShowMappingModal(false)} style={{background:"none",border:"none",fontSize:"1.5rem",cursor:"pointer"}}>×</button>
+            </div>
+            <form onSubmit={handleSaveMapping} style={{display:"flex",flexDirection:"column",gap:16}}>
+               <div>
+                 <label style={{display:"block",fontSize:".85rem",fontWeight:600,marginBottom:6}}>Global 'Full Name' maps to:</label>
+                 <select value={mappingForm.fullName} onChange={e=>setMappingForm({...mappingForm, fullName: e.target.value})} style={{width:"100%",padding:"8px 12px",borderRadius:8,border:"1px solid var(--bd)",boxSizing:"border-box",fontFamily:"inherit",background:"white"}}>
+                   <option value="Full Name">Full Name</option>
+                   {availableFields.map(f => <option key={f} value={f}>{f}</option>)}
+                 </select>
+               </div>
+               <div>
+                 <label style={{display:"block",fontSize:".85rem",fontWeight:600,marginBottom:6}}>Global 'Designation' maps to:</label>
+                 <select value={mappingForm.designation} onChange={e=>setMappingForm({...mappingForm, designation: e.target.value})} style={{width:"100%",padding:"8px 12px",borderRadius:8,border:"1px solid var(--bd)",boxSizing:"border-box",fontFamily:"inherit",background:"white"}}>
+                   <option value="Designation">Designation</option>
+                   {availableFields.map(f => <option key={f} value={f}>{f}</option>)}
+                 </select>
+               </div>
+               <div>
+                 <label style={{display:"block",fontSize:".85rem",fontWeight:600,marginBottom:6}}>Global 'Mobile' maps to:</label>
+                 <select value={mappingForm.mobile} onChange={e=>setMappingForm({...mappingForm, mobile: e.target.value})} style={{width:"100%",padding:"8px 12px",borderRadius:8,border:"1px solid var(--bd)",boxSizing:"border-box",fontFamily:"inherit",background:"white"}}>
+                   <option value="Mobile">Mobile</option>
+                   {availableFields.map(f => <option key={f} value={f}>{f}</option>)}
+                 </select>
+               </div>
+               <div>
+                 <label style={{display:"block",fontSize:".85rem",fontWeight:600,marginBottom:6}}>Global 'Email' maps to:</label>
+                 <select value={mappingForm.email} onChange={e=>setMappingForm({...mappingForm, email: e.target.value})} style={{width:"100%",padding:"8px 12px",borderRadius:8,border:"1px solid var(--bd)",boxSizing:"border-box",fontFamily:"inherit",background:"white"}}>
+                   <option value="Email">Email</option>
+                   {availableFields.map(f => <option key={f} value={f}>{f}</option>)}
+                 </select>
+               </div>
+               <div>
+                 <label style={{display:"block",fontSize:".85rem",fontWeight:600,marginBottom:6}}>Global 'Address' maps to:</label>
+                 <select value={mappingForm.address} onChange={e=>setMappingForm({...mappingForm, address: e.target.value})} style={{width:"100%",padding:"8px 12px",borderRadius:8,border:"1px solid var(--bd)",boxSizing:"border-box",fontFamily:"inherit",background:"white"}}>
+                   <option value="Address">Address</option>
+                   {availableFields.map(f => <option key={f} value={f}>{f}</option>)}
+                 </select>
+               </div>
+               <button type="submit" disabled={savingMapping} style={{padding:"10px 20px",borderRadius:8,border:"none",background:"var(--dt)",color:"white",cursor:savingMapping?"wait":"pointer",fontWeight:600,marginTop:8}}>
+                 {savingMapping ? "Saving..." : "Save Mapping"}
+               </button>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
-
-
 function AdminMeritList({ mob, C, auth }) {
   const [regs, setRegs] = useState([]);
   const [loading, setLoading] = useState(true);
