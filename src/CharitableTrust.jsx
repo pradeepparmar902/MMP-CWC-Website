@@ -7884,6 +7884,7 @@ function UserEditRegistrationModal({ reg, onClose, onSave, authToken, C }) {
 }
 
 function UserDashboard({ C, globalProfile, globalAuthToken, onClose }) {
+  const cleanPhone = (num) => String(num || "").replace(/\D/g, "").slice(-10);
 
   const [regs, setRegs] = useState([]);
   const [myDonations, setMyDonations] = useState([]);
@@ -7947,16 +7948,16 @@ function UserDashboard({ C, globalProfile, globalAuthToken, onClose }) {
     try {
       setLoading(true);
       const allRegs = await fbFetchRegistrations(globalAuthToken);
-      const mobileToMatch = String(globalProfile.mobile || globalProfile['Mobile Number'] || "").trim();
+      const mobileToMatch = cleanPhone(globalProfile.mobile || globalProfile['Mobile Number'] || "");
       const nameToMatch = String(globalProfile.name || globalProfile['Full Name'] || "").trim().toLowerCase();
       
       const mine = [];
       allRegs.forEach(r => {
-        const rMobile = String(r["Mobile Number"] || r.mobile || "").trim();
+        const rMobile = cleanPhone(r["Mobile Number"] || r.mobile || r.phone || "");
         const rName = String(r["Submitted By"] || r.name || r["Full Name"] || "").trim().toLowerCase();
-        const sMob = String(r.submitterMob || "").trim();
+        const sMob = cleanPhone(r.submitterMob || "");
         
-        if ((mobileToMatch && rMobile === mobileToMatch) || (nameToMatch && rName === nameToMatch) || sMob === mobileToMatch) {
+        if ((mobileToMatch && rMobile === mobileToMatch) || (nameToMatch && rName === nameToMatch) || (mobileToMatch && sMob === mobileToMatch)) {
           mine.push(r);
         }
       });
@@ -7970,16 +7971,16 @@ function UserDashboard({ C, globalProfile, globalAuthToken, onClose }) {
     try {
       setLoading(true);
       const allDons = await fbFetchDonations(globalAuthToken);
-      const mobileToMatch = String(globalProfile.mobile || globalProfile['Mobile Number'] || "").trim();
+      const mobileToMatch = cleanPhone(globalProfile.mobile || globalProfile['Mobile Number'] || "");
       const nameToMatch = String(globalProfile.name || globalProfile['Full Name'] || "").trim().toLowerCase();
       
       const mine = [];
       allDons.forEach(r => {
-        const rMobile = String(r.mobile || r.phone || "").trim();
+        const rMobile = cleanPhone(r.mobile || r.phone || r["Mobile Number"] || "");
         const rName = String(r.name || r.donor || "").trim().toLowerCase();
-        const sMob = String(r.submitterMob || "").trim();
+        const sMob = cleanPhone(r.submitterMob || "");
         
-        if ((mobileToMatch && rMobile === mobileToMatch) || (nameToMatch && rName === nameToMatch) || sMob === mobileToMatch) {
+        if ((mobileToMatch && rMobile === mobileToMatch) || (nameToMatch && rName === nameToMatch) || (mobileToMatch && sMob === mobileToMatch)) {
           mine.push(r);
         }
       });
@@ -8078,19 +8079,19 @@ function UserDashboard({ C, globalProfile, globalAuthToken, onClose }) {
                   </button>
                 </div>
                 {(() => {
-                  const mobileToMatch = String(globalProfile.mobile || globalProfile['Mobile Number'] || "").trim();
+                  const mobileToMatch = cleanPhone(globalProfile.mobile || globalProfile['Mobile Number'] || "");
                   const nameToMatch = String(globalProfile.name || globalProfile['Full Name'] || "").trim().toLowerCase();
                   
                   const filteredRegs = regs.filter(r => {
-                    const rMobile = String(r["Mobile Number"] || r.mobile || r.phone || "").trim();
+                    const rMobile = cleanPhone(r["Mobile Number"] || r.mobile || r.phone || "");
                     const rName = String(r["Submitted By"] || r.name || r["Full Name"] || "").trim().toLowerCase();
-                    const sMob = String(r.submitterMob || "").trim();
+                    const sMob = cleanPhone(r.submitterMob || "");
                     
                     if (subTab === "For Me") {
-                      return rMobile === mobileToMatch || (!rMobile && (sMob === mobileToMatch || rName === nameToMatch));
+                      return (mobileToMatch && rMobile === mobileToMatch) || (!rMobile && ((mobileToMatch && sMob === mobileToMatch) || rName === nameToMatch));
                     } else {
                       if (rMobile && rMobile !== mobileToMatch) {
-                        if (sMob === mobileToMatch) return true;
+                        if (mobileToMatch && sMob === mobileToMatch) return true;
                         if (!sMob && rName === nameToMatch) return true;
                       }
                       return false;
@@ -8196,19 +8197,19 @@ function UserDashboard({ C, globalProfile, globalAuthToken, onClose }) {
                   </button>
                 </div>
                 {(() => {
-                  const mobileToMatch = String(globalProfile.mobile || globalProfile['Mobile Number'] || "").trim();
+                  const mobileToMatch = cleanPhone(globalProfile.mobile || globalProfile['Mobile Number'] || "");
                   const nameToMatch = String(globalProfile.name || globalProfile['Full Name'] || "").trim().toLowerCase();
                   
                   const filteredDonations = myDonations.filter(r => {
-                    const rMobile = String(r.mobile || r.phone || r["Mobile Number"] || "").trim();
+                    const rMobile = cleanPhone(r.mobile || r.phone || r["Mobile Number"] || "");
                     const rName = String(r.name || r.donor || "").trim().toLowerCase();
-                    const sMob = String(r.submitterMob || "").trim();
+                    const sMob = cleanPhone(r.submitterMob || "");
                     
                     if (subTab === "For Me") {
-                      return rMobile === mobileToMatch || (!rMobile && (sMob === mobileToMatch || rName === nameToMatch));
+                      return (mobileToMatch && rMobile === mobileToMatch) || (!rMobile && ((mobileToMatch && sMob === mobileToMatch) || rName === nameToMatch));
                     } else {
                       if (rMobile && rMobile !== mobileToMatch) {
-                        if (sMob === mobileToMatch) return true;
+                        if (mobileToMatch && sMob === mobileToMatch) return true;
                         if (!sMob && rName === nameToMatch) return true;
                       }
                       return false;
@@ -8284,22 +8285,22 @@ function UserDashboard({ C, globalProfile, globalAuthToken, onClose }) {
                   </button>
                 </div>
                 {(() => {
-                  const mobileToMatch = String(globalProfile.mobile || globalProfile['Mobile Number'] || "").trim();
+                  const mobileToMatch = cleanPhone(globalProfile.mobile || globalProfile['Mobile Number'] || "");
                   const nameToMatch = String(globalProfile.name || globalProfile['Full Name'] || "").trim().toLowerCase();
 
                   const approvedRegs = regs.filter(r => {
                     const isVerified = (r.Status || r.status || "").toLowerCase().includes("verifi") || (r.Status || r.status || "").toLowerCase().includes("approv") || (r.Status || r.status || "").toLowerCase().includes("success");
                     if (!isVerified) return false;
                     
-                    const rMobile = String(r["Mobile Number"] || r.mobile || r.phone || "").trim();
+                    const rMobile = cleanPhone(r["Mobile Number"] || r.mobile || r.phone || "");
                     const rName = String(r["Submitted By"] || r.name || r["Full Name"] || "").trim().toLowerCase();
-                    const sMob = String(r.submitterMob || "").trim();
+                    const sMob = cleanPhone(r.submitterMob || "");
                     
                     if (subTab === "For Me") {
-                      return rMobile === mobileToMatch || (!rMobile && (sMob === mobileToMatch || rName === nameToMatch));
+                      return (mobileToMatch && rMobile === mobileToMatch) || (!rMobile && ((mobileToMatch && sMob === mobileToMatch) || rName === nameToMatch));
                     } else {
                       if (rMobile && rMobile !== mobileToMatch) {
-                        if (sMob === mobileToMatch) return true;
+                        if (mobileToMatch && sMob === mobileToMatch) return true;
                         if (!sMob && rName === nameToMatch) return true;
                       }
                       return false;
@@ -8443,22 +8444,22 @@ function UserDashboard({ C, globalProfile, globalAuthToken, onClose }) {
                   </button>
                 </div>
                 {(() => {
-                  const mobileToMatch = String(globalProfile.mobile || globalProfile['Mobile Number'] || "").trim();
+                  const mobileToMatch = cleanPhone(globalProfile.mobile || globalProfile['Mobile Number'] || "");
                   const nameToMatch = String(globalProfile.name || globalProfile['Full Name'] || "").trim().toLowerCase();
                   
                   const approvedRegs = regs.filter(r => {
                     const isVerified = (r.Status || r.status || "").toLowerCase().includes("verifi") || (r.Status || r.status || "").toLowerCase().includes("approv") || (r.Status || r.status || "").toLowerCase().includes("success");
                     if (!isVerified) return false;
                     
-                    const rMobile = String(r["Mobile Number"] || r.mobile || r.phone || "").trim();
+                    const rMobile = cleanPhone(r["Mobile Number"] || r.mobile || r.phone || "");
                     const rName = String(r["Submitted By"] || r.name || r["Full Name"] || "").trim().toLowerCase();
-                    const sMob = String(r.submitterMob || "").trim();
+                    const sMob = cleanPhone(r.submitterMob || "");
                     
                     if (subTab === "For Me") {
-                      return rMobile === mobileToMatch || (!rMobile && (sMob === mobileToMatch || rName === nameToMatch));
+                      return (mobileToMatch && rMobile === mobileToMatch) || (!rMobile && ((mobileToMatch && sMob === mobileToMatch) || rName === nameToMatch));
                     } else {
                       if (rMobile && rMobile !== mobileToMatch) {
-                        if (sMob === mobileToMatch) return true;
+                        if (mobileToMatch && sMob === mobileToMatch) return true;
                         if (!sMob && rName === nameToMatch) return true;
                       }
                       return false;
