@@ -845,6 +845,8 @@ function Hero({ C, lang }) {
                   maxHeight: h?.imageMaxHeight || 420,
                   height:"auto",
                   objectFit: h?.imageFit || "contain",
+                  imageRendering: (h?.imageRendering === "smooth") ? "auto" : "-webkit-optimize-contrast",
+                  filter: h?.imageRendering === "super-sharp" ? "contrast(1.1) brightness(1.02)" : "none",
                   borderRadius:12,
                   display:"block",
                   margin:"0 auto"
@@ -3642,29 +3644,42 @@ function ContentEditor({ C, setC, setPage, auth, hasAccess, master }) {
                 </div>
               </div>
 
-              <div style={{display:"grid", gridTemplateColumns:"1fr 1fr", gap:16}}>
+              <div style={{display:"grid", gridTemplateColumns:"1fr 1fr 1fr", gap:12}}>
                 <div>
-                  <label style={{display:"block",fontSize:".85rem",fontWeight:600,color:"var(--dt)",marginBottom:6}}>Image Fit & Aspect Ratio</label>
+                  <label style={{display:"block",fontSize:".85rem",fontWeight:600,color:"var(--dt)",marginBottom:6}}>Image Fit</label>
                   <select 
                     value={draft.hero.imageFit || "contain"} 
                     onChange={(e)=>upd("hero.imageFit", e.target.value)} 
-                    style={{width:"100%",padding:"8px 12px",borderRadius:8,border:"1px solid var(--bd)",fontSize:".85rem",background:"white"}}
+                    style={{width:"100%",padding:"8px 12px",borderRadius:8,border:"1px solid var(--bd)",fontSize:".82rem",background:"white"}}
                   >
-                    <option value="contain">Fit / Preserve Quality (Best for PNG & Logos)</option>
-                    <option value="cover">Cover / Fill Container (Crops edges)</option>
+                    <option value="contain">Fit / Preserve Quality</option>
+                    <option value="cover">Cover / Fill Container</option>
                   </select>
                 </div>
 
                 <div>
-                  <label style={{display:"block",fontSize:".85rem",fontWeight:600,color:"var(--dt)",marginBottom:6}}>Image Card Background</label>
+                  <label style={{display:"block",fontSize:".85rem",fontWeight:600,color:"var(--dt)",marginBottom:6}}>Card Background</label>
                   <select 
                     value={draft.hero.imageBg || "transparent"} 
                     onChange={(e)=>upd("hero.imageBg", e.target.value)} 
-                    style={{width:"100%",padding:"8px 12px",borderRadius:8,border:"1px solid var(--bd)",fontSize:".85rem",background:"white"}}
+                    style={{width:"100%",padding:"8px 12px",borderRadius:8,border:"1px solid var(--bd)",fontSize:".82rem",background:"white"}}
                   >
-                    <option value="transparent">Transparent (Borderless)</option>
+                    <option value="transparent">Transparent</option>
                     <option value="white">Solid White Card</option>
-                    <option value="glass">Glassmorphism Backdrop</option>
+                    <option value="glass">Glassmorphism</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label style={{display:"block",fontSize:".85rem",fontWeight:600,color:"var(--dt)",marginBottom:6}}>Sharpness / Quality</label>
+                  <select 
+                    value={draft.hero.imageRendering || "crisp"} 
+                    onChange={(e)=>upd("hero.imageRendering", e.target.value)} 
+                    style={{width:"100%",padding:"8px 12px",borderRadius:8,border:"1px solid var(--bd)",fontSize:".82rem",background:"white"}}
+                  >
+                    <option value="crisp">⚡ Crisp Sharp (No Blur)</option>
+                    <option value="super-sharp">✨ Super Sharp (Contrast Boost)</option>
+                    <option value="smooth">🌊 Smooth (Bilinear Blur)</option>
                   </select>
                 </div>
               </div>
