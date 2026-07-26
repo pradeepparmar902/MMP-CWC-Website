@@ -3565,18 +3565,54 @@ function ContentEditor({ C, setC, setPage, auth, hasAccess, master }) {
           </div>
         ))}
 
-        {/* Live preview strip */}
-        <div style={{marginTop:16,padding:"12px 16px",background:"var(--dt)",borderRadius:12,display:"flex",gap:8,flexWrap:"wrap",alignItems:"center"}}>
-          <span style={{color:"rgba(255,255,255,.5)",fontSize:".72rem",marginRight:4}}>Preview:</span>
-          {draft.nav.filter(n=>n.visible).map((item,i)=>(
-            <span key={i} style={{color:"white",fontSize:".8rem",fontWeight:500,padding:"3px 10px",borderRadius:20,background:"rgba(255,255,255,.1)"}}>
-              {item.icon} {item.label}
-            </span>
-          ))}
-          {draft.nav.filter(n=>!n.visible).length>0 && (
-            <span style={{color:"rgba(255,255,255,.35)",fontSize:".72rem",marginLeft:4}}>
-              + {draft.nav.filter(n=>!n.visible).length} hidden
-            </span>
+        {/* ── HEADER ACTION BUTTON MANAGER ─────────────────────────── */}
+        <div style={{marginTop:20,border:"2px solid var(--sf)",borderRadius:14,padding:"18px",background:"#FFF4EC"}}>
+          <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:4}}>
+            <span style={{fontSize:"1.2rem"}}>🔘</span>
+            <div style={{fontFamily:"'Playfair Display',serif",fontWeight:700,color:"var(--dt)",fontSize:".98rem"}}>Header Action Button (Donate Now vs Dashboard)</div>
+          </div>
+          <div style={{fontSize:".78rem",color:"var(--mu)",marginBottom:14}}>Select what primary action button appears in the top navbar next to the main menu.</div>
+
+          <div className="cf">
+            <label className="cl">Button Mode</label>
+            <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+              {[
+                {v:"donate", label:"Donate Now"},
+                {v:"dashboard", label:"My Dashboard"},
+                {v:"custom", label:"Custom Section / Link"},
+                {v:"none", label:"Hidden"}
+              ].map(m => {
+                const curMode = draft.headerAction?.mode || "donate";
+                const active = curMode === m.v;
+                return (
+                  <button key={m.v} type="button" onClick={()=>{
+                    upd("headerAction.mode", m.v);
+                    if (m.v === "donate") {
+                      upd("headerAction.label", "Donate Now");
+                      upd("headerAction.labelGu", "દાન આપો");
+                      upd("headerAction.linkTarget", "donate");
+                    } else if (m.v === "dashboard") {
+                      upd("headerAction.label", "Dashboard");
+                      upd("headerAction.labelGu", "ડેશબોર્ડ");
+                      upd("headerAction.linkTarget", "");
+                    }
+                  }}
+                  style={{flex:1,minWidth:120,padding:"10px",borderRadius:8,border:`2px solid ${active?"var(--sf)":"var(--bd)"}`,background:active?"var(--sf)":"white",color:active?"white":"var(--tm2)",fontWeight:700,cursor:"pointer",fontSize:".82rem",transition:"all .2s",fontFamily:"inherit"}}>
+                    {active ? "✓ " : ""}{m.label}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          {(draft.headerAction?.mode || "donate") !== "none" && (
+            <G2>
+              <F label="Button Text (English)" path="headerAction.label" hint="e.g. Donate Now, Dashboard"/>
+              <F label="Button Text (Gujarati)" path="headerAction.labelGu" hint="e.g. દાન આપો, ડેશબોર્ડ"/>
+              {(draft.headerAction?.mode || "donate") === "custom" && (
+                <F label="Target Section ID or URL" path="headerAction.linkTarget" hint="e.g. donate, events, programs"/>
+              )}
+            </G2>
           )}
         </div>
 
