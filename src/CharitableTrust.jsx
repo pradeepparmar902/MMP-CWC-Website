@@ -3030,7 +3030,7 @@ function ContentEditor({ C, setC, setPage, auth, hasAccess, master }) {
   const showSec = (id) => {
     if (master) return true;
     if (!hasAccess) return false;
-    return hasAccess.includes("content:" + id);
+    return hasAccess.includes("content") || hasAccess.includes("content:" + id);
   };
   const getDraft = (C) => {
     const d = JSON.parse(JSON.stringify(C));
