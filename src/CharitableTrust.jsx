@@ -3290,7 +3290,6 @@ function ContentEditor({ C, setC, setPage, auth, hasAccess, master }) {
         {(draft.headerAction?.mode || "donate") !== "none" && (
           <div style={{display:"grid",gridTemplateColumns:mob?"1fr":"1fr 1fr",gap:"0 14px",marginTop:10,paddingTop:10,borderTop:"1px dashed #FDDBB8"}}>
             <F label="Button Text (English)" path="headerAction.label"/>
-            <F label="Button Text (Gujarati)" path="headerAction.labelGu"/>
           </div>
         )}
       </div>
