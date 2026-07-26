@@ -522,6 +522,12 @@ const DC = {
       bgColor:  "gradient",   // "gradient" | "white" | "transparent"
     }
   },
+  headerAction: {
+    mode: "donate", // "donate" | "dashboard" | "custom" | "none"
+    label: "Donate Now",
+    labelGu: "દાન આપો",
+    linkTarget: "donate"
+  },
   hero:{badge:"ESTD. 2024 · COMMUNITY PLATFORM",title:"Empowering Our Community Together",titleGu:"આપણા સમુદાયને સાથે મળીને સશક્તિકરણ",subtitle:"A generic fallback boilerplate for communities to share their mission, programs, and connect with members.",subtitleGu:"સમુદાયો માટે તેમના મિશન, કાર્યક્રમો શેર કરવા અને સભ્યો સાથે જોડાવા માટે એક સામાન્ય ફોલબેક બોઈલરપ્લેટ.",cta1:"Donate Now",cta1Gu:"દાન આપો",cta2:"Our Programs",cta2Gu:"અમારા કાર્યક્રમો",badge1:"Verified",badge2:"Registered",badge3:"Audited",showStats:true,showImage:false,image:"",showRegBtn:false,regBtnLabel:"Register Now",regBtnLabelGu:"હવે નોંધણી કરો",regBtnLink:"#events"},
   stats:[{num:"10,000+",label:"Members",labelGu:"સભ્યો"},{num:"$100k",label:"Funds Raised",labelGu:"ભંડોળ એકત્ર"},{num:"50+",label:"Volunteers",labelGu:"સ્વયંસેવકો"},{num:"10",label:"Active Programs",labelGu:"સક્રિય કાર્યક્રમો"}],
   about:{heading:"Rooted in Compassion, Driven by Purpose",headingGu:"કરુણામાં મૂળ, ઉદ્દેશ્ય દ્વારા ચાલિત",body1:"myCommunity was founded to create a dignified life for every individual regardless of caste, creed, or economic status. This is fallback data when Firebase is not connected.",body1Gu:"મારો સમુદાય દરેક વ્યક્તિ માટે સન્માનજનક જીવન બનાવવા માટે સ્થાપિત કરવામાં આવ્યો હતો.",body2:"Our work spans education, healthcare, and empowerment through community participation.",body2Gu:"અમારું કાર્ય શિક્ષણ, આરોગ્ય અને સશક્તિકરણ સુધી ફેલાયેલું છે.",points:["Transparent Governance","Community-Led Programs","Annual Public Audit","Zero Admin Fee Policy"],yearsLabel:"Years of Service",cta:"Read Our Story"},
@@ -719,13 +725,35 @@ function Navbar({ C, lang, setLang, setPage, auth, onShowLogin, globalProfile, o
         )}
 
         {/* Right controls */}
-        <div style={{display:"flex",gap:8,alignItems:"center",flexShrink:0}}>
-          {mob && <button onClick={()=>setLang(lang==="en"?"gu":"en")} style={{background:"var(--tl)",border:"1px solid #B8D8E8",color:"var(--dt)",padding:"5px 10px",borderRadius:20,cursor:"pointer",fontSize:".78rem",fontWeight:700}}>{lang==="en"?"Gu":"EN"}</button>}
-          
-          <button className="bs" onClick={()=>go("donate")} style={{padding:mob?"7px 12px":"8px 24px",borderRadius:8,fontSize:mob?".78rem":".85rem",fontWeight:700}}>Donate Now</button>
+        {(() => {
+          const act = C.headerAction || { mode: "donate", label: "Donate Now", labelGu: "દાન આપો", linkTarget: "donate" };
+          if (act.mode === "none") return null;
+          let btnText = lang === "en" ? (act.label || "Donate Now") : (act.labelGu || act.label || "દાન આપો");
+          if (act.mode === "dashboard") {
+            btnText = lang === "en" ? (act.label || "Dashboard") : (act.labelGu || "ડેશબોર્ડ");
+          }
+          const handleHeaderAction = () => {
+            if (act.mode === "dashboard") {
+              if (globalProfile) {
+                onShowDashboard();
+              } else {
+                onShowUserLogin();
+              }
+            } else {
+              go(act.linkTarget || "donate");
+            }
+          };
 
-          {mob && <button onClick={()=>setDrawer(true)} style={{background:"none",border:"1px solid var(--bd)",borderRadius:8,width:36,height:36,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:4,cursor:"pointer",padding:0}}>{[0,1,2].map(i=><span key={i} style={{display:"block",width:16,height:2,background:"var(--dt)",borderRadius:2}}/>)}</button>}
-        </div>
+          return (
+            <div style={{display:"flex",gap:8,alignItems:"center",flexShrink:0}}>
+              {mob && <button onClick={()=>setLang(lang==="en"?"gu":"en")} style={{background:"var(--tl)",border:"1px solid #B8D8E8",color:"var(--dt)",padding:"5px 10px",borderRadius:20,cursor:"pointer",fontSize:".78rem",fontWeight:700}}>{lang==="en"?"Gu":"EN"}</button>}
+              
+              <button className="bs" onClick={handleHeaderAction} style={{padding:mob?"7px 12px":"8px 24px",borderRadius:8,fontSize:mob?".78rem":".85rem",fontWeight:700}}>{btnText}</button>
+
+              {mob && <button onClick={()=>setDrawer(true)} style={{background:"none",border:"1px solid var(--bd)",borderRadius:8,width:36,height:36,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:4,cursor:"pointer",padding:0}}>{[0,1,2].map(i=><span key={i} style={{display:"block",width:16,height:2,background:"var(--dt)",borderRadius:2}}/>)}</button>}
+            </div>
+          );
+        })()}
       </nav>
 
       {/* Mobile Drawer */}
@@ -753,9 +781,32 @@ function Navbar({ C, lang, setLang, setPage, auth, onShowLogin, globalProfile, o
 
             {/* Bottom action buttons */}
             <div style={{padding:"14px 14px 28px",borderTop:"1px solid var(--bd)",display:"flex",flexDirection:"column",gap:10}}>
-              <button className="bs" onClick={()=>go("donate")} style={{padding:"12px",borderRadius:10,fontWeight:700,fontSize:".9rem"}}>
-                Donate Now
-              </button>
+              {(() => {
+                const act = C.headerAction || { mode: "donate", label: "Donate Now", labelGu: "દાન આપો", linkTarget: "donate" };
+                if (act.mode === "none") return null;
+                let btnText = lang === "en" ? (act.label || "Donate Now") : (act.labelGu || act.label || "દાન આપો");
+                if (act.mode === "dashboard") {
+                  btnText = lang === "en" ? (act.label || "Dashboard") : (act.labelGu || "ડેશબોર્ડ");
+                }
+                const handleHeaderAction = () => {
+                  setDrawer(false);
+                  if (act.mode === "dashboard") {
+                    if (globalProfile) {
+                      onShowDashboard();
+                    } else {
+                      onShowUserLogin();
+                    }
+                  } else {
+                    go(act.linkTarget || "donate");
+                  }
+                };
+
+                return (
+                  <button className="bs" onClick={handleHeaderAction} style={{padding:"12px",borderRadius:10,fontWeight:700,fontSize:".9rem"}}>
+                    {btnText}
+                  </button>
+                );
+              })()}
 
               {/* Login / Account row */}
               {globalProfile ? (
@@ -3024,6 +3075,12 @@ function ContentEditor({ C, setC, setPage, auth, hasAccess, master }) {
       copyrightYear: new Date().getFullYear().toString(),
       tagline: "Designed with love for humanity"
     };
+    if(!d.headerAction) d.headerAction = {
+      mode: "donate",
+      label: "Donate Now",
+      labelGu: "દાન આપો",
+      linkTarget: "donate"
+    };
     return d;
   };
   const [draft, setDraft] = useState(()=>getDraft(C));
@@ -3188,8 +3245,54 @@ function ContentEditor({ C, setC, setPage, auth, hasAccess, master }) {
         <span style={{fontSize:"1.4rem"}}>💡</span>
         <div>
           <div style={{fontWeight:700,color:"var(--dt)",fontSize:".875rem"}}>Expand any section to edit content</div>
-          <div style={{color:"var(--mu)",fontSize:".78rem",marginTop:2}}>Changes apply live when you click Save. Use Preview Site to see the result.</div>
         </div>
+      </div>
+
+      {/* ── HEADER ACTION BUTTON MANAGER (ALWAYS VISIBLE) ─────────────────────────── */}
+      <div style={{background:"#FFF4EC",border:"2px solid var(--sf)",borderRadius:14,padding:"16px 20px",marginBottom:20,boxShadow:"0 2px 12px rgba(232,101,10,.12)"}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12,flexWrap:"wrap",gap:10}}>
+          <div style={{display:"flex",alignItems:"center",gap:10}}>
+            <span style={{fontSize:"1.4rem"}}>🔘</span>
+            <div>
+              <div style={{fontFamily:"'Playfair Display',serif",fontWeight:700,color:"var(--dt)",fontSize:"1rem"}}>Header Action Button (Desktop & Mobile)</div>
+              <div style={{fontSize:".78rem",color:"var(--mu)"}}>Select what primary button appears in the top navigation bar next to the menu (Image 1).</div>
+            </div>
+          </div>
+          <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+            {[
+              {v:"donate", label:"Donate Now"},
+              {v:"dashboard", label:"My Dashboard"},
+              {v:"none", label:"Hidden"}
+            ].map(m => {
+              const curMode = draft.headerAction?.mode || "donate";
+              const active = curMode === m.v;
+              return (
+                <button key={m.v} type="button" onClick={()=>{
+                  upd("headerAction.mode", m.v);
+                  if (m.v === "donate") {
+                    upd("headerAction.label", "Donate Now");
+                    upd("headerAction.labelGu", "દાન આપો");
+                    upd("headerAction.linkTarget", "donate");
+                  } else if (m.v === "dashboard") {
+                    upd("headerAction.label", "Dashboard");
+                    upd("headerAction.labelGu", "ડેશબોર્ડ");
+                    upd("headerAction.linkTarget", "");
+                  }
+                }}
+                style={{padding:"8px 16px",borderRadius:8,border:`2px solid ${active?"var(--sf)":"var(--bd)"}`,background:active?"var(--sf)":"white",color:active?"white":"var(--dt)",fontWeight:700,cursor:"pointer",fontSize:".85rem",transition:"all .2s"}}>
+                  {active ? "✓ " : ""}{m.label}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
+        {(draft.headerAction?.mode || "donate") !== "none" && (
+          <div style={{display:"grid",gridTemplateColumns:mob?"1fr":"1fr 1fr",gap:"0 14px",marginTop:10,paddingTop:10,borderTop:"1px dashed #FDDBB8"}}>
+            <F label="Button Text (English)" path="headerAction.label"/>
+            <F label="Button Text (Gujarati)" path="headerAction.labelGu"/>
+          </div>
+        )}
       </div>
 
       {/* ══ SECTIONS MANAGER ══════════════════════════════════════════════ */}
@@ -3477,6 +3580,7 @@ function ContentEditor({ C, setC, setPage, auth, hasAccess, master }) {
             </span>
           )}
         </div>
+
       </Sec>}
 
       {showSec("trust") && <Sec id="trust" icon="🏛️" label="Trust Information">
