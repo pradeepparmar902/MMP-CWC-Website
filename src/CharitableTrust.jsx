@@ -1,5 +1,69 @@
 import { QRCodeCanvas } from "qrcode.react";
 import { useState, useEffect, useRef, createContext, useContext } from "react";
+
+const SearchableDropdown = ({ value, onChange, options, placeholder, required }) => {
+  const [open, setOpen] = useState(false);
+  const [search, setSearch] = useState(value || "");
+  const wrapperRef = useRef(null);
+  
+  useEffect(() => {
+    setSearch(value || "");
+  }, [value]);
+
+  useEffect(() => {
+    function handleClickOutside(event) {
+      if (wrapperRef.current && !wrapperRef.current.contains(event.target)) {
+        setOpen(false);
+        if(!options.includes(search)) {
+          setSearch(value || ""); // reset if invalid
+          if (!options.includes(value||"")) onChange(""); // force valid
+        }
+      }
+    }
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, [search, options, value, onChange]);
+
+  const filtered = options.filter(o => o.toLowerCase().includes(search.toLowerCase()));
+
+  return (
+    <div ref={wrapperRef} style={{position: "relative", width: "100%"}}>
+      <input
+        required={required}
+        value={search}
+        onChange={e => { setSearch(e.target.value); setOpen(true); }}
+        onFocus={() => setOpen(true)}
+        placeholder={placeholder || "-- Select --"}
+        style={{width:"100%",padding:"10px",borderRadius:8,border:"1px solid var(--bd)",fontFamily:"inherit",fontSize:".9rem"}}
+      />
+      <div 
+        onClick={() => setOpen(!open)}
+        style={{position:"absolute", right:10, top:"50%", transform:"translateY(-50%)", cursor:"pointer", color:"#999", fontSize:".8rem", padding:"4px"}}
+      >▼</div>
+      {open && (
+        <div style={{position:"absolute", top:"100%", left:0, right:0, zIndex:1000, background:"white", border:"1px solid var(--bd)", borderRadius:8, maxHeight:200, overflowY:"auto", boxShadow:"0 4px 12px rgba(0,0,0,0.1)", marginTop:4}}>
+          {filtered.length === 0 ? <div style={{padding:"10px", color:"var(--mu)", fontSize:".9rem"}}>No matches</div> : null}
+          {filtered.map((opt, i) => (
+            <div
+              key={i}
+              onClick={() => {
+                setSearch(opt);
+                onChange(opt);
+                setOpen(false);
+              }}
+              style={{padding:"10px", cursor:"pointer", fontSize:".9rem", borderBottom: i < filtered.length-1 ? "1px solid #f0f0f0" : "none", color:"var(--dt)"}}
+              onMouseEnter={e => e.target.style.background="#f5f5f5"}
+              onMouseLeave={e => e.target.style.background="white"}
+            >
+              {opt}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+};
+
 import { jsPDF } from "jspdf";
 import JSZip from "jszip";
 import * as XLSX from "xlsx";
@@ -1718,10 +1782,13 @@ function Events({ C, lang, globalAuthToken, globalProfile, onPublicLogin, forceS
                     {f.type === 'address' ? (
                       <textarea required={f.required} value={formData[fKey]||""} onChange={e=>setFormData({...formData, [fKey]:e.target.value})} style={{width:"100%",padding:"10px",borderRadius:8,border:"1px solid var(--bd)",fontFamily:"inherit",fontSize:".9rem",minHeight:80,resize:"vertical"}}/>
                     ) : f.type === 'dropdown' ? (
-                      <select required={f.required} value={formData[fKey]||""} onChange={e=>setFormData({...formData, [fKey]:e.target.value})} style={{width:"100%",padding:"10px",borderRadius:8,border:"1px solid var(--bd)",fontFamily:"inherit",fontSize:".9rem"}}>
-                        <option value="">-- Select --</option>
-                        {(f.options||"").split(",").map((opt, oi) => opt.trim() && <option key={oi} value={opt.trim()}>{opt.trim()}</option>)}
-                      </select>
+                      <SearchableDropdown 
+                        required={f.required} 
+                        value={formData[fKey]||""} 
+                        onChange={val => setFormData({...formData, [fKey]:val})} 
+                        options={(f.options||"").split(",").map(o=>o.trim()).filter(Boolean)} 
+                        placeholder="-- Search & Select --" 
+                      />
                     ) : f.type === 'gender' ? (
                       <select required={f.required} value={formData[fKey]||""} onChange={e=>setFormData({...formData, [fKey]:e.target.value})} style={{width:"100%",padding:"10px",borderRadius:8,border:"1px solid var(--bd)",fontFamily:"inherit",fontSize:".9rem"}}>
                         <option value="">-- Select Gender --</option>
@@ -2076,10 +2143,13 @@ function Events({ C, lang, globalAuthToken, globalProfile, onPublicLogin, forceS
                         {f.type === 'address' ? (
                           <textarea required={f.required} value={formData[fKey]||""} onChange={e=>setFormData({...formData, [fKey]:e.target.value})} style={{width:"100%",padding:"10px",borderRadius:8,border:"1px solid var(--bd)",fontFamily:"inherit",fontSize:".9rem",minHeight:80,resize:"vertical"}}/>
                         ) : f.type === 'dropdown' ? (
-                          <select required={f.required} value={formData[fKey]||""} onChange={e=>setFormData({...formData, [fKey]:e.target.value})} style={{width:"100%",padding:"10px",borderRadius:8,border:"1px solid var(--bd)",fontFamily:"inherit",fontSize:".9rem"}}>
-                            <option value="">-- Select --</option>
-                            {(f.options||"").split(",").map((opt, oi) => opt.trim() && <option key={oi} value={opt.trim()}>{opt.trim()}</option>)}
-                          </select>
+                          <SearchableDropdown 
+                            required={f.required} 
+                            value={formData[fKey]||""} 
+                            onChange={val => setFormData({...formData, [fKey]:val})} 
+                            options={(f.options||"").split(",").map(o=>o.trim()).filter(Boolean)} 
+                            placeholder="-- Search & Select --" 
+                          />
                         ) : f.type === 'gender' ? (
                           <select required={f.required} value={formData[fKey]||""} onChange={e=>setFormData({...formData, [fKey]:e.target.value})} style={{width:"100%",padding:"10px",borderRadius:8,border:"1px solid var(--bd)",fontFamily:"inherit",fontSize:".9rem"}}>
                             <option value="">-- Select Gender --</option>
