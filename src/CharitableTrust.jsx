@@ -1709,6 +1709,12 @@ function Events({ C, lang, globalAuthToken, globalProfile, onPublicLogin, forceS
                             💬 Join Event WhatsApp Group
                           </a>
                         )}
+                          {selectedEvent.event.waGroupQrCode && (
+                            <div style={{marginTop: 10, display: "flex", flexDirection: "column", alignItems: "center"}}>
+                              <span style={{fontSize: ".75rem", color: "var(--mu)", marginBottom: 6}}>Or Scan QR Code to Join:</span>
+                              <img src={selectedEvent.event.waGroupQrCode} alt="WhatsApp Group QR Code" style={{width: 150, height: 150, objectFit: "contain", borderRadius: 8, border: "1px solid var(--bd)", boxShadow: "0 2px 8px rgba(0,0,0,0.1)"}} />
+                            </div>
+                          )}
                         {isProxy && selectedEvent.event.waGroupLink && (
                           <a href={`https://wa.me/91${targetMobile}?text=${encodeURIComponent(`Hello ${targetName},\n\nYou have been successfully registered for *${selectedEvent.event.title}*.\n\nPlease join the official WhatsApp group for updates: ${selectedEvent.event.waGroupLink}`)}`} target="_blank" rel="noreferrer" style={{display:"inline-block",padding:"10px 20px",borderRadius:20,background:"#FFF4EC",color:"var(--sf)",fontWeight:700,textDecoration:"none",fontSize:".9rem",border:"1px solid var(--sf)", marginTop: 10}}>
                             ➡️ Forward Group Link to {targetName}
@@ -2030,6 +2036,12 @@ function Events({ C, lang, globalAuthToken, globalProfile, onPublicLogin, forceS
                             <a href={selectedEvent.event.waGroupLink} target="_blank" rel="noreferrer" style={{display:"inline-block",padding:"10px 20px",borderRadius:20,background:"linear-gradient(135deg, #25D366, #128C7E)",color:"white",fontWeight:700,textDecoration:"none",fontSize:".9rem",boxShadow:"0 4px 10px rgba(37,211,102,0.3)"}}>
                               💬 Join Event WhatsApp Group
                             </a>
+                          )}
+                          {selectedEvent.event.waGroupQrCode && (
+                            <div style={{marginTop: 10, display: "flex", flexDirection: "column", alignItems: "center"}}>
+                              <span style={{fontSize: ".75rem", color: "var(--mu)", marginBottom: 6}}>Or Scan QR Code to Join:</span>
+                              <img src={selectedEvent.event.waGroupQrCode} alt="WhatsApp Group QR Code" style={{width: 150, height: 150, objectFit: "contain", borderRadius: 8, border: "1px solid var(--bd)", boxShadow: "0 2px 8px rgba(0,0,0,0.1)"}} />
+                            </div>
                           )}
                           {isProxy && selectedEvent.event.waGroupLink && (
                             <a href={`https://wa.me/91${targetMobile}?text=${encodeURIComponent(`Hello ${targetName},\n\nYou have been successfully registered for *${selectedEvent.event.title}*.\n\nPlease join the official WhatsApp group for updates: ${selectedEvent.event.waGroupLink}`)}`} target="_blank" rel="noreferrer" style={{display:"inline-block",padding:"10px 20px",borderRadius:20,background:"#FFF4EC",color:"var(--sf)",fontWeight:700,textDecoration:"none",fontSize:".9rem",border:"1px solid var(--sf)", marginTop: 10}}>
@@ -6766,6 +6778,13 @@ function AdminEvents({ mob, C, setC, auth }) {
                 <div style={{gridColumn:"1/-1"}}>
                   <label style={{fontSize:".7rem",color:"var(--mu)",fontWeight:600}}>WhatsApp Group Link (Optional - Shows after registration)</label>
                   <input type="text" placeholder="https://chat.whatsapp.com/..." value={ev.waGroupLink || ""} onChange={e=>updateItem(i,"waGroupLink",e.target.value)} style={{width:"100%",padding:"6px",borderRadius:6,border:"1px solid var(--bd)",fontSize:".85rem",fontFamily:"inherit"}}/>
+                </div>
+                <div style={{gridColumn:"1/-1"}}>
+                  <label style={{fontSize:".7rem",color:"var(--mu)",fontWeight:600}}>WhatsApp Group QR Code (Optional)</label>
+                  <div style={{display:"flex",gap:8}}>
+                    <input type="text" placeholder="Image URL..." value={ev.waGroupQrCode || ""} onChange={e=>updateItem(i,"waGroupQrCode",e.target.value)} style={{flex:1,padding:"6px",borderRadius:6,border:"1px solid var(--bd)",fontSize:".85rem",fontFamily:"inherit"}}/>
+                    <ImageUploadButton onUpload={(url) => updateItem(i,"waGroupQrCode",url)} btnStyle={{padding:"6px 12px"}} />
+                  </div>
                 </div>
                 <div style={{gridColumn:"1/-1", marginTop:8, padding:12, background:"#FFF5F5", borderRadius:8, border:"2px solid #F5B8B8"}}>
                   <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom: ev.regClosed ? 10 : 0}}>
