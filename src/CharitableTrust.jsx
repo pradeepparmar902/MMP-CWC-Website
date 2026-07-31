@@ -1408,8 +1408,8 @@ function Events({ C, lang, globalAuthToken, globalProfile, onPublicLogin, forceS
   const [done, setDone] = useState(false);
   const [waMessageLink, setWaMessageLink] = useState("");
   
-  // Auth State: default directly to form step (1) for direct QR scans
-  const [authStep, setAuthStep] = useState(1);
+  // Auth State: default to login (0) if not logged in, or form step (1) if logged in
+  const [authStep, setAuthStep] = useState(() => globalAuthToken ? 1 : 0);
   const [mobile, setMobile] = useState("");
   const [countryCode, setCountryCode] = useState("+91");
 
@@ -1426,9 +1426,9 @@ function Events({ C, lang, globalAuthToken, globalProfile, onPublicLogin, forceS
     const openForEventIndex = (idx) => {
       if (C.events && C.events[idx]) {
         setSelectedEvent({ type: 'register', event: C.events[idx] });
-        // For direct QR scans or registrations, default directly to form step (1)
-        setAuthToken(globalAuthToken || "public_qr_user");
-        setAuthStep(1);
+        // Check if logged in. If not, enforce login step (0)
+        setAuthToken(globalAuthToken || "");
+        setAuthStep(globalAuthToken ? 1 : 0);
         const newForm = { "Submitted By": globalProfile?.name || globalProfile?.['Full Name'] || globalProfile?.mobile || "" };
         const formSpec = C.forms?.find(f => f.id === C.events[idx].formId) || { fields: [] };
         formSpec.fields.forEach(f => {
@@ -1635,7 +1635,7 @@ function Events({ C, lang, globalAuthToken, globalProfile, onPublicLogin, forceS
           remarks: "Initial form submission"
         };
         await fbSubmitRegistration({
-          eventId: selectedEvent.event.title,
+          eventId: selectedEvent.event.id,
           eventTitle: selectedEvent.event.title,
           submitterMob: (globalProfile?.mobile || mobile || ""),
           formData: {
