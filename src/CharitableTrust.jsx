@@ -1979,16 +1979,36 @@ function Events({ C, lang, globalAuthToken, globalProfile, onPublicLogin, forceS
                     <div style={{fontSize:"3rem",marginBottom:10}}>✅</div>
                     <h4 style={{color:"#1A7A3E",fontWeight:700,marginBottom:6}}>Registration Successful!</h4>
                     <p style={{fontSize:".85rem",color:"var(--mu)",marginBottom:24}}>Thank you for registering. Please choose an option below:</p>
-                    <div style={{display:"flex",flexDirection:"column",gap:12,alignItems:"center"}}>
-                      <a href={waMessageLink} target="_blank" rel="noreferrer" style={{display:"inline-block",padding:"10px 20px",borderRadius:20,background:"#F5F5F5",color:"var(--dt)",fontWeight:700,textDecoration:"none",fontSize:".9rem",border:"1px solid var(--bd)"}}>
-                        📤 Send Details to Admin (WhatsApp)
-                      </a>
-                      {selectedEvent.event.waGroupLink && (
-                        <a href={selectedEvent.event.waGroupLink} target="_blank" rel="noreferrer" style={{display:"inline-block",padding:"10px 20px",borderRadius:20,background:"linear-gradient(135deg, #25D366, #128C7E)",color:"white",fontWeight:700,textDecoration:"none",fontSize:".9rem",boxShadow:"0 4px 10px rgba(37,211,102,0.3)"}}>
-                          💬 Join Event WhatsApp Group
-                        </a>
-                      )}
-                    </div>
+                    {(() => {
+                      const loggedInMob = (globalProfile?.mobile || mobile || "").replace(/\D/g, '').slice(-10);
+                      const formObj = getForm(selectedEvent.event.formId);
+                      const telField = formObj?.fields?.find(f => f.type === 'tel' || f.label.toLowerCase().includes('mobile') || f.label.includes('મોબાઇલ'))?.label || "";
+                      const nameField = formObj?.fields?.find(f => f.type === 'text' && (f.label.toLowerCase().includes('name') || f.label.includes('નામ')) && !f.label.toLowerCase().includes('event'))?.label || "";
+                      
+                      const targetMobileRaw = telField ? formData[telField] : Object.values(formData).find(v => String(v).replace(/\D/g, '').length >= 10);
+                      const targetMobile = String(targetMobileRaw || "").replace(/\D/g, '').slice(-10);
+                      const targetName = nameField ? formData[nameField] : "Student";
+                      
+                      const isProxy = targetMobile && loggedInMob && targetMobile !== loggedInMob;
+                      
+                      return (
+                        <div style={{display:"flex",flexDirection:"column",gap:12,alignItems:"center"}}>
+                          <a href={waMessageLink} target="_blank" rel="noreferrer" style={{display:"inline-block",padding:"10px 20px",borderRadius:20,background:"#F5F5F5",color:"var(--dt)",fontWeight:700,textDecoration:"none",fontSize:".9rem",border:"1px solid var(--bd)"}}>
+                            📤 Send Details to Admin (WhatsApp)
+                          </a>
+                          {selectedEvent.event.waGroupLink && (
+                            <a href={selectedEvent.event.waGroupLink} target="_blank" rel="noreferrer" style={{display:"inline-block",padding:"10px 20px",borderRadius:20,background:"linear-gradient(135deg, #25D366, #128C7E)",color:"white",fontWeight:700,textDecoration:"none",fontSize:".9rem",boxShadow:"0 4px 10px rgba(37,211,102,0.3)"}}>
+                              💬 Join Event WhatsApp Group
+                            </a>
+                          )}
+                          {isProxy && selectedEvent.event.waGroupLink && (
+                            <a href={`https://wa.me/91${targetMobile}?text=${encodeURIComponent(`Hello ${targetName},\n\nYou have been successfully registered for *${selectedEvent.event.title}*.\n\nPlease join the official WhatsApp group for updates: ${selectedEvent.event.waGroupLink}`)}`} target="_blank" rel="noreferrer" style={{display:"inline-block",padding:"10px 20px",borderRadius:20,background:"#FFF4EC",color:"var(--sf)",fontWeight:700,textDecoration:"none",fontSize:".9rem",border:"1px solid var(--sf)", marginTop: 10}}>
+                              ➡️ Forward Group Link to {targetName}
+                            </a>
+                          )}
+                        </div>
+                      );
+                    })()}
                   </div>
                 ) : authStep === 0 ? (
                   <div style={{display:"flex",flexDirection:"column",gap:12}}>
