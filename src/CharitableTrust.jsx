@@ -3638,7 +3638,7 @@ function ContentEditor({ C, setC, setPage, auth, hasAccess, master }) {
           </p>
         </div>
         <div style={{display:"flex",gap:10,alignItems:"center"}}>
-          <button onClick={reset} style={{padding:"9px 14px",borderRadius:8,background:"white",border:"1px solid var(--bd)",cursor:"pointer",fontSize:".8rem",fontWeight:600,color:"var(--mu)"}}>Reset</button>
+          
           <button onClick={()=>setPage("public")} style={{padding:"9px 14px",borderRadius:8,background:"var(--tl)",border:"1px solid #B8D8E8",cursor:"pointer",fontSize:".8rem",fontWeight:600,color:"var(--dt)"}}>Preview</button>
           <button className="bs" onClick={save} disabled={toast==="saving"} style={{padding:"10px 22px",borderRadius:8,fontWeight:700,fontSize:".9rem",opacity:toast==="saving"?.7:1}}>
             {toast==="saving" ? "Saving..." : "Save Changes"}
@@ -3668,13 +3668,11 @@ function ContentEditor({ C, setC, setPage, auth, hasAccess, master }) {
         </G2>
       </Sec>
 
-      {/* ── HEADER ACTION BUTTON MANAGER (ALWAYS VISIBLE) ─────────────────────────── */}
-      <div style={{background:"#FFF4EC",border:"2px solid var(--sf)",borderRadius:14,padding:"16px 20px",marginBottom:20,boxShadow:"0 2px 12px rgba(232,101,10,.12)"}}>
+      {/* ── HEADER ACTION BUTTON MANAGER ─────────────────────────── */}
+      <Sec id="headerActionButton" icon="🔘" label="Header Action Button (Desktop & Mobile)">
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12,flexWrap:"wrap",gap:10}}>
           <div style={{display:"flex",alignItems:"center",gap:10}}>
-            <span style={{fontSize:"1.4rem"}}>🔘</span>
             <div>
-              <div style={{fontFamily:"'Playfair Display',serif",fontWeight:700,color:"var(--dt)",fontSize:"1rem"}}>Header Action Button (Desktop & Mobile)</div>
               <div style={{fontSize:".78rem",color:"var(--mu)"}}>Select what primary button appears in the top navigation bar next to the menu (Image 1).</div>
             </div>
           </div>
@@ -3712,7 +3710,7 @@ function ContentEditor({ C, setC, setPage, auth, hasAccess, master }) {
             <F label="Button Text (English)" path="headerAction.label"/>
           </div>
         )}
-      </div>
+      </Sec>
 
       {/* ══ SECTIONS MANAGER ══════════════════════════════════════════════ */}
       {showSec("sections") && <Sec id="sections" icon="📄" label="Page Sections Manager"
@@ -7978,6 +7976,24 @@ function Settings({ mob, C, setC, auth, setPage, hasAccess, master }) {
           {saving ? "Saving..." : "Apply Theme"}
         </button>
       </div>
+
+      {master && (
+        <div className="ac" style={{padding:mob?"16px":"22px",gridColumn:mob?"1":"1 / -1", border:"2px solid #FCA5A5", background:"#FEF2F2"}}>
+          <h3 style={{fontFamily:"'Playfair Display',serif",fontSize:".95rem",color:"#DC2626",marginBottom:14,fontWeight:700}}>⚠️ Danger Zone (Super Admin)</h3>
+          <p style={{fontSize:".75rem", color:"var(--mu)", marginBottom: 12}}>Resetting content will wipe all customized data and revert the platform back to factory default strings and layouts. This cannot be undone.</p>
+          <button 
+            onClick={() => {
+              if (!window.confirm("DANGER: Are you sure you want to reset all content to factory defaults? This action cannot be undone.")) return;
+              if (!window.confirm("FINAL WARNING: All customizations will be permanently deleted. Proceed?")) return;
+              const d = JSON.parse(JSON.stringify(DC));
+              setC(d);
+              alert("Content has been reset to defaults. Make sure to click Save in the Content Editor if you wish to apply this to the database.");
+            }} 
+            style={{padding:"9px 14px",borderRadius:8,background:"#DC2626",border:"none",cursor:"pointer",fontSize:".8rem",fontWeight:700,color:"white",boxShadow:"0 4px 12px rgba(220, 38, 38, 0.3)"}}>
+            Reset All Content to Defaults
+          </button>
+        </div>
+      )}
     </div>
     
       {master && (
