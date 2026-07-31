@@ -34,11 +34,12 @@ const SearchableDropdown = ({ value, onChange, options, placeholder, required })
         onChange={e => { setSearch(e.target.value); setOpen(true); }}
         onFocus={() => setOpen(true)}
         placeholder={placeholder || "-- Select --"}
-        style={{width:"100%",padding:"10px",borderRadius:8,border:"1px solid var(--bd)",fontFamily:"inherit",fontSize:".9rem"}}
+        className="modern-input" 
+        style={{paddingRight: 32}}
       />
       <div 
         onClick={() => setOpen(!open)}
-        style={{position:"absolute", right:10, top:"50%", transform:"translateY(-50%)", cursor:"pointer", color:"#999", fontSize:".8rem", padding:"4px"}}
+        style={{position:"absolute", right:8, top:"50%", transform:"translateY(-50%)", cursor:"pointer", color:"#64748B", fontSize:".7rem", padding:"6px", display:"flex", alignItems:"center", justifyContent:"center", background:"#F8FAFC", borderRadius:4}}
       >▼</div>
       {open && (
         <div style={{position:"absolute", top:"100%", left:0, right:0, zIndex:1000, background:"white", border:"1px solid var(--bd)", borderRadius:8, maxHeight:200, overflowY:"auto", boxShadow:"0 4px 12px rgba(0,0,0,0.1)", marginTop:4}}>
@@ -1778,9 +1779,9 @@ function Events({ C, lang, globalAuthToken, globalProfile, onPublicLogin, forceS
                   const spanFull = f.type === 'address' || f.type === 'file' || f.type === 'image' || f.type === 'fullname';
                   return (
                   <div key={idx} id={`form_field_${idx}`} style={{animation:"fadeIn 0.4s ease-out", gridColumn: (spanFull || mob) ? "1 / -1" : "auto"}}>
-                    <label style={{display:"block",fontSize:".75rem",fontWeight:600,color:"var(--mu)",marginBottom:4}}>{f.label || fKey} {f.required&&<span style={{color:"red"}}>*</span>}</label>
+                    <label className="modern-label">{f.label || fKey} {f.required&&<span style={{color:"red"}}>*</span>}</label>
                     {f.type === 'address' ? (
-                      <textarea required={f.required} value={formData[fKey]||""} onChange={e=>setFormData({...formData, [fKey]:e.target.value})} style={{width:"100%",padding:"10px",borderRadius:8,border:"1px solid var(--bd)",fontFamily:"inherit",fontSize:".9rem",minHeight:80,resize:"vertical"}}/>
+                      <textarea required={f.required} value={formData[fKey]||""} onChange={e=>setFormData({...formData, [fKey]:e.target.value})} className="modern-input" style={{minHeight:100,resize:"vertical"}}/>
                     ) : f.type === 'dropdown' ? (
                       <SearchableDropdown 
                         required={f.required} 
@@ -1790,26 +1791,26 @@ function Events({ C, lang, globalAuthToken, globalProfile, onPublicLogin, forceS
                         placeholder="-- Search & Select --" 
                       />
                     ) : f.type === 'gender' ? (
-                      <select required={f.required} value={formData[fKey]||""} onChange={e=>setFormData({...formData, [fKey]:e.target.value})} style={{width:"100%",padding:"10px",borderRadius:8,border:"1px solid var(--bd)",fontFamily:"inherit",fontSize:".9rem"}}>
+                      <select required={f.required} value={formData[fKey]||""} onChange={e=>setFormData({...formData, [fKey]:e.target.value})} className="modern-input" >
                         <option value="">-- Select Gender --</option>
                         <option value="Male">Male</option>
                         <option value="Female">Female</option>
                         <option value="Other">Other</option>
                       </select>
                     ) : f.type === 'fullname' ? (
-                      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8}}>
+                      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:12}}>
                         <input placeholder="First" required={f.required} value={(formData[fKey]?.split("|")[0])||""} onChange={e=>{
                           const parts = (formData[fKey]||"||").split("|"); parts[0] = e.target.value; setFormData({...formData, [fKey]:parts.join("|")});
-                        }} style={{width:"100%",padding:"10px",borderRadius:8,border:"1px solid var(--bd)",fontFamily:"inherit",fontSize:".9rem"}}/>
+                        }} className="modern-input" />
                         <input placeholder="Middle" value={(formData[fKey]?.split("|")[1])||""} onChange={e=>{
                           const parts = (formData[fKey]||"||").split("|"); parts[1] = e.target.value; setFormData({...formData, [fKey]:parts.join("|")});
-                        }} style={{width:"100%",padding:"10px",borderRadius:8,border:"1px solid var(--bd)",fontFamily:"inherit",fontSize:".9rem"}}/>
+                        }} className="modern-input" />
                         <input placeholder="Last" required={f.required} value={(formData[fKey]?.split("|")[2])||""} onChange={e=>{
                           const parts = (formData[fKey]||"||").split("|"); parts[2] = e.target.value; setFormData({...formData, [fKey]:parts.join("|")});
-                        }} style={{width:"100%",padding:"10px",borderRadius:8,border:"1px solid var(--bd)",fontFamily:"inherit",fontSize:".9rem"}}/>
+                        }} className="modern-input" />
                       </div>
                     ) : f.type === 'image' || f.type === 'file' ? (
-                      <div style={{padding:"12px",borderRadius:8,border:"1px dashed var(--bd)",background:"#FAFAFA"}}>
+                      <div style={{padding:"16px",borderRadius:12,border:"2px dashed #CBD5E1",background:"#F8FAFC",transition:"all 0.2s ease"}} onMouseEnter={e => e.currentTarget.style.borderColor="#3B82F6"} onMouseLeave={e => e.currentTarget.style.borderColor="#CBD5E1"}>
                         {(() => {
                           const uploadedUrls = formData[fKey] ? formData[fKey].split(",").map(s => s.trim()).filter(Boolean) : [];
                           return (
@@ -1859,15 +1860,18 @@ function Events({ C, lang, globalAuthToken, globalProfile, onPublicLogin, forceS
                       </div>
                     ) : f.type === 'percentage' ? (
                       <div style={{position:"relative",display:"flex",alignItems:"center"}}>
-                        <input type="number" step="0.01" min="0" max="100" placeholder="e.g. 85.50" required={f.required} value={formData[fKey]||""} onChange={e=>setFormData({...formData, [fKey]:e.target.value})} style={{width:"100%",padding:"10px 32px 10px 10px",borderRadius:8,border:"1px solid var(--bd)",fontFamily:"inherit",fontSize:".9rem"}}/>
+                        <input type="number" step="0.01" min="0" max="100" placeholder="e.g. 85.50" required={f.required} value={formData[fKey]||""} onChange={e=>setFormData({...formData, [fKey]:e.target.value})} className="modern-input" style={{paddingRight:32}}/>
                         <span style={{position:"absolute",right:12,fontWeight:700,color:"var(--dt)",fontSize:".9rem",pointerEvents:"none"}}>%</span>
                       </div>
                     ) : (
-                      <input type={f.type} required={f.required} value={formData[fKey]||""} onChange={e=>setFormData({...formData, [fKey]:e.target.value})} style={{width:"100%",padding:"10px",borderRadius:8,border:"1px solid var(--bd)",fontFamily:"inherit",fontSize:".9rem"}}/>
+                      <input type={f.type} required={f.required} value={formData[fKey]||""} onChange={e=>setFormData({...formData, [fKey]:e.target.value})} className="modern-input" />
                     )}
                   </div>
                 )})}
-                <button type="submit" className="bs" style={{gridColumn:"1/-1",padding:"14px",borderRadius:8,fontWeight:700,marginTop:10,opacity:submitting?0.5:1,fontSize:"1rem"}} disabled={submitting}>
+                {getForm(selectedEvent.event.formId)?.footerNotes && (
+                  <div className="rich-instructions" style={{gridColumn:"1/-1", marginBottom: 14, background: "#FFF0F0", border: "1px solid #FFCDCD", padding: "14px 18px", borderRadius: 8, fontSize: ".9rem", color: "#C0392B", lineHeight: 1.5}} dangerouslySetInnerHTML={{__html: cleanFormInstructions(getForm(selectedEvent.event.formId).footerNotes)}} />
+                )}
+                <button type="submit" className="modern-submit-btn" style={{gridColumn:"1/-1"}} disabled={submitting}>
                   {submitting ? "Submitting..." : "Submit Registration"}
                 </button>
               </form>
@@ -2139,9 +2143,9 @@ function Events({ C, lang, globalAuthToken, globalProfile, onPublicLogin, forceS
                       const spanFull = f.type === 'address' || f.type === 'file' || f.type === 'image' || f.type === 'fullname';
                       return (
                       <div key={idx} id={`form_field_${idx}`} style={{animation:"fadeIn 0.4s ease-out", gridColumn: (spanFull || mob) ? "1 / -1" : "auto"}}>
-                        <label style={{display:"block",fontSize:".75rem",fontWeight:600,color:"var(--mu)",marginBottom:4}}>{f.label || fKey} {f.required&&<span style={{color:"red"}}>*</span>}</label>
+                        <label className="modern-label">{f.label || fKey} {f.required&&<span style={{color:"red"}}>*</span>}</label>
                         {f.type === 'address' ? (
-                          <textarea required={f.required} value={formData[fKey]||""} onChange={e=>setFormData({...formData, [fKey]:e.target.value})} style={{width:"100%",padding:"10px",borderRadius:8,border:"1px solid var(--bd)",fontFamily:"inherit",fontSize:".9rem",minHeight:80,resize:"vertical"}}/>
+                          <textarea required={f.required} value={formData[fKey]||""} onChange={e=>setFormData({...formData, [fKey]:e.target.value})} className="modern-input" style={{minHeight:100,resize:"vertical"}}/>
                         ) : f.type === 'dropdown' ? (
                           <SearchableDropdown 
                             required={f.required} 
@@ -2151,26 +2155,26 @@ function Events({ C, lang, globalAuthToken, globalProfile, onPublicLogin, forceS
                             placeholder="-- Search & Select --" 
                           />
                         ) : f.type === 'gender' ? (
-                          <select required={f.required} value={formData[fKey]||""} onChange={e=>setFormData({...formData, [fKey]:e.target.value})} style={{width:"100%",padding:"10px",borderRadius:8,border:"1px solid var(--bd)",fontFamily:"inherit",fontSize:".9rem"}}>
+                          <select required={f.required} value={formData[fKey]||""} onChange={e=>setFormData({...formData, [fKey]:e.target.value})} className="modern-input" >
                             <option value="">-- Select Gender --</option>
                             <option value="Male">Male</option>
                             <option value="Female">Female</option>
                             <option value="Other">Other</option>
                           </select>
                         ) : f.type === 'fullname' ? (
-                          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8}}>
+                          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:12}}>
                             <input placeholder="First" required={f.required} value={(formData[fKey]?.split("|")[0])||""} onChange={e=>{
                               const parts = (formData[fKey]||"||").split("|"); parts[0] = e.target.value; setFormData({...formData, [fKey]:parts.join("|")});
-                            }} style={{width:"100%",padding:"10px",borderRadius:8,border:"1px solid var(--bd)",fontFamily:"inherit",fontSize:".9rem"}}/>
+                            }} className="modern-input" />
                             <input placeholder="Middle" value={(formData[fKey]?.split("|")[1])||""} onChange={e=>{
                               const parts = (formData[fKey]||"||").split("|"); parts[1] = e.target.value; setFormData({...formData, [fKey]:parts.join("|")});
-                            }} style={{width:"100%",padding:"10px",borderRadius:8,border:"1px solid var(--bd)",fontFamily:"inherit",fontSize:".9rem"}}/>
+                            }} className="modern-input" />
                             <input placeholder="Last" required={f.required} value={(formData[fKey]?.split("|")[2])||""} onChange={e=>{
                               const parts = (formData[fKey]||"||").split("|"); parts[2] = e.target.value; setFormData({...formData, [fKey]:parts.join("|")});
-                            }} style={{width:"100%",padding:"10px",borderRadius:8,border:"1px solid var(--bd)",fontFamily:"inherit",fontSize:".9rem"}}/>
+                            }} className="modern-input" />
                           </div>
                         ) : f.type === 'image' || f.type === 'file' ? (
-                          <div style={{padding:"12px",borderRadius:8,border:"1px dashed var(--bd)",background:"#FAFAFA"}}>
+                          <div style={{padding:"16px",borderRadius:12,border:"2px dashed #CBD5E1",background:"#F8FAFC",transition:"all 0.2s ease"}} onMouseEnter={e => e.currentTarget.style.borderColor="#3B82F6"} onMouseLeave={e => e.currentTarget.style.borderColor="#CBD5E1"}>
                             {(() => {
                               const uploadedUrls = formData[fKey] ? formData[fKey].split(",").map(s => s.trim()).filter(Boolean) : [];
                               return (
@@ -2277,15 +2281,18 @@ function Events({ C, lang, globalAuthToken, globalProfile, onPublicLogin, forceS
                           </div>
                         ) : f.type === 'percentage' ? (
                           <div style={{position:"relative",display:"flex",alignItems:"center"}}>
-                            <input type="number" step="0.01" min="0" max="100" placeholder="e.g. 85.50" required={f.required} value={formData[fKey]||""} onChange={e=>setFormData({...formData, [fKey]:e.target.value})} style={{width:"100%",padding:"10px 32px 10px 10px",borderRadius:8,border:"1px solid var(--bd)",fontFamily:"inherit",fontSize:".9rem"}}/>
+                            <input type="number" step="0.01" min="0" max="100" placeholder="e.g. 85.50" required={f.required} value={formData[fKey]||""} onChange={e=>setFormData({...formData, [fKey]:e.target.value})} className="modern-input" style={{paddingRight:32}}/>
                             <span style={{position:"absolute",right:12,fontWeight:700,color:"var(--dt)",fontSize:".9rem",pointerEvents:"none"}}>%</span>
                           </div>
                         ) : (
-                          <input type={f.type} required={f.required} value={formData[fKey]||""} onChange={e=>setFormData({...formData, [fKey]:e.target.value})} style={{width:"100%",padding:"10px",borderRadius:8,border:"1px solid var(--bd)",fontFamily:"inherit",fontSize:".9rem"}}/>
+                          <input type={f.type} required={f.required} value={formData[fKey]||""} onChange={e=>setFormData({...formData, [fKey]:e.target.value})} className="modern-input" />
                         )}
                       </div>
                     )})}
-                    <button type="submit" className="bs" style={{padding:"12px",borderRadius:8,fontWeight:700,marginTop:10,opacity:submitting?0.5:1}} disabled={submitting}>
+                    {getForm(selectedEvent.event.formId)?.footerNotes && (
+                      <div className="rich-instructions" style={{gridColumn: "1 / -1", marginBottom: 14, background: "#FFF0F0", border: "1px solid #FFCDCD", padding: "14px 18px", borderRadius: 8, fontSize: ".9rem", color: "#C0392B", lineHeight: 1.5}} dangerouslySetInnerHTML={{__html: cleanFormInstructions(getForm(selectedEvent.event.formId).footerNotes)}} />
+                    )}
+                    <button type="submit" className="modern-submit-btn" style={{gridColumn: "1 / -1"}} disabled={submitting}>
                       {submitting ? "Submitting..." : "Submit Registration"}
                     </button>
                   </form>
@@ -6407,6 +6414,19 @@ function AdminForms({ C, setC, saveToFb, mob, auth }) {
                  </div>
                </div>
 
+               <div style={{marginTop: 16}}>
+                 <label style={{display:"block",fontSize:".75rem",fontWeight:700,color:"var(--dt)",marginBottom:4}}>Footer Notes (Pre-Submit Alert/Disclaimer)</label>
+                 <div style={{background:"white", borderRadius:6, overflow:"hidden", border:"1px solid var(--bd)"}}>
+                   <ReactQuill theme="snow" modules={{
+                     toolbar: [
+                       ['bold', 'italic', 'underline', 'strike'],
+                       [{'color': []}, {'background': []}],
+                       ['link', 'clean']
+                     ]
+                   }} value={editingForm.footerNotes || ""} onChange={(content) => updateCurrentForm({...editingForm, footerNotes: content})} placeholder="Enter important notes, rules, or alerts before users submit..."/>
+                 </div>
+               </div>
+
                <div style={{display:"flex",justifyContent:"flex-end",gap:10,marginTop:12}}>
                  <button onClick={() => { setEditingForm(null); setEditingFormIdx(null); }} className="bt" style={{padding:"8px 20px",borderRadius:6,fontWeight:700,fontSize:".85rem"}}>Done & Close</button>
                </div>
@@ -6432,26 +6452,26 @@ function AdminForms({ C, setC, saveToFb, mob, auth }) {
                  </div>
                )}
                 {previewForm.instructions && (
-                  <div className="rich-instructions" style={{marginBottom: 14, background: "#FFFBF4", border: "1px solid #FFE8C5", padding: "12px 16px", borderRadius: 8, fontSize: ".85rem", color: "var(--tx)", lineHeight: 1.5}} dangerouslySetInnerHTML={{__html: cleanFormInstructions(previewForm.instructions)}} />
+                  <div className="rich-instructions" style={{gridColumn: "1 / -1", marginBottom: 14, background: "#FFFBF4", border: "1px solid #FFE8C5", padding: "12px 16px", borderRadius: 8, fontSize: ".85rem", color: "var(--tx)", lineHeight: 1.5}} dangerouslySetInnerHTML={{__html: cleanFormInstructions(previewForm.instructions)}} />
                 )}
                
                {(previewForm?.fields || []).length === 0 && <p style={{fontSize:".85rem",color:"var(--mu)",fontStyle:"italic"}}>This form has no fields.</p>}
                {(previewForm?.fields || []).map((field, idx) => (
                  <div key={idx}>
-                   <label style={{display:"block",fontSize:".75rem",fontWeight:600,color:"var(--mu)",marginBottom:4}}>{field.label} {field.required&&<span style={{color:"red"}}>*</span>}</label>
+                   <label className="modern-label">{field.label} {field.required&&<span style={{color:"red"}}>*</span>}</label>
                    {field.type === 'address' ? (
-                     <textarea disabled style={{width:"100%",padding:"10px",borderRadius:8,border:"1px solid var(--bd)",fontFamily:"inherit",fontSize:".9rem",minHeight:60,background:"#F9F9F9"}}/>
+                     <textarea disabled className="modern-input" style={{minHeight:80, resize:"vertical", opacity: 0.8, cursor: "not-allowed"}}/>
                    ) : field.type === 'dropdown' ? (
-                     <select disabled style={{width:"100%",padding:"10px",borderRadius:8,border:"1px solid var(--bd)",fontFamily:"inherit",fontSize:".9rem",background:"#F9F9F9"}}>
+                     <select disabled className="modern-input" style={{opacity: 0.8, cursor: "not-allowed"}}>
                        <option value="">-- Select --</option>
                        {(field.options||"").split(",").map((opt, oi) => opt.trim() && <option key={oi} value={opt.trim()}>{opt.trim()}</option>)}
                      </select>
                    ) : field.type === 'gender' ? (
-                     <select disabled style={{width:"100%",padding:"10px",borderRadius:8,border:"1px solid var(--bd)",fontFamily:"inherit",fontSize:".9rem",background:"#F9F9F9"}}>
+                     <select disabled className="modern-input" style={{opacity: 0.8, cursor: "not-allowed"}}>
                        <option value="">-- Select Gender --</option>
                      </select>
                    ) : field.type === 'fullname' ? (
-                     <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8}}>
+                     <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:12}}>
                        <input disabled placeholder="First" style={{width:"100%",padding:"10px",borderRadius:8,border:"1px solid var(--bd)",fontSize:".9rem",background:"#F9F9F9"}}/>
                        <input disabled placeholder="Middle" style={{width:"100%",padding:"10px",borderRadius:8,border:"1px solid var(--bd)",fontSize:".9rem",background:"#F9F9F9"}}/>
                        <input disabled placeholder="Last" style={{width:"100%",padding:"10px",borderRadius:8,border:"1px solid var(--bd)",fontSize:".9rem",background:"#F9F9F9"}}/>
@@ -6797,7 +6817,7 @@ function AdminEvents({ mob, C, setC, auth }) {
                     const spanFull = f.type === 'address' || f.type === 'file' || f.type === 'image' || f.type === 'fullname';
                     return (
                       <div key={idx} style={{gridColumn: (spanFull || mob) ? "1 / -1" : "auto", opacity: f.logicRules?.length ? 0.7 : 1}}>
-                        <label style={{display:"block",fontSize:".75rem",fontWeight:600,color:"var(--mu)",marginBottom:4}}>
+                        <label className="modern-label">
                           {f.label || fKey} {f.required&&<span style={{color:"red"}}>*</span>}
                           {f.logicRules?.length > 0 && <span style={{marginLeft:6,fontSize:".65rem",color:"#1A7A3E",background:"#E8F5E9",padding:"2px 4px",borderRadius:4}}>Conditional</span>}
                         </label>
@@ -6808,7 +6828,7 @@ function AdminEvents({ mob, C, setC, auth }) {
                             <option>-- Select --</option>
                           </select>
                         ) : f.type === 'fullname' ? (
-                          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8}}>
+                          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:12}}>
                             <input disabled placeholder="First" style={{width:"100%",padding:"10px",borderRadius:8,border:"1px solid var(--bd)",background:"white",fontSize:".9rem"}}/>
                             <input disabled placeholder="Middle" style={{width:"100%",padding:"10px",borderRadius:8,border:"1px solid var(--bd)",background:"white",fontSize:".9rem"}}/>
                             <input disabled placeholder="Last" style={{width:"100%",padding:"10px",borderRadius:8,border:"1px solid var(--bd)",background:"white",fontSize:".9rem"}}/>
@@ -9887,7 +9907,7 @@ function VerificationModal({ viewing, setViewing, allRegs, saveVerification, C }
                       return (
                         <div key={f.key}>
                           <div style={{fontSize:".75rem",color:"var(--mu)",fontWeight:600,marginBottom:4}}>{f.label}</div>
-                          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8}}>
+                          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:12}}>
                             <input 
                               placeholder="First" 
                               value={parts[0] || ""} 
