@@ -6783,7 +6783,28 @@ function AdminEvents({ mob, C, setC, auth }) {
                   <label style={{fontSize:".7rem",color:"var(--mu)",fontWeight:600}}>WhatsApp Group QR Code (Optional)</label>
                   <div style={{display:"flex",gap:8}}>
                     <input type="text" placeholder="Image URL..." value={ev.waGroupQrCode || ""} onChange={e=>updateItem(i,"waGroupQrCode",e.target.value)} style={{flex:1,padding:"6px",borderRadius:6,border:"1px solid var(--bd)",fontSize:".85rem",fontFamily:"inherit"}}/>
-                    <ImageUploadButton onUpload={(url) => updateItem(i,"waGroupQrCode",url)} btnStyle={{padding:"6px 12px"}} />
+                    <label style={{padding:"6px 12px",borderRadius:6,border:"1px solid var(--sf)",background:"#FFF4EC",color:"var(--sf)",fontWeight:700,fontSize:".75rem",cursor:"pointer",display:"flex",alignItems:"center",gap:4,whiteSpace:"nowrap"}}>
+                      Upload QR
+                      <input type="file" accept="image/*" style={{display:"none"}} onChange={(e) => {
+                        const file = e.target.files[0]; if(!file) return;
+                        const reader = new FileReader();
+                        reader.onload = (event) => {
+                          const img = new Image();
+                          img.onload = () => {
+                            const canvas = document.createElement('canvas');
+                            let w = img.width; let h = img.height;
+                            if (w > 800) { h = Math.round((800/w)*h); w = 800; }
+                            canvas.width = w; canvas.height = h;
+                            const ctx = canvas.getContext('2d');
+                            ctx.drawImage(img, 0, 0, w, h);
+                            const b64 = canvas.toDataURL('image/jpeg', 0.85);
+                            updateItem(i, "waGroupQrCode", b64);
+                          };
+                          img.src = event.target.result;
+                        };
+                        reader.readAsDataURL(file);
+                      }} />
+                    </label>
                   </div>
                 </div>
                 <div style={{gridColumn:"1/-1", marginTop:8, padding:12, background:"#FFF5F5", borderRadius:8, border:"2px solid #F5B8B8"}}>
