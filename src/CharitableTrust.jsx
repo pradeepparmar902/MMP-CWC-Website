@@ -1720,14 +1720,7 @@ function Events({ C, lang, globalAuthToken, globalProfile, onPublicLogin, forceS
                             ➡️ Forward Group Link to {targetName}
                           </a>
                         )}
-                        {true && (
-                          <div style={{fontSize: "10px", color: "#ccc", marginTop: 20, textAlign: "left", width: "100%", wordBreak: "break-all"}}>
-                             DEBUG INFO:<br/>
-                             LoggedInMob: {loggedInMob || "Empty"}<br/>
-                             TargetMobile: {targetMobile || "Empty"}<br/>
-                             isProxy: {isProxy ? "true" : "false"}
-                          </div>
-                        )}
+
                       </>
                     );
                   })()}
@@ -2048,14 +2041,7 @@ function Events({ C, lang, globalAuthToken, globalProfile, onPublicLogin, forceS
                               ➡️ Forward Group Link to {targetName}
                             </a>
                           )}
-                          {true && (
-                            <div style={{fontSize: "10px", color: "#ccc", marginTop: 20, textAlign: "left", width: "100%", wordBreak: "break-all"}}>
-                               DEBUG INFO:<br/>
-                               LoggedInMob: {loggedInMob || "Empty"}<br/>
-                               TargetMobile: {targetMobile || "Empty"}<br/>
-                               isProxy: {isProxy ? "true" : "false"}
-                            </div>
-                          )}
+
                         </div>
                       );
                     })()}
