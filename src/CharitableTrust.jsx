@@ -1864,7 +1864,7 @@ function Events({ C, lang, globalAuthToken, globalProfile, onPublicLogin, forceS
                         <span style={{position:"absolute",right:12,fontWeight:700,color:"var(--dt)",fontSize:".9rem",pointerEvents:"none"}}>%</span>
                       </div>
                     ) : (
-                      <input type={f.type} required={f.required} value={formData[fKey]||""} onChange={e=>setFormData({...formData, [fKey]:e.target.value})} className="modern-input" />
+                      <input type={f.type} required={f.required} value={formData[fKey]||""} onChange={e=>setFormData({...formData, [fKey]:e.target.value})} className="modern-input" autoComplete={f.type === 'email' ? 'email' : (f.type === 'tel' ? 'tel' : 'off')} />
                     )}
                   </div>
                 )})}
@@ -2285,7 +2285,7 @@ function Events({ C, lang, globalAuthToken, globalProfile, onPublicLogin, forceS
                             <span style={{position:"absolute",right:12,fontWeight:700,color:"var(--dt)",fontSize:".9rem",pointerEvents:"none"}}>%</span>
                           </div>
                         ) : (
-                          <input type={f.type} required={f.required} value={formData[fKey]||""} onChange={e=>setFormData({...formData, [fKey]:e.target.value})} className="modern-input" />
+                          <input type={f.type} required={f.required} value={formData[fKey]||""} onChange={e=>setFormData({...formData, [fKey]:e.target.value})} className="modern-input" autoComplete={f.type === 'email' ? 'email' : (f.type === 'tel' ? 'tel' : 'off')} />
                         )}
                       </div>
                     )})}
