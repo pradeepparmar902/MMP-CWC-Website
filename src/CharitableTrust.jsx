@@ -6233,7 +6233,29 @@ function AdminForms({ C, setC, saveToFb, mob, auth }) {
                             <div style={{flex:1, display:"flex", flexDirection:"column", gap: 6}}>
                               <input value={field.label} onChange={e => { const newF=[...editingForm.fields]; newF[fieldIdx].label=e.target.value; updateCurrentForm({...editingForm, fields:newF}); }} style={{padding:4, border:"1px solid var(--bd)", borderRadius:4, fontSize:".85rem", fontWeight:700, width: "100%"}}/>
                               <input value={field.dataKey||""} onChange={e => { const newF=[...editingForm.fields]; newF[fieldIdx].dataKey=e.target.value; updateCurrentForm({...editingForm, fields:newF}); }} placeholder="Data Header / Key (Optional)" style={{padding:4, border:"1px solid var(--bd)", borderRadius:4, fontSize:".75rem", width: "100%", marginTop: 4}} title="If provided, multiple fields with the same Data Header will be merged into one column when exporting data."/>
-                              {field.type === 'dropdown' && <input value={field.options||""} onChange={e => { const newF=[...editingForm.fields]; newF[fieldIdx].options=e.target.value; updateCurrentForm({...editingForm, fields:newF}); }} placeholder="Options (comma separated)" style={{padding:4, border:"1px solid var(--bd)", borderRadius:4, fontSize:".75rem"}}/>}
+                              {field.type === 'dropdown' && (
+                                <div style={{display:"flex", gap: 4, alignItems: "center"}}>
+                                  <input value={field.options||""} onChange={e => { const newF=[...editingForm.fields]; newF[fieldIdx].options=e.target.value; updateCurrentForm({...editingForm, fields:newF}); }} placeholder="Options (comma separated)" style={{flex:1, padding:4, border:"1px solid var(--bd)", borderRadius:4, fontSize:".75rem"}}/>
+                                  <label style={{cursor:"pointer", background:"#E8F5E9", border:"1px solid #C8E6C9", color:"#1A7A3E", padding:"4px 8px", borderRadius:4, fontSize:".7rem", fontWeight:600}} title="Upload CSV or Text file for options">
+                                    Upload File
+                                    <input type="file" accept=".txt,.csv" style={{display:"none"}} onChange={e => {
+                                      const file = e.target.files[0];
+                                      if(!file) return;
+                                      const reader = new FileReader();
+                                      reader.onload = (ev) => {
+                                        const txt = ev.target.result;
+                                        const opts = txt.split(/[\r\n,]+/).map(s=>s.trim()).filter(Boolean);
+                                        const newF=[...editingForm.fields];
+                                        const existingOpts = newF[fieldIdx].options ? newF[fieldIdx].options.split(",").map(s=>s.trim()).filter(Boolean) : [];
+                                        newF[fieldIdx].options = Array.from(new Set([...existingOpts, ...opts])).join(", ");
+                                        updateCurrentForm({...editingForm, fields:newF});
+                                      };
+                                      reader.readAsText(file);
+                                      e.target.value = null;
+                                    }}/>
+                                  </label>
+                                </div>
+                              )}
                               { (() => {
                                   const parentFields = editingForm.fields.slice(0, fieldIdx).filter(f => ['dropdown','radio','checkbox'].includes(f.type));
                                   if(parentFields.length === 0) return null;
