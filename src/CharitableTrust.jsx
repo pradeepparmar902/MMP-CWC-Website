@@ -8666,8 +8666,13 @@ function UserDashboard({ C, globalProfile, globalAuthToken, onClose }) {
       
       const mine = [];
       allRegs.forEach(r => {
-        const rMobile = cleanPhone(r["Mobile Number"] || r.mobile || r.phone || "");
-        const rName = String(r["Submitted By"] || r.name || r["Full Name"] || "").trim().toLowerCase();
+        let rMobile = cleanPhone(r["Mobile Number"] || r.mobile || r.phone || r["Mobile"] || r["Phone"] || r["મોબાઇલ"] || r["મોબાઈલ"] || r["WhatsApp Number"] || "");
+        if (!rMobile) {
+            const rawVals = Object.values(r).map(v => String(v).replace(/\D/g, ''));
+            const possibleMob = rawVals.find(v => v.length >= 10);
+            if (possibleMob) rMobile = cleanPhone(possibleMob);
+        }
+        const rName = String(r["Submitted By"] || r.name || r["Full Name"] || r["Name"] || r["નામ"] || r["Student Name"] || "").trim().toLowerCase();
         const sMob = cleanPhone(r.submitterMob || "");
         
         if ((mobileToMatch && rMobile === mobileToMatch) || (nameToMatch && rName === nameToMatch) || (mobileToMatch && sMob === mobileToMatch)) {
@@ -8796,8 +8801,13 @@ function UserDashboard({ C, globalProfile, globalAuthToken, onClose }) {
                   const nameToMatch = String(globalProfile.name || globalProfile['Full Name'] || "").trim().toLowerCase();
                   
                   const filteredRegs = regs.filter(r => {
-                    const rMobile = cleanPhone(r["Mobile Number"] || r.mobile || r.phone || "");
-                    const rName = String(r["Submitted By"] || r.name || r["Full Name"] || "").trim().toLowerCase();
+                    let rMobile = cleanPhone(r["Mobile Number"] || r.mobile || r.phone || r["Mobile"] || r["Phone"] || r["મોબાઇલ"] || r["મોબાઈલ"] || r["WhatsApp Number"] || "");
+        if (!rMobile) {
+            const rawVals = Object.values(r).map(v => String(v).replace(/\D/g, ''));
+            const possibleMob = rawVals.find(v => v.length >= 10);
+            if (possibleMob) rMobile = cleanPhone(possibleMob);
+        }
+        const rName = String(r["Submitted By"] || r.name || r["Full Name"] || r["Name"] || r["નામ"] || r["Student Name"] || "").trim().toLowerCase();
                     const sMob = cleanPhone(r.submitterMob || "");
                     
                     if (subTab === "For Me") {
