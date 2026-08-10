@@ -754,7 +754,7 @@ function Navbar({ C, lang, setLang, setPage, auth, onShowLogin, globalProfile, o
         <div style={{background:"var(--dt)",color:"white",fontSize:".72rem",padding:"6px 28px",display:"flex",justifyContent:"space-between",alignItems:"center",gap:8}}>
           <span>Tel: {C.trust.phone} | Email: {C.trust.email}</span>
           <div style={{display:"flex",gap:16,alignItems:"center"}}>
-            <span>80G Tax Exemption Available</span>
+            <span>{C.trust?.topBarNotice !== undefined ? C.trust.topBarNotice : "80G Tax Exemption Available"}</span>
             <div style={{width:1,height:12,background:"rgba(255,255,255,.3)"}}/>
             <button onClick={()=>setLang(lang==="en"?"gu":"en")} style={{background:"transparent",border:"none",color:"white",cursor:"pointer",fontSize:".75rem",fontWeight:700}}>{lang==="en"?"ગુજરાતી":"English"}</button>
             
@@ -943,9 +943,19 @@ function Navbar({ C, lang, setLang, setPage, auth, onShowLogin, globalProfile, o
 // ── HERO ──────────────────────────────────────────────────────────────────────
 function Hero({ C, lang }) {
   const w = useW(); const mob = w < 768; const h = C.hero;
+  const [slideIndex, setSlideIndex] = useState(0);
+
+  useEffect(() => {
+    if (h?.heroType === 'slider' && h?.sliderImages?.length > 1) {
+      const interval = setInterval(() => {
+        setSlideIndex(prev => (prev + 1) % h.sliderImages.length);
+      }, 3500);
+      return () => clearInterval(interval);
+    }
+  }, [h?.heroType, h?.sliderImages]);
   const isTopBannerShown = (h?.showTopBanner === true || h?.showTopBanner === "true") && Boolean(h?.topBanner);
   const isStatsShown = h?.showStats !== false && h?.showStats !== "false" && h?.showStats !== 0;
-  const isImageShown = (h?.showImage === true || h?.showImage === "true") && Boolean(h?.image);
+  const isImageShown = (h?.showImage === true || h?.showImage === "true") && (h?.heroType === 'slider' ? h?.sliderImages?.length > 0 : Boolean(h?.image));
   const isRegBtnShown = h?.showRegBtn === true || h?.showRegBtn === "true";
 
   return (
@@ -985,6 +995,8 @@ function Hero({ C, lang }) {
           {isImageShown && (
             <div style={{
               width:"100%",
+              height:"100%",
+              alignSelf:"stretch",
               borderRadius:16,
               overflow:"hidden",
               background: h?.imageBg === "white" ? "white" : h?.imageBg === "glass" ? "rgba(255,255,255,0.15)" : "transparent",
@@ -994,24 +1006,65 @@ function Hero({ C, lang }) {
               display:"flex",
               alignItems:"center",
               justifyContent:"center",
+              position: "relative",
               padding: (h?.imageFit || "contain") === "contain" && h?.imageBg && h?.imageBg !== "transparent" ? 16 : 0
             }}>
-              <img 
-                src={h.image} 
-                alt="Campaign Image" 
-                style={{
-                  maxWidth:"100%",
-                  width: h?.imageWidth ? `${h.imageWidth}px` : "320px",
-                  maxHeight: h?.imageMaxHeight || 420,
-                  height:"auto",
-                  objectFit: h?.imageFit || "contain",
-                  imageRendering: (h?.imageRendering === "smooth") ? "auto" : "-webkit-optimize-contrast",
-                  filter: h?.imageRendering === "super-sharp" ? "contrast(1.1) brightness(1.02)" : "none",
-                  borderRadius:12,
-                  display:"block",
-                  margin:"0 auto"
-                }} 
-              />
+              {h?.heroType === 'slider' && h?.sliderImages?.length > 0 ? (
+                <div style={{width: "100%", height: "100%", maxHeight: h?.imageMaxHeight || 420, position:"relative", overflow:"hidden", borderRadius:12}}>
+                  <div style={{
+                    display:"flex", 
+                    width:`${h.sliderImages.length * 100}%`, 
+                    height:"100%",
+                    transform: `translateX(-${slideIndex * (100 / h.sliderImages.length)}%)`,
+                    transition: "transform 0.6s ease-in-out"
+                  }}>
+                    {h.sliderImages.map((img, i) => (
+                      <div key={i} style={{width: `${100 / h.sliderImages.length}%`, height:"100%", display:"flex", alignItems:"center", justifyContent:"center"}}>
+                        <img src={img} alt={`Slide ${i}`} style={{
+                          maxWidth:"100%",
+                          width: "100%",
+                          maxHeight: h?.imageMaxHeight || 420,
+                          height:"100%",
+                          objectFit: h?.imageFit || "contain",
+                          imageRendering: (h?.imageRendering === "smooth") ? "auto" : "-webkit-optimize-contrast",
+                          filter: h?.imageRendering === "super-sharp" ? "contrast(1.1) brightness(1.02)" : "none",
+                          display:"block",
+                          margin:"0 auto"
+                        }} />
+                      </div>
+                    ))}
+                  </div>
+                  {h.sliderImages.length > 1 && (
+                    <div style={{position:"absolute", bottom:12, left:0, right:0, display:"flex", justifyContent:"center", gap:8}}>
+                      {h.sliderImages.map((_, i) => (
+                        <div key={i} onClick={() => setSlideIndex(i)} style={{
+                          width: 10, height: 10, borderRadius: "50%", cursor: "pointer",
+                          background: slideIndex === i ? "var(--dt, #fff)" : "rgba(255,255,255,0.5)",
+                          boxShadow: "0 1px 3px rgba(0,0,0,0.4)",
+                          transition: "background 0.3s"
+                        }} />
+                      ))}
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <img 
+                  src={h.image} 
+                  alt="Campaign Image" 
+                  style={{
+                    maxWidth:"100%",
+                    width: h?.imageWidth ? `${h.imageWidth}px` : "320px",
+                    maxHeight: h?.imageMaxHeight || 420,
+                    height:"auto",
+                    objectFit: h?.imageFit || "contain",
+                    imageRendering: (h?.imageRendering === "smooth") ? "auto" : "-webkit-optimize-contrast",
+                    filter: h?.imageRendering === "super-sharp" ? "contrast(1.1) brightness(1.02)" : "none",
+                    borderRadius:12,
+                    display:"block",
+                    margin:"0 auto"
+                  }} 
+                />
+              )}
             </div>
           )}
           {isRegBtnShown && (
@@ -4220,6 +4273,7 @@ function ContentEditor({ C, setC, setPage, auth, hasAccess, master }) {
           <F label="Trust Subtitle (Under Name)" path="trust.subtitle"/>
           <F label="Phone Number" path="trust.phone"/>
           <F label="Email Address" path="trust.email"/>
+          <F label="Top Bar Notice (Header)" path="trust.topBarNotice" hint="e.g. 80G Tax Exemption Available"/>
           <F label="Office Hours" path="trust.hours"/>
           <F label="Established Year" path="trust.estd"/>
           <F label="PAN Number" path="trust.panNo"/>
@@ -4374,17 +4428,60 @@ function ContentEditor({ C, setC, setPage, auth, hasAccess, master }) {
           </div>
           {draft.hero.showImage && (
             <div style={{marginBottom: 24, marginLeft: 20, display:"flex", flexDirection:"column", gap:14, background:"#F9FAFB", padding:16, borderRadius:12, border:"1px solid var(--bd)"}}>
-              <div style={{display:"flex", alignItems:"flex-end", gap:8}}>
-                <div style={{flex:1}}>
-                  <F label="Image URL (Or upload PNG/JPEG)" path="hero.image" hint="Paste image URL or click Upload"/>
-                </div>
-                <div style={{marginBottom: 16}}>
-                  <input id="hero-img-upload" type="file" accept="image/*" style={{display:"none"}} onChange={handleHeroImageUpload} />
-                  <label htmlFor="hero-img-upload" style={{display:"inline-block",background:"var(--dt)",color:"white",padding:"10px 16px",borderRadius:8,fontSize:".85rem",cursor:"pointer",fontWeight:600}}>
-                    {uploading ? "Uploading..." : "Upload File"}
-                  </label>
-                </div>
+              <div style={{marginBottom:10}}>
+                <label style={{display:"block",fontSize:".85rem",fontWeight:600,color:"var(--dt)",marginBottom:6}}>Hero Media Type</label>
+                <select value={draft.hero.heroType || "single"} onChange={(e)=>upd("hero.heroType", e.target.value)} style={{width:"100%",padding:"10px 14px",borderRadius:8,border:"1px solid var(--bd)",fontSize:".9rem",outline:"none",background:"white"}}>
+                  <option value="single">Single Image</option>
+                  <option value="slider">Multi-Image Slider (Carousel)</option>
+                </select>
               </div>
+
+              {(draft.hero.heroType === "slider") ? (
+                <div style={{border:"1px solid var(--bd)",padding:16,borderRadius:8,background:"#fff"}}>
+                  <label style={{display:"block",fontSize:".85rem",fontWeight:600,color:"var(--dt)",marginBottom:12}}>Slider Images (Will slide right to left)</label>
+                  {(draft.hero.sliderImages || []).map((imgUrl, i) => (
+                    <div key={i} style={{display:"flex",gap:8,marginBottom:10,alignItems:"center"}}>
+                      {imgUrl && <img src={imgUrl} alt="Slide" style={{width:40,height:40,objectFit:"cover",borderRadius:4,border:"1px solid #ccc"}} />}
+                      <input type="text" value={imgUrl} onChange={(e) => {
+                        const newImgs = [...(draft.hero.sliderImages || [])];
+                        newImgs[i] = e.target.value;
+                        upd("hero.sliderImages", newImgs);
+                      }} style={{flex:1,padding:"8px 12px",borderRadius:6,border:"1px solid var(--bd)",fontSize:".8rem"}} placeholder="Image URL"/>
+                      <button onClick={() => {
+                        const newImgs = [...(draft.hero.sliderImages || [])];
+                        newImgs.splice(i, 1);
+                        upd("hero.sliderImages", newImgs);
+                      }} style={{padding:"8px",background:"#ff4d4f",color:"white",border:"none",borderRadius:6,cursor:"pointer",fontSize:".8rem"}}>X</button>
+                    </div>
+                  ))}
+                  <div style={{display:"flex",gap:12,marginTop:12}}>
+                    <button onClick={() => upd("hero.sliderImages", [...(draft.hero.sliderImages || []), ""])} style={{padding:"8px 14px",background:"#e0e0e0",color:"var(--dt)",border:"none",borderRadius:6,cursor:"pointer",fontSize:".85rem",fontWeight:600}}>+ Add Image URL</button>
+                    <input id="hero-slider-upload" type="file" accept="image/*" multiple style={{display:"none"}} onChange={(e) => {
+                      const files = Array.from(e.target.files);
+                      files.forEach(file => {
+                        const reader = new FileReader();
+                        reader.onloadend = () => {
+                          upd("hero.sliderImages", [...(draft.hero.sliderImages || []), reader.result]);
+                        };
+                        reader.readAsDataURL(file);
+                      });
+                    }} />
+                    <label htmlFor="hero-slider-upload" style={{padding:"8px 14px",background:"var(--dt)",color:"white",border:"none",borderRadius:6,cursor:"pointer",fontSize:".85rem",fontWeight:600,display:"inline-block"}}>+ Upload Images</label>
+                  </div>
+                </div>
+              ) : (
+                <div style={{display:"flex", alignItems:"flex-end", gap:8}}>
+                  <div style={{flex:1}}>
+                    <F label="Image URL (Or upload PNG/JPEG)" path="hero.image" hint="Paste image URL or click Upload"/>
+                  </div>
+                  <div style={{marginBottom: 16}}>
+                    <input id="hero-img-upload" type="file" accept="image/*" style={{display:"none"}} onChange={handleHeroImageUpload} />
+                    <label htmlFor="hero-img-upload" style={{display:"inline-block",background:"var(--dt)",color:"white",padding:"10px 16px",borderRadius:8,fontSize:".85rem",cursor:"pointer",fontWeight:600}}>
+                      {uploading ? "Uploading..." : "Upload File"}
+                    </label>
+                  </div>
+                </div>
+              )}
 
               <div style={{display:"grid", gridTemplateColumns:"1fr 1fr 1fr", gap:12}}>
                 <div>
