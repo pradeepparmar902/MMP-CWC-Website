@@ -13262,7 +13262,18 @@ function AdminProfile({ auth, mob, adminProfile, setAdminProfile }) {
 export default function App() {
   const [page,    setPage]    = useState("public");
   const [lang,    setLang]    = useState("en");
-  const [C,       setC]       = useState(()=>JSON.parse(JSON.stringify(DC)));
+  const [C,       setC]       = useState(() => {
+    const defaultData = JSON.parse(JSON.stringify(DC));
+    try {
+      const cached = localStorage.getItem("trustConfig");
+      if (cached) {
+        const parsed = JSON.parse(cached);
+        if (parsed.trust) defaultData.trust = { ...defaultData.trust, ...parsed.trust };
+        if (parsed.theme) defaultData.theme = parsed.theme;
+      }
+    } catch (e) {}
+    return defaultData;
+  });
   const [auth,    setAuth]    = useState(null);      // { idToken, email }
   const [fbState, setFbState] = useState("loading"); // loading | ready | error
   const [showLogin, setShowLogin] = useState(false);
@@ -13292,6 +13303,15 @@ export default function App() {
       clearTimeout(safetyTimer);
     };
   }, []);
+
+  // ── Cache config for next load ───────────────────────────────────────────
+  useEffect(() => {
+    if (C?.trust) {
+      try {
+        localStorage.setItem("trustConfig", JSON.stringify({ trust: C.trust, theme: C.theme }));
+      } catch (e) {}
+    }
+  }, [C?.trust?.name, C?.trust?.logo?.url, C?.theme]);
 
   // ── Dynamically update document title, favicon, and SEO meta tags ──────────────
   useEffect(() => {
@@ -13361,7 +13381,9 @@ export default function App() {
       <G theme={C?.theme || "classic"} />
       <div style={{minHeight:"100vh",background:"linear-gradient(135deg,#0D4B5E,#1A6B87)",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:20}}>
         <LogoMark logo={{...C.trust.logo, size: 60}} mob={false} />
-        <div style={{color:"white",fontFamily:"'Playfair Display',serif",fontSize:"1.1rem"}}>Loading {C.trust.name}...</div>
+        <div style={{color:"white",fontFamily:"'Playfair Display',serif",fontSize:"1.1rem"}}>
+          Loading {C.trust.name === "Mumbai Meghwal Panchayat" && !localStorage.getItem("trustConfig") ? "Community Portal" : C.trust.name}...
+        </div>
         <div style={{width:40,height:4,borderRadius:2,background:"rgba(255,255,255,.2)",overflow:"hidden"}}>
           <div style={{height:"100%",background:"var(--sf)",borderRadius:2,animation:"shimLoad 1.2s ease-in-out infinite"}}/>
         </div>
