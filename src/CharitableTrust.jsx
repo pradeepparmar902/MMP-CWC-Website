@@ -5114,6 +5114,7 @@ const ANAV = [
   {id:"achievements",icon:"🏆",label:"Achievements"},
   {id:"settings",icon:"⚙️",label:"Settings"},
   {id:"access",icon:"🔐",label:"Access Control"},
+  {id:"backup",icon:"💾",label:"Backup & Restore"},
   {id:"profile",icon:"👤",label:"My Profile"},
   {id:"meritlist",label:"Reports & Lists",icon:"📑"},
   {id:"inviteletters",label:"Invite Letters",icon:"📩"},
@@ -5505,7 +5506,87 @@ function AdminManualSidePanel({ activeTab, isOpen, onClose, master, C, setC, aut
 
     </div>
   );
+}// ── BACKUP AND RESTORE ───────────────────────────────────────────────────────
+function BackupRestore({ C, setC, auth }) {
+  const fileRef = useRef(null);
+  
+  const handleExport = () => {
+    const dataStr = JSON.stringify(C, null, 2);
+    const blob = new Blob([dataStr], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `trust_backup_${new Date().toISOString().split('T')[0]}.json`;
+    link.click();
+    URL.revokeObjectURL(url);
+  };
+  
+  const handleImport = async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    
+    try {
+      const text = await file.text();
+      const data = JSON.parse(text);
+      
+      if (!data || !data.trust || !data.events) {
+        throw new Error("Invalid backup file structure. Missing required keys (trust, events).");
+      }
+      
+      if (window.confirm("Are you sure you want to overwrite all data with this backup? This action cannot be undone.")) {
+        setC(data);
+        
+        // Save to Firebase immediately if authenticated
+        if (auth?.idToken) {
+          try {
+            await fbSave(data, auth.idToken);
+            alert("Data successfully restored and saved to database!");
+          } catch (err) {
+            alert("Data restored to preview, but failed to save to database: " + err.message + "\\nPlease go to Settings and click 'Save Settings' manually.");
+          }
+        } else {
+          alert("Data restored to preview! Please go to Settings and click 'Save Settings' to push to database.");
+        }
+      }
+    } catch (err) {
+      alert("Failed to parse backup file: " + err.message);
+    }
+    
+    // Clear file input
+    e.target.value = "";
+  };
+  
+  return (
+    <div style={{animation:"fadeIn .4s ease"}}>
+      <h2 style={{fontSize:"1.8rem",color:"var(--dt)",marginBottom:8}}>Backup & Restore</h2>
+      <p style={{color:"var(--mu)",marginBottom:30,lineHeight:1.6}}>Download a complete snapshot of all your website data (events, programs, trust details) as a JSON file, or upload a previously downloaded backup file to completely restore your database.</p>
+      
+      <div style={{display:"grid",gap:20,gridTemplateColumns:"repeat(auto-fit, minmax(300px, 1fr))"}}>
+        {/* Export Card */}
+        <div style={{background:"white",padding:24,borderRadius:16,border:"1px solid var(--bd)",boxShadow:"0 4px 15px rgba(0,0,0,0.03)"}}>
+          <div style={{fontSize:"2rem",marginBottom:12}}>📥</div>
+          <h3 style={{fontSize:"1.2rem",color:"var(--dt)",marginBottom:8}}>Export Data (Backup)</h3>
+          <p style={{color:"var(--mu)",fontSize:"0.9rem",marginBottom:20,lineHeight:1.5}}>Download all current settings, text, events, and configuration to your computer as a JSON file.</p>
+          <button onClick={handleExport} className="bt" style={{width:"100%",padding:"12px",borderRadius:8,fontSize:"1rem",fontWeight:600,display:"flex",alignItems:"center",justifyContent:"center",gap:8}}>
+            Download Backup
+          </button>
+        </div>
+        
+        {/* Import Card */}
+        <div style={{background:"white",padding:24,borderRadius:16,border:"1px solid var(--bd)",boxShadow:"0 4px 15px rgba(0,0,0,0.03)"}}>
+          <div style={{fontSize:"2rem",marginBottom:12}}>📤</div>
+          <h3 style={{fontSize:"1.2rem",color:"var(--dt)",marginBottom:8}}>Restore Data</h3>
+          <p style={{color:"var(--mu)",fontSize:"0.9rem",marginBottom:20,lineHeight:1.5}}>Upload a previously saved `.json` backup file. <strong style={{color:"#D32F2F"}}>Warning:</strong> This will overwrite all current website data.</p>
+          <input type="file" accept=".json" style={{display:"none"}} ref={fileRef} onChange={handleImport} />
+          <button onClick={() => fileRef.current?.click()} className="bt-sec" style={{width:"100%",padding:"12px",borderRadius:8,fontSize:"1rem",fontWeight:600,display:"flex",alignItems:"center",justifyContent:"center",gap:8,background:"#FEEAEA",color:"#D32F2F",borderColor:"#FEEAEA"}}>
+            Upload & Restore Backup
+          </button>
+        </div>
+      </div>
+    </div>
+  );
 }
+
 
 function Admin({ C, setC, setPage, auth, onLogout, onShowLogin }) {
   const isMasterAdmin = (email) => ["admin@vidyagohiltrust.org", "pradeepparmar902@yahoo.com"].includes(email?.toLowerCase());
@@ -5514,7 +5595,7 @@ function Admin({ C, setC, setPage, auth, onLogout, onShowLogin }) {
 
   let hasAccess = [];
   if (auth?.email) {
-    hasAccess = master ? ["content", "seo", "overview", "donations", "events", "registrations", "volunteers", "gallery", "team", "achievements", "settings", "access", "profile", "meritlist", "inviteletters", "certificates"] : [...(userRole?.permissions || []), "profile"];
+    hasAccess = master ? ["content", "seo", "overview", "donations", "events", "registrations", "volunteers", "gallery", "team", "achievements", "settings", "access", "backup", "profile", "meritlist", "inviteletters", "certificates"] : [...(userRole?.permissions || []), "profile"];
   }
 
   const visibleNav = ANAV.filter(item => hasAccess.includes(item.id));
@@ -5648,6 +5729,7 @@ function Admin({ C, setC, setPage, auth, onLogout, onShowLogin }) {
           {tab==="achievements" && hasAccess.includes("achievements") && <AdminAchievements mob={mob} C={C} setC={setC} auth={auth}/>}
           {tab==="settings"  && hasAccess.includes("settings") && <Settings mob={mob} C={C} setC={setC} auth={auth} setPage={setPage} hasAccess={hasAccess} master={master}/>}
           {tab==="access"    && hasAccess.includes("access") && <AdminAccess C={C} setC={setC} master={master} auth={auth}/>}
+          {tab==="backup"    && hasAccess.includes("backup") && <BackupRestore C={C} setC={setC} auth={auth}/>}
           {tab==="profile"   && hasAccess.includes("profile") && <AdminProfile auth={auth} mob={mob} adminProfile={adminProfile} setAdminProfile={setAdminProfile}/>}
         
           <AdminManualSidePanel activeTab={tab} isOpen={isHelpOpen} onClose={() => setIsHelpOpen(false)} master={master} C={C} setC={setC} auth={auth} /></div>
