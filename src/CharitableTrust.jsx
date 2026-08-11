@@ -13263,13 +13263,14 @@ export default function App() {
   const [page,    setPage]    = useState("public");
   const [lang,    setLang]    = useState("en");
   const [C,       setC]       = useState(() => {
-    const defaultData = JSON.parse(JSON.stringify(DC));
+    let defaultData = JSON.parse(JSON.stringify(DC));
     try {
       const cached = localStorage.getItem("trustConfig");
       if (cached) {
         const parsed = JSON.parse(cached);
-        if (parsed.trust) defaultData.trust = { ...defaultData.trust, ...parsed.trust };
-        if (parsed.theme) defaultData.theme = parsed.theme;
+        // Deep merge the cached config onto the default config
+        // This ensures if we add new properties to DC in future updates, they aren't lost
+        defaultData = { ...defaultData, ...parsed, trust: { ...defaultData.trust, ...(parsed.trust || {}) } };
       }
     } catch (e) {}
     return defaultData;
@@ -13308,10 +13309,10 @@ export default function App() {
   useEffect(() => {
     if (C?.trust) {
       try {
-        localStorage.setItem("trustConfig", JSON.stringify({ trust: C.trust, theme: C.theme }));
+        localStorage.setItem("trustConfig", JSON.stringify(C));
       } catch (e) {}
     }
-  }, [C?.trust?.name, C?.trust?.logo?.url, C?.theme]);
+  }, [C]);
 
   // ── Dynamically update document title, favicon, and SEO meta tags ──────────────
   useEffect(() => {
