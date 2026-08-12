@@ -5596,8 +5596,17 @@ function BackupRestore({ C, setC, auth }) {
           const val = rowData[key];
           if (typeof val === "string" && val.startsWith("http") && val.includes("firebasestorage")) {
             try {
-              // Fetch the file
-              const res = await fetch(val);
+              // Fetch the file with CORS proxy fallback
+              let res;
+              try {
+                res = await fetch(val);
+                if (!res.ok) throw new Error("Direct fetch failed");
+              } catch (directErr) {
+                // Fallback to CORS proxy
+                res = await fetch("https://corsproxy.io/?" + encodeURIComponent(val));
+                if (!res.ok) throw new Error("Proxy fetch failed");
+              }
+              
               const blob = await res.blob();
               
               // Determine extension safely
@@ -5619,6 +5628,7 @@ function BackupRestore({ C, setC, auth }) {
               
             } catch (err) {
               console.error("Failed to download attachment for", reg["Full Name"], key, err);
+              // Leave the original URL in the Excel if download fails
             }
           }
         }
