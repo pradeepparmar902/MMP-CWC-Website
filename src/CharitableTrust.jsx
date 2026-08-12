@@ -1713,7 +1713,7 @@ function Events({ C, lang, globalAuthToken, globalProfile, onPublicLogin, forceS
         await fbSubmitRegistration({
           eventId: selectedEvent.event.id,
           eventTitle: selectedEvent.event.title,
-          submitterMob: (globalProfile?.mobile || mobile || ""),
+          submitterMob: (globalProfile?.mobile || `${countryCode} ${mobile.replace(/\D/g, '').slice(-10)}`),
           formData: {
             ...formData,
             logHistory: [initialLog]
@@ -1968,8 +1968,61 @@ function Events({ C, lang, globalAuthToken, globalProfile, onPublicLogin, forceS
                         <input type="number" step="0.01" min="0" max="100" placeholder="e.g. 85.50" required={f.required} value={formData[fKey]||""} onChange={e=>setFormData({...formData, [fKey]:e.target.value})} className="modern-input" style={{paddingRight:32}}/>
                         <span style={{position:"absolute",right:12,fontWeight:700,color:"var(--dt)",fontSize:".9rem",pointerEvents:"none"}}>%</span>
                       </div>
+                    ) : f.type === 'tel' ? (
+                      <div style={{display:"flex",gap:8}}>
+                        {(() => {
+                          const rawVal = formData[fKey] || "";
+                          let currentCode = "+91";
+                          let currentNum = "";
+                          if (rawVal.startsWith("+")) {
+                            const spaceIdx = rawVal.indexOf(" ");
+                            if (spaceIdx !== -1) {
+                              currentCode = rawVal.substring(0, spaceIdx);
+                              currentNum = rawVal.substring(spaceIdx + 1).replace(/\\D/g, "");
+                            } else {
+                              if (rawVal.startsWith("+91") && rawVal.length > 3) {
+                                currentCode = "+91";
+                                currentNum = rawVal.substring(3).replace(/\\D/g, "");
+                              } else {
+                                currentNum = rawVal.replace(/\\D/g, "");
+                              }
+                            }
+                          } else {
+                            currentNum = rawVal.replace(/\\D/g, "");
+                          }
+                          return (
+                            <>
+                              <select 
+                                value={currentCode} 
+                                onChange={e => setFormData({...formData, [fKey]: `${e.target.value} ${currentNum}`})}
+                                style={{padding:"14px 8px", borderRadius:12, border:"1px solid #E2E8F0", fontSize:".95rem", fontWeight:700, background:"#F8FAFC", color:"#1E293B", outline:"none", cursor:"pointer", width: 85, boxSizing: "border-box"}}
+                              >
+                                <option value="+91">+91</option>
+                                <option value="+1">+1</option>
+                                <option value="+44">+44</option>
+                                <option value="+971">+971</option>
+                                <option value="+966">+966</option>
+                                <option value="+61">+61</option>
+                                <option value="+65">+65</option>
+                              </select>
+                              <input 
+                                type="tel" 
+                                required={f.required} 
+                                value={currentNum} 
+                                onChange={e => {
+                                  const val = e.target.value.replace(/\\D/g, "").slice(0, 10);
+                                  setFormData({...formData, [fKey]: `${currentCode} ${val}`});
+                                }} 
+                                className="modern-input" 
+                                style={{flex:1}} 
+                                autoComplete="tel" 
+                              />
+                            </>
+                          );
+                        })()}
+                      </div>
                     ) : (
-                      <input type={f.type} required={f.required} value={formData[fKey]||""} onChange={e=>setFormData({...formData, [fKey]:e.target.value})} className="modern-input" autoComplete={f.type === 'email' ? 'email' : (f.type === 'tel' ? 'tel' : 'off')} />
+                      <input type={f.type} required={f.required} value={formData[fKey]||""} onChange={e=>setFormData({...formData, [fKey]:e.target.value})} className="modern-input" autoComplete={f.type === 'email' ? 'email' : 'off'} />
                     )}
                   </div>
                 )})}
@@ -5594,42 +5647,49 @@ function BackupRestore({ C, setC, auth }) {
         // Find URLs (looking for firebasestorage URLs)
         for (const key in rowData) {
           const val = rowData[key];
-          if (typeof val === "string" && val.startsWith("http") && val.includes("firebasestorage")) {
-            try {
-              // Fetch the file with CORS proxy fallback
-              let res;
+          if (typeof val === "string" && val.includes("http") && val.includes("firebasestorage")) {
+            const urls = val.split(",").map(u => u.trim()).filter(u => u.startsWith("http"));
+            if (urls.length === 0) continue;
+            
+            const localPaths = [];
+            for (const u of urls) {
               try {
-                res = await fetch(val);
-                if (!res.ok) throw new Error("Direct fetch failed");
-              } catch (directErr) {
-                // Fallback to CORS proxy
-                res = await fetch("https://api.allorigins.win/raw?url=" + encodeURIComponent(val));
-                if (!res.ok) throw new Error("Proxy fetch failed");
+                // Fetch the file with CORS proxy fallback
+                let res;
+                try {
+                  res = await fetch(u);
+                  if (!res.ok) throw new Error("Direct fetch failed");
+                } catch (directErr) {
+                  // Fallback to CORS proxy
+                  res = await fetch("https://api.allorigins.win/raw?url=" + encodeURIComponent(u));
+                  if (!res.ok) throw new Error("Proxy fetch failed");
+                }
+                
+                const blob = await res.blob();
+                
+                // Determine extension safely
+                let ext = u.split('?')[0].split('.').pop();
+                if (!ext || ext.length > 5 || ext.includes('/')) {
+                  const mime = blob.type.split('/')[1];
+                  ext = mime && mime !== "octet-stream" ? mime : "jpg";
+                }
+                if (ext === "jpeg") ext = "jpg";
+                
+                // Safe file name
+                const safeName = `${(reg["Full Name"] || "Student").replace(/[^a-z0-9]/gi, '_')}_${key.replace(/[^a-z0-9]/gi, '_')}_${fileCounter++}.${ext}`;
+                
+                // Add to zip
+                attachmentsFolder.file(safeName, blob);
+                
+                // Keep track of local path
+                localPaths.push(`../attachments/${safeName}`); 
+                
+              } catch (err) {
+                console.error("Failed to download attachment for", reg["Full Name"], key, err);
+                localPaths.push(u); // keep original URL if failed
               }
-              
-              const blob = await res.blob();
-              
-              // Determine extension safely
-              let ext = val.split('?')[0].split('.').pop();
-              if (!ext || ext.length > 5 || ext.includes('/')) {
-                const mime = blob.type.split('/')[1];
-                ext = mime && mime !== "octet-stream" ? mime : "jpg";
-              }
-              if (ext === "jpeg") ext = "jpg";
-              
-              // Safe file name
-              const safeName = `${(reg["Full Name"] || "Student").replace(/[^a-z0-9]/gi, '_')}_${key.replace(/[^a-z0-9]/gi, '_')}_${fileCounter++}.${ext}`;
-              
-              // Add to zip
-              attachmentsFolder.file(safeName, blob);
-              
-              // Update Excel Data to point to the local file
-              rowData[key] = `../attachments/${safeName}`; 
-              
-            } catch (err) {
-              console.error("Failed to download attachment for", reg["Full Name"], key, err);
-              // Leave the original URL in the Excel if download fails
             }
+            rowData[key] = localPaths.join(", ");
           }
         }
         excelData.push(rowData);
@@ -9047,8 +9107,9 @@ function UserDashboard({ C, globalProfile, globalAuthToken, onClose }) {
     try {
       setLoading(true);
       const allRegs = await fbFetchRegistrations(globalAuthToken);
-      const mobileToMatch = cleanPhone(globalProfile.mobile || globalProfile['Mobile Number'] || "");
-      const nameToMatch = String(globalProfile.name || globalProfile['Full Name'] || "").trim().toLowerCase();
+      const mobileToMatch = cleanPhone(globalProfile?.mobile || globalProfile?.['Mobile Number'] || "");
+      const nameToMatch = String(globalProfile?.name || globalProfile?.['Full Name'] || "").trim().toLowerCase();
+      const emailToMatch = String(globalProfile?.email || auth?.email || "").trim().toLowerCase();
       
       const mine = [];
       allRegs.forEach(r => {
@@ -9059,9 +9120,10 @@ function UserDashboard({ C, globalProfile, globalAuthToken, onClose }) {
             if (possibleMob) rMobile = cleanPhone(possibleMob);
         }
         const rName = String(r["Submitted By"] || r.name || r["Full Name"] || r["Name"] || r["નામ"] || r["Student Name"] || "").trim().toLowerCase();
+        const rEmail = String(r["Email Address"] || r.email || r["Email"] || "").trim().toLowerCase();
         const sMob = cleanPhone(r.submitterMob || "");
         
-        if ((mobileToMatch && rMobile === mobileToMatch) || (nameToMatch && rName === nameToMatch) || (mobileToMatch && sMob === mobileToMatch)) {
+        if ((mobileToMatch && rMobile === mobileToMatch) || (nameToMatch && rName === nameToMatch) || (mobileToMatch && sMob === mobileToMatch) || (emailToMatch && rEmail === emailToMatch)) {
           mine.push(r);
         }
       });
@@ -10995,7 +11057,7 @@ function AdminRegistrations({ mob, C, setC, auth }) {
     if (r.isGlobalGuest || r.isSpecialGuest || r.globalGuestId || r.formId === "global_guest_directory" || r.formId === "global_guest_directory_import") return false;
     
     // Group section filter
-    const ev = C.events?.find(e => e.title === r.eventTitle || e.title === r.eventName || e.title === r.eventId);
+    const ev = C.events?.find(e => e.title === r.eventTitle || e.title === r.eventName || e.title === r.eventId || e.id === r.eventId);
     const evSection = ev?.section || "Default";
     if (selectedSection !== "All") {
       if (selectedSection === "Default") {
@@ -11204,9 +11266,11 @@ function AdminRegistrations({ mob, C, setC, auth }) {
         <style>{`
           .admin-table tbody tr { transition: background-color 0.2s ease; border-bottom: 1px solid #E0E0E0; }
           .admin-table tbody tr:hover { background-color: #f4f9ff !important; }
-          .admin-table-wrapper { border-radius: 12px; box-shadow: 0 10px 30px rgba(0,0,0,0.06); overflow: hidden; border: 1px solid #E0E0E0; background: white; }
+          .admin-table-wrapper { border-radius: 12px; box-shadow: 0 10px 30px rgba(0,0,0,0.06); overflow: hidden; border: 1px solid #E0E0E0; background: white; color: #111827; }
+          .admin-table tbody td, .admin-table tbody td div { color: #111827 !important; }
           .admin-table thead tr:first-child th { background-color: var(--dt); color: white; border-bottom: none; }
-          .admin-table th { font-weight: 600; letter-spacing: 0.3px; }
+          .admin-table th { font-weight: 600; letter-spacing: 0.3px; color: #111827; }
+          .admin-table thead tr:first-child th { color: white !important; }
           .admin-table select, .admin-table input { font-family: inherit; }
         `}</style>
         <div className="admin-table-wrapper" style={{overflowX:"auto"}}>
@@ -11275,8 +11339,8 @@ function AdminRegistrations({ mob, C, setC, auth }) {
                         </button>
                       </div>
                     </td>
-                    <td style={{padding:"12px",whiteSpace:"nowrap"}}>{date}</td>
-                    <td style={{padding:"12px",whiteSpace:"nowrap"}}>
+                    <td style={{padding:"12px",whiteSpace:"nowrap",color:"#111827"}}>{date}</td>
+                    <td style={{padding:"12px",whiteSpace:"nowrap",color:"#111827"}}>
                       <div>{evName}</div>
                       {ev?.section && ev.section !== 'Default' && (
                         <span style={{fontSize:".7rem",background:"var(--tl)",color:"var(--dt)",padding:"2px 6px",borderRadius:4,marginTop:4,display:"inline-block",fontWeight:600}}>
@@ -11284,7 +11348,7 @@ function AdminRegistrations({ mob, C, setC, auth }) {
                         </span>
                       )}
                     </td>
-                    <td style={{padding:"12px",whiteSpace:"nowrap",fontWeight:600}}>{r['Transaction ID'] || "-"}</td>
+                    <td style={{padding:"12px",whiteSpace:"nowrap",fontWeight:600,color:"#111827"}}>{r['Transaction ID'] || "-"}</td>
                     <td style={{padding:"12px",whiteSpace:"nowrap"}}>
                       <select 
                         value={r['Status'] || "Pending"} 
@@ -11303,12 +11367,12 @@ function AdminRegistrations({ mob, C, setC, auth }) {
                       </select>
                     </td>
                     <td style={{padding:"12px",maxWidth:200}}>
-                      <div style={{maxHeight:"60px", overflowY:"auto", whiteSpace:"normal", fontSize:".8rem", color:"var(--mu)", display:"flex", alignItems:"flex-start", gap: 6, minWidth:120, paddingRight:4}}>
+                      <div style={{maxHeight:"60px", overflowY:"auto", whiteSpace:"normal", fontSize:".8rem", color:"#111827", display:"flex", alignItems:"flex-start", gap: 6, minWidth:120, paddingRight:4}}>
                         <span>{r['Remarks'] || "-"}</span>
                         <button onClick={() => handleEditRemarks(r)} style={{background:"white",border:"1px solid #E0E0E0",borderRadius:4,cursor:"pointer",fontSize:".7rem",padding:"2px 4px",boxShadow:"0 1px 3px rgba(0,0,0,0.05)"}} title="Edit Remarks">✏️</button>
                       </div>
                     </td>
-                    <td style={{padding:"12px",whiteSpace:"nowrap",fontSize:".8rem",color:"var(--mu)"}}>
+                    <td style={{padding:"12px",whiteSpace:"nowrap",fontSize:".8rem",color:"#111827"}}>
                       {r['Updated By'] || "-"}
                     </td>
                     {allKeys.map(k => {
@@ -11346,7 +11410,7 @@ function AdminRegistrations({ mob, C, setC, auth }) {
                       else val = String(val);
                       
                       return (
-                        <td key={k} style={{padding:"12px", maxWidth:250}}>
+                        <td key={k} style={{padding:"12px", maxWidth:250, color:"#111827"}}>
                           <div style={{maxHeight:"60px", overflowY:"auto", whiteSpace:"normal", minWidth:100, paddingRight:4, lineHeight:1.4}}>
                             {val}
                           </div>
