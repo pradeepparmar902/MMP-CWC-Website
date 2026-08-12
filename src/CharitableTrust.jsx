@@ -5603,7 +5603,7 @@ function BackupRestore({ C, setC, auth }) {
                 if (!res.ok) throw new Error("Direct fetch failed");
               } catch (directErr) {
                 // Fallback to CORS proxy
-                res = await fetch("https://corsproxy.io/?" + encodeURIComponent(val));
+                res = await fetch("https://api.allorigins.win/raw?url=" + encodeURIComponent(val));
                 if (!res.ok) throw new Error("Proxy fetch failed");
               }
               
