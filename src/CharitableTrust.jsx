@@ -5567,6 +5567,105 @@ function BackupRestore({ C, setC, auth }) {
     }
   };
   
+  const [isZipping, setIsZipping] = useState(false);
+  
+  const handleOfflineZipExport = async () => {
+    setIsZipping(true);
+    try {
+      // 1. Fetch Registrations
+      const registrations = auth?.idToken ? await fbFetchRegistrations(auth.idToken).catch(()=>[]) : [];
+      if (registrations.length === 0) {
+          alert("No registrations found to backup.");
+          setIsZipping(false);
+          return;
+      }
+      
+      const zip = new JSZip();
+      const dataFolder = zip.folder("data");
+      const attachmentsFolder = zip.folder("attachments");
+      
+      const excelData = [];
+      let fileCounter = 1;
+      
+      // 2. Iterate and process
+      for (const reg of registrations) {
+        const rowData = { ...reg };
+        
+        // Find URLs (looking for firebasestorage URLs)
+        for (const key in rowData) {
+          const val = rowData[key];
+          if (typeof val === "string" && val.startsWith("http") && val.includes("firebasestorage")) {
+            try {
+              // Fetch the file
+              const res = await fetch(val);
+              const blob = await res.blob();
+              
+              // Determine extension safely
+              let ext = val.split('?')[0].split('.').pop();
+              if (!ext || ext.length > 5 || ext.includes('/')) {
+                const mime = blob.type.split('/')[1];
+                ext = mime && mime !== "octet-stream" ? mime : "jpg";
+              }
+              if (ext === "jpeg") ext = "jpg";
+              
+              // Safe file name
+              const safeName = `${(reg["Full Name"] || "Student").replace(/[^a-z0-9]/gi, '_')}_${key.replace(/[^a-z0-9]/gi, '_')}_${fileCounter++}.${ext}`;
+              
+              // Add to zip
+              attachmentsFolder.file(safeName, blob);
+              
+              // Update Excel Data to point to the local file
+              rowData[key] = `../attachments/${safeName}`; 
+              
+            } catch (err) {
+              console.error("Failed to download attachment for", reg["Full Name"], key, err);
+            }
+          }
+        }
+        excelData.push(rowData);
+      }
+      
+      // 3. Create Excel
+      const ws = XLSX.utils.json_to_sheet(excelData);
+      
+      // (Optional) Add clickable hyperlinks to the cells that we modified
+      const range = XLSX.utils.decode_range(ws['!ref']);
+      for(let R = range.s.r; R <= range.e.r; ++R) {
+        for(let C = range.s.c; C <= range.e.c; ++C) {
+          const cellAddress = {c:C, r:R};
+          const cellRef = XLSX.utils.encode_cell(cellAddress);
+          const cell = ws[cellRef];
+          if(cell && cell.v && typeof cell.v === 'string' && cell.v.startsWith('../attachments/')) {
+            cell.l = { Target: cell.v }; // Add hyperlink
+          }
+        }
+      }
+
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, "Registrations");
+      
+      // Convert workbook to array buffer
+      const excelBuffer = XLSX.write(wb, { bookType: "xlsx", type: "array" });
+      
+      // Add Excel to ZIP
+      dataFolder.file("Registration_Data.xlsx", excelBuffer);
+      
+      // 4. Generate and download ZIP
+      const zipBlob = await zip.generateAsync({ type: "blob" });
+      const url = URL.createObjectURL(zipBlob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `Offline_Backup_${new Date().toISOString().split('T')[0]}.zip`;
+      link.click();
+      URL.revokeObjectURL(url);
+      
+    } catch (err) {
+      alert("Offline zip backup failed: " + err.message);
+    } finally {
+      setIsZipping(false);
+    }
+  };
+  
   const restoreCollections = async (collections, idToken) => {
     let successCount = 0;
     let failCount = 0;
@@ -5650,24 +5749,34 @@ function BackupRestore({ C, setC, auth }) {
       <p style={{color:"var(--mu)",marginBottom:30,lineHeight:1.6}}>Download a complete snapshot of all your website data (events, programs, trust details) as a JSON file, or upload a previously downloaded backup file to completely restore your database.</p>
       
       <div style={{display:"grid",gap:20,gridTemplateColumns:"repeat(auto-fit, minmax(300px, 1fr))"}}>
-        {/* Export Card */}
-        <div style={{background:"white",padding:24,borderRadius:16,border:"1px solid var(--bd)",boxShadow:"0 4px 15px rgba(0,0,0,0.03)"}}>
+        {/* Export JSON Card */}
+        <div style={{background:"white",padding:24,borderRadius:16,border:"1px solid var(--bd)",boxShadow:"0 4px 15px rgba(0,0,0,0.03)",display:"flex",flexDirection:"column"}}>
           <div style={{fontSize:"2rem",marginBottom:12}}>📥</div>
-          <h3 style={{fontSize:"1.2rem",color:"var(--dt)",marginBottom:8}}>Export Data (Backup)</h3>
-          <p style={{color:"var(--mu)",fontSize:"0.9rem",marginBottom:20,lineHeight:1.5}}>Download all current settings, text, events, registrations, donations, and volunteer records to your computer as a complete JSON file.</p>
+          <h3 style={{fontSize:"1.2rem",color:"var(--dt)",marginBottom:8}}>Export Data (System Backup)</h3>
+          <p style={{color:"var(--mu)",fontSize:"0.9rem",marginBottom:20,lineHeight:1.5,flex:1}}>Download all current settings, text, events, registrations, donations, and volunteer records to your computer as a complete JSON file for system restoration.</p>
           <button onClick={handleExport} disabled={isExporting} className="bt" style={{width:"100%",padding:"12px",borderRadius:8,fontSize:"1rem",fontWeight:600,display:"flex",alignItems:"center",justifyContent:"center",gap:8, opacity: isExporting ? 0.7 : 1}}>
-            {isExporting ? "Compiling Backup..." : "Download Full Backup"}
+            {isExporting ? "Compiling JSON..." : "Download JSON Backup"}
           </button>
         </div>
         
-        {/* Import Card */}
-        <div style={{background:"white",padding:24,borderRadius:16,border:"1px solid var(--bd)",boxShadow:"0 4px 15px rgba(0,0,0,0.03)"}}>
+        {/* Export Offline ZIP Card */}
+        <div style={{background:"white",padding:24,borderRadius:16,border:"1px solid var(--bd)",boxShadow:"0 4px 15px rgba(0,0,0,0.03)",display:"flex",flexDirection:"column"}}>
+          <div style={{fontSize:"2rem",marginBottom:12}}>🗂️</div>
+          <h3 style={{fontSize:"1.2rem",color:"var(--dt)",marginBottom:8}}>Offline Archive (Excel + Files)</h3>
+          <p style={{color:"var(--mu)",fontSize:"0.9rem",marginBottom:20,lineHeight:1.5,flex:1}}>Generate a ZIP folder containing an organized Excel sheet of all registrations, alongside a folder containing every downloaded student photo and PDF attachment.</p>
+          <button onClick={handleOfflineZipExport} disabled={isZipping} className="bt" style={{width:"100%",padding:"12px",borderRadius:8,fontSize:"1rem",fontWeight:600,display:"flex",alignItems:"center",justifyContent:"center",gap:8, opacity: isZipping ? 0.7 : 1, background:"#2E7D32", borderColor:"#2E7D32"}}>
+            {isZipping ? "Downloading Files & Zipping..." : "Download Offline ZIP"}
+          </button>
+        </div>
+        
+        {/* Import JSON Card */}
+        <div style={{background:"white",padding:24,borderRadius:16,border:"1px solid var(--bd)",boxShadow:"0 4px 15px rgba(0,0,0,0.03)",display:"flex",flexDirection:"column"}}>
           <div style={{fontSize:"2rem",marginBottom:12}}>📤</div>
-          <h3 style={{fontSize:"1.2rem",color:"var(--dt)",marginBottom:8}}>Restore Data</h3>
-          <p style={{color:"var(--mu)",fontSize:"0.9rem",marginBottom:20,lineHeight:1.5}}>Upload a previously saved `.json` backup file. <strong style={{color:"#D32F2F"}}>Warning:</strong> This will overwrite all current website data and records.</p>
+          <h3 style={{fontSize:"1.2rem",color:"var(--dt)",marginBottom:8}}>Restore System</h3>
+          <p style={{color:"var(--mu)",fontSize:"0.9rem",marginBottom:20,lineHeight:1.5,flex:1}}>Upload a previously saved `.json` backup file. <strong style={{color:"#D32F2F"}}>Warning:</strong> This will overwrite all current website data and records.</p>
           <input type="file" accept=".json" style={{display:"none"}} ref={fileRef} onChange={handleImport} />
-          <button onClick={() => fileRef.current?.click()} disabled={isImporting} className="bt-sec" style={{width:"100%",padding:"12px",borderRadius:8,fontSize:"1rem",fontWeight:600,display:"flex",alignItems:"center",justifyContent:"center",gap:8,background:"#FEEAEA",color:"#D32F2F",borderColor:"#FEEAEA", opacity: isImporting ? 0.7 : 1}}>
-            {isImporting ? "Restoring..." : "Upload & Restore Backup"}
+          <button onClick={() => fileRef.current?.click()} disabled={isImporting} className="bt-sec" style={{width:"100%",padding:"12px",borderRadius:8,fontSize:"1rem",fontWeight:600,display:"flex",alignItems:"center",justifyContent:"center",gap:8,background:"#FEEAEA",color:"#D32F2F",borderColor:"#FEEAEA", opacity: isImporting ? 0.7 : 1, marginTop:"auto"}}>
+            {isImporting ? "Restoring..." : "Upload & Restore JSON"}
           </button>
         </div>
       </div>
