@@ -193,6 +193,29 @@ const fbUpdateRegistration = async (docId, newData, idToken) => {
   return true;
 };
 
+const fbRestoreDocument = async (collection, docId, data, idToken) => {
+  const REG_URL = `https://firestore.googleapis.com/v1/projects/${getFB().projectId}/databases/(default)/documents/${collection}/${docId}`;
+  const headers = { "Content-Type": "application/json" };
+  if (idToken) headers["Authorization"] = `Bearer ${idToken}`;
+  
+  // Format data specifically for our stringValue architecture
+  const bodyData = {
+    fields: {
+      data: { stringValue: JSON.stringify(data) },
+      // Optional: Restore original timestamp if it exists, otherwise use current
+      submittedAt: { timestampValue: data._submittedAt || new Date().toISOString() }
+    }
+  };
+
+  const res = await fetch(REG_URL, {
+    method: "PATCH", // PATCH creates the document if it doesn't exist
+    headers: headers,
+    body: JSON.stringify(bodyData)
+  });
+  if (!res.ok) throw new Error(`Restore failed for ${collection}/${docId}`);
+  return true;
+};
+
 const fbDeleteRegistration = async (docId, idToken) => {
   const REG_URL = `https://firestore.googleapis.com/v1/projects/${getFB().projectId}/databases/(default)/documents/registrations/${docId}`;
   const headers = {};
@@ -5508,19 +5531,69 @@ function AdminManualSidePanel({ activeTab, isOpen, onClose, master, C, setC, aut
   );
 }// ── BACKUP AND RESTORE ───────────────────────────────────────────────────────
 function BackupRestore({ C, setC, auth }) {
+  const [isExporting, setIsExporting] = useState(false);
+  const [isImporting, setIsImporting] = useState(false);
   const fileRef = useRef(null);
   
-  const handleExport = () => {
-    const dataStr = JSON.stringify(C, null, 2);
-    const blob = new Blob([dataStr], { type: "application/json" });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement("a");
-    link.href = url;
-    link.download = `trust_backup_${new Date().toISOString().split('T')[0]}.json`;
-    link.click();
-    URL.revokeObjectURL(url);
+  const handleExport = async () => {
+    setIsExporting(true);
+    try {
+      // Fetch all dynamic collections
+      const registrations = auth?.idToken ? await fbFetchRegistrations(auth.idToken).catch(()=>[]) : [];
+      const donations = auth?.idToken ? await fbFetchDonations(auth.idToken).catch(()=>[]) : [];
+      const volunteers = auth?.idToken ? await fbFetchVolunteers(auth.idToken).catch(()=>[]) : [];
+      
+      const fullBackup = {
+        config: C,
+        collections: {
+          registrations,
+          donations,
+          volunteers
+        }
+      };
+
+      const dataStr = JSON.stringify(fullBackup, null, 2);
+      const blob = new Blob([dataStr], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `trust_full_backup_${new Date().toISOString().split('T')[0]}.json`;
+      link.click();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      alert("Backup failed: " + err.message);
+    } finally {
+      setIsExporting(false);
+    }
   };
   
+  const restoreCollections = async (collections, idToken) => {
+    let successCount = 0;
+    let failCount = 0;
+    const processCollection = async (items, collectionName) => {
+      if (!items || !items.length) return;
+      for (const item of items) {
+        try {
+          // Keep original document ID
+          const docId = item.id || "VG-" + Math.random().toString(36).substring(2, 8).toUpperCase();
+          const dataToRestore = { ...item };
+          delete dataToRestore.id; // Don't save the ID inside the document fields
+          
+          await fbRestoreDocument(collectionName, docId, dataToRestore, idToken);
+          successCount++;
+        } catch (e) {
+          failCount++;
+        }
+      }
+    };
+
+    await processCollection(collections.registrations, "registrations");
+    await processCollection(collections.donations, "donations");
+    await processCollection(collections.volunteers, "volunteers");
+    
+    return { successCount, failCount };
+  };
+
   const handleImport = async (e) => {
     const file = e.target.files[0];
     if (!file) return;
@@ -5529,18 +5602,31 @@ function BackupRestore({ C, setC, auth }) {
       const text = await file.text();
       const data = JSON.parse(text);
       
-      if (!data || !data.trust || !data.events) {
+      // Determine if it's a new full backup or an old config-only backup
+      const isFullBackup = !!data.config;
+      const configData = isFullBackup ? data.config : data;
+      
+      if (!configData || !configData.trust || !configData.events) {
         throw new Error("Invalid backup file structure. Missing required keys (trust, events).");
       }
       
       if (window.confirm("Are you sure you want to overwrite all data with this backup? This action cannot be undone.")) {
-        setC(data);
+        setIsImporting(true);
+        setC(configData);
         
         // Save to Firebase immediately if authenticated
         if (auth?.idToken) {
           try {
-            await fbSave(data, auth.idToken);
-            alert("Data successfully restored and saved to database!");
+            await fbSave(configData, auth.idToken);
+            let msg = "Website configuration successfully restored and saved!";
+            
+            // Restore auxiliary collections if present
+            if (isFullBackup && data.collections) {
+               const { successCount, failCount } = await restoreCollections(data.collections, auth.idToken);
+               msg += `\nRestored ${successCount} records (Registrations/Donations/Volunteers).`;
+               if (failCount > 0) msg += `\nFailed to restore ${failCount} records.`;
+            }
+            alert(msg);
           } catch (err) {
             alert("Data restored to preview, but failed to save to database: " + err.message + "\\nPlease go to Settings and click 'Save Settings' manually.");
           }
@@ -5550,6 +5636,8 @@ function BackupRestore({ C, setC, auth }) {
       }
     } catch (err) {
       alert("Failed to parse backup file: " + err.message);
+    } finally {
+      setIsImporting(false);
     }
     
     // Clear file input
@@ -5566,9 +5654,9 @@ function BackupRestore({ C, setC, auth }) {
         <div style={{background:"white",padding:24,borderRadius:16,border:"1px solid var(--bd)",boxShadow:"0 4px 15px rgba(0,0,0,0.03)"}}>
           <div style={{fontSize:"2rem",marginBottom:12}}>📥</div>
           <h3 style={{fontSize:"1.2rem",color:"var(--dt)",marginBottom:8}}>Export Data (Backup)</h3>
-          <p style={{color:"var(--mu)",fontSize:"0.9rem",marginBottom:20,lineHeight:1.5}}>Download all current settings, text, events, and configuration to your computer as a JSON file.</p>
-          <button onClick={handleExport} className="bt" style={{width:"100%",padding:"12px",borderRadius:8,fontSize:"1rem",fontWeight:600,display:"flex",alignItems:"center",justifyContent:"center",gap:8}}>
-            Download Backup
+          <p style={{color:"var(--mu)",fontSize:"0.9rem",marginBottom:20,lineHeight:1.5}}>Download all current settings, text, events, registrations, donations, and volunteer records to your computer as a complete JSON file.</p>
+          <button onClick={handleExport} disabled={isExporting} className="bt" style={{width:"100%",padding:"12px",borderRadius:8,fontSize:"1rem",fontWeight:600,display:"flex",alignItems:"center",justifyContent:"center",gap:8, opacity: isExporting ? 0.7 : 1}}>
+            {isExporting ? "Compiling Backup..." : "Download Full Backup"}
           </button>
         </div>
         
@@ -5576,10 +5664,10 @@ function BackupRestore({ C, setC, auth }) {
         <div style={{background:"white",padding:24,borderRadius:16,border:"1px solid var(--bd)",boxShadow:"0 4px 15px rgba(0,0,0,0.03)"}}>
           <div style={{fontSize:"2rem",marginBottom:12}}>📤</div>
           <h3 style={{fontSize:"1.2rem",color:"var(--dt)",marginBottom:8}}>Restore Data</h3>
-          <p style={{color:"var(--mu)",fontSize:"0.9rem",marginBottom:20,lineHeight:1.5}}>Upload a previously saved `.json` backup file. <strong style={{color:"#D32F2F"}}>Warning:</strong> This will overwrite all current website data.</p>
+          <p style={{color:"var(--mu)",fontSize:"0.9rem",marginBottom:20,lineHeight:1.5}}>Upload a previously saved `.json` backup file. <strong style={{color:"#D32F2F"}}>Warning:</strong> This will overwrite all current website data and records.</p>
           <input type="file" accept=".json" style={{display:"none"}} ref={fileRef} onChange={handleImport} />
-          <button onClick={() => fileRef.current?.click()} className="bt-sec" style={{width:"100%",padding:"12px",borderRadius:8,fontSize:"1rem",fontWeight:600,display:"flex",alignItems:"center",justifyContent:"center",gap:8,background:"#FEEAEA",color:"#D32F2F",borderColor:"#FEEAEA"}}>
-            Upload & Restore Backup
+          <button onClick={() => fileRef.current?.click()} disabled={isImporting} className="bt-sec" style={{width:"100%",padding:"12px",borderRadius:8,fontSize:"1rem",fontWeight:600,display:"flex",alignItems:"center",justifyContent:"center",gap:8,background:"#FEEAEA",color:"#D32F2F",borderColor:"#FEEAEA", opacity: isImporting ? 0.7 : 1}}>
+            {isImporting ? "Restoring..." : "Upload & Restore Backup"}
           </button>
         </div>
       </div>
