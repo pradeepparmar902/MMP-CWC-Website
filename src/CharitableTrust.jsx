@@ -2469,8 +2469,61 @@ function Events({ C, lang, globalAuthToken, globalProfile, onPublicLogin, forceS
                             <input type="number" step="0.01" min="0" max="100" placeholder="e.g. 85.50" required={f.required} value={formData[fKey]||""} onChange={e=>setFormData({...formData, [fKey]:e.target.value})} className="modern-input" style={{paddingRight:32}}/>
                             <span style={{position:"absolute",right:12,fontWeight:700,color:"var(--dt)",fontSize:".9rem",pointerEvents:"none"}}>%</span>
                           </div>
+                        ) : f.type === 'tel' ? (
+                          <div style={{display:"flex",gap:8}}>
+                            {(() => {
+                              const rawVal = formData[fKey] || "";
+                              let currentCode = "+91";
+                              let currentNum = "";
+                              if (rawVal.startsWith("+")) {
+                                const spaceIdx = rawVal.indexOf(" ");
+                                if (spaceIdx !== -1) {
+                                  currentCode = rawVal.substring(0, spaceIdx);
+                                  currentNum = rawVal.substring(spaceIdx + 1).replace(/\D/g, "");
+                                } else {
+                                  if (rawVal.startsWith("+91") && rawVal.length > 3) {
+                                    currentCode = "+91";
+                                    currentNum = rawVal.substring(3).replace(/\D/g, "");
+                                  } else {
+                                    currentNum = rawVal.replace(/\D/g, "");
+                                  }
+                                }
+                              } else {
+                                currentNum = rawVal.replace(/\D/g, "");
+                              }
+                              return (
+                                <>
+                                  <select 
+                                    value={currentCode} 
+                                    onChange={e => setFormData({...formData, [fKey]: `${e.target.value} ${currentNum}`})}
+                                    style={{padding:"14px 8px", borderRadius:12, border:"1px solid #E2E8F0", fontSize:".95rem", fontWeight:700, background:"#F8FAFC", color:"#1E293B", outline:"none", cursor:"pointer", width: 85, boxSizing: "border-box"}}
+                                  >
+                                    <option value="+91">+91</option>
+                                    <option value="+1">+1</option>
+                                    <option value="+44">+44</option>
+                                    <option value="+971">+971</option>
+                                    <option value="+966">+966</option>
+                                    <option value="+61">+61</option>
+                                    <option value="+65">+65</option>
+                                  </select>
+                                  <input 
+                                    type="tel" 
+                                    required={f.required} 
+                                    value={currentNum} 
+                                    onChange={e => {
+                                      const val = e.target.value.replace(/\D/g, "").slice(0, 10);
+                                      setFormData({...formData, [fKey]: `${currentCode} ${val}`});
+                                    }} 
+                                    className="modern-input" 
+                                    style={{flex:1}} 
+                                    autoComplete="tel" 
+                                  />
+                                </>
+                              );
+                            })()}
+                          </div>
                         ) : (
-                          <input type={f.type} required={f.required} value={formData[fKey]||""} onChange={e=>setFormData({...formData, [fKey]:e.target.value})} className="modern-input" autoComplete={f.type === 'email' ? 'email' : (f.type === 'tel' ? 'tel' : 'off')} />
+                          <input type={f.type} required={f.required} value={formData[fKey]||""} onChange={e=>setFormData({...formData, [fKey]:e.target.value})} className="modern-input" autoComplete={f.type === 'email' ? 'email' : 'off'} />
                         )}
                       </div>
                     )})}
