@@ -249,7 +249,10 @@ const fbFetchRegistrations = async (idToken) => {
   const REG_URL = `https://firestore.googleapis.com/v1/projects/${getFB().projectId}/databases/(default)/documents/registrations?pageSize=300`;
   const headers = {};
   if (idToken) headers["Authorization"] = `Bearer ${idToken}`;
-  const res = await fetch(REG_URL, { headers });
+  let res = await fetch(REG_URL, { headers });
+  if (res.status === 401 && idToken) {
+    res = await fetch(REG_URL);
+  }
   if (!res.ok) {
     const errText = await res.text();
     throw new Error(`Failed to fetch registrations (${res.status}): ${errText}`);
@@ -343,7 +346,10 @@ const fbFetchDonations = async (idToken) => {
   const REG_URL = `https://firestore.googleapis.com/v1/projects/${getFB().projectId}/databases/(default)/documents/donations?pageSize=300`;
   const headers = {};
   if (idToken) headers["Authorization"] = `Bearer ${idToken}`;
-  const res = await fetch(REG_URL, { headers });
+  let res = await fetch(REG_URL, { headers });
+  if (res.status === 401 && idToken) {
+    res = await fetch(REG_URL);
+  }
   if (!res.ok) throw new Error("Failed to fetch donations");
   const data = await res.json();
   if (!data.documents) return [];
