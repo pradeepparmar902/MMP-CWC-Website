@@ -1767,6 +1767,22 @@ function Events({ C, lang, globalAuthToken, globalProfile, onPublicLogin, forceS
             ...sanitizedForm
           };
           
+          // Google Sheets specific overrides to ensure it shows up without script changes
+          if (payload["Full Name"]) {
+            payload["Full Name"] = String(payload["Full Name"]).replace(/\|/g, " ") + " (Tx: " + txId + ")";
+          }
+          if (payload["Name"]) {
+            payload["Name"] = String(payload["Name"]).replace(/\|/g, " ") + " (Tx: " + txId + ")";
+          }
+          
+          // Ensure mobile number doesn't have +91 if it's there
+          if (payload["Mobile Number"]) {
+             payload["Mobile Number"] = String(payload["Mobile Number"]).replace(/^\+91\s*/, "").replace(/\D/g, "").slice(-10);
+          }
+          if (payload["Submitted By"]) {
+             payload["Submitted By"] = String(payload["Submitted By"]).replace(/^\+91\s*/, "").replace(/\D/g, "").slice(-10);
+          }
+          
           if (selectedEvent.event.saveToGoogleDrive) {
             const fileKeys = Object.keys(formBase64Data);
             if (fileKeys.length > 0) {
