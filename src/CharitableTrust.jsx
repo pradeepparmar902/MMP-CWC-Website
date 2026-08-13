@@ -9163,6 +9163,17 @@ function UserDashboard({ C, globalProfile, globalAuthToken, onClose }) {
       const nameToMatch = String(globalProfile?.name || globalProfile?.['Full Name'] || "").trim().toLowerCase();
       const emailToMatch = String(globalProfile?.email || auth?.email || "").trim().toLowerCase();
       
+      console.log("=== DASHBOARD DEBUG ===");
+      console.log("User Profile:", globalProfile);
+      console.log("mobileToMatch:", mobileToMatch);
+      console.log("nameToMatch:", nameToMatch);
+      console.log("emailToMatch:", emailToMatch);
+      console.log("Total registrations fetched:", allRegs.length);
+      if (allRegs.length > 0) {
+        console.log("Sample reg keys:", Object.keys(allRegs[0]));
+        console.log("Sample reg[0]:", allRegs[0]);
+      }
+      
       const mine = [];
       allRegs.forEach(r => {
         let rMobile = cleanPhone(r["Mobile Number"] || r.mobile || r.phone || r["Mobile"] || r["Phone"] || r["મોબાઇલ"] || r["મોબાઈલ"] || r["WhatsApp Number"] || "");
@@ -9175,11 +9186,15 @@ function UserDashboard({ C, globalProfile, globalAuthToken, onClose }) {
         const rEmail = String(r["Email Address"] || r.email || r["Email"] || "").trim().toLowerCase();
         const sMob = cleanPhone(r.submitterMob || "");
         
-        if ((mobileToMatch && rMobile === mobileToMatch) || (nameToMatch && rName === nameToMatch) || (mobileToMatch && sMob === mobileToMatch) || (emailToMatch && rEmail === emailToMatch)) {
+        const matched = (mobileToMatch && rMobile === mobileToMatch) || (nameToMatch && rName === nameToMatch) || (mobileToMatch && sMob === mobileToMatch) || (emailToMatch && rEmail === emailToMatch);
+        if (matched) {
           mine.push(r);
+        } else {
+          console.log("NOT MATCHED - rMobile:", rMobile, "rName:", rName, "rEmail:", rEmail, "sMob:", sMob, "reg:", r.id);
         }
       });
       
+      console.log("Matched registrations:", mine.length);
       setRegs(mine);
     } catch(e) { console.error(e); }
     setLoading(false);
