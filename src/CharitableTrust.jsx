@@ -9447,6 +9447,43 @@ function UserDashboard({ C, globalProfile, globalAuthToken, onClose }) {
     await generateReceiptPDF(r, C, 'download');
   };
 
+  const matchesSubTab = (r, targetSubTab) => {
+    const mobileToMatch = cleanPhone(globalProfile?.mobile || globalProfile?.['Mobile Number'] || globalProfile?.phone || "");
+    const nameToMatch   = String(globalProfile?.name || globalProfile?.['Full Name'] || "").trim().toLowerCase();
+    const emailToMatch  = String(globalProfile?.email || "").trim().toLowerCase();
+
+    let rMobile = cleanPhone(
+      r["Mobile Number"] || r.mobile || r.phone ||
+      r["Mobile"] || r["Phone"] || r["WhatsApp Number"] ||
+      r["મોબાઇલ"] || r["મોબાઈલ"] || ""
+    );
+    if (!rMobile) {
+      const hit = Object.values(r).map(v => String(v).replace(/\D/g,'')).find(v => v.length >= 10);
+      if (hit) rMobile = cleanPhone(hit);
+    }
+    const rName  = String(r["Submitted By"] || r.name || r["Full Name"] || r["Name"] || r["Student Name"] || r["નામ"] || "").trim().toLowerCase();
+    const rEmail = String(r["Email Address"] || r.email || r["Email"] || "").trim().toLowerCase();
+    const sMob   = cleanPhone(r.submitterMob || "");
+    const sName  = String(r.submitterName || "").trim().toLowerCase();
+    const sEmail = String(r.submitterEmail || "").trim().toLowerCase();
+
+    // "For Me": registrant matches logged-in user profile
+    const iAmRegistrant =
+      (mobileToMatch && rMobile === mobileToMatch) ||
+      (emailToMatch  && rEmail  === emailToMatch)  ||
+      (nameToMatch   && rName   === nameToMatch);
+
+    // "For Others": I submitted for someone else (submitter = me, but registrant ≠ me)
+    const iAmSubmitter =
+      (mobileToMatch && sMob   === mobileToMatch) ||
+      (emailToMatch  && sEmail === emailToMatch)  ||
+      (nameToMatch   && sName  === nameToMatch);
+
+    if (targetSubTab === "For Me")     return iAmRegistrant;
+    if (targetSubTab === "For Others") return iAmSubmitter && !iAmRegistrant;
+    return true;
+  };
+
   const fetchMyRegs = async () => {
     setLoading(true);
     try {
@@ -9609,41 +9646,7 @@ function UserDashboard({ C, globalProfile, globalAuthToken, onClose }) {
                   </button>
                 </div>
                 {(() => {
-                  const mobileToMatch = cleanPhone(globalProfile?.mobile || globalProfile?.['Mobile Number'] || "");
-                  const nameToMatch   = String(globalProfile?.name || globalProfile?.['Full Name'] || "").trim().toLowerCase();
-                  const emailToMatch  = String(globalProfile?.email || "").trim().toLowerCase();
-
-                  // Split regs into "For Me" (I am the registrant) vs "For Others" (I submitted on behalf of someone else)
-                  const filteredRegs = regs.filter(r => {
-                    let rMobile = cleanPhone(
-                      r["Mobile Number"] || r.mobile || r.phone ||
-                      r["Mobile"] || r["Phone"] || r["WhatsApp Number"] ||
-                      r["મોબાઇલ"] || r["મોબાઈલ"] || ""
-                    );
-                    if (!rMobile) {
-                      const hit = Object.values(r).map(v => String(v).replace(/\D/g,'')).find(v => v.length >= 10);
-                      if (hit) rMobile = cleanPhone(hit);
-                    }
-                    const rName  = String(r["Submitted By"] || r.name || r["Full Name"] || r["Name"] || r["Student Name"] || r["નામ"] || "").trim().toLowerCase();
-                    const rEmail = String(r["Email Address"] || r.email || r["Email"] || "").trim().toLowerCase();
-                    const sMob   = cleanPhone(r.submitterMob || "");
-                    const sName  = String(r.submitterName || "").trim().toLowerCase();
-
-                    // "For Me": the registrant's contact matches my profile
-                    const iAmRegistrant =
-                      (mobileToMatch && rMobile === mobileToMatch) ||
-                      (emailToMatch  && rEmail  === emailToMatch)  ||
-                      (nameToMatch   && rName   === nameToMatch);
-
-                    // "For Others": I submitted for someone else (submitter = me, but registrant ≠ me)
-                    const iAmSubmitter =
-                      (mobileToMatch && sMob   === mobileToMatch) ||
-                      (nameToMatch   && sName  === nameToMatch);
-
-                    if (subTab === "For Me")     return iAmRegistrant;
-                    if (subTab === "For Others") return iAmSubmitter && !iAmRegistrant;
-                    return true;
-                  });
+                  const filteredRegs = regs.filter(r => matchesSubTab(r, subTab));
 
                   if (loading) return <div style={{textAlign:"center",padding:40,color:"var(--mu)"}}>Loading your registrations...</div>;
                   if (filteredRegs.length === 0) return (
@@ -9856,13 +9859,11 @@ function UserDashboard({ C, globalProfile, globalAuthToken, onClose }) {
                   </button>
                 </div>
                 {(() => {
-                  const mobileToMatch = cleanPhone(globalProfile.mobile || globalProfile['Mobile Number'] || "");
-                  const nameToMatch = String(globalProfile.name || globalProfile['Full Name'] || "").trim().toLowerCase();
-
-                  const awds = regs.map(r => {
+                  const awds = regs.filter(r => {
                     const isReleased = r.certificateReleased === true || r.certificateReleased === "true";
-                    if (!isReleased || r.certificateHold) return null;
-
+                    if (!isReleased || r.certificateHold) return false;
+                    return matchesSubTab(r, subTab);
+                  }).map(r => {
                     const rEvName = (r.eventName || r.eventTitle || r["Event Name"] || r["Event"] || "").trim().toLowerCase();
                     const ev = (C.events || []).find(e => {
                       if (rEvName && e.title && e.title.trim().toLowerCase() === rEvName) return true;
@@ -9871,7 +9872,7 @@ function UserDashboard({ C, globalProfile, globalAuthToken, onClose }) {
                     }) || { title: r.eventName || r.eventTitle || "Event" };
 
                     return { reg: r, ev };
-                  }).filter(Boolean);
+                  });
                   
                   if (loading) return <div style={{textAlign:"center",padding:40,color:"var(--mu)"}}>Loading awards...</div>;
                   if (awds.length === 0) return (
@@ -9999,13 +10000,11 @@ function UserDashboard({ C, globalProfile, globalAuthToken, onClose }) {
                   </button>
                 </div>
                 {(() => {
-                  const mobileToMatch = cleanPhone(globalProfile.mobile || globalProfile['Mobile Number'] || "");
-                  const nameToMatch = String(globalProfile.name || globalProfile['Full Name'] || "").trim().toLowerCase();
-                  
-                  const invs = regs.map(r => {
+                  const invs = regs.filter(r => {
                     const isReleased = r.inviteLetterReleased === true || r.inviteLetterReleased === "true" || r.inviteReleased === true || r.inviteReleased === "true";
-                    if (!isReleased || r.inviteLetterHold) return null;
-
+                    if (!isReleased || r.inviteLetterHold) return false;
+                    return matchesSubTab(r, subTab);
+                  }).map(r => {
                     const rEvName = (r.eventName || r.eventTitle || r["Event Name"] || r["Event"] || "").trim().toLowerCase();
                     const ev = (C.events || []).find(e => {
                       if (rEvName && e.title && e.title.trim().toLowerCase() === rEvName) return true;
@@ -10014,7 +10013,7 @@ function UserDashboard({ C, globalProfile, globalAuthToken, onClose }) {
                     }) || { title: r.eventName || r.eventTitle || "Event" };
 
                     return { reg: r, ev };
-                  }).filter(Boolean);
+                  });
                   
                   if (loading) return <div style={{textAlign:"center",padding:40,color:"var(--mu)"}}>Loading invites...</div>;
                   if (invs.length === 0) return (
