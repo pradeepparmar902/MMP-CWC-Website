@@ -9161,7 +9161,7 @@ function UserDashboard({ C, globalProfile, globalAuthToken, onClose }) {
       const allRegs = await fbFetchRegistrations(globalAuthToken);
       const mobileToMatch = cleanPhone(globalProfile?.mobile || globalProfile?.['Mobile Number'] || "");
       const nameToMatch = String(globalProfile?.name || globalProfile?.['Full Name'] || "").trim().toLowerCase();
-      const emailToMatch = String(globalProfile?.email || auth?.email || "").trim().toLowerCase();
+      const emailToMatch = String(globalProfile?.email || "").trim().toLowerCase();
       
       const mine = [];
       allRegs.forEach(r => {
@@ -9326,7 +9326,18 @@ function UserDashboard({ C, globalProfile, globalAuthToken, onClose }) {
                     <div style={{background:"white",padding:"40px 20px",borderRadius:16,textAlign:"center",border:"1px solid var(--bd)"}}>
                       <div style={{fontSize:"3rem",marginBottom:12}}>📅</div>
                       <div style={{fontWeight:600,color:"var(--dt)",fontSize:"1.1rem",marginBottom:6}}>No Registrations Found</div>
-                      <div style={{color:"var(--mu)",fontSize:".85rem"}}>You have no registrations {subTab === "For Me" ? "for yourself" : "for others"}.</div>
+                      <div style={{color:"var(--mu)",fontSize:".85rem",marginBottom:16}}>You have no registrations {subTab === "For Me" ? "for yourself" : "for others"}.</div>
+                      <div style={{fontSize:".7rem",color:"#999",textAlign:"left",background:"#f9f9f9",padding:10,borderRadius:8}}>
+                        <strong>Debug Info:</strong><br/>
+                        mobileToMatch: '{mobileToMatch}'<br/>
+                        emailToMatch: '{emailToMatch}'<br/>
+                        Total Regs Fetched: {regs.length}<br/>
+                        {regs.map(r => (
+                          <div key={r.id}>
+                            ID: {r.id}, rMobile: '{cleanPhone(r["Mobile Number"] || r.mobile || r.phone || "")}', sMob: '{cleanPhone(r.submitterMob || "")}'
+                          </div>
+                        ))}
+                      </div>
                     </div>
                   );
                   return (
