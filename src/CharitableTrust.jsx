@@ -9297,27 +9297,29 @@ function UserDashboard({ C, globalProfile, globalAuthToken, onClose }) {
                   </button>
                 </div>
                 {(() => {
-                  const mobileToMatch = cleanPhone(globalProfile.mobile || globalProfile['Mobile Number'] || "");
-                  const nameToMatch = String(globalProfile.name || globalProfile['Full Name'] || "").trim().toLowerCase();
+                  const mobileToMatch = cleanPhone(globalProfile?.mobile || globalProfile?.['Mobile Number'] || "");
+                  const nameToMatch = String(globalProfile?.name || globalProfile?.['Full Name'] || "").trim().toLowerCase();
+                  const emailToMatch = String(globalProfile?.email || "").trim().toLowerCase();
                   
                   const filteredRegs = regs.filter(r => {
                     let rMobile = cleanPhone(r["Mobile Number"] || r.mobile || r.phone || r["Mobile"] || r["Phone"] || r["મોબાઇલ"] || r["મોબાઈલ"] || r["WhatsApp Number"] || "");
-        if (!rMobile) {
-            const rawVals = Object.values(r).map(v => String(v).replace(/\D/g, ''));
-            const possibleMob = rawVals.find(v => v.length >= 10);
-            if (possibleMob) rMobile = cleanPhone(possibleMob);
-        }
-        const rName = String(r["Submitted By"] || r.name || r["Full Name"] || r["Name"] || r["નામ"] || r["Student Name"] || "").trim().toLowerCase();
+                    if (!rMobile) {
+                        const rawVals = Object.values(r).map(v => String(v).replace(/\D/g, ''));
+                        const possibleMob = rawVals.find(v => v.length >= 10);
+                        if (possibleMob) rMobile = cleanPhone(possibleMob);
+                    }
+                    const rName = String(r["Submitted By"] || r.name || r["Full Name"] || r["Name"] || r["નામ"] || r["Student Name"] || "").trim().toLowerCase();
+                    const rEmail = String(r["Email Address"] || r.email || r["Email"] || "").trim().toLowerCase();
                     const sMob = cleanPhone(r.submitterMob || "");
                     
+                    const isForMe = (mobileToMatch && rMobile === mobileToMatch) || 
+                                    (nameToMatch && rName === nameToMatch) || 
+                                    (emailToMatch && rEmail === emailToMatch);
+                                    
                     if (subTab === "For Me") {
-                      return (mobileToMatch && rMobile === mobileToMatch) || (!rMobile && ((mobileToMatch && sMob === mobileToMatch) || rName === nameToMatch));
+                      return isForMe;
                     } else {
-                      if (rMobile && rMobile !== mobileToMatch) {
-                        if (mobileToMatch && sMob === mobileToMatch) return true;
-                        if (!sMob && rName === nameToMatch) return true;
-                      }
-                      return false;
+                      return (mobileToMatch && sMob === mobileToMatch) && !isForMe;
                     }
                   });
 
