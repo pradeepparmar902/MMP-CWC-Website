@@ -150,13 +150,6 @@ const fbSubmitRegistration = async (registrationData, idToken) => {
   const headers = { "Content-Type": "application/json" };
   if (idToken) headers["Authorization"] = `Bearer ${idToken}`;
   
-  // Sanitize any remaining pipe characters from old localStorage data
-  for (const key in registrationData) {
-    if (typeof registrationData[key] === 'string' && registrationData[key].includes('|')) {
-      registrationData[key] = registrationData[key].replace(/\|/g, " ").replace(/\s+/g, " ").trim();
-    }
-  }
-
   // Inject Transaction ID and default status
   const txId = "VG-" + Math.random().toString(36).substring(2, 8).toUpperCase();
   registrationData = { 
@@ -1720,22 +1713,6 @@ function Events({ C, lang, globalAuthToken, globalProfile, onPublicLogin, forceS
   const submitForm = async (e) => {
     e.preventDefault();
     setSubmitting(true);
-
-    // Sanitize any pipe characters in formData (legacy from localStorage)
-    const txId = "VG-" + Math.random().toString(36).substring(2, 8).toUpperCase();
-    const sanitizedForm = {
-      "Transaction ID": txId,
-      "Status": "Pending",
-      "Remarks": ""
-    };
-    for (const key in formData) {
-      if (typeof formData[key] === 'string') {
-        sanitizedForm[key] = formData[key].replace(/\|/g, " ").replace(/\s+/g, " ").trim();
-      } else {
-        sanitizedForm[key] = formData[key];
-      }
-    }
-
     try {
       // Option B: Save to Firebase (fails gracefully if Security Rules aren't set)
       try {
@@ -1751,7 +1728,7 @@ function Events({ C, lang, globalAuthToken, globalProfile, onPublicLogin, forceS
           eventTitle: selectedEvent.event.title,
           submitterMob: (globalProfile?.mobile || `${countryCode} ${mobile.replace(/\D/g, '').slice(-10)}`),
           formData: {
-            ...sanitizedForm,
+            ...formData,
             logHistory: [initialLog]
           }
         }, authToken);
@@ -1764,24 +1741,8 @@ function Events({ C, lang, globalAuthToken, globalProfile, onPublicLogin, forceS
         try {
           const payload = {
             eventName: selectedEvent.event.title,
-            ...sanitizedForm
+            ...formData
           };
-          
-          // Google Sheets specific overrides to ensure it shows up without script changes
-          if (payload["Full Name"]) {
-            payload["Full Name"] = String(payload["Full Name"]).replace(/\|/g, " ");
-          }
-          if (payload["Name"]) {
-            payload["Name"] = String(payload["Name"]).replace(/\|/g, " ");
-          }
-          
-          // Ensure mobile number doesn't have +91 if it's there
-          if (payload["Mobile Number"]) {
-             payload["Mobile Number"] = String(payload["Mobile Number"]).replace(/^\+91\s*/, "").replace(/\D/g, "").slice(-10);
-          }
-          if (payload["Submitted By"]) {
-             payload["Submitted By"] = String(payload["Submitted By"]).replace(/^\+91\s*/, "").replace(/\D/g, "").slice(-10);
-          }
           
           if (selectedEvent.event.saveToGoogleDrive) {
             const fileKeys = Object.keys(formBase64Data);
@@ -1988,14 +1949,14 @@ function Events({ C, lang, globalAuthToken, globalProfile, onPublicLogin, forceS
                       </select>
                     ) : f.type === 'fullname' ? (
                       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:12}}>
-                        <input placeholder="First" required={f.required} value={(formData[fKey]?.split(" ")[0])||""} onChange={e=>{
-                          const parts = (formData[fKey]||"  ").split(" "); parts[0] = e.target.value.replace(/\s+/g, ''); setFormData({...formData, [fKey]:parts.join(" ")});
+                        <input placeholder="First" required={f.required} value={(formData[fKey]?.split("|")[0])||""} onChange={e=>{
+                          const parts = (formData[fKey]||"||").split("|"); parts[0] = e.target.value; setFormData({...formData, [fKey]:parts.join("|")});
                         }} className="modern-input" />
-                        <input placeholder="Middle" value={(formData[fKey]?.split(" ")[1])||""} onChange={e=>{
-                          const parts = (formData[fKey]||"  ").split(" "); parts[1] = e.target.value.replace(/\s+/g, ''); setFormData({...formData, [fKey]:parts.join(" ")});
+                        <input placeholder="Middle" value={(formData[fKey]?.split("|")[1])||""} onChange={e=>{
+                          const parts = (formData[fKey]||"||").split("|"); parts[1] = e.target.value; setFormData({...formData, [fKey]:parts.join("|")});
                         }} className="modern-input" />
-                        <input placeholder="Last" required={f.required} value={(formData[fKey]?.split(" ")[2])||""} onChange={e=>{
-                          const parts = (formData[fKey]||"  ").split(" "); parts[2] = e.target.value.replace(/\s+/g, ''); setFormData({...formData, [fKey]:parts.join(" ")});
+                        <input placeholder="Last" required={f.required} value={(formData[fKey]?.split("|")[2])||""} onChange={e=>{
+                          const parts = (formData[fKey]||"||").split("|"); parts[2] = e.target.value; setFormData({...formData, [fKey]:parts.join("|")});
                         }} className="modern-input" />
                       </div>
                     ) : f.type === 'image' || f.type === 'file' ? (
@@ -2432,14 +2393,14 @@ function Events({ C, lang, globalAuthToken, globalProfile, onPublicLogin, forceS
                           </select>
                         ) : f.type === 'fullname' ? (
                           <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:12}}>
-                            <input placeholder="First" required={f.required} value={(formData[fKey]?.split(" ")[0])||""} onChange={e=>{
-                              const parts = (formData[fKey]||"  ").split(" "); parts[0] = e.target.value.replace(/\s+/g, ''); setFormData({...formData, [fKey]:parts.join(" ")});
+                            <input placeholder="First" required={f.required} value={(formData[fKey]?.split("|")[0])||""} onChange={e=>{
+                              const parts = (formData[fKey]||"||").split("|"); parts[0] = e.target.value; setFormData({...formData, [fKey]:parts.join("|")});
                             }} className="modern-input" />
-                            <input placeholder="Middle" value={(formData[fKey]?.split(" ")[1])||""} onChange={e=>{
-                              const parts = (formData[fKey]||"  ").split(" "); parts[1] = e.target.value.replace(/\s+/g, ''); setFormData({...formData, [fKey]:parts.join(" ")});
+                            <input placeholder="Middle" value={(formData[fKey]?.split("|")[1])||""} onChange={e=>{
+                              const parts = (formData[fKey]||"||").split("|"); parts[1] = e.target.value; setFormData({...formData, [fKey]:parts.join("|")});
                             }} className="modern-input" />
-                            <input placeholder="Last" required={f.required} value={(formData[fKey]?.split(" ")[2])||""} onChange={e=>{
-                              const parts = (formData[fKey]||"  ").split(" "); parts[2] = e.target.value.replace(/\s+/g, ''); setFormData({...formData, [fKey]:parts.join(" ")});
+                            <input placeholder="Last" required={f.required} value={(formData[fKey]?.split("|")[2])||""} onChange={e=>{
+                              const parts = (formData[fKey]||"||").split("|"); parts[2] = e.target.value; setFormData({...formData, [fKey]:parts.join("|")});
                             }} className="modern-input" />
                           </div>
                         ) : f.type === 'image' || f.type === 'file' ? (
@@ -9200,7 +9161,7 @@ function UserDashboard({ C, globalProfile, globalAuthToken, onClose }) {
       const allRegs = await fbFetchRegistrations(globalAuthToken);
       const mobileToMatch = cleanPhone(globalProfile?.mobile || globalProfile?.['Mobile Number'] || "");
       const nameToMatch = String(globalProfile?.name || globalProfile?.['Full Name'] || "").trim().toLowerCase();
-      const emailToMatch = String(globalProfile?.email || "").trim().toLowerCase();
+      const emailToMatch = String(globalProfile?.email || auth?.email || "").trim().toLowerCase();
       
       const mine = [];
       allRegs.forEach(r => {
@@ -9336,29 +9297,27 @@ function UserDashboard({ C, globalProfile, globalAuthToken, onClose }) {
                   </button>
                 </div>
                 {(() => {
-                  const mobileToMatch = cleanPhone(globalProfile?.mobile || globalProfile?.['Mobile Number'] || "");
-                  const nameToMatch = String(globalProfile?.name || globalProfile?.['Full Name'] || "").trim().toLowerCase();
-                  const emailToMatch = String(globalProfile?.email || "").trim().toLowerCase();
+                  const mobileToMatch = cleanPhone(globalProfile.mobile || globalProfile['Mobile Number'] || "");
+                  const nameToMatch = String(globalProfile.name || globalProfile['Full Name'] || "").trim().toLowerCase();
                   
                   const filteredRegs = regs.filter(r => {
                     let rMobile = cleanPhone(r["Mobile Number"] || r.mobile || r.phone || r["Mobile"] || r["Phone"] || r["મોબાઇલ"] || r["મોબાઈલ"] || r["WhatsApp Number"] || "");
-                    if (!rMobile) {
-                        const rawVals = Object.values(r).map(v => String(v).replace(/\D/g, ''));
-                        const possibleMob = rawVals.find(v => v.length >= 10);
-                        if (possibleMob) rMobile = cleanPhone(possibleMob);
-                    }
-                    const rName = String(r["Submitted By"] || r.name || r["Full Name"] || r["Name"] || r["નામ"] || r["Student Name"] || "").trim().toLowerCase();
-                    const rEmail = String(r["Email Address"] || r.email || r["Email"] || "").trim().toLowerCase();
+        if (!rMobile) {
+            const rawVals = Object.values(r).map(v => String(v).replace(/\D/g, ''));
+            const possibleMob = rawVals.find(v => v.length >= 10);
+            if (possibleMob) rMobile = cleanPhone(possibleMob);
+        }
+        const rName = String(r["Submitted By"] || r.name || r["Full Name"] || r["Name"] || r["નામ"] || r["Student Name"] || "").trim().toLowerCase();
                     const sMob = cleanPhone(r.submitterMob || "");
                     
-                    const isForMe = (mobileToMatch && rMobile === mobileToMatch) || 
-                                    (nameToMatch && rName === nameToMatch) || 
-                                    (emailToMatch && rEmail === emailToMatch);
-                                    
                     if (subTab === "For Me") {
-                      return isForMe;
+                      return (mobileToMatch && rMobile === mobileToMatch) || (!rMobile && ((mobileToMatch && sMob === mobileToMatch) || rName === nameToMatch));
                     } else {
-                      return (mobileToMatch && sMob === mobileToMatch) && !isForMe;
+                      if (rMobile && rMobile !== mobileToMatch) {
+                        if (mobileToMatch && sMob === mobileToMatch) return true;
+                        if (!sMob && rName === nameToMatch) return true;
+                      }
+                      return false;
                     }
                   });
 
@@ -9367,18 +9326,7 @@ function UserDashboard({ C, globalProfile, globalAuthToken, onClose }) {
                     <div style={{background:"white",padding:"40px 20px",borderRadius:16,textAlign:"center",border:"1px solid var(--bd)"}}>
                       <div style={{fontSize:"3rem",marginBottom:12}}>📅</div>
                       <div style={{fontWeight:600,color:"var(--dt)",fontSize:"1.1rem",marginBottom:6}}>No Registrations Found</div>
-                      <div style={{color:"var(--mu)",fontSize:".85rem",marginBottom:16}}>You have no registrations {subTab === "For Me" ? "for yourself" : "for others"}.</div>
-                      <div style={{fontSize:".7rem",color:"#999",textAlign:"left",background:"#f9f9f9",padding:10,borderRadius:8}}>
-                        <strong>Debug Info:</strong><br/>
-                        mobileToMatch: '{mobileToMatch}'<br/>
-                        emailToMatch: '{emailToMatch}'<br/>
-                        Total Regs Fetched: {regs.length}<br/>
-                        {regs.map(r => (
-                          <div key={r.id}>
-                            ID: {r.id}, rMobile: '{cleanPhone(r["Mobile Number"] || r.mobile || r.phone || "")}', sMob: '{cleanPhone(r.submitterMob || "")}'
-                          </div>
-                        ))}
-                      </div>
+                      <div style={{color:"var(--mu)",fontSize:".85rem"}}>You have no registrations {subTab === "For Me" ? "for yourself" : "for others"}.</div>
                     </div>
                   );
                   return (
@@ -9387,14 +9335,12 @@ function UserDashboard({ C, globalProfile, globalAuthToken, onClose }) {
                       <thead style={{background:"var(--dt)",color:"white"}}>
                         <tr>
                           <th style={{padding:"14px 16px",textAlign:"left",whiteSpace:"nowrap",fontWeight:600}}>Date</th>
-                          <th style={{padding:"14px 16px",textAlign:"left",whiteSpace:"nowrap",fontWeight:600}}>Transaction ID</th>
-                          <th style={{padding:"14px 16px",textAlign:"left",whiteSpace:"nowrap",fontWeight:600}}>Full Name</th>
                           <th style={{padding:"14px 16px",textAlign:"left",whiteSpace:"nowrap",fontWeight:600}}>Event</th>
                           <th style={{padding:"14px 16px",textAlign:"left",whiteSpace:"nowrap",fontWeight:600}}>Status</th>
                           <th style={{padding:"14px 16px",textAlign:"left",whiteSpace:"nowrap",fontWeight:600}}>Admin Remarks</th>
                           <th style={{padding:"14px 16px",textAlign:"center",whiteSpace:"nowrap",fontWeight:600}}>Actions</th>
                           {Array.from(new Set(regs.flatMap(r => Object.keys(r))))
-                            .filter(k => !["id", "_submittedAt", "timestamp", "Status", "status", "Remarks", "remarks", "AdminRemarks", "Event Name", "Event", "eventName", "eventTitle", "eventId", "logHistory", "Transaction ID", "Full Name", "Name"].includes(k))
+                            .filter(k => !["id", "_submittedAt", "timestamp", "Status", "status", "Remarks", "remarks", "AdminRemarks", "Event Name", "Event", "eventName", "eventTitle", "eventId", "logHistory"].includes(k))
                             .map(k => (
                             <th key={k} style={{padding:"14px 16px",textAlign:"left",whiteSpace:"nowrap",fontWeight:600}}>{k}</th>
                           ))}
@@ -9404,13 +9350,11 @@ function UserDashboard({ C, globalProfile, globalAuthToken, onClose }) {
                         {filteredRegs.map((r, i) => {
                           const sc = getStatusColor(r.Status || r.status || "Pending");
                           const rowKeys = Array.from(new Set(regs.flatMap(r => Object.keys(r))))
-                            .filter(k => !["id", "_submittedAt", "timestamp", "Status", "status", "Remarks", "remarks", "AdminRemarks", "Event Name", "Event", "eventName", "eventTitle", "eventId", "logHistory", "Transaction ID", "Full Name", "Name"].includes(k));
+                            .filter(k => !["id", "_submittedAt", "timestamp", "Status", "status", "Remarks", "remarks", "AdminRemarks", "Event Name", "Event", "eventName", "eventTitle", "eventId", "logHistory"].includes(k));
                           
                           return (
                             <tr key={r.id || i} style={{borderBottom:"1px solid var(--ww)",background:i%2===0?"white":"#FAFAFA"}}>
                               <td style={{padding:"14px 16px",whiteSpace:"nowrap"}}>{new Date(r.timestamp || r._submittedAt).toLocaleString()}</td>
-                              <td style={{padding:"14px 16px",whiteSpace:"nowrap",fontWeight:700,color:"var(--dt)"}}>{r["Transaction ID"] || "-"}</td>
-                              <td style={{padding:"14px 16px",whiteSpace:"nowrap"}}>{r["Full Name"] || r.Name || r.name || "-"}</td>
                               <td style={{padding:"14px 16px",whiteSpace:"nowrap",fontWeight:700,color:"var(--dt)"}}>{r.eventName || r["Event Name"] || r["Event"] || "Event Registration"}</td>
                               <td style={{padding:"14px 16px",whiteSpace:"nowrap"}}>
                                 <span style={{background:sc.bg,color:sc.col,padding:"5px 12px",borderRadius:20,fontSize:".75rem",fontWeight:700,border:`1px solid ${sc.col}33`}}>
@@ -10569,7 +10513,7 @@ function VerificationModal({ viewing, setViewing, allRegs, saveVerification, C }
                     }
 
                     if (f.type === 'fullname') {
-                      const parts = (editedReg[f.key] || "  ").split(" ");
+                      const parts = (editedReg[f.key] || "||").split("|");
                       return (
                         <div key={f.key}>
                           <div style={{fontSize:".75rem",color:"var(--mu)",fontWeight:600,marginBottom:4}}>{f.label}</div>
@@ -10578,8 +10522,8 @@ function VerificationModal({ viewing, setViewing, allRegs, saveVerification, C }
                               placeholder="First" 
                               value={parts[0] || ""} 
                               onChange={e => {
-                                const newParts = [...parts]; newParts[0] = e.target.value.replace(/\s+/g, '');
-                                setEditedReg(prev => ({ ...prev, [f.key]: newParts.join(" ") }));
+                                const newParts = [...parts]; newParts[0] = e.target.value;
+                                setEditedReg(prev => ({ ...prev, [f.key]: newParts.join("|") }));
                               }} 
                               style={{width:"100%",padding:"10px",borderRadius:6,border: "1px solid var(--bd)",fontFamily:"inherit",fontSize:".9rem"}}
                             />
@@ -10587,8 +10531,8 @@ function VerificationModal({ viewing, setViewing, allRegs, saveVerification, C }
                               placeholder="Middle" 
                               value={parts[1] || ""} 
                               onChange={e => {
-                                const newParts = [...parts]; newParts[1] = e.target.value.replace(/\s+/g, '');
-                                setEditedReg(prev => ({ ...prev, [f.key]: newParts.join(" ") }));
+                                const newParts = [...parts]; newParts[1] = e.target.value;
+                                setEditedReg(prev => ({ ...prev, [f.key]: newParts.join("|") }));
                               }} 
                               style={{width:"100%",padding:"10px",borderRadius:6,border: "1px solid var(--bd)",fontFamily:"inherit",fontSize:".9rem"}}
                             />
@@ -10596,8 +10540,8 @@ function VerificationModal({ viewing, setViewing, allRegs, saveVerification, C }
                               placeholder="Last" 
                               value={parts[2] || ""} 
                               onChange={e => {
-                                const newParts = [...parts]; newParts[2] = e.target.value.replace(/\s+/g, '');
-                                setEditedReg(prev => ({ ...prev, [f.key]: newParts.join(" ") }));
+                                const newParts = [...parts]; newParts[2] = e.target.value;
+                                setEditedReg(prev => ({ ...prev, [f.key]: newParts.join("|") }));
                               }} 
                               style={{width:"100%",padding:"10px",borderRadius:6,border: "1px solid var(--bd)",fontFamily:"inherit",fontSize:".9rem"}}
                             />
