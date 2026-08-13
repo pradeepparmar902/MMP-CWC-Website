@@ -1949,14 +1949,14 @@ function Events({ C, lang, globalAuthToken, globalProfile, onPublicLogin, forceS
                       </select>
                     ) : f.type === 'fullname' ? (
                       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:12}}>
-                        <input placeholder="First" required={f.required} value={(formData[fKey]?.split("|")[0])||""} onChange={e=>{
-                          const parts = (formData[fKey]||"||").split("|"); parts[0] = e.target.value; setFormData({...formData, [fKey]:parts.join("|")});
+                        <input placeholder="First" required={f.required} value={(formData[fKey]?.split(" ")[0])||""} onChange={e=>{
+                          const parts = (formData[fKey]||"  ").split(" "); parts[0] = e.target.value.replace(/\s+/g, ''); setFormData({...formData, [fKey]:parts.join(" ")});
                         }} className="modern-input" />
-                        <input placeholder="Middle" value={(formData[fKey]?.split("|")[1])||""} onChange={e=>{
-                          const parts = (formData[fKey]||"||").split("|"); parts[1] = e.target.value; setFormData({...formData, [fKey]:parts.join("|")});
+                        <input placeholder="Middle" value={(formData[fKey]?.split(" ")[1])||""} onChange={e=>{
+                          const parts = (formData[fKey]||"  ").split(" "); parts[1] = e.target.value.replace(/\s+/g, ''); setFormData({...formData, [fKey]:parts.join(" ")});
                         }} className="modern-input" />
-                        <input placeholder="Last" required={f.required} value={(formData[fKey]?.split("|")[2])||""} onChange={e=>{
-                          const parts = (formData[fKey]||"||").split("|"); parts[2] = e.target.value; setFormData({...formData, [fKey]:parts.join("|")});
+                        <input placeholder="Last" required={f.required} value={(formData[fKey]?.split(" ")[2])||""} onChange={e=>{
+                          const parts = (formData[fKey]||"  ").split(" "); parts[2] = e.target.value.replace(/\s+/g, ''); setFormData({...formData, [fKey]:parts.join(" ")});
                         }} className="modern-input" />
                       </div>
                     ) : f.type === 'image' || f.type === 'file' ? (
@@ -2393,14 +2393,14 @@ function Events({ C, lang, globalAuthToken, globalProfile, onPublicLogin, forceS
                           </select>
                         ) : f.type === 'fullname' ? (
                           <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:12}}>
-                            <input placeholder="First" required={f.required} value={(formData[fKey]?.split("|")[0])||""} onChange={e=>{
-                              const parts = (formData[fKey]||"||").split("|"); parts[0] = e.target.value; setFormData({...formData, [fKey]:parts.join("|")});
+                            <input placeholder="First" required={f.required} value={(formData[fKey]?.split(" ")[0])||""} onChange={e=>{
+                              const parts = (formData[fKey]||"  ").split(" "); parts[0] = e.target.value.replace(/\s+/g, ''); setFormData({...formData, [fKey]:parts.join(" ")});
                             }} className="modern-input" />
-                            <input placeholder="Middle" value={(formData[fKey]?.split("|")[1])||""} onChange={e=>{
-                              const parts = (formData[fKey]||"||").split("|"); parts[1] = e.target.value; setFormData({...formData, [fKey]:parts.join("|")});
+                            <input placeholder="Middle" value={(formData[fKey]?.split(" ")[1])||""} onChange={e=>{
+                              const parts = (formData[fKey]||"  ").split(" "); parts[1] = e.target.value.replace(/\s+/g, ''); setFormData({...formData, [fKey]:parts.join(" ")});
                             }} className="modern-input" />
-                            <input placeholder="Last" required={f.required} value={(formData[fKey]?.split("|")[2])||""} onChange={e=>{
-                              const parts = (formData[fKey]||"||").split("|"); parts[2] = e.target.value; setFormData({...formData, [fKey]:parts.join("|")});
+                            <input placeholder="Last" required={f.required} value={(formData[fKey]?.split(" ")[2])||""} onChange={e=>{
+                              const parts = (formData[fKey]||"  ").split(" "); parts[2] = e.target.value.replace(/\s+/g, ''); setFormData({...formData, [fKey]:parts.join(" ")});
                             }} className="modern-input" />
                           </div>
                         ) : f.type === 'image' || f.type === 'file' ? (
@@ -10524,7 +10524,7 @@ function VerificationModal({ viewing, setViewing, allRegs, saveVerification, C }
                     }
 
                     if (f.type === 'fullname') {
-                      const parts = (editedReg[f.key] || "||").split("|");
+                      const parts = (editedReg[f.key] || "  ").split(" ");
                       return (
                         <div key={f.key}>
                           <div style={{fontSize:".75rem",color:"var(--mu)",fontWeight:600,marginBottom:4}}>{f.label}</div>
@@ -10533,8 +10533,8 @@ function VerificationModal({ viewing, setViewing, allRegs, saveVerification, C }
                               placeholder="First" 
                               value={parts[0] || ""} 
                               onChange={e => {
-                                const newParts = [...parts]; newParts[0] = e.target.value;
-                                setEditedReg(prev => ({ ...prev, [f.key]: newParts.join("|") }));
+                                const newParts = [...parts]; newParts[0] = e.target.value.replace(/\s+/g, '');
+                                setEditedReg(prev => ({ ...prev, [f.key]: newParts.join(" ") }));
                               }} 
                               style={{width:"100%",padding:"10px",borderRadius:6,border: "1px solid var(--bd)",fontFamily:"inherit",fontSize:".9rem"}}
                             />
@@ -10542,8 +10542,8 @@ function VerificationModal({ viewing, setViewing, allRegs, saveVerification, C }
                               placeholder="Middle" 
                               value={parts[1] || ""} 
                               onChange={e => {
-                                const newParts = [...parts]; newParts[1] = e.target.value;
-                                setEditedReg(prev => ({ ...prev, [f.key]: newParts.join("|") }));
+                                const newParts = [...parts]; newParts[1] = e.target.value.replace(/\s+/g, '');
+                                setEditedReg(prev => ({ ...prev, [f.key]: newParts.join(" ") }));
                               }} 
                               style={{width:"100%",padding:"10px",borderRadius:6,border: "1px solid var(--bd)",fontFamily:"inherit",fontSize:".9rem"}}
                             />
@@ -10551,8 +10551,8 @@ function VerificationModal({ viewing, setViewing, allRegs, saveVerification, C }
                               placeholder="Last" 
                               value={parts[2] || ""} 
                               onChange={e => {
-                                const newParts = [...parts]; newParts[2] = e.target.value;
-                                setEditedReg(prev => ({ ...prev, [f.key]: newParts.join("|") }));
+                                const newParts = [...parts]; newParts[2] = e.target.value.replace(/\s+/g, '');
+                                setEditedReg(prev => ({ ...prev, [f.key]: newParts.join(" ") }));
                               }} 
                               style={{width:"100%",padding:"10px",borderRadius:6,border: "1px solid var(--bd)",fontFamily:"inherit",fontSize:".9rem"}}
                             />
