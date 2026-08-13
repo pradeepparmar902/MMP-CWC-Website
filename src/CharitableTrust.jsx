@@ -9071,8 +9071,9 @@ function UserEditRegistrationModal({ reg, onClose, onSave, authToken, C }) {
 function UserDashboard({ C, globalProfile, globalAuthToken, onClose }) {
   const cleanPhone = (num) => String(num || "").replace(/\D/g, "").slice(-10);
 
-  const [regs, setRegs] = useState([]);
+  const [regs, setRegs] = useState([]);          // ALL registrations fetched
   const [myDonations, setMyDonations] = useState([]);
+  const [debugInfo, setDebugInfo] = useState(null); // debug snapshot
   const [editingReg, setEditingReg] = useState(null);
   const [viewingHistoryModal, setViewingHistoryModal] = useState(null);
 
@@ -9156,32 +9157,52 @@ function UserDashboard({ C, globalProfile, globalAuthToken, onClose }) {
   };
 
   const fetchMyRegs = async () => {
+    setLoading(true);
     try {
-      setLoading(true);
       const allRegs = await fbFetchRegistrations(globalAuthToken);
       const mobileToMatch = cleanPhone(globalProfile?.mobile || globalProfile?.['Mobile Number'] || "");
-      const nameToMatch = String(globalProfile?.name || globalProfile?.['Full Name'] || "").trim().toLowerCase();
-      const emailToMatch = String(globalProfile?.email || auth?.email || "").trim().toLowerCase();
-      
-      const mine = [];
-      allRegs.forEach(r => {
-        let rMobile = cleanPhone(r["Mobile Number"] || r.mobile || r.phone || r["Mobile"] || r["Phone"] || r["મોબાઇલ"] || r["મોબાઈલ"] || r["WhatsApp Number"] || "");
+      const nameToMatch   = String(globalProfile?.name || globalProfile?.['Full Name'] || "").trim().toLowerCase();
+      const emailToMatch  = String(globalProfile?.email || "").trim().toLowerCase();
+
+      // Keep every reg where the user is EITHER the registrant OR the submitter
+      const mine = allRegs.filter(r => {
+        // Extract mobile from any field name that could hold it
+        let rMobile = cleanPhone(
+          r["Mobile Number"] || r.mobile || r.phone ||
+          r["Mobile"] || r["Phone"] || r["WhatsApp Number"] ||
+          r["મોબાઇલ"] || r["મોબાઈલ"] || ""
+        );
+        // Last resort: scan all values for a 10-digit number
         if (!rMobile) {
-            const rawVals = Object.values(r).map(v => String(v).replace(/\D/g, ''));
-            const possibleMob = rawVals.find(v => v.length >= 10);
-            if (possibleMob) rMobile = cleanPhone(possibleMob);
+          const hit = Object.values(r).map(v => String(v).replace(/\D/g,'')).find(v => v.length >= 10);
+          if (hit) rMobile = cleanPhone(hit);
         }
-        const rName = String(r["Submitted By"] || r.name || r["Full Name"] || r["Name"] || r["નામ"] || r["Student Name"] || "").trim().toLowerCase();
-        const rEmail = String(r["Email Address"] || r.email || r["Email"] || "").trim().toLowerCase();
-        const sMob = cleanPhone(r.submitterMob || "");
-        
-        if ((mobileToMatch && rMobile === mobileToMatch) || (nameToMatch && rName === nameToMatch) || (mobileToMatch && sMob === mobileToMatch) || (emailToMatch && rEmail === emailToMatch)) {
-          mine.push(r);
-        }
+        const rName   = String(r["Submitted By"] || r.name || r["Full Name"] || r["Name"] || r["Student Name"] || r["નામ"] || "").trim().toLowerCase();
+        const rEmail  = String(r["Email Address"] || r.email || r["Email"] || "").trim().toLowerCase();
+        const sMob    = cleanPhone(r.submitterMob || "");
+        const sName   = String(r.submitterName || "").trim().toLowerCase();
+        const sEmail  = String(r.submitterEmail || "").trim().toLowerCase();
+
+        const matchesMobile = mobileToMatch && (rMobile === mobileToMatch || sMob === mobileToMatch);
+        const matchesName   = nameToMatch   && (rName   === nameToMatch   || sName === nameToMatch);
+        const matchesEmail  = emailToMatch  && (rEmail  === emailToMatch  || sEmail === emailToMatch);
+        return matchesMobile || matchesName || matchesEmail;
       });
-      
+
+      setDebugInfo({
+        total: allRegs.length,
+        matched: mine.length,
+        mobileToMatch,
+        nameToMatch,
+        emailToMatch,
+        sampleKeys: allRegs.length > 0 ? Object.keys(allRegs[0]).slice(0,10) : [],
+        sampleMob:  allRegs.length > 0 ? cleanPhone(allRegs[0]["Mobile Number"] || allRegs[0].mobile || allRegs[0].phone || "") : ""
+      });
       setRegs(mine);
-    } catch(e) { console.error(e); }
+    } catch(e) {
+      console.error("fetchMyRegs error:", e);
+      setDebugInfo({ error: String(e) });
+    }
     setLoading(false);
   };
 
@@ -9297,28 +9318,40 @@ function UserDashboard({ C, globalProfile, globalAuthToken, onClose }) {
                   </button>
                 </div>
                 {(() => {
-                  const mobileToMatch = cleanPhone(globalProfile.mobile || globalProfile['Mobile Number'] || "");
-                  const nameToMatch = String(globalProfile.name || globalProfile['Full Name'] || "").trim().toLowerCase();
-                  
+                  const mobileToMatch = cleanPhone(globalProfile?.mobile || globalProfile?.['Mobile Number'] || "");
+                  const nameToMatch   = String(globalProfile?.name || globalProfile?.['Full Name'] || "").trim().toLowerCase();
+                  const emailToMatch  = String(globalProfile?.email || "").trim().toLowerCase();
+
+                  // Split regs into "For Me" (I am the registrant) vs "For Others" (I submitted on behalf of someone else)
                   const filteredRegs = regs.filter(r => {
-                    let rMobile = cleanPhone(r["Mobile Number"] || r.mobile || r.phone || r["Mobile"] || r["Phone"] || r["મોબાઇલ"] || r["મોબાઈલ"] || r["WhatsApp Number"] || "");
-        if (!rMobile) {
-            const rawVals = Object.values(r).map(v => String(v).replace(/\D/g, ''));
-            const possibleMob = rawVals.find(v => v.length >= 10);
-            if (possibleMob) rMobile = cleanPhone(possibleMob);
-        }
-        const rName = String(r["Submitted By"] || r.name || r["Full Name"] || r["Name"] || r["નામ"] || r["Student Name"] || "").trim().toLowerCase();
-                    const sMob = cleanPhone(r.submitterMob || "");
-                    
-                    if (subTab === "For Me") {
-                      return (mobileToMatch && rMobile === mobileToMatch) || (!rMobile && ((mobileToMatch && sMob === mobileToMatch) || rName === nameToMatch));
-                    } else {
-                      if (rMobile && rMobile !== mobileToMatch) {
-                        if (mobileToMatch && sMob === mobileToMatch) return true;
-                        if (!sMob && rName === nameToMatch) return true;
-                      }
-                      return false;
+                    let rMobile = cleanPhone(
+                      r["Mobile Number"] || r.mobile || r.phone ||
+                      r["Mobile"] || r["Phone"] || r["WhatsApp Number"] ||
+                      r["મોબાઇલ"] || r["મોબાઈલ"] || ""
+                    );
+                    if (!rMobile) {
+                      const hit = Object.values(r).map(v => String(v).replace(/\D/g,'')).find(v => v.length >= 10);
+                      if (hit) rMobile = cleanPhone(hit);
                     }
+                    const rName  = String(r["Submitted By"] || r.name || r["Full Name"] || r["Name"] || r["Student Name"] || r["નામ"] || "").trim().toLowerCase();
+                    const rEmail = String(r["Email Address"] || r.email || r["Email"] || "").trim().toLowerCase();
+                    const sMob   = cleanPhone(r.submitterMob || "");
+                    const sName  = String(r.submitterName || "").trim().toLowerCase();
+
+                    // "For Me": the registrant's contact matches my profile
+                    const iAmRegistrant =
+                      (mobileToMatch && rMobile === mobileToMatch) ||
+                      (emailToMatch  && rEmail  === emailToMatch)  ||
+                      (nameToMatch   && rName   === nameToMatch);
+
+                    // "For Others": I submitted for someone else (submitter = me, but registrant ≠ me)
+                    const iAmSubmitter =
+                      (mobileToMatch && sMob   === mobileToMatch) ||
+                      (nameToMatch   && sName  === nameToMatch);
+
+                    if (subTab === "For Me")     return iAmRegistrant;
+                    if (subTab === "For Others") return iAmSubmitter && !iAmRegistrant;
+                    return true;
                   });
 
                   if (loading) return <div style={{textAlign:"center",padding:40,color:"var(--mu)"}}>Loading your registrations...</div>;
@@ -9326,7 +9359,24 @@ function UserDashboard({ C, globalProfile, globalAuthToken, onClose }) {
                     <div style={{background:"white",padding:"40px 20px",borderRadius:16,textAlign:"center",border:"1px solid var(--bd)"}}>
                       <div style={{fontSize:"3rem",marginBottom:12}}>📅</div>
                       <div style={{fontWeight:600,color:"var(--dt)",fontSize:"1.1rem",marginBottom:6}}>No Registrations Found</div>
-                      <div style={{color:"var(--mu)",fontSize:".85rem"}}>You have no registrations {subTab === "For Me" ? "for yourself" : "for others"}.</div>
+                      <div style={{color:"var(--mu)",fontSize:".85rem",marginBottom:12}}>You have no registrations {subTab === "For Me" ? "for yourself" : "for others"}.</div>
+                      {debugInfo && (
+                        <div style={{marginTop:12,padding:"12px 16px",background:"#F0F4FF",borderRadius:10,border:"1px solid #C7D6FF",textAlign:"left",fontSize:".75rem",color:"#333",maxWidth:500,margin:"12px auto 0"}}>
+                          <div style={{fontWeight:700,marginBottom:6,color:"#1e3a8a"}}>🔍 Debug Info</div>
+                          {debugInfo.error
+                            ? <div style={{color:"red"}}>Error: {debugInfo.error}</div>
+                            : (<>
+                              <div>📦 Total regs fetched: <b>{debugInfo.total}</b></div>
+                              <div>✅ Matched to me: <b>{debugInfo.matched}</b></div>
+                              <div>📱 My mobile: <b>{debugInfo.mobileToMatch || "(none)"}</b></div>
+                              <div>👤 My name: <b>{debugInfo.nameToMatch || "(none)"}</b></div>
+                              <div>📧 My email: <b>{debugInfo.emailToMatch || "(none)"}</b></div>
+                              {debugInfo.total > 0 && <div>🔑 Sample reg keys: <b>{debugInfo.sampleKeys.join(", ")}</b></div>}
+                              {debugInfo.total > 0 && <div>📱 Sample reg mobile: <b>{debugInfo.sampleMob || "(empty)"}</b></div>}
+                            </>)
+                          }
+                        </div>
+                      )}
                     </div>
                   );
                   return (
