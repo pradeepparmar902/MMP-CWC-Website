@@ -1968,7 +1968,7 @@ function Events({ C, lang, globalAuthToken, globalProfile, onPublicLogin, forceS
                         <input type="number" step="0.01" min="0" max="100" placeholder="e.g. 85.50" required={f.required} value={formData[fKey]||""} onChange={e=>setFormData({...formData, [fKey]:e.target.value})} className="modern-input" style={{paddingRight:32}}/>
                         <span style={{position:"absolute",right:12,fontWeight:700,color:"var(--dt)",fontSize:".9rem",pointerEvents:"none"}}>%</span>
                       </div>
-                    ) : f.type === 'tel' ? (
+                    ) : (f.type === 'tel' || (f.label || "").toLowerCase().includes("phone") || (f.label || "").toLowerCase().includes("mobile") || fKey.toLowerCase().includes("phone") || fKey.toLowerCase().includes("mobile")) ? (
                       <div style={{display:"flex",gap:8}}>
                         {(() => {
                           const rawVal = formData[fKey] || "";
@@ -2407,69 +2407,13 @@ function Events({ C, lang, globalAuthToken, globalProfile, onPublicLogin, forceS
                               );
                             })()}
                           </div>
-                        ) : (f.type === 'tel' || fKey.toLowerCase().includes("phone") || fKey.toLowerCase().includes("mobile")) ? (
-                          <div style={{display:"flex", gap:8}}>
-                            {(() => {
-                              const rawVal = formData[fKey] || "";
-                              let currentCode = "+91";
-                              let currentNum = "";
-                              
-                              if (rawVal.startsWith("+")) {
-                                const spaceIdx = rawVal.indexOf(" ");
-                                if (spaceIdx !== -1) {
-                                  currentCode = rawVal.substring(0, spaceIdx);
-                                  currentNum = rawVal.substring(spaceIdx + 1).replace(/\D/g, "");
-                                } else {
-                                  if (rawVal.startsWith("+91") && rawVal.length > 3) {
-                                    currentCode = "+91";
-                                    currentNum = rawVal.substring(3).replace(/\D/g, "");
-                                  } else {
-                                    currentNum = rawVal.replace(/\D/g, "");
-                                  }
-                                }
-                              } else {
-                                currentNum = rawVal.replace(/\D/g, "");
-                              }
-                              
-                              return (
-                                <>
-                                  <select 
-                                    value={currentCode} 
-                                    onChange={e=>{
-                                      const nextCode = e.target.value;
-                                      setFormData({...formData, [fKey]: `${nextCode} ${currentNum}`});
-                                    }} 
-                                    style={{padding:"10px 8px", borderRadius:8, border:"1px solid var(--bd)", fontSize:".9rem", background:"white", outline:"none", cursor:"pointer", width: 85, boxSizing: "border-box"}}
-                                  >
-                                    <option value="+91">+91 (IN)</option>
-                                    <option value="+1">+1 (US)</option>
-                                    <option value="+44">+44 (UK)</option>
-                                    <option value="+971">+971 (AE)</option>
-                                    <option value="+966">+966 (SA)</option>
-                                    <option value="+61">+61 (AU)</option>
-                                    <option value="+65">+65 (SG)</option>
-                                  </select>
-                                  <input 
-                                    type="tel" 
-                                    required={f.required} 
-                                    value={currentNum} 
-                                    onChange={e=>{
-                                      const val = e.target.value.replace(/\D/g, "").slice(0, 10);
-                                      setFormData({...formData, [fKey]: `${currentCode} ${val}`});
-                                    }} 
-                                    style={{flex:1, padding:"10px", borderRadius:8, border:"1px solid var(--bd)", fontFamily:"inherit", fontSize:".9rem", boxSizing: "border-box"}} 
-                                    placeholder="10-digit number"
-                                  />
-                                </>
-                              );
-                            })()}
-                          </div>
+
                         ) : f.type === 'percentage' ? (
                           <div style={{position:"relative",display:"flex",alignItems:"center"}}>
                             <input type="number" step="0.01" min="0" max="100" placeholder="e.g. 85.50" required={f.required} value={formData[fKey]||""} onChange={e=>setFormData({...formData, [fKey]:e.target.value})} className="modern-input" style={{paddingRight:32}}/>
                             <span style={{position:"absolute",right:12,fontWeight:700,color:"var(--dt)",fontSize:".9rem",pointerEvents:"none"}}>%</span>
                           </div>
-                        ) : f.type === 'tel' ? (
+                        ) : (f.type === 'tel' || (f.label || "").toLowerCase().includes("phone") || (f.label || "").toLowerCase().includes("mobile") || fKey.toLowerCase().includes("phone") || fKey.toLowerCase().includes("mobile")) ? (
                           <div style={{display:"flex",gap:8}}>
                             {(() => {
                               const rawVal = formData[fKey] || "";
