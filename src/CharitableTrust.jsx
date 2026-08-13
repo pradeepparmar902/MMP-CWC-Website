@@ -9385,12 +9385,14 @@ function UserDashboard({ C, globalProfile, globalAuthToken, onClose }) {
                       <thead style={{background:"var(--dt)",color:"white"}}>
                         <tr>
                           <th style={{padding:"14px 16px",textAlign:"left",whiteSpace:"nowrap",fontWeight:600}}>Date</th>
+                          <th style={{padding:"14px 16px",textAlign:"left",whiteSpace:"nowrap",fontWeight:600}}>Transaction ID</th>
+                          <th style={{padding:"14px 16px",textAlign:"left",whiteSpace:"nowrap",fontWeight:600}}>Full Name</th>
                           <th style={{padding:"14px 16px",textAlign:"left",whiteSpace:"nowrap",fontWeight:600}}>Event</th>
                           <th style={{padding:"14px 16px",textAlign:"left",whiteSpace:"nowrap",fontWeight:600}}>Status</th>
                           <th style={{padding:"14px 16px",textAlign:"left",whiteSpace:"nowrap",fontWeight:600}}>Admin Remarks</th>
                           <th style={{padding:"14px 16px",textAlign:"center",whiteSpace:"nowrap",fontWeight:600}}>Actions</th>
                           {Array.from(new Set(regs.flatMap(r => Object.keys(r))))
-                            .filter(k => !["id", "_submittedAt", "timestamp", "Status", "status", "Remarks", "remarks", "AdminRemarks", "Event Name", "Event", "eventName", "eventTitle", "eventId", "logHistory"].includes(k))
+                            .filter(k => !["id", "_submittedAt", "timestamp", "Status", "status", "Remarks", "remarks", "AdminRemarks", "Event Name", "Event", "eventName", "eventTitle", "eventId", "logHistory", "Transaction ID", "Full Name", "Name"].includes(k))
                             .map(k => (
                             <th key={k} style={{padding:"14px 16px",textAlign:"left",whiteSpace:"nowrap",fontWeight:600}}>{k}</th>
                           ))}
@@ -9400,11 +9402,13 @@ function UserDashboard({ C, globalProfile, globalAuthToken, onClose }) {
                         {filteredRegs.map((r, i) => {
                           const sc = getStatusColor(r.Status || r.status || "Pending");
                           const rowKeys = Array.from(new Set(regs.flatMap(r => Object.keys(r))))
-                            .filter(k => !["id", "_submittedAt", "timestamp", "Status", "status", "Remarks", "remarks", "AdminRemarks", "Event Name", "Event", "eventName", "eventTitle", "eventId", "logHistory"].includes(k));
+                            .filter(k => !["id", "_submittedAt", "timestamp", "Status", "status", "Remarks", "remarks", "AdminRemarks", "Event Name", "Event", "eventName", "eventTitle", "eventId", "logHistory", "Transaction ID", "Full Name", "Name"].includes(k));
                           
                           return (
                             <tr key={r.id || i} style={{borderBottom:"1px solid var(--ww)",background:i%2===0?"white":"#FAFAFA"}}>
                               <td style={{padding:"14px 16px",whiteSpace:"nowrap"}}>{new Date(r.timestamp || r._submittedAt).toLocaleString()}</td>
+                              <td style={{padding:"14px 16px",whiteSpace:"nowrap",fontWeight:700,color:"var(--dt)"}}>{r["Transaction ID"] || "-"}</td>
+                              <td style={{padding:"14px 16px",whiteSpace:"nowrap"}}>{r["Full Name"] || r.Name || r.name || "-"}</td>
                               <td style={{padding:"14px 16px",whiteSpace:"nowrap",fontWeight:700,color:"var(--dt)"}}>{r.eventName || r["Event Name"] || r["Event"] || "Event Registration"}</td>
                               <td style={{padding:"14px 16px",whiteSpace:"nowrap"}}>
                                 <span style={{background:sc.bg,color:sc.col,padding:"5px 12px",borderRadius:20,fontSize:".75rem",fontWeight:700,border:`1px solid ${sc.col}33`}}>
