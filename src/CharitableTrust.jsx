@@ -1480,6 +1480,7 @@ function Events({ C, lang, globalAuthToken, globalProfile, onPublicLogin, forceS
 
   const [selectedEvent, setSelectedEvent] = useState(getInitialEvent);
   const [formData, setFormData] = useState({});
+  const [formBase64Data, setFormBase64Data] = useState({});
   const [submitting, setSubmitting] = useState(false);
   const [done, setDone] = useState(false);
   const [waMessageLink, setWaMessageLink] = useState("");
@@ -1547,9 +1548,21 @@ function Events({ C, lang, globalAuthToken, globalProfile, onPublicLogin, forceS
     setUploadingFields(prev => ({...prev, [fKey]: true}));
     try {
       const urls = [];
+      const b64s = [];
       for (const file of files) {
+        if (selectedEvent?.event?.saveToGoogleDrive) {
+          const b64Obj = await new Promise((resolve) => {
+            const reader = new FileReader();
+            reader.onload = (ev) => resolve({ data: ev.target.result.split(',')[1], name: file.name, type: file.type });
+            reader.readAsDataURL(file);
+          });
+          b64s.push(b64Obj);
+        }
         const url = await fbUploadPublicFile(file, authToken);
         if (url) urls.push(url);
+      }
+      if (b64s.length > 0) {
+        setFormBase64Data(prev => ({...prev, [fKey]: [...(prev[fKey]||[]), ...b64s]}));
       }
       setFormData(prev => {
         const existing = prev[fKey] ? prev[fKey].split(",").map(s => s.trim()).filter(Boolean) : [];
@@ -1722,6 +1735,38 @@ function Events({ C, lang, globalAuthToken, globalProfile, onPublicLogin, forceS
       } catch (fbErr) {
         console.warn("Firebase save skipped (Update Security Rules to enable database logging). Proceeding to WhatsApp.");
       }
+      
+      // Option C: Google Sheets & Drive Integration via Webhook
+      if (selectedEvent?.event?.googleSheetsWebhookUrl) {
+        try {
+          const payload = {
+            eventName: selectedEvent.event.title,
+            ...formData
+          };
+          
+          if (selectedEvent.event.saveToGoogleDrive) {
+            const fileKeys = Object.keys(formBase64Data);
+            if (fileKeys.length > 0) {
+              const files = formBase64Data[fileKeys[0]];
+              if (files && files.length > 0) {
+                payload.fileBase64 = files[0].data;
+                payload.fileName = files[0].name;
+                payload.fileMimeType = files[0].type;
+              }
+            }
+          }
+
+          fetch(selectedEvent.event.googleSheetsWebhookUrl, {
+            method: 'POST',
+            mode: 'no-cors',
+            headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+            body: JSON.stringify(payload)
+          }).catch(err => console.error("Google Sheets Webhook Error:", err));
+        } catch (err) {
+          console.error("Webhook prepare error:", err);
+        }
+      }
+
       // Option A: WhatsApp redirection
       let msg = `*New Registration: ${selectedEvent.event.title}*\n\n`;
       Object.entries(formData).forEach(([k,v]) => {
@@ -7235,6 +7280,16 @@ function AdminEvents({ mob, C, setC, auth }) {
                       }} />
                     </label>
                   </div>
+                </div>
+                <div style={{gridColumn:"1/-1"}}>
+                  <label style={{fontSize:".7rem",color:"var(--mu)",fontWeight:600}}>Google Sheets Webhook URL (For auto-saving registrations to Google Sheets)</label>
+                  <input type="text" placeholder="https://script.google.com/macros/s/..." value={ev.googleSheetsWebhookUrl || ""} onChange={e=>updateItem(i,"googleSheetsWebhookUrl",e.target.value)} style={{width:"100%",padding:"6px",borderRadius:6,border:"1px solid var(--bd)",fontSize:".85rem",fontFamily:"inherit"}}/>
+                </div>
+                <div style={{gridColumn:"1/-1", display:"flex", alignItems:"center", gap:8}}>
+                  <input type="checkbox" id={`drive_${i}`} checked={ev.saveToGoogleDrive || false} onChange={e=>updateItem(i,"saveToGoogleDrive",e.target.checked)} />
+                  <label htmlFor={`drive_${i}`} style={{fontSize:".75rem",fontWeight:700,color:"var(--dt)",cursor:"pointer"}}>
+                    Save File Attachments to Google Drive (Requires Google Apps Script setup)
+                  </label>
                 </div>
                 <div style={{gridColumn:"1/-1", marginTop:8, padding:12, background:"#FFF5F5", borderRadius:8, border:"2px solid #F5B8B8"}}>
                   <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom: ev.regClosed ? 10 : 0}}>
