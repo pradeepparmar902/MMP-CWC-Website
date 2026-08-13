@@ -12558,6 +12558,10 @@ function AdminInviteLetters({ mob, C, auth }) {
 
   const inviteRegs = regs.filter(r => {
     if (!selectedEventId) return false;
+    // Only Approved registrations (same as Certificates — exclude Pending/Rejected)
+    if (r.Status !== "Approved" && r.status !== "Approved") return false;
+    // Exclude special/global guests (they are handled separately)
+    if (r.isGlobalGuest || r.isSpecialGuest || r.globalGuestId) return false;
     const ev = inviteEvents.find(e => e.id === selectedEventId);
     if (!ev) return false;
     let evName = r.eventName || r.eventTitle || r.eventId;
