@@ -3230,74 +3230,94 @@ export const generateCertificatePDF = async (certConfig, fieldsData, fallbackNam
       actualType = 'cert';
     }
 
-    const img = new Image();
     const isInvite = actualType === 'invite';
-    let srcUrl = isInvite ? certConfig.inviteBgUrl : certConfig.certBgUrl;
-    
-    if (srcUrl && srcUrl.startsWith('http')) {
-      img.crossOrigin = "Anonymous";
-      srcUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(srcUrl)}`;
+    let srcUrl = isInvite ? certConfig?.inviteBgUrl : certConfig?.certBgUrl;
+
+    if (!srcUrl) {
+      reject(new Error(`No ${isInvite ? 'Invite' : 'Certificate'} Template background image has been uploaded for this event. Please go to Admin -> Content Editor -> Events -> Edit Event -> '${isInvite ? '✉️ Configure Template' : '⚙️ Configure Template'}' to upload a background image.`));
+      return;
     }
-    
-    img.onload = () => {
-      try {
-        const doc = new jsPDF({ orientation: img.width > img.height ? 'landscape' : 'portrait', unit: 'px', format: [img.width, img.height] });
-        doc.addImage(img, 'JPEG', 0, 0, img.width, img.height);
-        
-        const fontSize = isInvite ? certConfig.inviteFontSize : certConfig.certFontSize;
-        const fontColor = isInvite ? certConfig.inviteFontColor : certConfig.certFontColor;
-        
-        doc.setFontSize(fontSize || 30);
-        doc.setTextColor(fontColor || "#000000");
-        doc.setFont("helvetica", "bold");
 
-        const m = (isInvite ? certConfig.inviteMap : certConfig.certMap) || {};
+    const loadImg = (urlToLoad, useProxy = false) => {
+      const img = new Image();
+      if (urlToLoad.startsWith('http')) {
+        img.crossOrigin = "Anonymous";
+      }
+      
+      let targetUrl = urlToLoad;
+      if (useProxy && urlToLoad.startsWith('http')) {
+        targetUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(urlToLoad)}`;
+      }
 
-        Object.entries(m).forEach(([key, pos]) => {
-          if (pos.visible) {
-            const xPx = (parseFloat(pos.x) / 100) * img.width;
-            const yPx = (parseFloat(pos.y) / 100) * img.height;
-            let val = fieldsData[key] || "";
-            
-            if (key.startsWith("[TEXT] ")) {
-                val = key.replace("[TEXT] ", "");
-            } else if (!val) {
-                // Special fallback for standard fields if not provided
-                if (key.toLowerCase().includes("name") && !key.toLowerCase().includes("event")) val = fallbackName;
+      img.onload = () => {
+        try {
+          const doc = new jsPDF({ orientation: img.width > img.height ? 'landscape' : 'portrait', unit: 'px', format: [img.width, img.height] });
+          doc.addImage(img, 'JPEG', 0, 0, img.width, img.height);
+          
+          const fontSize = isInvite ? certConfig.inviteFontSize : certConfig.certFontSize;
+          const fontColor = isInvite ? certConfig.inviteFontColor : certConfig.certFontColor;
+          
+          doc.setFontSize(fontSize || 30);
+          doc.setTextColor(fontColor || "#000000");
+          doc.setFont("helvetica", "bold");
+
+          const m = (isInvite ? certConfig.inviteMap : certConfig.certMap) || {};
+
+          Object.entries(m).forEach(([key, pos]) => {
+            if (pos.visible) {
+              const xPx = (parseFloat(pos.x) / 100) * img.width;
+              const yPx = (parseFloat(pos.y) / 100) * img.height;
+              let val = fieldsData[key] || "";
+              
+              if (key.startsWith("[TEXT] ")) {
+                  val = key.replace("[TEXT] ", "");
+              } else if (!val) {
+                  if (key.toLowerCase().includes("name") && !key.toLowerCase().includes("event")) val = fallbackName;
+              }
+              
+              if (typeof val === 'string') {
+                  val = val.replace(/\|/g, ' ').trim();
+              }
+              const alignOpt = isInvite ? "left" : "center";
+              doc.text(String(val), xPx, yPx, { align: alignOpt, baseline: "middle" });
             }
-            
-            if (typeof val === 'string') {
-                val = val.replace(/\|/g, ' ').trim();
-            }
-            const alignOpt = isInvite ? "left" : "center";
-            doc.text(String(val), xPx, yPx, { align: alignOpt, baseline: "middle" });
+          });
+          
+          const blob = doc.output('blob');
+          const url = URL.createObjectURL(blob);
+          
+          if (actualPreviewMode === 'blob') {
+              resolve(blob);
+              return;
+          } else if (actualPreviewMode === 'url') {
+              resolve(url);
+              return;
+          } else if (actualPreviewMode === true) {
+              window.open(url, '_blank');
+          } else {
+              const link = document.createElement("a");
+              link.href = url;
+              const outName = fallbackName ? fallbackName.replace(/\s+/g, '_') : "Student";
+              link.download = `${isInvite ? 'Invite' : 'Certificate'}_${outName}.pdf`;
+              link.click();
           }
-        });
-        
-        const blob = doc.output('blob');
-        const url = URL.createObjectURL(blob);
-        
-        if (actualPreviewMode === 'blob') {
-            resolve(blob);
-            return;
-        } else if (actualPreviewMode === 'url') {
-            resolve(url);
-            return;
-        } else if (actualPreviewMode === true) {
-            window.open(url, '_blank');
+          
+          resolve(true);
+        } catch(e) { reject(e); }
+      };
+
+      img.onerror = (e) => {
+        if (!useProxy && urlToLoad.startsWith('http')) {
+          loadImg(urlToLoad, true);
         } else {
-            const link = document.createElement("a");
-            link.href = url;
-            const outName = fallbackName ? fallbackName.replace(/\s+/g, '_') : "Student";
-            link.download = `${isInvite ? 'Invite' : 'Certificate'}_${outName}.pdf`;
-            link.click();
+          reject(new Error(`Failed to load ${isInvite ? 'invite' : 'certificate'} template image. Please ensure a valid image is configured under Event Settings.`));
         }
-        
-        resolve(true);
-      } catch(e) { reject(e); }
+      };
+
+      img.src = targetUrl;
     };
-    img.onerror = (e) => reject(new Error(`Failed to load ${isInvite ? 'invite' : 'certificate'} template image.`));
-    img.src = srcUrl;
+
+    loadImg(srcUrl, false);
   });
 };
 
@@ -12426,7 +12446,7 @@ function AdminCertificates({ mob, C, auth }) {
                   <th style={{padding:"14px 12px",textAlign:"left",background:"var(--dt)",color:"white",fontWeight:600}}>Date Approved</th>
                   <th style={{padding:"14px 12px",textAlign:"left",background:"var(--dt)",color:"white",fontWeight:600}}>Event</th>
                   <th style={{padding:"14px 12px",textAlign:"left",background:"var(--dt)",color:"white",fontWeight:600}}>Participant Name</th>
-                  <th style={{padding:"14px 12px",textAlign:"center",background:"var(--dt)",color:"white",fontWeight:600}}>Status</th>
+                  <th style={{padding:"14px 12px",textAlign:"center",background:"var(--dt)",color:"white",fontWeight:600}}>Release Status</th>
                   <th style={{padding:"14px 12px",textAlign:"center",background:"var(--dt)",color:"white",fontWeight:600}}>Viewed On</th>
                   <th style={{padding:"14px 12px",textAlign:"center",background:"var(--dt)",color:"white",fontWeight:600}}>Downloaded On</th>
                 </tr>
@@ -12474,7 +12494,7 @@ function AdminCertificates({ mob, C, auth }) {
                           </span>
                         ) : (
                           <span style={{padding:"4px 8px",borderRadius:6,fontSize:".75rem",fontWeight:700,background:r.certificateReleased?"#EDFAF1":"#FEF9EC",color:r.certificateReleased?"#1A7A3E":"#C8860A"}}>
-                            {r.certificateReleased ? "Released" : "Pending"}
+                            {r.certificateReleased ? "Released" : "Not Released"}
                           </span>
                         )}
                       </td>
@@ -13083,7 +13103,7 @@ function AdminInviteLetters({ mob, C, auth }) {
                   <th style={{padding:"14px 12px",textAlign:"left",background:"var(--dt)",color:"white",fontWeight:600}}>Date Approved</th>
                   <th style={{padding:"14px 12px",textAlign:"left",background:"var(--dt)",color:"white",fontWeight:600}}>Event</th>
                   <th style={{padding:"14px 12px",textAlign:"left",background:"var(--dt)",color:"white",fontWeight:600}}>Participant Name</th>
-                  <th style={{padding:"14px 12px",textAlign:"center",background:"var(--dt)",color:"white",fontWeight:600}}>Status</th>
+                  <th style={{padding:"14px 12px",textAlign:"center",background:"var(--dt)",color:"white",fontWeight:600}}>Invite Status</th>
                   <th style={{padding:"14px 12px",textAlign:"center",background:"var(--dt)",color:"white",fontWeight:600}}>Viewed On</th>
                   <th style={{padding:"14px 12px",textAlign:"center",background:"var(--dt)",color:"white",fontWeight:600}}>Downloaded On</th>
                 </tr>
@@ -13131,7 +13151,7 @@ function AdminInviteLetters({ mob, C, auth }) {
                           </span>
                         ) : (
                           <span style={{padding:"4px 8px",borderRadius:6,fontSize:".75rem",fontWeight:700,background:r.inviteLetterReleased?"#EDFAF1":"#FEF9EC",color:r.inviteLetterReleased?"#1A7A3E":"#C8860A"}}>
-                            {r.inviteLetterReleased ? "Released" : "Pending"}
+                            {r.inviteLetterReleased ? "Released" : "Not Released"}
                           </span>
                         )}
                       </td>
