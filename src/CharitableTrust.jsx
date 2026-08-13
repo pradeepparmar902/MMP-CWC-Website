@@ -1722,7 +1722,12 @@ function Events({ C, lang, globalAuthToken, globalProfile, onPublicLogin, forceS
     setSubmitting(true);
 
     // Sanitize any pipe characters in formData (legacy from localStorage)
-    const sanitizedForm = {};
+    const txId = "VG-" + Math.random().toString(36).substring(2, 8).toUpperCase();
+    const sanitizedForm = {
+      "Transaction ID": txId,
+      "Status": "Pending",
+      "Remarks": ""
+    };
     for (const key in formData) {
       if (typeof formData[key] === 'string') {
         sanitizedForm[key] = formData[key].replace(/\|/g, " ").replace(/\s+/g, " ").trim();
