@@ -1769,10 +1769,10 @@ function Events({ C, lang, globalAuthToken, globalProfile, onPublicLogin, forceS
           
           // Google Sheets specific overrides to ensure it shows up without script changes
           if (payload["Full Name"]) {
-            payload["Full Name"] = String(payload["Full Name"]).replace(/\|/g, " ") + " (Tx: " + txId + ")";
+            payload["Full Name"] = String(payload["Full Name"]).replace(/\|/g, " ");
           }
           if (payload["Name"]) {
-            payload["Name"] = String(payload["Name"]).replace(/\|/g, " ") + " (Tx: " + txId + ")";
+            payload["Name"] = String(payload["Name"]).replace(/\|/g, " ");
           }
           
           // Ensure mobile number doesn't have +91 if it's there
