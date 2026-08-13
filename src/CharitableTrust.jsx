@@ -9327,7 +9327,7 @@ function UserDashboard({ C, globalProfile, globalAuthToken, onClose }) {
                   if (filteredRegs.length === 0) return (
                     <div style={{background:"white",padding:"40px 20px",borderRadius:16,textAlign:"center",border:"1px solid var(--bd)"}}>
                       <div style={{fontSize:"3rem",marginBottom:12}}>📅</div>
-                      <div style={{fontWeight:600,color:"var(--dt)",fontSize:"1.1rem",marginBottom:6}}>No Registrations Found</div>
+                      <div style={{fontWeight:600,color:"var(--dt)",fontSize:"1.1rem",marginBottom:6}}>No Registrations Found (v2)</div>
                       <div style={{color:"var(--mu)",fontSize:".85rem"}}>You have no registrations {subTab === "For Me" ? "for yourself" : "for others"}.</div>
                     </div>
                   );
