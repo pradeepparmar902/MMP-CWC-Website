@@ -7055,6 +7055,271 @@ function AdminForms({ C, setC, saveToFb, mob, auth }) {
   );
 }
 
+function CertificateTemplateMapper({ imgUrl, mapData, fontSize, fontColor, onChange, availableFields, isInvite=false }) {
+  const [fields, setFields] = useState(() => {
+    const initFields = {};
+    if (availableFields) {
+       availableFields.forEach((f, i) => {
+         initFields[f] = { x: 50, y: 30 + ((i % 6) * 10), visible: false };
+       });
+    }
+    if (mapData) {
+       return { ...initFields, ...mapData };
+    }
+    return initFields;
+  });
+
+  useEffect(() => {
+    if (availableFields) {
+      setFields(prev => {
+        const next = { ...prev };
+        let changed = false;
+        availableFields.forEach((f, i) => {
+          if (!next[f]) {
+            next[f] = { x: 50, y: 30 + ((i % 6) * 10), visible: false };
+            changed = true;
+          }
+        });
+        return changed ? next : prev;
+      });
+    }
+  }, [availableFields]);
+
+  const [fSize, setFSize] = useState(fontSize || 30);
+  const [fColor, setFColor] = useState(fontColor || "#000000");
+
+  const containerRef = useRef(null);
+  const [dragging, setDragging] = useState(null);
+
+  const handlePointerDown = (e, key) => { e.preventDefault(); e.target.setPointerCapture(e.pointerId); setDragging(key); };
+  const handlePointerMove = (e) => {
+    if (!dragging || !containerRef.current) return;
+    const rect = containerRef.current.getBoundingClientRect();
+    let x = ((e.clientX - rect.left) / rect.width) * 100;
+    let y = ((e.clientY - rect.top) / rect.height) * 100;
+    x = Math.max(0, Math.min(100, x)); y = Math.max(0, Math.min(100, y));
+    setFields(prev => ({ ...prev, [dragging]: { ...prev[dragging], x, y } }));
+  };
+  const handlePointerUp = (e) => { 
+    if (dragging) {
+      e.target.releasePointerCapture(e.pointerId);
+      setDragging(null); 
+      onChange(fields, fSize, fColor); 
+    }
+  };
+
+  const toggleVisibility = (key) => {
+    const nextFields = { ...fields, [key]: { ...fields[key], visible: !fields[key].visible } };
+    setFields(nextFields);
+    onChange(nextFields, fSize, fColor);
+  };
+
+  return (
+    <div style={{marginTop: 16, border: "1px solid var(--bd)", borderRadius: 8, padding: 16, background: "white"}}>
+      <h4 style={{margin: 0, marginBottom: 8, fontSize: ".9rem"}}>Visual Certificate Mapper</h4>
+      <p style={{fontSize: ".75rem", color: "var(--mu)", marginBottom: 16}}>Drag the fields to position them on your template. Click a button below to show/hide a field.</p>
+      
+      <div style={{display:"flex",gap:16,marginBottom:16}}>
+        <div>
+          <label style={{fontSize:".75rem",fontWeight:600,display:"block",marginBottom:4}}>Font Size (px)</label>
+          <input type="number" value={fSize} onChange={(e) => { setFSize(parseInt(e.target.value)); onChange(fields, parseInt(e.target.value), fColor); }} style={{width:80,padding:6,borderRadius:6,border:"1px solid var(--bd)"}} />
+        </div>
+        <div>
+          <label style={{fontSize:".75rem",fontWeight:600,display:"block",marginBottom:4}}>Text Color</label>
+          <input type="color" value={fColor} onChange={(e) => { setFColor(e.target.value); onChange(fields, fSize, e.target.value); }} style={{width:50,height:32,padding:0,border:"none",borderRadius:6,cursor:"pointer"}} />
+        </div>
+      </div>
+      <div style={{display:"flex", gap: 8, flexWrap: "wrap", marginBottom: 16}}>
+        {Object.entries(fields).map(([key, pos]) => (
+          <button 
+            key={key} 
+            onClick={() => toggleVisibility(key)}
+            style={{padding:"6px 12px", borderRadius:20, border:"1px solid var(--bd)", background:pos.visible?"var(--dt)":"#f5f5f5", color:pos.visible?"white":"#555", fontSize:".75rem", fontWeight:600, cursor:"pointer"}}
+          >
+            {pos.visible ? "✓ " : "+ "}{key.startsWith("[TEXT] ") ? key.replace("[TEXT] ", "") : key}
+          </button>
+        ))}
+      </div>
+
+      <div 
+        ref={containerRef} onPointerMove={handlePointerMove} onPointerUp={handlePointerUp} onPointerLeave={handlePointerUp}
+        style={{position: "relative", width: "100%", overflow: "hidden", borderRadius: 8, background: "#f5f5f5", border: "1px dashed var(--bd)", touchAction: "none", minHeight: 200}}
+      >
+        <img src={imgUrl} style={{width: "100%", display: "block", pointerEvents: "none"}} alt="Template" />
+        
+        {Object.entries(fields).map(([key, pos]) => {
+          if (!pos.visible) return null;
+          let safeX = Math.max(5, Math.min(95, parseFloat(pos.x) || 50));
+          let safeY = Math.max(5, Math.min(95, parseFloat(pos.y) || 50));
+          return (
+          <div
+            key={key} onPointerDown={(e) => handlePointerDown(e, key)}
+            style={{
+              position: "absolute", left: `${safeX}%`, top: `${safeY}%`, transform: isInvite ? "translate(0%, -50%)" : "translate(-50%, -50%)",
+              background: dragging === key ? "var(--sf)" : "rgba(13, 75, 94, 0.85)", color: "white", padding: "4px 8px", borderRadius: 4,
+              fontSize: "12px", fontWeight: 700, cursor: dragging === key ? "grabbing" : "grab", userSelect: "none", whiteSpace: "nowrap", zIndex: dragging === key ? 10 : 1
+            }}
+          >
+            {key.startsWith("[TEXT] ") ? key.replace("[TEXT] ", "") : key}
+          </div>
+          );
+        })}
+      </div>
+      
+      <div style={{display: "flex", gap: 8, flexWrap: "wrap", marginTop: 16}}>
+        {Object.entries(fields).map(([key, pos]) => (
+          <button 
+            key={key} onClick={() => toggleVisibility(key)}
+            style={{ padding: "6px 12px", borderRadius: 16, fontSize: ".75rem", fontWeight: 600, cursor: "pointer", background: pos.visible ? "var(--tl)" : "#f5f5f5", border: `1px solid ${pos.visible ? "var(--dt)" : "#ddd"}`, color: pos.visible ? "var(--dt)" : "#888" }}
+          >
+            {pos.visible ? "✓ " : "+ "}{key.startsWith("[TEXT] ") ? key.replace("[TEXT] ", "") : key}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function CertificateConfigModal({ ev, onSave, onClose, auth, forms, type = 'cert' }) {
+  const isInvite = type === 'invite';
+  const [certBgUrl, setCertBgUrl] = useState(isInvite ? (ev.inviteBgUrl || "") : (ev.certBgUrl || ""));
+  const [certMap, setCertMap] = useState(isInvite ? (ev.inviteMap || null) : (ev.certMap || null));
+  const [customText, setCustomText] = useState("");
+  
+  const [availableFields, setAvailableFields] = useState(["Event Name", "Date", "Group", "Serial Number"]);
+  useEffect(() => {
+    let allFields = ["Event Name", "Date", "Group", "Serial Number", "Chest No", "Receipt Number"];
+    if (ev.formId && forms) {
+      const form = forms.find(f => f.id === ev.formId);
+      if (form && form.fields) {
+         const labels = form.fields.map(f => f.label || "Field").filter(Boolean);
+         allFields = [...allFields, ...labels];
+      }
+    }
+    
+    // Attempt to fetch actual registration keys to include any custom admin-added columns
+    const fetchRegKeys = async () => {
+      try {
+        const d = await fbFetchRegistrations(auth?.idToken);
+        if (d) {
+           const evRegs = d.filter(r => r.eventId === ev.id || r.eventName === ev.title || r.eventTitle === ev.title);
+           evRegs.forEach(r => {
+              Object.keys(r).forEach(k => {
+                 if (!k.startsWith('_') && !['id','eventId','eventName','eventTitle','Transaction ID','Status','Remarks','Updated By'].includes(k)) {
+                    allFields.push(k);
+                 }
+              });
+           });
+        }
+        // Filter out unwanted sub-stream values that might have been added as columns by mistake
+        let cleanedFields = allFields.filter(k => !['Commerce', 'Science', 'Arts', 'Other'].includes(k));
+        setAvailableFields([...new Set(cleanedFields)]);
+      } catch(e) {
+        let cleanedFields = allFields.filter(k => !['Commerce', 'Science', 'Arts', 'Other'].includes(k));
+        setAvailableFields([...new Set(cleanedFields)]);
+      }
+    };
+    fetchRegKeys();
+  }, [ev.formId, forms, ev.id, ev.title, auth?.idToken]);
+  const [certFontSize, setCertFontSize] = useState(isInvite ? (ev.inviteFontSize || 30) : (ev.certFontSize || 30));
+  const [certFontColor, setCertFontColor] = useState(isInvite ? (ev.inviteFontColor || "#000000") : (ev.certFontColor || "#000000"));
+  const [uploading, setUploading] = useState(false);
+
+  const handleUpload = async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    setUploading(true);
+    try {
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        const img = new Image();
+        img.onload = () => {
+          const canvas = document.createElement('canvas');
+          let w = img.width; let h = img.height;
+          if (w > 1200) { h = Math.round((1200/w)*h); w = 1200; }
+          canvas.width = w; canvas.height = h;
+          const ctx = canvas.getContext('2d');
+          ctx.drawImage(img, 0, 0, w, h);
+          const b64 = canvas.toDataURL('image/jpeg', 0.85);
+          setCertBgUrl(b64);
+          setUploading(false);
+        };
+        img.src = event.target.result;
+      };
+      reader.readAsDataURL(file);
+    } catch(err) {
+      alert("Upload failed: " + err.message);
+      setUploading(false);
+    }
+  };
+
+  const save = () => {
+    onSave({ bgUrl: certBgUrl, map: certMap, fontSize: certFontSize, fontColor: certFontColor });
+  };
+
+  return (
+    <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.8)",zIndex:99999,display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
+      <div style={{background:"white",width:"100%",maxWidth:900,borderRadius:12,padding:24,maxHeight:"90vh",overflowY:"auto"}}>
+        <h3 style={{marginBottom:16,fontFamily:"'Playfair Display',serif",fontSize:"1.3rem"}}>Configure {isInvite ? 'Invite Letter' : 'Certificate'} for {ev.title}</h3>
+        
+        <div style={{display:"flex",gap:16,marginBottom:20, flexWrap: "wrap"}}>
+          <div style={{flex:1, minWidth: 300}}>
+            <label style={{fontSize:".8rem",fontWeight:600,display:"block",marginBottom:6}}>Background Image</label>
+            <div style={{display:"flex",gap:8}}>
+              <input type="text" value={certBgUrl} onChange={e=>setCertBgUrl(e.target.value)} placeholder="Image URL (or upload)..." style={{flex:1,padding:8,borderRadius:6,border:"1px solid var(--bd)"}} />
+              <label style={{background:"var(--sf)",color:"white",padding:"8px 16px",borderRadius:6,cursor:"pointer",fontWeight:600}}>
+                {uploading ? "..." : "Upload"}
+                <input type="file" accept="image/*" onChange={handleUpload} style={{display:"none"}} disabled={uploading}/>
+              </label>
+            </div>
+            {certBgUrl && (
+              <button onClick={() => setCertBgUrl("")} style={{background:"none",border:"none",color:"#C0392B",fontSize:".75rem",fontWeight:600,cursor:"pointer",padding:0,marginTop:6}}>Remove Image</button>
+            )}
+          </div>
+          
+          <div style={{flex:1, minWidth: 300}}>
+            <label style={{fontSize:".8rem",fontWeight:600,display:"block",marginBottom:6}}>Add Custom Static Text (e.g. Date, Phrase)</label>
+            <div style={{display:"flex",gap:8}}>
+              <input type="text" value={customText} onChange={e => setCustomText(e.target.value)} placeholder="Enter text to print..." style={{flex:1,padding:8,borderRadius:6,border:"1px solid var(--bd)"}} />
+              <button onClick={() => {
+                if(customText.trim()){
+                  setAvailableFields(prev => [...prev, "[TEXT] " + customText.trim()]);
+                  setCustomText("");
+                }
+              }} style={{background:"var(--dt)",color:"white",padding:"8px 16px",borderRadius:6,cursor:"pointer",border:"none",fontWeight:600}}>Add Text</button>
+            </div>
+          </div>
+        </div>
+
+        {certBgUrl ? (
+          <CertificateTemplateMapper 
+            imgUrl={certBgUrl} 
+            mapData={certMap} 
+            fontSize={certFontSize}
+            fontColor={certFontColor}
+            availableFields={availableFields}
+            isInvite={isInvite}
+            onChange={(map, size, color) => {
+              setCertMap(map);
+              setCertFontSize(size);
+              setCertFontColor(color);
+            }} 
+          />
+        ) : (
+          <div style={{padding:40,textAlign:"center",background:"#F5F5F5",borderRadius:8,marginBottom:20,color:"var(--mu)"}}>
+            Upload or paste an image URL to start mapping the fields.
+          </div>
+        )}
+
+        <div style={{display:"flex",justifyContent:"flex-end",gap:12,marginTop:20}}>
+          <button onClick={onClose} style={{padding:"8px 16px",borderRadius:6,border:"1px solid var(--bd)",background:"white",cursor:"pointer"}}>Cancel</button>
+          <button onClick={save} style={{padding:"8px 16px",borderRadius:6,border:"none",background:"var(--dt)",color:"white",cursor:"pointer",fontWeight:600}}>Save Configuration</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function AdminEvents({ mob, C, setC, auth }) {
   const [items, setItems] = useState(C.events || []);
   const [previewForm, setPreviewForm] = useState(null);
@@ -12446,7 +12711,7 @@ function AdminCertificates({ mob, C, auth }) {
                   <th style={{padding:"14px 12px",textAlign:"left",background:"var(--dt)",color:"white",fontWeight:600}}>Date Approved</th>
                   <th style={{padding:"14px 12px",textAlign:"left",background:"var(--dt)",color:"white",fontWeight:600}}>Event</th>
                   <th style={{padding:"14px 12px",textAlign:"left",background:"var(--dt)",color:"white",fontWeight:600}}>Participant Name</th>
-                  <th style={{padding:"14px 12px",textAlign:"center",background:"var(--dt)",color:"white",fontWeight:600}}>Release Status</th>
+                  <th style={{padding:"14px 12px",textAlign:"center",background:"var(--dt)",color:"white",fontWeight:600}}>Status</th>
                   <th style={{padding:"14px 12px",textAlign:"center",background:"var(--dt)",color:"white",fontWeight:600}}>Viewed On</th>
                   <th style={{padding:"14px 12px",textAlign:"center",background:"var(--dt)",color:"white",fontWeight:600}}>Downloaded On</th>
                 </tr>
@@ -12494,7 +12759,7 @@ function AdminCertificates({ mob, C, auth }) {
                           </span>
                         ) : (
                           <span style={{padding:"4px 8px",borderRadius:6,fontSize:".75rem",fontWeight:700,background:r.certificateReleased?"#EDFAF1":"#FEF9EC",color:r.certificateReleased?"#1A7A3E":"#C8860A"}}>
-                            {r.certificateReleased ? "Released" : "Not Released"}
+                            {r.certificateReleased ? "Released" : "Pending"}
                           </span>
                         )}
                       </td>
@@ -13103,7 +13368,7 @@ function AdminInviteLetters({ mob, C, auth }) {
                   <th style={{padding:"14px 12px",textAlign:"left",background:"var(--dt)",color:"white",fontWeight:600}}>Date Approved</th>
                   <th style={{padding:"14px 12px",textAlign:"left",background:"var(--dt)",color:"white",fontWeight:600}}>Event</th>
                   <th style={{padding:"14px 12px",textAlign:"left",background:"var(--dt)",color:"white",fontWeight:600}}>Participant Name</th>
-                  <th style={{padding:"14px 12px",textAlign:"center",background:"var(--dt)",color:"white",fontWeight:600}}>Invite Status</th>
+                  <th style={{padding:"14px 12px",textAlign:"center",background:"var(--dt)",color:"white",fontWeight:600}}>Status</th>
                   <th style={{padding:"14px 12px",textAlign:"center",background:"var(--dt)",color:"white",fontWeight:600}}>Viewed On</th>
                   <th style={{padding:"14px 12px",textAlign:"center",background:"var(--dt)",color:"white",fontWeight:600}}>Downloaded On</th>
                 </tr>
@@ -13151,7 +13416,7 @@ function AdminInviteLetters({ mob, C, auth }) {
                           </span>
                         ) : (
                           <span style={{padding:"4px 8px",borderRadius:6,fontSize:".75rem",fontWeight:700,background:r.inviteLetterReleased?"#EDFAF1":"#FEF9EC",color:r.inviteLetterReleased?"#1A7A3E":"#C8860A"}}>
-                            {r.inviteLetterReleased ? "Released" : "Not Released"}
+                            {r.inviteLetterReleased ? "Released" : "Pending"}
                           </span>
                         )}
                       </td>
