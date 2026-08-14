@@ -8384,6 +8384,7 @@ function AdminTeam({ mob, C, setC, auth }) {
   const handleDownloadTemplate = () => {
     const templateData = [
       {
+        "Level": 1,
         "ID": "1",
         "Name": "Ravi Dharia",
         "Position": "President",
@@ -8394,9 +8395,10 @@ function AdminTeam({ mob, C, setC, auth }) {
         "Qualification": "M.Com",
         "Address": "Mumbai, Maharashtra",
         "Photo URL": "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=300",
-        "Description": "President of MMP CWC and Trustee"
+        "Description": "President of MMP CWC (Level 1 Top Leader)"
       },
       {
+        "Level": 2,
         "ID": "2",
         "Name": "Prakash Gohil",
         "Position": "Treasurer",
@@ -8407,9 +8409,10 @@ function AdminTeam({ mob, C, setC, auth }) {
         "Qualification": "B.Com / CA",
         "Address": "Mumbai, Maharashtra",
         "Photo URL": "",
-        "Description": "Central Working Committee Treasurer"
+        "Description": "Level 2 Subordinate (Row 2 card under Ravi Dharia)"
       },
       {
+        "Level": 2,
         "ID": "3",
         "Name": "Vasant Padaya",
         "Position": "Vice President",
@@ -8420,20 +8423,35 @@ function AdminTeam({ mob, C, setC, auth }) {
         "Qualification": "LL.B.",
         "Address": "Mumbai, Maharashtra",
         "Photo URL": "",
-        "Description": "Vice President of CWC"
+        "Description": "Level 2 Subordinate (Row 2 card under Ravi Dharia)"
       },
       {
+        "Level": 2,
         "ID": "4",
+        "Name": "Vinod Makwana",
+        "Position": "Chief Secretary",
+        "Parent Leader Name": "Ravi Dharia",
+        "Committee": "CWC - Central Working Committee",
+        "Mobile": "+91 9876543213",
+        "Profession": "Service",
+        "Qualification": "Graduate",
+        "Address": "Mumbai, Maharashtra",
+        "Photo URL": "",
+        "Description": "Level 2 Subordinate (Row 2 card under Ravi Dharia)"
+      },
+      {
+        "Level": 1,
+        "ID": "5",
         "Name": "Pradeep Parmar",
         "Position": "Chairman",
         "Parent Leader Name": "",
         "Committee": "Education Committee",
-        "Mobile": "+91 9876543213",
+        "Mobile": "+91 9876543214",
         "Profession": "Engineer",
         "Qualification": "B.E.",
         "Address": "Mumbai, Maharashtra",
         "Photo URL": "",
-        "Description": "Chairman of Education Committee"
+        "Description": "Education Committee Chairman (Level 1 Top Leader)"
       }
     ];
 
@@ -8443,7 +8461,7 @@ function AdminTeam({ mob, C, setC, auth }) {
     XLSX.writeFile(wb, "Team_Hierarchy_Template.xlsx");
   };
 
-  // Bulk Import Excel / CSV for Team Hierarchy
+  // Bulk Import Excel / CSV for Team Hierarchy (Level & Parent Based)
   const handleImportExcel = (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -8468,6 +8486,7 @@ function AdminTeam({ mob, C, setC, auth }) {
 
         const nodeMap = new Map();
         const newNodes = [];
+        const lastLeaderByCommAndLevel = new Map();
 
         rows.forEach((row, idx) => {
           const getVal = (...keys) => {
@@ -8477,6 +8496,9 @@ function AdminTeam({ mob, C, setC, auth }) {
             }
             return "";
           };
+
+          const rawLevel = getVal("level", "lvl", "hierarchy level", "tier", "row level");
+          const levelNum = parseInt(String(rawLevel).replace(/\D/g, '')) || 0;
 
           const rawId = getVal("id", "member id", "role id");
           const name = getVal("name", "full name", "member name");
@@ -8507,6 +8529,7 @@ function AdminTeam({ mob, C, setC, auth }) {
             desc: desc,
             parentId: null,
             order: idx,
+            _levelNum: levelNum,
             _rawParent: parentName,
             _rawId: rawId || nodeId
           };
@@ -8515,20 +8538,42 @@ function AdminTeam({ mob, C, setC, auth }) {
           if (name) nodeMap.set(name.toLowerCase(), node.id);
           if (rawId) nodeMap.set(String(rawId).toLowerCase(), node.id);
           nodeMap.set(nodeId.toLowerCase(), node.id);
+
+          if (levelNum > 0) {
+            lastLeaderByCommAndLevel.set(`${committee.toLowerCase()}_${levelNum}`, node.id);
+          }
         });
 
-        // Link parent IDs
+        // Pass 2: Connect parentId using Level & Parent Leader Name
         newNodes.forEach(node => {
+          const commKey = node.committee.toLowerCase();
+
+          // 1. Explicit Parent Leader Name matching
           if (node._rawParent) {
             const matchedParentId = nodeMap.get(node._rawParent.toLowerCase());
             if (matchedParentId && matchedParentId !== node.id) {
               node.parentId = matchedParentId;
+            }
+          }
+
+          // 2. Level hierarchy matching fallback
+          if (!node.parentId) {
+            if (node._levelNum === 1) {
+              node.parentId = null; // Level 1 is always Top Row Root Leader
+            } else if (node._levelNum > 1) {
+              const parentLevelLeader = lastLeaderByCommAndLevel.get(`${commKey}_${node._levelNum - 1}`)
+                || lastLeaderByCommAndLevel.get(`${commKey}_1`);
+              if (parentLevelLeader && parentLevelLeader !== node.id) {
+                node.parentId = parentLevelLeader;
+              } else {
+                node.parentId = null;
+              }
             } else {
               node.parentId = null;
             }
-          } else {
-            node.parentId = null;
           }
+
+          delete node._levelNum;
           delete node._rawParent;
           delete node._rawId;
         });
