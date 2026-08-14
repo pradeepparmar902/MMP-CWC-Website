@@ -2666,30 +2666,43 @@ function Achievements({ C, lang }) {
 function Team({ C, lang }) {
   const [activeMember, setActiveMember] = useState(null);
   const [fullScreenMode, setFullScreenMode] = useState(null);
-  const [activeCommittee, setActiveCommittee] = useState("All");
-  const items = C.teamItems || [];
-  const layout = C.teamLayout || "plain";
-  const w = useW(); const mob = w<768;
-
-  if(items.length === 0) return null;
-
+  
   const defaultCommittees = [
     "Central Working Committee (CWC)",
     "Education Committee",
     "Marriage Consultation Committee",
     "Executive Committee"
   ];
-  const customCommittees = Array.from(new Set(items.map(i => i.committee).filter(Boolean)));
-  const allCommittees = ["All", ...Array.from(new Set([...defaultCommittees, ...customCommittees]))];
+  const storedCommittees = C.committees || defaultCommittees;
+  const initialDefault = (C.defaultCommittee && storedCommittees.includes(C.defaultCommittee))
+    ? C.defaultCommittee
+    : (storedCommittees[0] || "Central Working Committee (CWC)");
+
+  const [activeCommittee, setActiveCommittee] = useState(initialDefault);
+
+  useEffect(() => {
+    if (C.defaultCommittee && storedCommittees.includes(C.defaultCommittee)) {
+      setActiveCommittee(C.defaultCommittee);
+    }
+  }, [C.defaultCommittee, C.committees]);
+
+  const items = C.teamItems || [];
+  const layout = C.teamLayout || "plain";
+  const w = useW(); const mob = w<768;
+
+  if(items.length === 0) return null;
+
+  const primaryCommittee = initialDefault;
+  const allCommittees = ["All", ...storedCommittees];
 
   const getCommitteeCount = (comm) => {
-    if (comm === "All") return items.length;
-    return items.filter(i => (i.committee || "Central Working Committee (CWC)") === comm).length;
+    if (comm === "All") return items.filter(i => !i.isSeparator).length;
+    return items.filter(i => !i.isSeparator && (i.committee || primaryCommittee) === comm).length;
   };
 
   const filteredItems = activeCommittee === "All"
     ? items
-    : items.filter(i => (i.committee || "Central Working Committee (CWC)") === activeCommittee);
+    : items.filter(i => (i.committee || primaryCommittee) === activeCommittee);
 
   const plainItems = filteredItems.filter(i => i.parentId === "plain" || typeof i.parentId === "undefined");
   const sortedPlainItems = [...plainItems].sort((a,b)=>(a.order||0)-(b.order||0));
@@ -2773,25 +2786,45 @@ function Team({ C, lang }) {
 
   const renderPlainGrid = (isFullScreen = false) => (
     <div style={{display:"grid",gridTemplateColumns:mob?"repeat(2,1fr)":(!isFullScreen && filteredItems.filter(i => i.parentId === null).length > 0 && sortedPlainItems.length > 0 && !mob)?"repeat(2,1fr)":isFullScreen?"repeat(auto-fit, minmax(180px, 1fr))":w<1024?"repeat(4,1fr)":"repeat(5,1fr)",gap:mob?16:24, padding: "10px"}}>
-      {sortedPlainItems.map(item => (
-        <div key={item.id} className="gi" style={{background:"#fdfdfd",borderRadius:20,overflow:"hidden",boxShadow:"0 12px 30px rgba(0,0,0,.06)",transition:"all .3s", cursor:"pointer", border:"1px solid rgba(0,0,0,0.05)"}}
-          onMouseEnter={e=>e.currentTarget.style.transform="translateY(-8px)"} onMouseLeave={e=>e.currentTarget.style.transform="none"} onClick={() => openModal(item)}>
-          <div style={{width:"100%",aspectRatio:"1",background:"#f5f5f5",position:"relative"}}>
-            {item.image ? (
-              <img src={item.image} alt={item.name} style={{width:"100%",height:"100%",objectFit:"cover"}}/>
-            ) : (
-              <div style={{width:"100%",height:"100%",display:"flex",alignItems:"center",justifyContent:"center",fontSize:"4rem",opacity:0.1}}>👤</div>
-            )}
+      {sortedPlainItems.map(item => {
+        if (item.isSeparator) {
+          return (
+            <div key={item.id} style={{
+              gridColumn:"1 / -1", width:"100%", margin:mob?"16px 0 8px 0":"28px 0 12px 0", textAlign:"center", position:"relative"
+            }}>
+              <div style={{display:"flex", alignItems:"center", justifyContent:"center", gap:16}}>
+                <div style={{flex:1, height:2, background:"linear-gradient(90deg, transparent, var(--sf))"}}/>
+                <div style={{background:"var(--dt)", color:"white", padding:mob?"6px 14px":"8px 24px", borderRadius:24, fontWeight:700, fontSize:mob?".8rem":".9rem", letterSpacing:1, boxShadow:"0 4px 14px rgba(0,0,0,0.08)", display:"flex", alignItems:"center", gap:8}}>
+                  <span>⚡</span>
+                  <span>{item.title || "--- Section Separator ---"}</span>
+                </div>
+                <div style={{flex:1, height:2, background:"linear-gradient(90deg, var(--sf), transparent)"}}/>
+              </div>
+              {item.desc && <div style={{fontSize:mob?".75rem":".85rem", color:"var(--mu)", marginTop:6, fontWeight:500}}>{item.desc}</div>}
+            </div>
+          );
+        }
+
+        return (
+          <div key={item.id} className="gi" style={{background:"#fdfdfd",borderRadius:20,overflow:"hidden",boxShadow:"0 12px 30px rgba(0,0,0,.06)",transition:"all .3s", cursor:"pointer", border:"1px solid rgba(0,0,0,0.05)"}}
+            onMouseEnter={e=>e.currentTarget.style.transform="translateY(-8px)"} onMouseLeave={e=>e.currentTarget.style.transform="none"} onClick={() => openModal(item)}>
+            <div style={{width:"100%",aspectRatio:"1",background:"#f5f5f5",position:"relative"}}>
+              {item.image ? (
+                <img src={item.image} alt={item.name} style={{width:"100%",height:"100%",objectFit:"cover"}}/>
+              ) : (
+                <div style={{width:"100%",height:"100%",display:"flex",alignItems:"center",justifyContent:"center",fontSize:"4rem",opacity:0.1}}>👤</div>
+              )}
+            </div>
+            <div style={{padding:mob?16:20,textAlign:"center"}}>
+              <h3 style={{fontFamily:"'Playfair Display',serif",fontSize:mob?"1rem":"1.1rem",color:"var(--dt)",margin:"0 0 4px 0",fontWeight:700}}>{item.name}</h3>
+              <div style={{fontSize:mob?".65rem":".75rem",color:"var(--sf)",fontWeight:600,textTransform:"uppercase",letterSpacing:1}}>{item.position}</div>
+              {item.committee && (
+                <div style={{fontSize:".65rem", color:"var(--mu)", marginTop:4, fontWeight:600}}>{item.committee}</div>
+              )}
+            </div>
           </div>
-          <div style={{padding:mob?16:20,textAlign:"center"}}>
-            <h3 style={{fontFamily:"'Playfair Display',serif",fontSize:mob?"1rem":"1.1rem",color:"var(--dt)",margin:"0 0 4px 0",fontWeight:700}}>{item.name}</h3>
-            <div style={{fontSize:mob?".65rem":".75rem",color:"var(--sf)",fontWeight:600,textTransform:"uppercase",letterSpacing:1}}>{item.position}</div>
-            {item.committee && (
-              <div style={{fontSize:".65rem", color:"var(--mu)", marginTop:4, fontWeight:600}}>{item.committee}</div>
-            )}
-          </div>
-        </div>
-      ))}
+        );
+      })}
     </div>
   );
 
@@ -2803,52 +2836,86 @@ function Team({ C, lang }) {
           <h2 style={{fontFamily:"'Playfair Display',serif",fontSize:mob?"1.8rem":"2.4rem",color:"var(--dt)",marginTop:8,fontWeight:700}}>Our Team</h2>
         </div>
 
-        {/* Committee Workspace Tabs */}
-        <div style={{display:"flex", justifyContent:"center", gap:8, flexWrap:"wrap", marginBottom:24}}>
-          {allCommittees.map(comm => {
-            const count = getCommitteeCount(comm);
-            if (comm !== "All" && count === 0) return null;
-            const isActive = activeCommittee === comm;
-            return (
-              <button key={comm} onClick={() => setActiveCommittee(comm)} style={{
-                padding: "8px 18px", borderRadius: 24, border: isActive ? "none" : "1px solid var(--bd)",
-                background: isActive ? "var(--sf)" : "white",
-                color: isActive ? "white" : "var(--dt)",
-                fontWeight: isActive ? 700 : 600, fontSize: ".85rem",
-                cursor: "pointer", transition: "all 0.2s", display: "flex", alignItems: "center", gap: 6,
-                boxShadow: isActive ? "0 4px 12px rgba(232,101,10,0.3)" : "0 2px 8px rgba(0,0,0,0.04)"
-              }}>
-                <span>{comm}</span>
-                <span style={{
-                  background: isActive ? "rgba(255,255,255,0.25)" : "#F0F0F0",
-                  color: isActive ? "white" : "var(--mu)",
-                  padding: "2px 7px", borderRadius: 10, fontSize: ".75rem", fontWeight: 700
-                }}>{count}</span>
-              </button>
-            );
-          })}
-        </div>
+        {/* Main Content Layout: Left Sidebar + Right Hierarchy/Members Panel */}
+        <div style={{display: mob ? "block" : "flex", gap: 28, alignItems: "flex-start", marginTop: 24}}>
+          {/* Left Side Panel (Committees / Workspaces) */}
+          <div style={{
+            width: mob ? "100%" : 280, flexShrink: 0, background: "white",
+            borderRadius: 24, padding: mob ? 16 : 20, border: "1px solid var(--bd)",
+            boxShadow: "0 8px 30px rgba(0,0,0,0.04)", marginBottom: mob ? 24 : 0
+          }}>
+            <div style={{fontSize: ".75rem", fontWeight: 700, color: "var(--sf)", textTransform: "uppercase", letterSpacing: 1.5, marginBottom: 14, paddingLeft: 4}}>
+              Committees & Workspaces
+            </div>
+            <div style={{display: "flex", flexDirection: mob ? "row" : "column", gap: 10, overflowX: mob ? "auto" : "visible", paddingBottom: mob ? 8 : 0}}>
+              {allCommittees.map(comm => {
+                const count = getCommitteeCount(comm);
+                if (comm !== "All" && count === 0) return null;
+                const isActive = activeCommittee === comm;
+                const nameLower = comm.toLowerCase();
+                const icon = comm === "All" ? "🌐" : (nameLower.includes("cwc") ? "🏛️" : (nameLower.includes("education") ? "📚" : (nameLower.includes("marriage") ? "💒" : "💼")));
 
-        <div style={{display: (filteredItems.filter(i => i.parentId === null).length > 0 && sortedPlainItems.length > 0 && !mob) ? "flex" : "block", gap: 24, alignItems: "flex-start"}}>
-          {filteredItems.filter(i => i.parentId === null).length > 0 && (
-            <div style={{flex: 1, position:"relative", width: (filteredItems.filter(i => i.parentId === null).length > 0 && sortedPlainItems.length > 0 && !mob) ? "50%" : "100%", marginBottom: (filteredItems.filter(i => i.parentId === null).length > 0 && sortedPlainItems.length > 0 && !mob) ? 0 : 40}}>
-              <div style={{overflow:"auto", maxHeight:"450px", padding:"24px", background:"white", borderRadius:24, border:"1px solid var(--bd)", boxShadow:"inset 0 4px 24px rgba(0,0,0,0.03)"}}>
-                <div style={{minWidth: mob?300:((filteredItems.filter(i => i.parentId === null).length > 0 && sortedPlainItems.length > 0 && !mob) ? 400 : 800), margin:"0 auto", paddingTop: 10, paddingBottom: 10}}>
-                   {renderHierarchy(null)}
-                </div>
+                return (
+                  <button
+                    key={comm}
+                    onClick={() => setActiveCommittee(comm)}
+                    style={{
+                      width: mob ? "auto" : "100%",
+                      padding: "12px 16px",
+                      borderRadius: 16,
+                      border: isActive ? "2px solid var(--sf)" : "1px solid var(--bd)",
+                      background: isActive ? "var(--sf)" : "#FDFDFD",
+                      color: isActive ? "white" : "var(--dt)",
+                      fontWeight: isActive ? 700 : 600,
+                      fontSize: ".88rem",
+                      cursor: "pointer",
+                      transition: "all 0.2s ease",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "space-between",
+                      gap: 10,
+                      boxShadow: isActive ? "0 6px 18px rgba(232,101,10,0.25)" : "none",
+                      textAlign: "left"
+                    }}
+                  >
+                    <div style={{display: "flex", alignItems: "center", gap: 10, overflow: "hidden"}}>
+                      <span style={{fontSize: "1.1rem"}}>{icon}</span>
+                      <span style={{whiteSpace: "nowrap", overflow: "hidden", textOverflow:"ellipsis"}}>{comm}</span>
+                    </div>
+                    <span style={{
+                      background: isActive ? "rgba(255,255,255,0.25)" : "#F0F0F0",
+                      color: isActive ? "white" : "var(--mu)",
+                      padding: "2px 8px", borderRadius: 12, fontSize: ".75rem", fontWeight: 700, flexShrink: 0
+                    }}>
+                      {count}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Right Panel (Hierarchy Area - Clean Single Container) */}
+          <div style={{flex: 1, minWidth: 0, width: "100%"}}>
+            <div style={{position:"relative", width: "100%"}}>
+              <div style={{overflow:"auto", maxHeight:"560px", padding: mob ? "16px" : "28px", background:"white", borderRadius:24, border:"1px solid var(--bd)", boxShadow:"inset 0 4px 24px rgba(0,0,0,0.03)"}}>
+                {filteredItems.filter(i => i.parentId === null).length > 0 ? (
+                  <div style={{minWidth: mob ? 300 : 700, margin:"0 auto", paddingTop: 10, paddingBottom: 10}}>
+                    {renderHierarchy(null)}
+                  </div>
+                ) : sortedPlainItems.length > 0 ? (
+                  <div style={{padding: "10px"}}>
+                    {renderPlainGrid(false)}
+                  </div>
+                ) : (
+                  <div style={{padding: "40px", textAlign: "center", color: "var(--mu)", fontStyle: "italic"}}>
+                    No team members listed for this committee.
+                  </div>
+                )}
               </div>
               <button onClick={() => setFullScreenMode("hierarchy")} style={{position:"absolute", top:16, right:24, background:"white", border:"1px solid #ddd", borderRadius:"50%", width:40, height:40, display:"flex", alignItems:"center", justifyContent:"center", cursor:"pointer", zIndex:10, boxShadow:"0 4px 12px rgba(0,0,0,0.1)", fontSize:"1.2rem", color:"var(--dt)"}} title="Full Screen">⛶</button>
             </div>
-          )}
-
-          {sortedPlainItems.length > 0 && (
-            <div style={{flex: 1, position:"relative", width: (filteredItems.filter(i => i.parentId === null).length > 0 && sortedPlainItems.length > 0 && !mob) ? "50%" : "100%"}}>
-              <div style={{overflowY:"auto", overflowX:"hidden", maxHeight:"450px", padding:"24px", background:"white", borderRadius:24, border:"1px solid var(--bd)", boxShadow:"inset 0 4px 24px rgba(0,0,0,0.03)"}}>
-                {renderPlainGrid(false)}
-              </div>
-              <button onClick={() => setFullScreenMode("plain")} style={{position:"absolute", top:16, right:24, background:"white", border:"1px solid #ddd", borderRadius:"50%", width:40, height:40, display:"flex", alignItems:"center", justifyContent:"center", cursor:"pointer", zIndex:10, boxShadow:"0 4px 12px rgba(0,0,0,0.1)", fontSize:"1.2rem", color:"var(--dt)"}} title="Full Screen">⛶</button>
-            </div>
-          )}
+          </div>
         </div>
       </div>
 
@@ -2892,11 +2959,59 @@ function Team({ C, lang }) {
               <h2 style={{fontFamily:"'Playfair Display',serif", color:"var(--dt)", margin:"0 0 8px 0", fontSize:"2rem"}}>{activeMember.name}</h2>
               <div style={{color:"var(--sf)", fontWeight:700, fontSize:"1.1rem", textTransform:"uppercase", letterSpacing:1, marginBottom:24}}>{activeMember.position}</div>
               
-              <div style={{background:"#f8f9fa", padding:20, borderRadius:16, border:"1px solid var(--bd)"}}>
-                <h4 style={{margin:"0 0 12px 0", color:"var(--dt)", fontSize:"1rem"}}>Information</h4>
-                <p style={{color:"var(--tm)", lineHeight:1.6, fontSize:"1rem", margin:0, whiteSpace:"pre-wrap"}}>
-                  {activeMember.desc || "No further details available."}
-                </p>
+              <div style={{background:"#f8f9fa", padding:20, borderRadius:16, border:"1px solid var(--bd)", display:"flex", flexDirection:"column", gap:14}}>
+                <h4 style={{margin:"0 0 4px 0", color:"var(--dt)", fontSize:"1.05rem", fontWeight:700}}>Member Profile Details</h4>
+                
+                {activeMember.mobile && (
+                  <div style={{display:"flex", alignItems:"center", gap:12}}>
+                    <span style={{fontSize:"1.3rem", width: 28}}>📱</span>
+                    <div>
+                      <div style={{fontSize:".65rem", color:"var(--sf)", fontWeight:700, textTransform:"uppercase", letterSpacing:0.5}}>Mobile Number</div>
+                      <div style={{fontWeight:600, color:"var(--dt)", fontSize:".95rem"}}>{activeMember.mobile}</div>
+                    </div>
+                  </div>
+                )}
+
+                {activeMember.profession && (
+                  <div style={{display:"flex", alignItems:"center", gap:12}}>
+                    <span style={{fontSize:"1.3rem", width: 28}}>💼</span>
+                    <div>
+                      <div style={{fontSize:".65rem", color:"var(--sf)", fontWeight:700, textTransform:"uppercase", letterSpacing:0.5}}>Profession</div>
+                      <div style={{fontWeight:600, color:"var(--dt)", fontSize:".95rem"}}>{activeMember.profession}</div>
+                    </div>
+                  </div>
+                )}
+
+                {activeMember.qualification && (
+                  <div style={{display:"flex", alignItems:"center", gap:12}}>
+                    <span style={{fontSize:"1.3rem", width: 28}}>🎓</span>
+                    <div>
+                      <div style={{fontSize:".65rem", color:"var(--sf)", fontWeight:700, textTransform:"uppercase", letterSpacing:0.5}}>Last Qualification</div>
+                      <div style={{fontWeight:600, color:"var(--dt)", fontSize:".95rem"}}>{activeMember.qualification}</div>
+                    </div>
+                  </div>
+                )}
+
+                {activeMember.address && (
+                  <div style={{display:"flex", alignItems:"center", gap:12}}>
+                    <span style={{fontSize:"1.3rem", width: 28}}>🏠</span>
+                    <div>
+                      <div style={{fontSize:".65rem", color:"var(--sf)", fontWeight:700, textTransform:"uppercase", letterSpacing:0.5}}>Address</div>
+                      <div style={{fontWeight:600, color:"var(--dt)", fontSize:".95rem"}}>{activeMember.address}</div>
+                    </div>
+                  </div>
+                )}
+
+                {activeMember.desc && (
+                  <div style={{marginTop: 4, paddingTop: 10, borderTop: "1px solid #EAEAEA"}}>
+                    <div style={{fontSize:".65rem", color:"var(--sf)", fontWeight:700, textTransform:"uppercase", letterSpacing:0.5, marginBottom:4}}>About / Notes</div>
+                    <p style={{color:"var(--tm)", lineHeight:1.5, fontSize:".9rem", margin:0, whiteSpace:"pre-wrap"}}>{activeMember.desc}</p>
+                  </div>
+                )}
+
+                {!activeMember.mobile && !activeMember.profession && !activeMember.qualification && !activeMember.address && !activeMember.desc && (
+                  <p style={{color:"var(--mu)", fontStyle:"italic", margin:0, fontSize:".9rem"}}>No additional details provided.</p>
+                )}
               </div>
             </div>
 
@@ -8086,10 +8201,14 @@ function AdminTeam({ mob, C, setC, auth }) {
   const [layout, setLayout] = useState(C.teamLayout || "plain");
   const [saving, setSaving] = useState(false);
   const [activeNode, setActiveNode] = useState(null); // For editing details
-  const [menuNode, setMenuNode] = useState(null); // For Add actions
+  const [menuNode, setMenuNode] = useState(null); // For Add/Action actions
   const [uploadingImage, setUploadingImage] = useState(false);
   const [allUsers, setAllUsers] = useState([]);
   const [activeCommittee, setActiveCommittee] = useState("All");
+  const [draggedComm, setDraggedComm] = useState(null);
+  const [draggedItemId, setDraggedItemId] = useState(null);
+
+  const [customModal, setCustomModal] = useState(null);
 
   const defaultCommittees = [
     "Central Working Committee (CWC)",
@@ -8170,6 +8289,18 @@ function AdminTeam({ mob, C, setC, auth }) {
     setLayout(C.teamLayout || "plain");
   }, [C.teamItems, C.teamLayout]);
 
+  const getWorkspaceIcon = (commName) => {
+    if (commName === "All") return "🌐";
+    const nameLower = commName.toLowerCase();
+    if (nameLower.includes("cwc") || nameLower.includes("central")) return "🏛️";
+    if (nameLower.includes("education") || nameLower.includes("felicitation")) return "📚";
+    if (nameLower.includes("marriage") || nameLower.includes("matrimonial") || nameLower.includes("consultation")) return "💒";
+    if (nameLower.includes("executive")) return "💼";
+    if (nameLower.includes("youth")) return "🚀";
+    if (nameLower.includes("women")) return "🤝";
+    return "📁";
+  };
+
   const saveToFb = async (newC) => {
     if (!auth?.idToken) { alert("Login required to save"); return; }
     setSaving(true);
@@ -8198,6 +8329,170 @@ function AdminTeam({ mob, C, setC, auth }) {
 
   const getNewId = () => "team_" + Date.now() + Math.floor(Math.random()*1000);
   const targetCommittee = activeCommittee !== "All" ? activeCommittee : "Central Working Committee (CWC)";
+
+  // Workspace Drag and Drop Handler
+  const handleCommDragStart = (e, comm) => {
+    setDraggedComm(comm);
+    e.dataTransfer.effectAllowed = "move";
+  };
+
+  const handleCommDrop = (e, targetComm) => {
+    e.preventDefault();
+    if (!draggedComm || draggedComm === targetComm) return;
+    const list = [...allCommitteesList];
+    const fromIdx = list.indexOf(draggedComm);
+    const toIdx = list.indexOf(targetComm);
+    if (fromIdx === -1 || toIdx === -1) return;
+    list.splice(fromIdx, 1);
+    list.splice(toIdx, 0, draggedComm);
+    const newC = { ...C, committees: list };
+    setC(newC);
+    saveToFb(newC);
+    setDraggedComm(null);
+  };
+
+  // Helper to find top/first hierarchy leader for a workspace
+  const getWorkspaceTopLeader = (commName) => {
+    if (commName === "All") return null;
+
+    const commItems = items.filter(i => !i.isSeparator && (i.committee || "Central Working Committee (CWC)") === commName);
+
+    if (commItems.length === 0) return null;
+
+    // 1. Root leaders (parentId === null) sorted by order
+    const rootLeaders = commItems.filter(i => i.parentId === null);
+    if (rootLeaders.length > 0) {
+      rootLeaders.sort((a, b) => (a.order || 0) - (b.order || 0));
+      return rootLeaders[0];
+    }
+
+    // 2. Fallback to first item sorted by order
+    const sorted = [...commItems];
+    sorted.sort((a, b) => (a.order || 0) - (b.order || 0));
+    return sorted[0];
+  };
+
+  // Set Default Workspace Handler
+  const handleSetDefaultWorkspace = (commName, e) => {
+    if (e) e.stopPropagation();
+    const newC = { ...C, defaultCommittee: commName };
+    setC(newC);
+    saveToFb(newC);
+  };
+
+  // Create Workspace Handler
+  const handleCreateWorkspace = () => {
+    setCustomModal({
+      title: "Create New Workspace",
+      message: "Enter committee or team workspace name:",
+      type: "input",
+      inputValue: "",
+      inputPlaceholder: "e.g. Youth Wing Committee",
+      confirmText: "Create Workspace",
+      onConfirm: (customName) => {
+        if (!customName) return;
+        const newCList = Array.from(new Set([...allCommitteesList, customName]));
+        const newC = { ...C, committees: newCList };
+        setC(newC);
+        saveToFb(newC);
+        setActiveCommittee(customName);
+      }
+    });
+  };
+
+  // Delete Workspace Handler
+  const handleDeleteWorkspace = (commName, e) => {
+    if (e) e.stopPropagation();
+    if (commName === "All") return;
+
+    setCustomModal({
+      title: `Delete Workspace "${commName}"`,
+      message: `Are you sure you want to delete the workspace "${commName}"?\nAny members in this workspace will be moved to Central Working Committee (CWC).`,
+      type: "confirm",
+      confirmStyle: "danger",
+      confirmText: "Delete Workspace",
+      onConfirm: () => {
+        const newCommList = allCommitteesList.filter(c => c !== commName);
+        const updatedTeamItems = items.map(item => {
+          if (item.committee === commName) {
+            return { ...item, committee: "Central Working Committee (CWC)" };
+          }
+          return item;
+        });
+
+        setItems(updatedTeamItems);
+        if (activeCommittee === commName) {
+          setActiveCommittee("All");
+        }
+
+        const newC = {
+          ...C,
+          committees: newCommList,
+          teamItems: updatedTeamItems
+        };
+        setC(newC);
+        saveToFb(newC);
+      }
+    });
+  };
+
+  // Rename Workspace Handler
+  const handleRenameWorkspace = (commName, e) => {
+    if (e) e.stopPropagation();
+    if (commName === "All") return;
+
+    setCustomModal({
+      title: `Rename Workspace`,
+      message: `Enter new name for workspace "${commName}":`,
+      type: "input",
+      inputValue: commName,
+      inputPlaceholder: "Workspace Name",
+      confirmText: "Save Name",
+      onConfirm: (newName) => {
+        if (!newName || newName === commName) return;
+        const newCommList = allCommitteesList.map(c => c === commName ? newName : c);
+        const updatedTeamItems = items.map(item => {
+          if (item.committee === commName) {
+            return { ...item, committee: newName };
+          }
+          return item;
+        });
+
+        setItems(updatedTeamItems);
+        if (activeCommittee === commName) {
+          setActiveCommittee(newName);
+        }
+
+        const newC = {
+          ...C,
+          committees: newCommList,
+          teamItems: updatedTeamItems
+        };
+        setC(newC);
+        saveToFb(newC);
+      }
+    });
+  };
+
+  // Item Drag and Drop Handler (Plain view & separators)
+  const handleItemDragStart = (e, id) => {
+    setDraggedItemId(id);
+    e.dataTransfer.effectAllowed = "move";
+  };
+
+  const handleItemDrop = (e, targetId) => {
+    e.preventDefault();
+    if (!draggedItemId || draggedItemId === targetId) return;
+    let list = [...items];
+    const fromIdx = list.findIndex(i => i.id === draggedItemId);
+    const toIdx = list.findIndex(i => i.id === targetId);
+    if (fromIdx === -1 || toIdx === -1) return;
+    const [draggedObj] = list.splice(fromIdx, 1);
+    list.splice(toIdx, 0, draggedObj);
+    list = list.map((item, idx) => ({ ...item, order: idx }));
+    updItems(list);
+    setDraggedItemId(null);
+  };
 
   // Hierarchy actions
   const addRoot = () => {
@@ -8229,30 +8524,89 @@ function AdminTeam({ mob, C, setC, auth }) {
 
   const addSibling = (node, dir) => {
     // dir: -1 (left), 1 (right)
-    const newSibling = { id: getNewId(), parentId: node.parentId, name: "New Member", position: "Role", desc: "", image: "", order: node.order + dir * 0.5, committee: node.committee || targetCommittee };
+    const siblings = items.filter(i => i.parentId === node.parentId);
+    siblings.sort((a,b) => (a.order||0) - (b.order||0));
+    const idx = siblings.findIndex(s => s.id === node.id);
+    const newOrder = (node.order || 0) + (dir * 0.5);
+    const newSibling = { id: getNewId(), parentId: node.parentId, name: "New Member", position: "Role", desc: "", image: "", order: newOrder, committee: node.committee || targetCommittee };
     updItems([...items, newSibling]);
     setMenuNode(null);
   };
 
-  const removeNode = (id) => {
-    if(!window.confirm("Delete this member? Any subordinates will also be deleted.")) return;
-    
-    const getDescendants = (pid) => {
-      let desc = items.filter(i => i.parentId === pid).map(i => i.id);
-      let all = [...desc];
-      desc.forEach(d => all.push(...getDescendants(d)));
-      return all;
-    };
-    
-    const toRemove = [id, ...getDescendants(id)];
-    updItems(items.filter(i => !toRemove.includes(i.id)));
+  // Move sibling role horizontally (left or right)
+  const moveSibling = (node, dir) => {
+    const siblings = items.filter(i => i.parentId === node.parentId);
+    siblings.sort((a,b) => (a.order||0) - (b.order||0));
+    const idx = siblings.findIndex(s => s.id === node.id);
+    if (idx === -1) return;
+    const targetIdx = idx + dir;
+    if (targetIdx < 0 || targetIdx >= siblings.length) return;
+
+    const targetNode = siblings[targetIdx];
+    const nodeOrder = node.order ?? idx;
+    const targetOrder = targetNode.order ?? targetIdx;
+
+    const updatedItems = items.map(i => {
+      if (i.id === node.id) return { ...i, order: targetOrder };
+      if (i.id === targetNode.id) return { ...i, order: nodeOrder };
+      return i;
+    });
+    updItems(updatedItems);
     setMenuNode(null);
   };
+
+  // Smart delete node options
+  const removeSingleNodeOnly = (id) => {
+    const target = items.find(i => i.id === id);
+    if (!target) return;
+    
+    setCustomModal({
+      title: "Delete Role Only",
+      message: `Are you sure you want to delete role "${target.name || target.title || 'Role'}" only?\nSubordinates will be re-assigned to the leader above.`,
+      type: "confirm",
+      confirmStyle: "danger",
+      confirmText: "Delete Role",
+      onConfirm: () => {
+        const parentId = target.parentId;
+        const updatedItems = items
+          .filter(i => i.id !== id)
+          .map(i => i.parentId === id ? { ...i, parentId: parentId } : i);
+        updItems(updatedItems);
+        setMenuNode(null);
+      }
+    });
+  };
+
+  const removeNodeAndSubtree = (id) => {
+    const target = items.find(i => i.id === id);
+    if (!target) return;
+    
+    setCustomModal({
+      title: "Delete Role & All Subordinates",
+      message: `Are you sure you want to delete role "${target.name || target.title || 'Role'}" and ALL subordinates under it?`,
+      type: "confirm",
+      confirmStyle: "danger",
+      confirmText: "Delete Role & Subtree",
+      onConfirm: () => {
+        const getDescendants = (pid) => {
+          let desc = items.filter(i => i.parentId === pid).map(i => i.id);
+          let all = [...desc];
+          desc.forEach(d => all.push(...getDescendants(d)));
+          return all;
+        };
+        
+        const toRemove = [id, ...getDescendants(id)];
+        updItems(items.filter(i => !toRemove.includes(i.id)));
+        setMenuNode(null);
+      }
+    });
+  };
+
+  const removeNode = (id) => removeNodeAndSubtree(id);
 
   const updateActiveNode = (field, val) => {
     setActiveNode(prev => {
       const nextNode = { ...prev, [field]: val };
-      // Also update local items array to reflect change immediately
       setItems(currItems => currItems.map(i => i.id === prev.id ? nextNode : i));
       return nextNode;
     });
@@ -8263,23 +8617,34 @@ function AdminTeam({ mob, C, setC, auth }) {
       if (!currActive) return null;
       setItems(currItems => {
         const newItems = currItems.map(it => it.id === currActive.id ? currActive : it);
-        
         setC(currC => {
           const newC = { ...currC, teamItems: newItems };
           saveToFb(newC);
           return newC;
         });
-        
         return newItems;
       });
       return null;
     });
   };
 
-  // Plain layout actions
+  // Plain layout & Separator actions
   const addPlain = () => {
     const newItem = { id: getNewId(), parentId: "plain", name: "New Member", position: "Role", desc: "", image: "", order: items.length, committee: targetCommittee };
     updItems([...items, newItem]);
+  };
+
+  const addSeparator = () => {
+    const newSep = {
+      id: getNewId(),
+      isSeparator: true,
+      parentId: "plain",
+      title: "--- Sub Teams: Education & Marriage ---",
+      desc: "Specialized committee branches and sub-teams",
+      committee: targetCommittee,
+      order: items.length
+    };
+    updItems([...items, newSep]);
   };
 
   const movePlain = (index, dir) => {
@@ -8292,10 +8657,21 @@ function AdminTeam({ mob, C, setC, auth }) {
   };
 
   const removePlain = (index) => {
-    if(!window.confirm("Delete this member?")) return;
-    let arr = [...items];
-    arr.splice(index, 1);
-    updItems(arr);
+    const target = items[index];
+    const label = target?.isSeparator ? (target.title || "Separator") : (target?.name || "Member");
+
+    setCustomModal({
+      title: `Delete ${target?.isSeparator ? 'Separator' : 'Member'}`,
+      message: `Are you sure you want to delete ${target?.isSeparator ? 'separator' : 'team member'} "${label}"?`,
+      type: "confirm",
+      confirmStyle: "danger",
+      confirmText: "Delete",
+      onConfirm: () => {
+        let arr = [...items];
+        arr.splice(index, 1);
+        updItems(arr);
+      }
+    });
   };
 
   const filteredAdminItems = activeCommittee === "All"
@@ -8337,11 +8713,65 @@ function AdminTeam({ mob, C, setC, auth }) {
               
               {/* Card */}
               <div className="gi" style={{
-                background:"white", padding: 12, borderRadius: 12, borderTop: "3px solid var(--sf)", 
-                width: 140, textAlign:"center", boxShadow:"0 8px 24px rgba(0,0,0,0.06)",
-                transition:"transform .3s", position:"relative", zIndex:2, cursor:"pointer"
+                background:"white", padding: "16px 10px 12px 10px", borderRadius: 16, borderTop: "4px solid var(--sf)", 
+                width: 160, textAlign:"center", boxShadow:"0 8px 24px rgba(0,0,0,0.06)",
+                transition:"all .2s ease", position:"relative", zIndex:2, cursor:"pointer"
               }} onClick={() => setActiveNode(node)}>
-                <div style={{width:50, height:50, margin:"0 auto 8px", borderRadius:"50%", overflow:"hidden", border:"2px solid #f0f0f0", background:"#eee"}}>
+
+                {/* Control Bar on Top of Role Card */}
+                <div style={{position:"absolute", top: 6, left: 6, right: 6, display:"flex", justifyContent:"space-between", alignItems:"center", zIndex:12}} onClick={e=>e.stopPropagation()}>
+                  {/* Reorder Left & Right */}
+                  {children.length > 1 ? (
+                    <div style={{display:"flex", gap: 3}}>
+                      <button
+                        onClick={()=>moveSibling(node, -1)}
+                        disabled={i===0}
+                        style={{
+                          width:22, height:22, borderRadius:6,
+                          background: i===0 ? "#F0F0F0" : "#EBF3FF",
+                          color: i===0 ? "#CCC" : "var(--dt)",
+                          border:"1px solid rgba(0,0,0,0.08)", fontSize:".65rem",
+                          cursor: i===0 ? "default" : "pointer",
+                          display:"flex", alignItems:"center", justifyContent:"center"
+                        }}
+                        title="Move Role Left"
+                      >
+                        ⬅️
+                      </button>
+                      <button
+                        onClick={()=>moveSibling(node, 1)}
+                        disabled={i===children.length-1}
+                        style={{
+                          width:22, height:22, borderRadius:6,
+                          background: i===children.length-1 ? "#F0F0F0" : "#EBF3FF",
+                          color: i===children.length-1 ? "#CCC" : "var(--dt)",
+                          border:"1px solid rgba(0,0,0,0.08)", fontSize:".65rem",
+                          cursor: i===children.length-1 ? "default" : "pointer",
+                          display:"flex", alignItems:"center", justifyContent:"center"
+                        }}
+                        title="Move Role Right"
+                      >
+                        ➡️
+                      </button>
+                    </div>
+                  ) : <div />}
+
+                  {/* Delete Role Button */}
+                  <button
+                    onClick={(e)=>{e.stopPropagation(); removeSingleNodeOnly(node.id);}}
+                    style={{
+                      width:22, height:22, borderRadius:6,
+                      background:"#FFF0F0", color:"#D32F2F", border:"1px solid #FFCDCD",
+                      fontSize:".65rem", cursor:"pointer",
+                      display:"flex", alignItems:"center", justifyContent:"center"
+                    }}
+                    title="Delete Role"
+                  >
+                    🗑️
+                  </button>
+                </div>
+
+                <div style={{width:50, height:50, margin:"16px auto 6px", borderRadius:"50%", overflow:"hidden", border:"2px solid #f0f0f0", background:"#eee"}}>
                   {node.image ? (
                     <img src={node.image} alt={node.name} style={{width:"100%", height:"100%", objectFit:"cover"}}/>
                   ) : (
@@ -8354,24 +8784,33 @@ function AdminTeam({ mob, C, setC, auth }) {
                   <div style={{fontSize:".6rem", background:"#F0F4FF", color:"var(--dt)", borderRadius:6, padding:"1px 4px", marginTop:3, fontWeight:600, whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis"}}>{node.committee}</div>
                 )}
                 
-                {/* Plus button to open menu */}
+                {/* Plus button to open add menu */}
                 <button onClick={(e)=>{e.stopPropagation(); setMenuNode(node);}} style={{
-                  position:"absolute", bottom: -12, right: -12, width: 24, height: 24, borderRadius:"50%", 
+                  position:"absolute", bottom: -12, right: -12, width: 26, height: 26, borderRadius:"50%", 
                   background:"var(--dt)", color:"white", border:"2px solid white", cursor:"pointer",
-                  display:"flex", alignItems:"center", justifyContent:"center", fontSize:"1rem", zIndex:10
-                }}>+</button>
+                  display:"flex", alignItems:"center", justifyContent:"center", fontSize:"1rem", zIndex:10,
+                  boxShadow:"0 2px 8px rgba(0,0,0,0.15)"
+                }} title="Add Role relative (Boss/Sibling/Subordinate)">+</button>
               </div>
 
               {/* Action Menu Context */}
               {menuNode?.id === node.id && (
-                <div style={{position:"absolute", top: "100%", left: "50%", transform:"translate(-50%, 15px)", background:"white", borderRadius:8, boxShadow:"0 10px 30px rgba(0,0,0,.2)", zIndex:100, width: 160, padding: 8, border:"1px solid #eee"}}>
-                  <div style={{fontSize:".7rem", color:"#888", marginBottom:6, textAlign:"center", fontWeight:600}}>ADD RELATIVE</div>
-                  <button onClick={()=>addBoss(node)} className="gi" style={{display:"block", width:"100%", padding:"6px", fontSize:".75rem", background:"#f9f9f9", border:"none", borderRadius:4, marginBottom:4, cursor:"pointer"}}>⬆️ Add Boss (Above)</button>
-                  <button onClick={()=>addSibling(node, -1)} className="gi" style={{display:"block", width:"100%", padding:"6px", fontSize:".75rem", background:"#f9f9f9", border:"none", borderRadius:4, marginBottom:4, cursor:"pointer"}}>⬅️ Add Sibling (Left)</button>
-                  <button onClick={()=>addSibling(node, 1)} className="gi" style={{display:"block", width:"100%", padding:"6px", fontSize:".75rem", background:"#f9f9f9", border:"none", borderRadius:4, marginBottom:4, cursor:"pointer"}}>➡️ Add Sibling (Right)</button>
-                  <button onClick={()=>addSubordinate(node)} className="gi" style={{display:"block", width:"100%", padding:"6px", fontSize:".75rem", background:"#f9f9f9", border:"none", borderRadius:4, marginBottom:4, cursor:"pointer"}}>⬇️ Add Subordinate</button>
+                <div style={{position:"absolute", top: "100%", left: "50%", transform:"translate(-50%, 15px)", background:"white", borderRadius:12, boxShadow:"0 10px 30px rgba(0,0,0,.2)", zIndex:100, width: 190, padding: 10, border:"1px solid #eee"}}>
+                  <div style={{fontSize:".7rem", color:"#888", marginBottom:6, textAlign:"center", fontWeight:700, letterSpacing:1}}>REORDER / ADD ROLE</div>
+                  {children.length > 1 && (
+                    <div style={{display:"flex", gap: 4, marginBottom: 8}}>
+                      <button onClick={()=>moveSibling(node, -1)} disabled={i===0} style={{flex:1, padding:"5px", fontSize:".7rem", background:"#f0f4ff", border:"none", borderRadius:4, cursor:i===0?"default":"pointer", opacity:i===0?0.5:1}}>⬅️ Move Left</button>
+                      <button onClick={()=>moveSibling(node, 1)} disabled={i===children.length-1} style={{flex:1, padding:"5px", fontSize:".7rem", background:"#f0f4ff", border:"none", borderRadius:4, cursor:i===children.length-1?"default":"pointer", opacity:i===children.length-1?0.5:1}}>➡️ Move Right</button>
+                    </div>
+                  )}
+                  <button onClick={()=>addBoss(node)} className="gi" style={{display:"block", width:"100%", padding:"6px", fontSize:".75rem", background:"#f9f9f9", border:"none", borderRadius:4, marginBottom:4, cursor:"pointer", textAlign:"left"}}>⬆️ Add Boss (Above)</button>
+                  <button onClick={()=>addSibling(node, -1)} className="gi" style={{display:"block", width:"100%", padding:"6px", fontSize:".75rem", background:"#f9f9f9", border:"none", borderRadius:4, marginBottom:4, cursor:"pointer", textAlign:"left"}}>⬅️ Add Sibling (Left)</button>
+                  <button onClick={()=>addSibling(node, 1)} className="gi" style={{display:"block", width:"100%", padding:"6px", fontSize:".75rem", background:"#f9f9f9", border:"none", borderRadius:4, marginBottom:4, cursor:"pointer", textAlign:"left"}}>➡️ Add Sibling (Right)</button>
+                  <button onClick={()=>addSubordinate(node)} className="gi" style={{display:"block", width:"100%", padding:"6px", fontSize:".75rem", background:"#f9f9f9", border:"none", borderRadius:4, marginBottom:4, cursor:"pointer", textAlign:"left"}}>⬇️ Add Subordinate</button>
                   <div style={{height:1, background:"#eee", margin:"6px 0"}}/>
-                  <button onClick={()=>removeNode(node.id)} style={{display:"block", width:"100%", padding:"6px", fontSize:".75rem", background:"#FFF0F0", color:"#D32F2F", border:"none", borderRadius:4, cursor:"pointer"}}>🗑️ Delete Node</button>
+                  <div style={{fontSize:".65rem", color:"#888", marginBottom:4, textAlign:"center", fontWeight:700}}>DELETE ACTIONS</div>
+                  <button onClick={()=>removeSingleNodeOnly(node.id)} style={{display:"block", width:"100%", padding:"6px", fontSize:".75rem", background:"#FFF5F5", color:"#C53030", border:"none", borderRadius:4, marginBottom:4, cursor:"pointer", textAlign:"left"}}>🗑️ Delete Only This Role</button>
+                  <button onClick={()=>removeNodeAndSubtree(node.id)} style={{display:"block", width:"100%", padding:"6px", fontSize:".75rem", background:"#FFEBEB", color:"#9B2C2C", border:"none", borderRadius:4, cursor:"pointer", textAlign:"left", fontWeight:700}}>💥 Delete Role & Subtree</button>
                   <button onClick={()=>setMenuNode(null)} style={{display:"block", width:"100%", padding:"6px", fontSize:".75rem", background:"transparent", border:"none", marginTop:4, cursor:"pointer", color:"#666"}}>Cancel</button>
                 </div>
               )}
@@ -8392,7 +8831,7 @@ function AdminTeam({ mob, C, setC, auth }) {
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:20,flexWrap:"wrap",gap:16}}>
         <div>
           <h2 style={{fontSize:"1.8rem",color:"var(--dt)",fontFamily:"'Playfair Display',serif",fontWeight:700,margin:0}}>Our Team Manager</h2>
-          <p style={{color:"var(--mu)",fontSize:".9rem",marginTop:4}}>Manage your team structure and committee workspaces.</p>
+          <p style={{color:"var(--mu)",fontSize:".9rem",marginTop:4}}>Manage your team structure, reorder roles, and organize committee workspaces.</p>
         </div>
         <div style={{display:"flex",gap:10,background:"#fff",padding:4,borderRadius:12,boxShadow:"0 4px 12px rgba(0,0,0,.05)"}}>
           <button onClick={()=>updLayout("plain")} style={{padding:"8px 16px",borderRadius:8,border:"none",background:layout==="plain"?"var(--sf)":"transparent",color:layout==="plain"?"white":"var(--mu)",fontWeight:600,cursor:"pointer",transition:"all .2s"}}>Plain Layout</button>
@@ -8400,43 +8839,162 @@ function AdminTeam({ mob, C, setC, auth }) {
         </div>
       </div>
 
-      {/* Committee / Workspace Bar */}
-      <div style={{display:"flex", gap:8, flexWrap:"wrap", marginBottom:20, alignItems:"center", background:"#F8F9FA", padding:12, borderRadius:16, border:"1px solid var(--bd)"}}>
-        <span style={{fontSize:".8rem", fontWeight:700, color:"var(--mu)", marginRight:4, textTransform:"uppercase"}}>Committee Workspace:</span>
-        {["All", ...allCommitteesList].map(comm => {
-          const isActive = activeCommittee === comm;
-          const count = comm === "All" ? items.length : items.filter(i => (i.committee || "Central Working Committee (CWC)") === comm).length;
-          return (
-            <button key={comm} onClick={() => setActiveCommittee(comm)} style={{
-              padding: "6px 14px", borderRadius: 20,
-              background: isActive ? "var(--dt)" : "white",
-              color: isActive ? "white" : "var(--dt)",
-              fontWeight: isActive ? 700 : 600, fontSize: ".8rem",
-              cursor: "pointer", transition: "all 0.2s", display: "flex", alignItems: "center", gap: 6,
-              border: isActive ? "none" : "1px solid var(--bd)"
-            }}>
-              <span>{comm}</span>
-              <span style={{
-                background: isActive ? "rgba(255,255,255,0.25)" : "#EFEFEF",
-                color: isActive ? "white" : "var(--mu)",
-                padding: "1px 6px", borderRadius: 10, fontSize: ".7rem", fontWeight: 700
-              }}>{count}</span>
-            </button>
-          );
-        })}
-        <button onClick={() => {
-          const customName = prompt("Enter new Committee / Team Workspace name:");
-          if (customName && customName.trim()) {
-            const cName = customName.trim();
-            const newCList = Array.from(new Set([...allCommitteesList, cName]));
-            const newC = { ...C, committees: newCList };
-            setC(newC);
-            saveToFb(newC);
-            setActiveCommittee(cName);
-          }
-        }} style={{padding:"6px 14px", borderRadius:20, background:"var(--sf)", color:"white", border:"none", fontWeight:700, fontSize:".8rem", cursor:"pointer", marginLeft:"auto"}}>
-          + New Workspace
-        </button>
+      {/* Team Workspaces Cards Grid (Image 1 Style) */}
+      <div style={{marginBottom: 28, background:"#FAFBFD", padding: mob?16:24, borderRadius:20, border:"1px solid var(--bd)"}}>
+        <div style={{display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:20, flexWrap:"wrap", gap:12}}>
+          <div>
+            <h3 style={{fontFamily:"'Playfair Display',serif", color:"var(--dt)", margin:0, fontSize:"1.4rem", fontWeight:700}}>Team Workspaces</h3>
+            <p style={{fontSize:".85rem", color:"var(--mu)", marginTop:4}}>Select a workspace card below to manage its team members, reorder roles, and organize hierarchy.</p>
+          </div>
+          <button onClick={handleCreateWorkspace} style={{padding:"10px 20px", borderRadius:12, background:"var(--sf)", color:"white", border:"none", fontWeight:700, fontSize:".85rem", cursor:"pointer", boxShadow:"0 4px 12px rgba(232,101,10,0.25)", display:"flex", alignItems:"center", gap:6}}>
+            <span>+</span> Create Workspace
+          </button>
+        </div>
+
+        <div style={{display:"grid", gridTemplateColumns: mob ? "1fr" : "repeat(auto-fill, minmax(270px, 1fr))", gap: 18}}>
+          {["All", ...allCommitteesList].map((comm) => {
+            const isActive = activeCommittee === comm;
+            const isDragging = draggedComm === comm;
+            const isDefault = C.defaultCommittee
+              ? C.defaultCommittee === comm
+              : (allCommitteesList[0] === comm && comm !== "All");
+            const count = comm === "All"
+              ? items.filter(i => !i.isSeparator).length
+              : items.filter(i => !i.isSeparator && (i.committee || "Central Working Committee (CWC)") === comm).length;
+            const icon = getWorkspaceIcon(comm);
+            const topLeader = getWorkspaceTopLeader(comm);
+            const leaderPhoto = topLeader?.image;
+
+            return (
+              <div key={comm}
+                draggable={comm !== "All"}
+                onDragStart={(e) => handleCommDragStart(e, comm)}
+                onDragOver={(e) => e.preventDefault()}
+                onDrop={(e) => handleCommDrop(e, comm)}
+                onClick={() => setActiveCommittee(comm)}
+                style={{
+                  background: isActive ? "#FFFFFF" : "#FFFFFF",
+                  border: isActive ? "2px solid var(--dt)" : "1px solid var(--bd)",
+                  borderRadius: 18,
+                  padding: "22px 24px",
+                  cursor: comm === "All" ? "pointer" : "grab",
+                  boxShadow: isActive ? "0 8px 24px rgba(0,0,0,0.08)" : "0 4px 12px rgba(0,0,0,0.03)",
+                  transition: "all 0.2s ease",
+                  position: "relative",
+                  opacity: isDragging ? 0.4 : 1
+                }}
+                onMouseEnter={e => {
+                  if (!isActive) {
+                    e.currentTarget.style.transform = "translateY(-3px)";
+                    e.currentTarget.style.boxShadow = "0 8px 20px rgba(0,0,0,0.06)";
+                  }
+                }}
+                onMouseLeave={e => {
+                  if (!isActive) {
+                    e.currentTarget.style.transform = "none";
+                    e.currentTarget.style.boxShadow = "0 4px 12px rgba(0,0,0,0.03)";
+                  }
+                }}
+              >
+                {/* Action Bar & Badges */}
+                <div style={{position:"absolute", top: 10, right: 10, display:"flex", alignItems:"center", gap:4, zIndex:10}} onClick={e=>e.stopPropagation()}>
+                  {comm !== "All" && (
+                    isDefault ? (
+                      <span style={{
+                        background:"#FFF8E1", color:"#B78103", border:"1px solid #FFE082",
+                        fontSize:".6rem", fontWeight:700, padding:"3px 8px", borderRadius:10,
+                        display:"flex", alignItems:"center", gap:3
+                      }} title="This workspace is set as Default for public website visitors">
+                        ⭐ Default
+                      </span>
+                    ) : (
+                      <button
+                        onClick={(e) => handleSetDefaultWorkspace(comm, e)}
+                        style={{
+                          background:"#FFFDF5", color:"#B78103", border:"1px solid #FFE58F",
+                          borderRadius:10, padding:"3px 8px", fontSize:".65rem", fontWeight:600,
+                          cursor:"pointer", transition:"all 0.2s"
+                        }}
+                        title={`Set "${comm}" as default workspace for public website visitors`}
+                      >
+                        ⭐ Set Default
+                      </button>
+                    )
+                  )}
+
+                  {isActive && (
+                    <span style={{background:"var(--dt)", color:"white", fontSize:".6rem", fontWeight:700, padding:"3px 8px", borderRadius:10, textTransform:"uppercase", letterSpacing:0.5}}>
+                      Active
+                    </span>
+                  )}
+
+                  {comm !== "All" && (
+                    <button
+                      onClick={(e) => handleRenameWorkspace(comm, e)}
+                      style={{
+                        width:24, height:24, borderRadius:"50%", background:"#F0F4FF", border:"1px solid #D0E0FF",
+                        color:"#3B82F6", cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"center",
+                        fontSize:".7rem", transition:"all 0.2s"
+                      }}
+                      title={`Rename "${comm}" Workspace`}
+                    >
+                      ✏️
+                    </button>
+                  )}
+
+                  {comm !== "All" && (
+                    <button
+                      onClick={(e) => handleDeleteWorkspace(comm, e)}
+                      style={{
+                        width:24, height:24, borderRadius:"50%", background:"#FFF0F0", border:"1px solid #FFCDCD",
+                        color:"#D32F2F", cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"center",
+                        fontSize:".7rem", transition:"all 0.2s"
+                      }}
+                      title={`Delete "${comm}" Workspace`}
+                    >
+                      🗑️
+                    </button>
+                  )}
+                </div>
+
+                {/* Workspace Leader Avatar & Details (Enlarged 70px Image Area) */}
+                <div style={{display:"flex", alignItems:"center", gap: 14, marginBottom: 16, marginTop: 4}}>
+                  <div style={{
+                    width: 70, height: 70, borderRadius: "50%", overflow: "hidden",
+                    border: leaderPhoto ? "3px solid var(--sf)" : "2px solid #EAEAEA",
+                    background: "#F5F7FA", display: "flex", alignItems: "center", justifyContent: "center",
+                    boxShadow: leaderPhoto ? "0 6px 16px rgba(232,101,10,0.2)" : "0 4px 10px rgba(0,0,0,0.06)", flexShrink: 0
+                  }}>
+                    {leaderPhoto ? (
+                      <img src={leaderPhoto} alt={topLeader.name} style={{width:"100%", height:"100%", objectFit:"cover"}} />
+                    ) : (
+                      <div style={{fontSize: "2.2rem"}}>{icon}</div>
+                    )}
+                  </div>
+                  {topLeader?.name ? (
+                    <div style={{overflow:"hidden", textAlign:"left"}}>
+                      <div style={{fontSize:".65rem", color:"var(--sf)", fontWeight:700, textTransform:"uppercase", letterSpacing:0.5}}>Top Leader</div>
+                      <div style={{fontSize:".95rem", color:"var(--dt)", fontWeight:700, whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis"}}>{topLeader.name}</div>
+                      <div style={{fontSize:".75rem", color:"var(--mu)", whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis"}}>{topLeader.position || "Leader"}</div>
+                    </div>
+                  ) : (
+                    <div style={{textAlign:"left"}}>
+                      <div style={{fontSize:".65rem", color: comm === "All" ? "var(--sf)" : "var(--mu)", fontWeight:700, textTransform:"uppercase", letterSpacing:0.5}}>
+                        {comm === "All" ? "GLOBAL OVERVIEW" : "COMMITTEE"}
+                      </div>
+                      <div style={{fontSize:".85rem", color: comm === "All" ? "var(--dt)" : "var(--mu)", fontWeight: comm === "All" ? 700 : 400, fontStyle: comm === "All" ? "normal" : "italic"}}>
+                        {comm === "All" ? "All Committees" : "No members yet"}
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                <h3 style={{margin:"0 0 4px 0", color:"var(--dt)", fontSize:"1.1rem", fontWeight:700, lineHeight: 1.3}}>{comm}</h3>
+                <p style={{margin:0, fontSize:".85rem", color:"var(--mu)", fontWeight:500}}>{count} team member{count !== 1 ? "s" : ""}</p>
+              </div>
+            );
+          })}
+        </div>
       </div>
 
       {layout === "hierarchy" ? (
@@ -8456,29 +9014,75 @@ function AdminTeam({ mob, C, setC, auth }) {
         </div>
       ) : (
         <div style={{background:"white",borderRadius:24,padding:mob?16:32,boxShadow:"0 12px 40px rgba(0,0,0,0.04)"}}>
-          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:20}}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:20,flexWrap:"wrap",gap:10}}>
             <h3 style={{color:"var(--dt)",margin:0}}>Team Members ({activeCommittee})</h3>
-            <button className="btn-primary" onClick={addPlain} style={{padding:"8px 16px",borderRadius:8}}>+ Add Member</button>
+            <div style={{display:"flex", gap:8}}>
+              <button className="btn-primary" onClick={addSeparator} style={{padding:"8px 16px",borderRadius:8, background:"#4A90E2", border:"none"}}>+ Add Row Separator</button>
+              <button className="btn-primary" onClick={addPlain} style={{padding:"8px 16px",borderRadius:8}}>+ Add Member</button>
+            </div>
           </div>
+
           <div style={{display:"flex",flexDirection:"column",gap:16}}>
-            {filteredAdminItems.filter(i => i.parentId === "plain" || typeof i.parentId === "undefined").sort((a,b)=>(a.order||0)-(b.order||0)).map((item, i) => (
-              <div key={item.id} style={{display:"flex",gap:16,padding:16,border:"1px solid var(--bd)",borderRadius:16,background:"#fafafa",alignItems:"center",flexWrap:"wrap"}}>
-                <div style={{width:60,height:60,borderRadius:"50%",background:"#eee",overflow:"hidden",flexShrink:0}}>
-                  {item.image ? <img src={item.image} style={{width:"100%",height:"100%",objectFit:"cover"}}/> : <div style={{width:"100%",height:"100%",display:"flex",alignItems:"center",justifyContent:"center",fontSize:"1.5rem"}}>👤</div>}
+            {filteredAdminItems.filter(i => i.parentId === "plain" || typeof i.parentId === "undefined").sort((a,b)=>(a.order||0)-(b.order||0)).map((item, i) => {
+              if (item.isSeparator) {
+                return (
+                  <div key={item.id}
+                    draggable
+                    onDragStart={(e)=>handleItemDragStart(e, item.id)}
+                    onDragOver={(e)=>e.preventDefault()}
+                    onDrop={(e)=>handleItemDrop(e, item.id)}
+                    style={{
+                      display:"flex", alignItems:"center", gap:16, padding:"16px 20px",
+                      background:"linear-gradient(135deg, #F0F4FF 0%, #E8EEFF 100%)",
+                      borderRadius:16, border:"2px dashed #4A90E2", margin:"8px 0", cursor:"grab",
+                      opacity: draggedItemId === item.id ? 0.4 : 1
+                    }}
+                  >
+                    <div style={{fontSize:"1.2rem", color:"#4A90E2", fontWeight:"bold"}}>⋮⋮</div>
+                    <div style={{fontSize:1.4}}>➖</div>
+                    <div style={{flex:1, minWidth:180}}>
+                      <div style={{fontSize:".65rem", fontWeight:700, color:"#4A90E2", textTransform:"uppercase", letterSpacing:1}}>ROW SEPARATOR / TEAM DIVISION</div>
+                      <div style={{fontWeight:700, fontSize:"1.05rem", color:"var(--dt)"}}>{item.title || "--- Section Separator ---"}</div>
+                      {item.desc && <div style={{fontSize:".75rem", color:"var(--mu)"}}>{item.desc}</div>}
+                    </div>
+                    <div style={{display:"flex",gap:8}}>
+                      <button onClick={()=>setActiveNode(item)} style={{padding:"6px 12px",borderRadius:6,border:"1px solid #4A90E2",background:"white",color:"#4A90E2",cursor:"pointer",fontWeight:600}}>Edit Separator</button>
+                      <button onClick={()=>movePlain(i,-1)} disabled={i===0} style={{padding:"6px 12px",borderRadius:6,border:"1px solid var(--bd)",background:"white",cursor:i===0?"not-allowed":"pointer"}}>↑</button>
+                      <button onClick={()=>removePlain(i)} style={{padding:"6px 12px",borderRadius:6,border:"none",background:"#FFF0F0",color:"#D32F2F",cursor:"pointer"}}>Delete</button>
+                    </div>
+                  </div>
+                );
+              }
+
+              return (
+                <div key={item.id}
+                  draggable
+                  onDragStart={(e)=>handleItemDragStart(e, item.id)}
+                  onDragOver={(e)=>e.preventDefault()}
+                  onDrop={(e)=>handleItemDrop(e, item.id)}
+                  style={{
+                    display:"flex",gap:16,padding:16,border:"1px solid var(--bd)",borderRadius:16,background:"#fafafa",alignItems:"center",flexWrap:"wrap", cursor:"grab",
+                    opacity: draggedItemId === item.id ? 0.4 : 1
+                  }}
+                >
+                  <div style={{fontSize:"1.2rem", color:"#bbb", fontWeight:"bold"}}>⋮⋮</div>
+                  <div style={{width:60,height:60,borderRadius:"50%",background:"#eee",overflow:"hidden",flexShrink:0}}>
+                    {item.image ? <img src={item.image} style={{width:"100%",height:"100%",objectFit:"cover"}}/> : <div style={{width:"100%",height:"100%",display:"flex",alignItems:"center",justifyContent:"center",fontSize:"1.5rem"}}>👤</div>}
+                  </div>
+                  <div style={{flex:1,minWidth:200}}>
+                    <div style={{fontWeight:700,color:"var(--dt)",fontSize:"1.1rem"}}>{item.name || "No Name"}</div>
+                    <div style={{color:"var(--sf)",fontSize:".85rem",fontWeight:600}}>{item.position || "No Position"}</div>
+                    <div style={{color:"var(--tm)",fontSize:".8rem",marginTop:4}}>{item.desc || "No Description"}</div>
+                    <div style={{fontSize:".7rem", background:"#EBF3FF", color:"var(--dt)", borderRadius:6, padding:"2px 8px", marginTop:6, display:"inline-block", fontWeight:700}}>{item.committee || "Central Working Committee (CWC)"}</div>
+                  </div>
+                  <div style={{display:"flex",gap:8}}>
+                    <button onClick={()=>setActiveNode(item)} style={{padding:"6px 12px",borderRadius:6,border:"1px solid var(--sf)",background:"white",color:"var(--sf)",cursor:"pointer",fontWeight:600}}>Edit</button>
+                    <button onClick={()=>movePlain(i,-1)} disabled={i===0} style={{padding:"6px 12px",borderRadius:6,border:"1px solid var(--bd)",background:"white",cursor:i===0?"not-allowed":"pointer"}}>↑</button>
+                    <button onClick={()=>removePlain(i)} style={{padding:"6px 12px",borderRadius:6,border:"none",background:"#FFF0F0",color:"#D32F2F",cursor:"pointer"}}>Delete</button>
+                  </div>
                 </div>
-                <div style={{flex:1,minWidth:200}}>
-                  <div style={{fontWeight:700,color:"var(--dt)",fontSize:"1.1rem"}}>{item.name || "No Name"}</div>
-                  <div style={{color:"var(--sf)",fontSize:".85rem",fontWeight:600}}>{item.position || "No Position"}</div>
-                  <div style={{color:"var(--tm)",fontSize:".8rem",marginTop:4}}>{item.desc || "No Description"}</div>
-                  <div style={{fontSize:".7rem", background:"#EBF3FF", color:"var(--dt)", borderRadius:6, padding:"2px 8px", marginTop:6, display:"inline-block", fontWeight:700}}>{item.committee || "Central Working Committee (CWC)"}</div>
-                </div>
-                <div style={{display:"flex",gap:8}}>
-                  <button onClick={()=>setActiveNode(item)} style={{padding:"6px 12px",borderRadius:6,border:"1px solid var(--sf)",background:"white",color:"var(--sf)",cursor:"pointer",fontWeight:600}}>Edit</button>
-                  <button onClick={()=>movePlain(i,-1)} disabled={i===0} style={{padding:"6px 12px",borderRadius:6,border:"1px solid var(--bd)",background:"white",cursor:i===0?"not-allowed":"pointer"}}>↑</button>
-                  <button onClick={()=>removePlain(i)} style={{padding:"6px 12px",borderRadius:6,border:"none",background:"#FFF0F0",color:"#D32F2F",cursor:"pointer"}}>Delete</button>
-                </div>
-              </div>
-            ))}
+              );
+            })}
             {items.length===0 && <div style={{padding:40,textAlign:"center",color:"#888"}}>No team members yet.</div>}
           </div>
         </div>
@@ -8487,52 +9091,154 @@ function AdminTeam({ mob, C, setC, auth }) {
       {/* Edit Node Modal */}
       {activeNode && (
         <div style={{position:"fixed",top:0,left:0,right:0,bottom:0,background:"rgba(0,0,0,.7)",zIndex:9999,display:"flex",alignItems:"center",justifyContent:"center",padding:16}}>
-          <div style={{background:"white",width:"100%",maxWidth:500,borderRadius:24,padding:32,position:"relative",boxShadow:"0 20px 60px rgba(0,0,0,.3)"}}>
-            <button onClick={flushNodeUpdate} style={{position:"absolute",top:16,right:16,background:"none",border:"none",fontSize:"1.5rem",cursor:"pointer",color:"#888"}}>✕</button>
-            <h3 style={{marginTop:0,marginBottom:24,color:"var(--dt)"}}>Edit Team Member</h3>
-            
-            <div style={{marginBottom:24, paddingBottom:20, borderBottom:"1px solid #eee"}}>
-              <label style={{display:"block",fontSize:".75rem",fontWeight:700,color:"var(--sf)",marginBottom:6}}>⚡ AUTO-FILL FROM REGISTERED USER</label>
-              <select onChange={handleSelectUser} style={{width:"100%",padding:12,borderRadius:8,border:"1px solid var(--bd)",fontSize:"1rem",background:"#fafafa",cursor:"pointer"}}>
-                <option value="">-- Select a User to auto-fill details --</option>
-                {allUsers.map(u => (
-                  <option key={u.id} value={u.id}>{u.name || u.email || u.id}</option>
-                ))}
-              </select>
-            </div>
-
-            <div style={{display:"flex",gap:16,marginBottom:20}}>
-              <div style={{width:80,height:80,borderRadius:"50%",background:"#f5f5f5",overflow:"hidden",position:"relative",flexShrink:0}}>
-                {activeNode.image ? <img src={activeNode.image} style={{width:"100%",height:"100%",objectFit:"cover"}}/> : <div style={{width:"100%",height:"100%",display:"flex",alignItems:"center",justifyContent:"center",fontSize:"2rem"}}>👤</div>}
-              </div>
-              <div style={{flex:1, minWidth:0}}>
-                <label style={{display:"flex",justifyContent:"space-between",alignItems:"center",fontSize:".75rem",fontWeight:700,color:"var(--mu)",marginBottom:4}}>
-                  <span>PHOTO URL</span>
-                  <label style={{cursor:"pointer",color:"var(--dt)",textDecoration:"underline",fontWeight:700}}>
-                    {uploadingImage ? "Uploading..." : "Click to Upload Photo"}
-                    <input type="file" style={{display:"none"}} accept="image/*" onChange={handlePhotoUpload} disabled={uploadingImage}/>
-                  </label>
-                </label>
-                <input type="text" value={activeNode.image} onChange={e=>updateActiveNode("image", e.target.value)} style={{width:"100%",padding:10,borderRadius:8,border:"1px solid var(--bd)",fontSize:".9rem"}} placeholder="https://..."/>
-              </div>
-            </div>
-
-            <div style={{marginBottom:16}}>
-              <label style={{display:"block",fontSize:".75rem",fontWeight:700,color:"var(--mu)",marginBottom:4}}>NAME</label>
-              <input type="text" value={activeNode.name} onChange={e=>updateActiveNode("name", e.target.value)} style={{width:"100%",padding:12,borderRadius:8,border:"1px solid var(--bd)",fontSize:"1rem"}}/>
+          <div style={{background:"white",width:"100%",maxWidth:540,maxHeight:"88vh",overflowY:"auto",borderRadius:24,padding:mob?20:32,position:"relative",boxShadow:"0 20px 60px rgba(0,0,0,.3)"}}>
+            <div style={{position:"sticky",top:0,background:"white",zIndex:10,display:"flex",justifyContent:"space-between",alignItems:"center",paddingBottom:12,marginBottom:16,borderBottom:"1px solid #eee"}}>
+              <h3 style={{margin:0,color:activeNode.isSeparator ? "#4A90E2" : "var(--dt)",fontSize:"1.25rem",fontWeight:700}}>
+                {activeNode.isSeparator ? "Edit Row Separator" : "Edit Team Member"}
+              </h3>
+              <button onClick={flushNodeUpdate} style={{background:"#F0F0F0",border:"none",borderRadius:"50%",width:36,height:36,fontSize:"1.2rem",cursor:"pointer",color:"#333",display:"flex",alignItems:"center",justifyContent:"center",boxShadow:"0 2px 8px rgba(0,0,0,0.1)"}} title="Close">✕</button>
             </div>
             
-            <div style={{marginBottom:16}}>
-              <label style={{display:"block",fontSize:".75rem",fontWeight:700,color:"var(--mu)",marginBottom:4}}>POSITION / TITLE</label>
-              <input type="text" value={activeNode.position} onChange={e=>updateActiveNode("position", e.target.value)} style={{width:"100%",padding:12,borderRadius:8,border:"1px solid var(--bd)",fontSize:"1rem"}}/>
-            </div>
+            {activeNode.isSeparator ? (
+              <>
+                <div style={{marginBottom:16}}>
+                  <label style={{display:"block",fontSize:".75rem",fontWeight:700,color:"var(--mu)",marginBottom:4}}>SEPARATOR TITLE</label>
+                  <input type="text" value={activeNode.title || ""} onChange={e=>updateActiveNode("title", e.target.value)} style={{width:"100%",padding:12,borderRadius:8,border:"1px solid var(--bd)",fontSize:"1rem"}} placeholder="e.g. --- Sub Teams: Education & Marriage ---"/>
+                </div>
+                <div style={{marginBottom:24}}>
+                  <label style={{display:"block",fontSize:".75rem",fontWeight:700,color:"var(--mu)",marginBottom:4}}>DESCRIPTION / SUBTITLE</label>
+                  <input type="text" value={activeNode.desc || ""} onChange={e=>updateActiveNode("desc", e.target.value)} style={{width:"100%",padding:12,borderRadius:8,border:"1px solid var(--bd)",fontSize:"1rem"}} placeholder="e.g. Specialized committee branches"/>
+                </div>
+              </>
+            ) : (
+              <>
+                <div style={{marginBottom:24, paddingBottom:20, borderBottom:"1px solid #eee"}}>
+                  <label style={{display:"block",fontSize:".75rem",fontWeight:700,color:"var(--sf)",marginBottom:6}}>⚡ AUTO-FILL FROM REGISTERED USER</label>
+                  <select onChange={handleSelectUser} style={{width:"100%",padding:12,borderRadius:8,border:"1px solid var(--bd)",fontSize:"1rem",background:"#fafafa",cursor:"pointer"}}>
+                    <option value="">-- Select a User to auto-fill details --</option>
+                    {allUsers.map(u => (
+                      <option key={u.id} value={u.id}>{u.name || u.email || u.id}</option>
+                    ))}
+                  </select>
+                </div>
 
-            <div style={{marginBottom:24}}>
-              <label style={{display:"block",fontSize:".75rem",fontWeight:700,color:"var(--mu)",marginBottom:4}}>SHORT DESCRIPTION</label>
-              <textarea value={activeNode.desc} onChange={e=>updateActiveNode("desc", e.target.value)} style={{width:"100%",padding:12,borderRadius:8,border:"1px solid var(--bd)",fontSize:"1rem",minHeight:80,resize:"vertical"}}/>
-            </div>
+                <div style={{display:"flex",gap:16,marginBottom:20}}>
+                  <div style={{width:80,height:80,borderRadius:"50%",background:"#f5f5f5",overflow:"hidden",position:"relative",flexShrink:0}}>
+                    {activeNode.image ? <img src={activeNode.image} style={{width:"100%",height:"100%",objectFit:"cover"}}/> : <div style={{width:"100%",height:"100%",display:"flex",alignItems:"center",justifyContent:"center",fontSize:"2rem"}}>👤</div>}
+                  </div>
+                  <div style={{flex:1, minWidth:0}}>
+                    <label style={{display:"flex",justifyContent:"space-between",alignItems:"center",fontSize:".75rem",fontWeight:700,color:"var(--mu)",marginBottom:4}}>
+                      <span>PHOTO URL</span>
+                      <label style={{cursor:"pointer",color:"var(--dt)",textDecoration:"underline",fontWeight:700}}>
+                        {uploadingImage ? "Uploading..." : "Click to Upload Photo"}
+                        <input type="file" style={{display:"none"}} accept="image/*" onChange={handlePhotoUpload} disabled={uploadingImage}/>
+                      </label>
+                    </label>
+                    <input type="text" value={activeNode.image || ""} onChange={e=>updateActiveNode("image", e.target.value)} style={{width:"100%",padding:10,borderRadius:8,border:"1px solid var(--bd)",fontSize:".9rem"}} placeholder="https://..."/>
+                  </div>
+                </div>
+
+                <div style={{marginBottom:16}}>
+                  <label style={{display:"block",fontSize:".75rem",fontWeight:700,color:"var(--mu)",marginBottom:4}}>NAME</label>
+                  <input type="text" value={activeNode.name || ""} onChange={e=>updateActiveNode("name", e.target.value)} style={{width:"100%",padding:12,borderRadius:8,border:"1px solid var(--bd)",fontSize:"1rem"}}/>
+                </div>
+                
+                <div style={{marginBottom:16}}>
+                  <label style={{display:"block",fontSize:".75rem",fontWeight:700,color:"var(--mu)",marginBottom:4}}>POSITION / TITLE</label>
+                  <input type="text" value={activeNode.position || ""} onChange={e=>updateActiveNode("position", e.target.value)} style={{width:"100%",padding:12,borderRadius:8,border:"1px solid var(--bd)",fontSize:"1rem"}}/>
+                </div>
+
+                <div style={{display:"grid", gridTemplateColumns: mob?"1fr":"1fr 1fr", gap: 12, marginBottom:16}}>
+                  <div>
+                    <label style={{display:"block",fontSize:".75rem",fontWeight:700,color:"var(--mu)",marginBottom:4}}>📱 MOBILE NUMBER</label>
+                    <input type="text" value={activeNode.mobile || ""} onChange={e=>updateActiveNode("mobile", e.target.value)} style={{width:"100%",padding:10,borderRadius:8,border:"1px solid var(--bd)",fontSize:".95rem"}} placeholder="e.g. +91 9876543210"/>
+                  </div>
+                  <div>
+                    <label style={{display:"block",fontSize:".75rem",fontWeight:700,color:"var(--mu)",marginBottom:4}}>💼 PROFESSION</label>
+                    <input type="text" value={activeNode.profession || ""} onChange={e=>updateActiveNode("profession", e.target.value)} style={{width:"100%",padding:10,borderRadius:8,border:"1px solid var(--bd)",fontSize:".95rem"}} placeholder="e.g. Engineer / Business"/>
+                  </div>
+                </div>
+
+                <div style={{display:"grid", gridTemplateColumns: mob?"1fr":"1fr 1fr", gap: 12, marginBottom:16}}>
+                  <div>
+                    <label style={{display:"block",fontSize:".75rem",fontWeight:700,color:"var(--mu)",marginBottom:4}}>🎓 LAST QUALIFICATION</label>
+                    <input type="text" value={activeNode.qualification || ""} onChange={e=>updateActiveNode("qualification", e.target.value)} style={{width:"100%",padding:10,borderRadius:8,border:"1px solid var(--bd)",fontSize:".95rem"}} placeholder="e.g. M.Com / B.E. / LL.B."/>
+                  </div>
+                  <div>
+                    <label style={{display:"block",fontSize:".75rem",fontWeight:700,color:"var(--mu)",marginBottom:4}}>🏠 ADDRESS</label>
+                    <input type="text" value={activeNode.address || ""} onChange={e=>updateActiveNode("address", e.target.value)} style={{width:"100%",padding:10,borderRadius:8,border:"1px solid var(--bd)",fontSize:".95rem"}} placeholder="e.g. Mumbai, Maharashtra"/>
+                  </div>
+                </div>
+
+                <div style={{marginBottom:24}}>
+                  <label style={{display:"block",fontSize:".75rem",fontWeight:700,color:"var(--mu)",marginBottom:4}}>SHORT DESCRIPTION / ABOUT</label>
+                  <textarea value={activeNode.desc || ""} onChange={e=>updateActiveNode("desc", e.target.value)} style={{width:"100%",padding:12,borderRadius:8,border:"1px solid var(--bd)",fontSize:"1rem",minHeight:60,resize:"vertical"}} placeholder="Additional notes or bio..."/>
+                </div>
+              </>
+            )}
 
             <button onClick={flushNodeUpdate} className="btn-primary" style={{width:"100%",padding:14,borderRadius:12,fontSize:"1rem"}}>Save Changes</button>
+          </div>
+        </div>
+      )}
+
+      {/* Custom Message / Confirmation Modal Dialog */}
+      {customModal && (
+        <div style={{position:"fixed", top:0, left:0, right:0, bottom:0, background:"rgba(0,0,0,0.6)", zIndex:10000, display:"flex", alignItems:"center", justifyContent:"center", padding:16, backdropFilter:"blur(4px)"}} onClick={() => setCustomModal(null)}>
+          <div style={{background:"white", width:"100%", maxWidth:450, borderRadius:20, padding:28, boxShadow:"0 20px 50px rgba(0,0,0,0.25)", position:"relative"}} onClick={e => e.stopPropagation()}>
+            <button onClick={() => setCustomModal(null)} style={{position:"absolute", top:16, right:16, background:"none", border:"none", fontSize:"1.2rem", cursor:"pointer", color:"#999"}}>✕</button>
+            <h3 style={{marginTop:0, marginBottom:12, color:"var(--dt)", fontSize:"1.25rem", fontWeight:700}}>{customModal.title}</h3>
+            {customModal.message && (
+              <p style={{color:"var(--mu)", fontSize:".9rem", lineHeight:1.5, marginBottom: customModal.type === "input" ? 16 : 24, whiteSpace:"pre-line"}}>{customModal.message}</p>
+            )}
+
+            {customModal.type === "input" && (
+              <input
+                type="text"
+                autoFocus
+                value={customModal.inputValue || ""}
+                onChange={(e) => setCustomModal({ ...customModal, inputValue: e.target.value })}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && customModal.inputValue?.trim()) {
+                    const val = customModal.inputValue.trim();
+                    const callback = customModal.onConfirm;
+                    setCustomModal(null);
+                    callback(val);
+                  }
+                }}
+                placeholder={customModal.inputPlaceholder || "Enter name..."}
+                style={{width:"100%", padding:"12px 14px", borderRadius:10, border:"1px solid var(--bd)", fontSize:"1rem", marginBottom:24, boxSizing:"border-box"}}
+              />
+            )}
+
+            <div style={{display:"flex", justifyContent:"flex-end", gap:12}}>
+              <button
+                onClick={() => setCustomModal(null)}
+                style={{padding:"10px 18px", borderRadius:10, border:"1px solid var(--bd)", background:"white", color:"var(--dt)", fontWeight:600, fontSize:".9rem", cursor:"pointer"}}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => {
+                  const val = customModal.inputValue?.trim();
+                  const callback = customModal.onConfirm;
+                  setCustomModal(null);
+                  if (customModal.type === "input") {
+                    if (val) callback(val);
+                  } else {
+                    callback();
+                  }
+                }}
+                style={{
+                  padding:"10px 20px", borderRadius:10, border:"none",
+                  background: customModal.confirmStyle === "danger" ? "#D32F2F" : "var(--dt)",
+                  color:"white", fontWeight:700, fontSize:".9rem", cursor:"pointer",
+                  boxShadow:"0 4px 12px rgba(0,0,0,0.15)"
+                }}
+              >
+                {customModal.confirmText || (customModal.confirmStyle === "danger" ? "Delete" : "Confirm")}
+              </button>
+            </div>
           </div>
         </div>
       )}
