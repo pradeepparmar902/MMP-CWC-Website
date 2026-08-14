@@ -8380,6 +8380,196 @@ function AdminTeam({ mob, C, setC, auth }) {
     saveToFb(newC);
   };
 
+  // Download Sample Excel Template for Team Hierarchy
+  const handleDownloadTemplate = () => {
+    const templateData = [
+      {
+        "ID": "1",
+        "Name": "Ravi Dharia",
+        "Position": "President",
+        "Parent Leader Name": "",
+        "Committee": "CWC - Central Working Committee",
+        "Mobile": "+91 9876543210",
+        "Profession": "Business",
+        "Qualification": "M.Com",
+        "Address": "Mumbai, Maharashtra",
+        "Photo URL": "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=300",
+        "Description": "President of MMP CWC and Trustee"
+      },
+      {
+        "ID": "2",
+        "Name": "Prakash Gohil",
+        "Position": "Treasurer",
+        "Parent Leader Name": "Ravi Dharia",
+        "Committee": "CWC - Central Working Committee",
+        "Mobile": "+91 9876543211",
+        "Profession": "Chartered Accountant",
+        "Qualification": "B.Com / CA",
+        "Address": "Mumbai, Maharashtra",
+        "Photo URL": "",
+        "Description": "Central Working Committee Treasurer"
+      },
+      {
+        "ID": "3",
+        "Name": "Vasant Padaya",
+        "Position": "Vice President",
+        "Parent Leader Name": "Ravi Dharia",
+        "Committee": "CWC - Central Working Committee",
+        "Mobile": "+91 9876543212",
+        "Profession": "Advocate",
+        "Qualification": "LL.B.",
+        "Address": "Mumbai, Maharashtra",
+        "Photo URL": "",
+        "Description": "Vice President of CWC"
+      },
+      {
+        "ID": "4",
+        "Name": "Pradeep Parmar",
+        "Position": "Chairman",
+        "Parent Leader Name": "",
+        "Committee": "Education Committee",
+        "Mobile": "+91 9876543213",
+        "Profession": "Engineer",
+        "Qualification": "B.E.",
+        "Address": "Mumbai, Maharashtra",
+        "Photo URL": "",
+        "Description": "Chairman of Education Committee"
+      }
+    ];
+
+    const ws = XLSX.utils.json_to_sheet(templateData);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Hierarchy Template");
+    XLSX.writeFile(wb, "Team_Hierarchy_Template.xlsx");
+  };
+
+  // Bulk Import Excel / CSV for Team Hierarchy
+  const handleImportExcel = (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (evt) => {
+      try {
+        const data = new Uint8Array(evt.target.result);
+        const workbook = XLSX.read(data, { type: "array" });
+        const sheetName = workbook.SheetNames[0];
+        const rows = XLSX.utils.sheet_to_json(workbook.Sheets[sheetName]);
+
+        if (!rows || rows.length === 0) {
+          setCustomModal({
+            title: "Empty Spreadsheet",
+            message: "No data rows were found in the uploaded file.",
+            confirmText: "OK",
+            onConfirm: () => {}
+          });
+          return;
+        }
+
+        const nodeMap = new Map();
+        const newNodes = [];
+
+        rows.forEach((row, idx) => {
+          const getVal = (...keys) => {
+            for (const k of keys) {
+              const matchedKey = Object.keys(row).find(x => String(x).trim().toLowerCase() === k.toLowerCase());
+              if (matchedKey && row[matchedKey] !== undefined) return String(row[matchedKey]).trim();
+            }
+            return "";
+          };
+
+          const rawId = getVal("id", "member id", "role id");
+          const name = getVal("name", "full name", "member name");
+          const position = getVal("position", "title", "designation", "role");
+          const parentName = getVal("parent leader name", "parent leader", "parent name", "boss name", "parent id", "parentleader");
+          const committee = getVal("committee", "workspace", "team") || (activeCommittee !== "All" ? activeCommittee : "CWC - Central Working Committee");
+          const mobile = getVal("mobile", "mobile number", "phone", "contact");
+          const profession = getVal("profession", "occupation", "job");
+          const qualification = getVal("qualification", "education", "degree");
+          const address = getVal("address", "city", "location");
+          const image = getVal("photo url", "photo", "image", "picture");
+          const desc = getVal("description", "desc", "notes", "about");
+
+          if (!name && !position) return;
+
+          const nodeId = rawId ? `team_${rawId}` : `team_${Date.now()}_${idx}_${Math.floor(Math.random()*1000)}`;
+
+          const node = {
+            id: nodeId,
+            name: name || "Member",
+            position: position || "Member",
+            committee: committee,
+            mobile: mobile,
+            profession: profession,
+            qualification: qualification,
+            address: address,
+            image: image,
+            desc: desc,
+            parentId: null,
+            order: idx,
+            _rawParent: parentName,
+            _rawId: rawId || nodeId
+          };
+
+          newNodes.push(node);
+          if (name) nodeMap.set(name.toLowerCase(), node.id);
+          if (rawId) nodeMap.set(String(rawId).toLowerCase(), node.id);
+          nodeMap.set(nodeId.toLowerCase(), node.id);
+        });
+
+        // Link parent IDs
+        newNodes.forEach(node => {
+          if (node._rawParent) {
+            const matchedParentId = nodeMap.get(node._rawParent.toLowerCase());
+            if (matchedParentId && matchedParentId !== node.id) {
+              node.parentId = matchedParentId;
+            } else {
+              node.parentId = null;
+            }
+          } else {
+            node.parentId = null;
+          }
+          delete node._rawParent;
+          delete node._rawId;
+        });
+
+        const importedCommittees = Array.from(new Set(newNodes.map(n => n.committee).filter(Boolean)));
+        const newCommitteesList = Array.from(new Set([...allCommitteesList, ...importedCommittees]));
+
+        setCustomModal({
+          title: "Import Team Hierarchy",
+          message: `Found ${newNodes.length} team members from Excel spreadsheet.\n\nDo you want to append these members to your team structure?`,
+          confirmText: "Import Members",
+          confirmStyle: "primary",
+          onConfirm: () => {
+            const finalItems = [...items, ...newNodes];
+            const newC = { ...C, teamItems: finalItems, committees: newCommitteesList };
+            setItems(finalItems);
+            setC(newC);
+            saveToFb(newC);
+            setCustomModal({
+              title: "Import Successful",
+              message: `Successfully imported ${newNodes.length} team members into your hierarchy!`,
+              confirmText: "Awesome!",
+              onConfirm: () => {}
+            });
+          }
+        });
+
+      } catch (err) {
+        setCustomModal({
+          title: "Import Failed",
+          message: "Failed to parse Excel spreadsheet: " + err.message,
+          confirmText: "Close",
+          onConfirm: () => {}
+        });
+      }
+    };
+
+    reader.readAsArrayBuffer(file);
+    e.target.value = "";
+  };
+
   // Create Workspace Handler
   const handleCreateWorkspace = () => {
     setCustomModal({
@@ -8846,9 +9036,35 @@ function AdminTeam({ mob, C, setC, auth }) {
             <h3 style={{fontFamily:"'Playfair Display',serif", color:"var(--dt)", margin:0, fontSize:"1.4rem", fontWeight:700}}>Team Workspaces</h3>
             <p style={{fontSize:".85rem", color:"var(--mu)", marginTop:4}}>Select a workspace card below to manage its team members, reorder roles, and organize hierarchy.</p>
           </div>
-          <button onClick={handleCreateWorkspace} style={{padding:"10px 20px", borderRadius:12, background:"var(--sf)", color:"white", border:"none", fontWeight:700, fontSize:".85rem", cursor:"pointer", boxShadow:"0 4px 12px rgba(232,101,10,0.25)", display:"flex", alignItems:"center", gap:6}}>
-            <span>+</span> Create Workspace
-          </button>
+          <div style={{display:"flex", gap:10, flexWrap:"wrap", alignItems:"center"}}>
+            <button
+              onClick={handleDownloadTemplate}
+              style={{
+                padding:"9px 16px", borderRadius:12, border:"1px solid var(--bd)",
+                background:"white", color:"var(--dt)", fontWeight:700, fontSize:".85rem",
+                cursor:"pointer", display:"flex", alignItems:"center", gap:6, boxShadow:"0 2px 8px rgba(0,0,0,0.04)"
+              }}
+              title="Download sample Excel template to fill hierarchy in bulk"
+            >
+              <span>📥</span> Sample Excel Template
+            </button>
+
+            <label
+              style={{
+                padding:"9px 16px", borderRadius:12, border:"none",
+                background:"#107C41", color:"white", fontWeight:700, fontSize:".85rem",
+                cursor:"pointer", display:"flex", alignItems:"center", gap:6, boxShadow:"0 4px 12px rgba(16,124,65,0.25)"
+              }}
+              title="Upload Excel or CSV spreadsheet to import team hierarchy in bulk"
+            >
+              <span>📤</span> Import Excel/CSV
+              <input type="file" accept=".xlsx, .xls, .csv" onChange={handleImportExcel} style={{display:"none"}}/>
+            </label>
+
+            <button onClick={handleCreateWorkspace} style={{padding:"9px 18px", borderRadius:12, background:"var(--sf)", color:"white", border:"none", fontWeight:700, fontSize:".85rem", cursor:"pointer", boxShadow:"0 4px 12px rgba(232,101,10,0.25)", display:"flex", alignItems:"center", gap:6}}>
+              <span>+</span> Create Workspace
+            </button>
+          </div>
         </div>
 
         <div style={{display:"grid", gridTemplateColumns: mob ? "1fr" : "repeat(auto-fill, minmax(270px, 1fr))", gap: 18}}>
