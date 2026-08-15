@@ -2751,11 +2751,11 @@ function Team({ C, lang }) {
 
           {/* Container holding rows */}
           <div style={{position:"relative", display:"flex", flexDirection:"column", gap: mob?20:28, alignItems:"center", width:"100%", marginTop: (parentId && !mob) ? 20 : 0}}>
-            {/* Central Vertical Trunk Line extending through rows */}
+            {/* Left Vertical Bus Line connecting all rows */}
             {!mob && rows.length > 1 && (
               <div style={{
-                position:"absolute", top: 0, bottom: 40, left: "50%", width: 2,
-                background: "var(--sf)", transform:"translateX(-50%)", zIndex: 1
+                position:"absolute", top: 0, bottom: 24, left: 4, width: 2,
+                background: "var(--sf)", zIndex: 1
               }} />
             )}
 
@@ -2764,6 +2764,14 @@ function Team({ C, lang }) {
                 display:"flex", gap: mob?"8px":"16px", justifyContent:"center",
                 position:"relative", zIndex: 2, width:"100%"
               }}>
+                {/* Horizontal Branch from Left Bus Line to Row Bar */}
+                {!mob && rows.length > 1 && (
+                  <div style={{
+                    position:"absolute", top: 0, left: 4, width: "calc(10% - 4px)", height: 2,
+                    background: "var(--sf)", zIndex: 1
+                  }} />
+                )}
+
                 {/* Horizontal Connector Line spanning across this row */}
                 {!mob && rowItems.length > 1 && (
                   <div style={{
@@ -2781,8 +2789,8 @@ function Team({ C, lang }) {
 
                     {/* Card Node */}
                     <div style={{marginTop: !mob ? 16 : 0, position:"relative", display:"flex", flexDirection:"column", alignItems:"center"}}>
-                      {/* Parent connector for children under this node */}
-                      {!mob && filteredItems.find(x=>x.parentId===node.id) && (
+                      {/* Parent connector ONLY if node has actual children under it */}
+                      {!mob && filteredItems.some(x => x.parentId === node.id) && (
                         <div style={{position:"absolute", bottom: -20, left: "50%", width: 2, height: 20, background: "var(--sf)", transform:"translateX(-50%)", zIndex:1}} />
                       )}
 
@@ -2841,8 +2849,8 @@ function Team({ C, lang }) {
             
             {/* The Node */}
             <div style={{marginTop: (parentId && !mob) ? 20 : 0, position:"relative", display:"flex", flexDirection:"column", alignItems:"center"}}>
-              {/* Parent connector */}
-              {!mob && filteredItems.find(x=>x.parentId===node.id) && (
+              {/* Parent connector ONLY if node has actual children under it */}
+              {!mob && filteredItems.some(x => x.parentId === node.id) && (
                 <div style={{position:"absolute", bottom: -20, left: "50%", width: 2, height: 20, background: "var(--sf)", transform:"translateX(-50%)"}} />
               )}
               
@@ -9037,11 +9045,11 @@ function AdminTeam({ mob, C, setC, auth }) {
 
           {/* Container holding rows */}
           <div style={{position:"relative", display:"flex", flexDirection:"column", gap: mob?20:28, alignItems:"center", width:"100%", marginTop: (parentId && !mob) ? 20 : 0}}>
-            {/* Central Vertical Trunk Line extending through rows */}
+            {/* Left Vertical Bus Line connecting all rows */}
             {!mob && rows.length > 1 && (
               <div style={{
-                position:"absolute", top: 0, bottom: 40, left: "50%", width: 2,
-                background: "var(--sf)", transform:"translateX(-50%)", zIndex: 1
+                position:"absolute", top: 0, bottom: 24, left: 4, width: 2,
+                background: "var(--sf)", zIndex: 1
               }} />
             )}
 
@@ -9050,6 +9058,14 @@ function AdminTeam({ mob, C, setC, auth }) {
                 display:"flex", gap: mob?"8px":"16px", justifyContent:"center",
                 position:"relative", zIndex: 2, width:"100%"
               }}>
+                {/* Horizontal Branch from Left Bus Line to Row Bar */}
+                {!mob && rows.length > 1 && (
+                  <div style={{
+                    position:"absolute", top: 0, left: 4, width: "calc(10% - 4px)", height: 2,
+                    background: "var(--sf)", zIndex: 1
+                  }} />
+                )}
+
                 {/* Horizontal Connector Line spanning across this row */}
                 {!mob && rowItems.length > 1 && (
                   <div style={{
@@ -9067,8 +9083,8 @@ function AdminTeam({ mob, C, setC, auth }) {
 
                     {/* Node Card */}
                     <div style={{marginTop: !mob ? 16 : 0, position:"relative", display:"flex", flexDirection:"column", alignItems:"center"}}>
-                      {/* Parent connector for children under this node */}
-                      {!mob && filteredAdminItems.find(x=>x.parentId===node.id) && (
+                      {/* Parent connector ONLY if node has actual children under it */}
+                      {!mob && filteredAdminItems.some(x => x.parentId === node.id) && (
                         <div style={{position:"absolute", bottom: -20, left: "50%", width: 2, height: 20, background: "var(--sf)", transform:"translateX(-50%)", zIndex:1}} />
                       )}
 
