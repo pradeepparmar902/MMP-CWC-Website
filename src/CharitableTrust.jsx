@@ -2789,12 +2789,12 @@ function Team({ C, lang }) {
     };
 
     const threshold = mob ? 2 : (C.maxHorizontalCards || 5);
+    const activePattern = mob ? "2" : (C.commRowWrapPattern?.[activeCommittee] ?? C.rowWrapPattern ?? "");
+    const activeLabels = C.commRowLabels?.[activeCommittee] ?? C.rowLabelsStr ?? "";
 
-    // Compact Matrix Layout for Mobile & Hierarchies (> threshold children)
-    if (mob || (children.length > threshold && threshold < 999)) {
+    // Compact Matrix Layout for Mobile, Custom Row Patterns & Hierarchies
+    if (mob || Boolean(activePattern && activePattern.trim()) || (children.length > threshold && threshold < 999)) {
       const cols = mob ? 2 : Math.min(threshold, 5);
-      const activePattern = mob ? "2" : (C.commRowWrapPattern?.[activeCommittee] || C.rowWrapPattern || "");
-      const activeLabels = C.commRowLabels?.[activeCommittee] || C.rowLabelsStr || "";
       const rows = chunkArrayWithPattern(children, cols, activePattern);
       const rowLabelsList = activeLabels.split(",").map(s => s.trim()).filter(Boolean);
 
@@ -9299,12 +9299,12 @@ function AdminTeam({ mob, C, setC, auth }) {
     };
 
     const threshold = mob ? 2 : (C.maxHorizontalCards || 5);
+    const activePattern = mob ? "2" : (C.commRowWrapPattern?.[activeCommittee] ?? C.rowWrapPattern ?? "");
+    const activeLabels = C.commRowLabels?.[activeCommittee] ?? C.rowLabelsStr ?? "";
 
-    // Compact Matrix Layout for Mobile & Large Admin Hierarchies (> threshold children)
-    if (mob || (children.length > threshold && threshold < 999)) {
+    // Compact Matrix Layout for Mobile, Custom Row Patterns & Hierarchies
+    if (mob || Boolean(activePattern && activePattern.trim()) || (children.length > threshold && threshold < 999)) {
       const cols = mob ? 2 : Math.min(threshold, 5);
-      const activePattern = mob ? "2" : (C.commRowWrapPattern?.[activeCommittee] || C.rowWrapPattern || "");
-      const activeLabels = C.commRowLabels?.[activeCommittee] || C.rowLabelsStr || "";
       const rows = chunkArrayWithPattern(children, cols, activePattern);
       const rowLabelsList = activeLabels.split(",").map(s => s.trim()).filter(Boolean);
 
