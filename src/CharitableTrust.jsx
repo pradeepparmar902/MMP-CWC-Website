@@ -2878,7 +2878,7 @@ function Team({ C, lang }) {
 
                       <div className="gi" style={{
                         background:"white", padding: mob?8:10, borderRadius: 12, borderTop: "3px solid var(--sf)", 
-                        width: mob?110:140, textAlign:"center", boxShadow:"0 8px 24px rgba(0,0,0,0.06)",
+                        width: mob?125:140, textAlign:"center", boxShadow:"0 8px 24px rgba(0,0,0,0.06)",
                         transition:"transform .3s", position:"relative", zIndex:2, cursor:"pointer"
                       }} onMouseEnter={e=>e.currentTarget.style.transform="translateY(-3px)"} onMouseLeave={e=>e.currentTarget.style.transform="none"} onClick={() => openModal(node)}>
                         <div style={{width:mob?40:50, height:mob?40:50, margin:"0 auto 8px", borderRadius:"50%", overflow:"hidden", border:"2px solid #f0f0f0", background:"#eee"}}>
@@ -3053,7 +3053,15 @@ function Team({ C, lang }) {
             <div style={{fontSize: ".75rem", fontWeight: 700, color: "var(--sf)", textTransform: "uppercase", letterSpacing: 1.5, marginBottom: 14, paddingLeft: 4}}>
               Committees & Workspaces
             </div>
-            <div style={{display: "flex", flexDirection: mob ? "row" : "column", gap: 10, overflowX: mob ? "auto" : "visible", paddingBottom: mob ? 8 : 0}}>
+            <div style={{
+              display: "flex",
+              flexDirection: mob ? "row" : "column",
+              gap: mob ? 8 : 10,
+              overflowX: mob ? "auto" : "visible",
+              paddingBottom: mob ? 10 : 0,
+              WebkitOverflowScrolling: "touch",
+              scrollbarWidth: "none"
+            }}>
               {allCommittees.map(comm => {
                 const count = getCommitteeCount(comm);
                 if (comm !== "All" && count === 0) return null;
@@ -3068,31 +3076,33 @@ function Team({ C, lang }) {
                     title={comm}
                     style={{
                       width: mob ? "auto" : "100%",
-                      padding: "12px 16px",
-                      borderRadius: 16,
+                      flexShrink: 0,
+                      whiteSpace: mob ? "nowrap" : "normal",
+                      padding: mob ? "9px 16px" : "12px 16px",
+                      borderRadius: mob ? 20 : 16,
                       border: isActive ? "2px solid var(--sf)" : "1px solid var(--bd)",
                       background: isActive ? "var(--sf)" : "#FDFDFD",
                       color: isActive ? "white" : "var(--dt)",
                       fontWeight: isActive ? 700 : 600,
-                      fontSize: ".88rem",
+                      fontSize: mob ? ".82rem" : ".88rem",
                       cursor: "pointer",
                       transition: "all 0.2s ease",
-                      display: "flex",
+                      display: "inline-flex",
                       alignItems: "center",
                       justifyContent: "space-between",
-                      gap: 10,
+                      gap: 8,
                       boxShadow: isActive ? "0 6px 18px rgba(232,101,10,0.25)" : "none",
                       textAlign: "left"
                     }}
                   >
-                    <div style={{display: "flex", alignItems: "center", gap: 10, flex: 1, minWidth: 0}}>
-                      <span style={{fontSize: "1.1rem", flexShrink: 0}}>{icon}</span>
-                      <span style={{whiteSpace: "normal", wordBreak: "break-word", lineHeight: 1.35}}>{comm}</span>
+                    <div style={{display: "flex", alignItems: "center", gap: 8, minWidth: 0}}>
+                      <span style={{fontSize: mob ? "1rem" : "1.1rem", flexShrink: 0}}>{icon}</span>
+                      <span style={{whiteSpace: mob ? "nowrap" : "normal", wordBreak: mob ? "normal" : "break-word", lineHeight: 1.35}}>{comm}</span>
                     </div>
                     <span style={{
                       background: isActive ? "rgba(255,255,255,0.25)" : "#F0F0F0",
                       color: isActive ? "white" : "var(--mu)",
-                      padding: "2px 8px", borderRadius: 12, fontSize: ".75rem", fontWeight: 700, flexShrink: 0
+                      padding: "2px 8px", borderRadius: 12, fontSize: ".72rem", fontWeight: 700, flexShrink: 0
                     }}>
                       {count}
                     </span>
@@ -3141,8 +3151,19 @@ function Team({ C, lang }) {
                   );
                 })()}
 
+                {mob && (
+                  <div style={{
+                    fontSize: ".75rem", color: "var(--sf)", textAlign: "center",
+                    marginBottom: 12, fontWeight: 700, display: "flex", alignItems: "center",
+                    justifyContent: "center", gap: 6, background: "#FFF6EE", padding: "6px 12px",
+                    borderRadius: 12, border: "1px solid rgba(232,101,10,0.2)"
+                  }}>
+                    <span>↔️ Swipe horizontally to view full org chart</span>
+                  </div>
+                )}
+
                 {filteredItems.filter(i => i.parentId === null).length > 0 ? (
-                  <div style={{minWidth: mob ? 300 : 700, margin:"0 auto", paddingTop: 10, paddingBottom: 10}}>
+                  <div style={{minWidth: mob ? "max-content" : 700, width: "100%", overflowX: mob ? "auto" : "visible", WebkitOverflowScrolling: "touch", margin:"0 auto", paddingTop: 10, paddingBottom: 10}}>
                     {renderHierarchy(null)}
                   </div>
                 ) : sortedPlainItems.length > 0 ? (
