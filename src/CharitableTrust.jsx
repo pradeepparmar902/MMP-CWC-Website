@@ -2180,16 +2180,47 @@ function Events({ C, lang, globalAuthToken, globalProfile, onPublicLogin, forceS
             
             {selectedEvent.type === 'details' && (
               <div>
-                <h3 style={{fontFamily:"'Playfair Display',serif",fontSize:"1.4rem",color:"var(--dt)",marginBottom:10,fontWeight:700,paddingRight:30}}>{lang==="gu"&&selectedEvent.event.titleGu?selectedEvent.event.titleGu:selectedEvent.event.title}</h3>
-                <div style={{display:"flex",gap:10,marginBottom:16}}>
-                   <span style={{fontSize:".75rem",fontWeight:600,padding:"4px 10px",borderRadius:20,background:selectedEvent.event.color||"var(--tl)",color:"var(--dt)"}}>{lang==="gu"&&selectedEvent.event.tagGu?selectedEvent.event.tagGu:selectedEvent.event.tag}</span>
-                   <span style={{fontSize:".75rem",fontWeight:600,padding:"4px 10px",borderRadius:20,background:"#F5F5F5",color:"var(--mu)"}}>{lang==="gu"&&selectedEvent.event.dateGu?selectedEvent.event.dateGu:selectedEvent.event.date} {lang==="gu"&&selectedEvent.event.monthGu?selectedEvent.event.monthGu:selectedEvent.event.month}</span>
+                <h3 style={{fontFamily:"'Playfair Display',serif",fontSize:"1.5rem",color:"var(--dt)",marginBottom:10,fontWeight:700,paddingRight:30}}>
+                  {lang==="gu"&&selectedEvent.event.titleGu ? selectedEvent.event.titleGu : selectedEvent.event.title}
+                </h3>
+                <div style={{display:"flex",gap:10,marginBottom:16,flexWrap:"wrap"}}>
+                   <span style={{fontSize:".75rem",fontWeight:700,padding:"4px 12px",borderRadius:20,background:selectedEvent.event.color||"var(--tl)",color:"var(--dt)"}}>
+                     {lang==="gu"&&selectedEvent.event.tagGu ? selectedEvent.event.tagGu : selectedEvent.event.tag}
+                   </span>
+                   <span style={{fontSize:".75rem",fontWeight:700,padding:"4px 12px",borderRadius:20,background:"#F5F5F5",color:"var(--mu)"}}>
+                     📅 {lang==="gu"&&selectedEvent.event.dateGu ? selectedEvent.event.dateGu : selectedEvent.event.date} {lang==="gu"&&selectedEvent.event.monthGu ? selectedEvent.event.monthGu : selectedEvent.event.month}
+                   </span>
+                   {selectedEvent.event.time && (
+                     <span style={{fontSize:".75rem",fontWeight:700,padding:"4px 12px",borderRadius:20,background:"#FFF6EE",color:"var(--sf)"}}>
+                       ⏰ {selectedEvent.event.time}
+                     </span>
+                   )}
                 </div>
-                <p style={{fontSize:".9rem",color:"var(--tm2)",lineHeight:1.6}}>
-                  {lang === "gu" ? "આ ઇવેન્ટ માટે " : "Join us at "} 
-                  <strong>{lang==="gu"&&selectedEvent.event.locationGu?selectedEvent.event.locationGu:selectedEvent.event.location}</strong> 
-                  {lang === "gu" ? " માં જોડાઓ. અમે તમને ત્યાં જોવા માટે આતુર છીએ!" : " for this incredible event. We look forward to seeing you there!"}
-                </p>
+
+                <div style={{padding:"12px 16px", background:"#F8FAFC", borderRadius:10, border:"1px solid var(--bd)", marginBottom:16}}>
+                  <div style={{fontSize:".75rem", color:"var(--sf)", fontWeight:700, textTransform:"uppercase", letterSpacing:0.5}}>📍 Venue & Location</div>
+                  <div style={{fontWeight:700, color:"var(--dt)", fontSize:".95rem", marginTop:2}}>
+                    {lang==="gu"&&selectedEvent.event.locationGu ? selectedEvent.event.locationGu : selectedEvent.event.location}
+                  </div>
+                </div>
+
+                {/* Custom Detailed Event Description */}
+                {(selectedEvent.event.desc || selectedEvent.event.descGu) ? (
+                  <div style={{padding: "16px", background: "white", borderRadius: 12, border: "1px solid var(--bd)", boxShadow: "0 4px 12px rgba(0,0,0,0.03)"}}>
+                    <div style={{fontSize: ".75rem", color: "var(--sf)", fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 8}}>
+                      ℹ️ About This Event
+                    </div>
+                    <div style={{fontSize: ".92rem", color: "var(--tm2)", lineHeight: 1.7, whiteSpace: "pre-wrap", margin: 0}}>
+                      {lang === "gu" && selectedEvent.event.descGu ? selectedEvent.event.descGu : (selectedEvent.event.desc || selectedEvent.event.location)}
+                    </div>
+                  </div>
+                ) : (
+                  <p style={{fontSize:".92rem",color:"var(--tm2)",lineHeight:1.6}}>
+                    {lang === "gu" ? "આ ઇવેન્ટ માટે " : "Join us at "} 
+                    <strong>{lang==="gu"&&selectedEvent.event.locationGu?selectedEvent.event.locationGu:selectedEvent.event.location}</strong> 
+                    {lang === "gu" ? " માં જોડાઓ. અમે તમને ત્યાં જોવા માટે આતુર છીએ!" : " for this incredible event. We look forward to seeing you there!"}
+                  </p>
+                )}
               </div>
             )}
 
@@ -8101,8 +8132,42 @@ function AdminEvents({ mob, C, setC, auth }) {
                   <input type="text" value={ev.month} onChange={e=>updateItem(i,"month",e.target.value)} style={{width:"100%",padding:"6px",borderRadius:6,border:"1px solid var(--bd)",fontSize:".85rem",fontFamily:"inherit"}}/>
                 </div>
                 <div style={{gridColumn:"1/-1"}}>
-                  <label style={{fontSize:".7rem",color:"var(--mu)",fontWeight:600}}>Location</label>
+                  <label style={{fontSize:".7rem",color:"var(--mu)",fontWeight:600}}>Location / Venue Name</label>
                   <input type="text" value={ev.location} onChange={e=>updateItem(i,"location",e.target.value)} style={{width:"100%",padding:"6px",borderRadius:6,border:"1px solid var(--bd)",fontSize:".85rem",fontFamily:"inherit"}}/>
+                </div>
+                <div style={{gridColumn:"1/-1"}}>
+                  <label style={{fontSize:".7rem",color:"var(--mu)",fontWeight:600}}>Event Time & Schedule Details (e.g. 10:00 AM to 5:00 PM)</label>
+                  <input type="text" placeholder="e.g. 10:00 AM - 5:00 PM" value={ev.time || ""} onChange={e=>updateItem(i,"time",e.target.value)} style={{width:"100%",padding:"6px",borderRadius:6,border:"1px solid var(--bd)",fontSize:".85rem",fontFamily:"inherit"}}/>
+                </div>
+                <div style={{gridColumn:"1/-1", marginTop:4}}>
+                  <div style={{display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:4}}>
+                    <label style={{fontSize:".7rem",color:"var(--mu)",fontWeight:600}}>Event Description & Detailed Information</label>
+                    <button type="button" onClick={async () => {
+                      if (!ev.desc) return;
+                      try {
+                        const res = await fetch(`https://translate.googleapis.com/translate_a/single?client=gtx&sl=en&tl=gu&dt=t&q=${encodeURIComponent(ev.desc)}`);
+                        if (!res.ok) throw new Error();
+                        const data = await res.json();
+                        updateItem(i, "descGu", data[0].map(x => x[0]).join(''));
+                      } catch(err) { alert("Translation failed"); }
+                    }} style={{padding:"2px 8px", fontSize:".7rem", background:"#FFF4EC", color:"var(--sf)", border:"1px solid var(--sf)", borderRadius:4, cursor:"pointer", fontWeight:600}}>
+                      Auto Translate 🌐
+                    </button>
+                  </div>
+                  <div style={{display:"grid", gridTemplateColumns: mob ? "1fr" : "1fr 1fr", gap:8}}>
+                    <textarea
+                      placeholder="Enter detailed information about this event in English (agenda, chief guests, highlights, instructions)..."
+                      value={ev.desc || ""}
+                      onChange={e=>updateItem(i,"desc",e.target.value)}
+                      style={{padding:8, border:"1px solid var(--bd)", borderRadius:6, minHeight:80, resize:"vertical", fontSize:".85rem", fontFamily:"inherit"}}
+                    />
+                    <textarea
+                      placeholder="ઇવેન્ટની વિસ્તૃત માહિતી ગુજરાતીમાં અહીં લખો..."
+                      value={ev.descGu || ""}
+                      onChange={e=>updateItem(i,"descGu",e.target.value)}
+                      style={{padding:8, border:"1px solid var(--bd)", borderRadius:6, minHeight:80, resize:"vertical", fontSize:".85rem", fontFamily:"inherit"}}
+                    />
+                  </div>
                 </div>
                 <div style={{gridColumn:"1/-1"}}>
                   <label style={{fontSize:".7rem",color:"var(--mu)",fontWeight:600}}>Category / Tag</label>
