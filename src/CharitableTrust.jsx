@@ -2705,6 +2705,7 @@ function Team({ C, lang }) {
 
   const [activeCommittee, setActiveCommittee] = useState(initialDefault);
   const [searchTerm, setSearchTerm] = useState("");
+  const [searchScope, setSearchScope] = useState("all"); // "all" | "current"
 
   useEffect(() => {
     if (C.defaultCommittee && storedCommittees.includes(C.defaultCommittee)) {
@@ -2743,6 +2744,9 @@ function Team({ C, lang }) {
   const filteredItems = activeCommittee === "All"
     ? items
     : items.filter(i => (i.committee || primaryCommittee) === activeCommittee);
+
+  const searchPool = searchScope === "current" ? filteredItems.filter(i => !i.isSeparator) : items.filter(i => !i.isSeparator);
+  const matchingMembers = searchPool.filter(isSearchMatch);
   
   const searchMatchCount = filteredItems.filter(isSearchMatch).length;
 
