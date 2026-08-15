@@ -8800,7 +8800,7 @@ function AdminTeam({ mob, C, setC, auth }) {
   ];
   const storedCommittees = C.committees || defaultCommittees;
   const itemCommittees = Array.from(new Set(items.map(i => i.committee).filter(Boolean)));
-  const allCommitteesList = Array.from(new Set([...storedCommittees, ...itemCommittees]));
+  const allCommitteesList = C.committees ? C.committees : Array.from(new Set([...storedCommittees, ...itemCommittees]));
 
   useEffect(() => {
     if (auth?.idToken) {
@@ -9304,17 +9304,19 @@ function AdminTeam({ mob, C, setC, auth }) {
     if (e) e.stopPropagation();
     if (commName === "All") return;
 
+    const newCommList = allCommitteesList.filter(c => c !== commName && c !== "All");
+    const fallbackComm = newCommList[0] || "Education Committee";
+
     setCustomModal({
       title: `Delete Workspace "${commName}"`,
-      message: `Are you sure you want to delete the workspace "${commName}"?\nAny members in this workspace will be moved to Central Working Committee (CWC).`,
+      message: `Are you sure you want to delete the workspace "${commName}"?\nAny members in this workspace will be moved to "${fallbackComm}".`,
       type: "confirm",
       confirmStyle: "danger",
       confirmText: "Delete Workspace",
       onConfirm: () => {
-        const newCommList = allCommitteesList.filter(c => c !== commName);
         const updatedTeamItems = items.map(item => {
           if (item.committee === commName) {
-            return { ...item, committee: "Central Working Committee (CWC)" };
+            return { ...item, committee: fallbackComm };
           }
           return item;
         });
