@@ -2749,7 +2749,12 @@ function Team({ C, lang }) {
 
   const renderHierarchy = (parentId = null) => {
     let children = filteredItems.filter(i => i.parentId === parentId);
-    children.sort((a,b) => (a.order||0) - (b.order||0));
+    children.sort((a,b) => {
+      const orderA = typeof a.order === 'number' ? a.order : (parseInt(a.order, 10) || 0);
+      const orderB = typeof b.order === 'number' ? b.order : (parseInt(b.order, 10) || 0);
+      if (orderA !== orderB) return orderA - orderB;
+      return (a.name || '').localeCompare(b.name || '');
+    });
     
     if(children.length === 0) return null;
 
@@ -9150,7 +9155,12 @@ function AdminTeam({ mob, C, setC, auth }) {
   // Hierarchy Renderer component (recursive)
   const renderTree = (parentId = null) => {
     let children = filteredAdminItems.filter(i => i.parentId === parentId);
-    children.sort((a,b) => (a.order||0) - (b.order||0));
+    children.sort((a,b) => {
+      const orderA = typeof a.order === 'number' ? a.order : (parseInt(a.order, 10) || 0);
+      const orderB = typeof b.order === 'number' ? b.order : (parseInt(b.order, 10) || 0);
+      if (orderA !== orderB) return orderA - orderB;
+      return (a.name || '').localeCompare(b.name || '');
+    });
     
     if(children.length === 0) return null;
 
@@ -9943,12 +9953,12 @@ function AdminTeam({ mob, C, setC, auth }) {
 
                 <div style={{display:"grid", gridTemplateColumns: mob?"1fr":"1fr 1fr", gap: 12, marginBottom:16}}>
                   <div>
-                    <label style={{display:"block",fontSize:".75rem",fontWeight:700,color:"var(--mu)",marginBottom:4}}>📱 MOBILE NUMBER</label>
-                    <input type="text" value={activeNode.mobile || ""} onChange={e=>updateActiveNode("mobile", e.target.value)} style={{width:"100%",padding:10,borderRadius:8,border:"1px solid var(--bd)",fontSize:".95rem"}} placeholder="e.g. +91 9876543210"/>
+                    <label style={{display:"block",fontSize:".75rem",fontWeight:700,color:"var(--sf)",marginBottom:4}}>🔢 DISPLAY ORDER INDEX (#)</label>
+                    <input type="number" value={activeNode.order ?? 0} onChange={e=>updateActiveNode("order", parseInt(e.target.value, 10) || 0)} style={{width:"100%",padding:10,borderRadius:8,border:"1px solid var(--bd)",fontSize:".95rem",fontWeight:700}} placeholder="e.g. 1, 2, 3..."/>
                   </div>
                   <div>
-                    <label style={{display:"block",fontSize:".75rem",fontWeight:700,color:"var(--mu)",marginBottom:4}}>💼 PROFESSION</label>
-                    <input type="text" value={activeNode.profession || ""} onChange={e=>updateActiveNode("profession", e.target.value)} style={{width:"100%",padding:10,borderRadius:8,border:"1px solid var(--bd)",fontSize:".95rem"}} placeholder="e.g. Engineer / Business"/>
+                    <label style={{display:"block",fontSize:".75rem",fontWeight:700,color:"var(--mu)",marginBottom:4}}>📱 MOBILE NUMBER</label>
+                    <input type="text" value={activeNode.mobile || ""} onChange={e=>updateActiveNode("mobile", e.target.value)} style={{width:"100%",padding:10,borderRadius:8,border:"1px solid var(--bd)",fontSize:".95rem"}} placeholder="e.g. +91 9876543210"/>
                   </div>
                 </div>
 
