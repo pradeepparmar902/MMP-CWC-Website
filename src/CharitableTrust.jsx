@@ -2796,28 +2796,30 @@ function Team({ C, lang }) {
       return (
         <div style={{display:"flex", flexDirection:"column", alignItems:"center", position:"relative", paddingTop: parentId ? (mob?16:20) : 0, width:"100%"}}>
           {/* Central Top Connector line from Parent */}
-          {parentId && !mob && (
-            <div style={{position:"absolute", top: 0, left: "50%", width: 2, height: 20, background: "var(--sf)", transform:"translateX(-50%)", zIndex:1}} />
+          {parentId && (
+            <div style={{position:"absolute", top: 0, left: "50%", width: 2, height: mob?16:20, background: "var(--sf)", transform:"translateX(-50%)", zIndex:1}} />
           )}
 
           {/* Container holding rows with Clear Side Padding */}
           <div style={{
             position:"relative", display:"flex", flexDirection:"column", gap: mob?20:32,
-            alignItems:"center", width:"100%", marginTop: (parentId && !mob) ? 20 : 0,
-            paddingLeft: mob ? 0 : 36, paddingRight: mob ? 0 : 36
+            alignItems:"center", width:"100%", marginTop: parentId ? (mob?16:20) : 0,
+            paddingLeft: mob ? 20 : 36, paddingRight: mob ? 8 : 36
           }}>
-            {/* Left Vertical Bus Line in 36px Margin */}
-            {!mob && rows.length > 1 && (
+            {/* Left Vertical Bus Line */}
+            {rows.length > 1 && (
               <>
                 <div style={{
-                  position:"absolute", top: 0, bottom: 24, left: 12, width: 2,
+                  position:"absolute", top: 0, bottom: 24, left: mob ? 8 : 12, width: 2,
                   background: "var(--sf)", zIndex: 1
                 }} />
                 {/* Horizontal connection from parent drop to left bus */}
-                <div style={{
-                  position:"absolute", top: 0, left: 12, right: "50%", height: 2,
-                  background: "var(--sf)", zIndex: 1
-                }} />
+                {parentId && (
+                  <div style={{
+                    position:"absolute", top: 0, left: mob ? 8 : 12, right: "50%", height: 2,
+                    background: "var(--sf)", zIndex: 1
+                  }} />
+                )}
               </>
             )}
 
@@ -2843,11 +2845,11 @@ function Team({ C, lang }) {
                   )}
 
                   <div key={`h_row_${rIdx}`} style={{
-                    display:"flex", gap: mob?"10px":"16px", justifyContent:"center", flexWrap: mob?"wrap":"nowrap",
+                    display:"flex", gap: mob?"10px":"16px", justifyContent: mob?"flex-start":"center", flexWrap: mob?"wrap":"nowrap",
                     position:"relative", zIndex: 2, width:"100%", maxWidth: mob?"100%":"none"
                   }}>
                     {/* Horizontal Branch from Left Bus Line across row */}
-                    {!mob && rows.length > 1 && (
+                    {rows.length > 1 && (
                       <div style={{
                         position:"absolute", top: 0, left: -24, right: "10%", height: 2,
                         background: "var(--sf)", zIndex: 1
@@ -2937,10 +2939,10 @@ function Team({ C, lang }) {
         {children.map((node, i) => (
           <div key={node.id} style={{display:"flex", flexDirection:"column", alignItems:"center", position:"relative"}}>
             {/* Connecting lines for children */}
-            {parentId && !mob && (
+            {parentId && (
               <>
-                <div style={{position:"absolute", top: 0, left: "50%", width: 2, height: 20, background: "var(--sf)", transform:"translateX(-50%)"}} />
-                {children.length > 1 && (
+                <div style={{position:"absolute", top: 0, left: "50%", width: 2, height: mob?16:20, background: "var(--sf)", transform:"translateX(-50%)"}} />
+                {children.length > 1 && !mob && (
                   <div style={{
                     position:"absolute", top: 0, height: 2, background: "var(--sf)",
                     left: i === 0 ? "50%" : 0,
@@ -2952,10 +2954,10 @@ function Team({ C, lang }) {
             )}
             
             {/* The Node */}
-            <div style={{marginTop: (parentId && !mob) ? 20 : 0, position:"relative", display:"flex", flexDirection:"column", alignItems:"center"}}>
+            <div style={{marginTop: parentId ? (mob?16:20) : 0, position:"relative", display:"flex", flexDirection:"column", alignItems:"center", width: mob?"100%":"auto"}}>
               {/* Parent connector ONLY if node has actual children under it */}
-              {!mob && filteredItems.some(x => x.parentId === node.id) && (
-                <div style={{position:"absolute", bottom: -20, left: "50%", width: 2, height: 20, background: "var(--sf)", transform:"translateX(-50%)"}} />
+              {filteredItems.some(x => x.parentId === node.id) && (
+                <div style={{position:"absolute", bottom: mob?-16:-20, left: "50%", width: 2, height: mob?16:20, background: "var(--sf)", transform:"translateX(-50%)"}} />
               )}
               
               {/* Card */}
@@ -9180,28 +9182,30 @@ function AdminTeam({ mob, C, setC, auth }) {
       return (
         <div style={{display:"flex", flexDirection:"column", alignItems:"center", position:"relative", paddingTop: parentId ? (mob?16:20) : 0, width:"100%"}}>
           {/* Central Top Connector line from Parent */}
-          {parentId && !mob && (
-            <div style={{position:"absolute", top: 0, left: "50%", width: 2, height: 20, background: "var(--sf)", transform:"translateX(-50%)", zIndex:1}} />
+          {parentId && (
+            <div style={{position:"absolute", top: 0, left: "50%", width: 2, height: mob?16:20, background: "var(--sf)", transform:"translateX(-50%)", zIndex:1}} />
           )}
 
           {/* Container holding rows with Clear Side Padding */}
           <div style={{
             position:"relative", display:"flex", flexDirection:"column", gap: mob?20:32,
-            alignItems:"center", width:"100%", marginTop: (parentId && !mob) ? 20 : 0,
-            paddingLeft: mob ? 0 : 36, paddingRight: mob ? 0 : 36
+            alignItems:"center", width:"100%", marginTop: parentId ? (mob?16:20) : 0,
+            paddingLeft: mob ? 20 : 36, paddingRight: mob ? 8 : 36
           }}>
-            {/* Left Vertical Bus Line in 36px Margin */}
-            {!mob && rows.length > 1 && (
+            {/* Left Vertical Bus Line */}
+            {rows.length > 1 && (
               <>
                 <div style={{
-                  position:"absolute", top: 0, bottom: 24, left: 12, width: 2,
+                  position:"absolute", top: 0, bottom: 24, left: mob ? 8 : 12, width: 2,
                   background: "var(--sf)", zIndex: 1
                 }} />
                 {/* Horizontal connection from parent drop to left bus */}
-                <div style={{
-                  position:"absolute", top: 0, left: 12, right: "50%", height: 2,
-                  background: "var(--sf)", zIndex: 1
-                }} />
+                {parentId && (
+                  <div style={{
+                    position:"absolute", top: 0, left: mob ? 8 : 12, right: "50%", height: 2,
+                    background: "var(--sf)", zIndex: 1
+                  }} />
+                )}
               </>
             )}
 
@@ -9228,22 +9232,22 @@ function AdminTeam({ mob, C, setC, auth }) {
                   )}
 
                   <div key={`tree_row_${rIdx}`} style={{
-                    display:"flex", gap: mob?"10px":"16px", justifyContent:"center", flexWrap: mob?"wrap":"nowrap",
+                    display:"flex", gap: mob?"10px":"16px", justifyContent: mob?"flex-start":"center", flexWrap: mob?"wrap":"nowrap",
                     position:"relative", zIndex: isRowActive ? 999 : 2, width:"100%", maxWidth: mob?"100%":"none"
                   }}>
                     {/* Horizontal Branch from Left Bus Line across row */}
-                    {!mob && rows.length > 1 && (
+                    {rows.length > 1 && (
                       <div style={{
-                        position:"absolute", top: 0, left: -24, right: "10%", height: 2,
+                        position:"absolute", top: 0, left: mob ? -12 : -24, right: mob ? "2%" : "10%", height: 2,
                         background: "var(--sf)", zIndex: 1
                       }} />
                     )}
 
                   {/* Horizontal Connector Line spanning single row */}
-                  {!mob && rowItems.length > 1 && rows.length === 1 && (
+                  {rowItems.length > 1 && rows.length === 1 && (
                     <div style={{
                       position:"absolute", top: 0, height: 2, background: "var(--sf)",
-                      left: "10%", right: "10%", zIndex: 1
+                      left: mob ? "5%" : "10%", right: mob ? "5%" : "10%", zIndex: 1
                     }} />
                   )}
 
@@ -9251,24 +9255,22 @@ function AdminTeam({ mob, C, setC, auth }) {
                     const isNodeActive = menuNode?.id === node.id;
                     const globalIdx = children.indexOf(node);
                     return (
-                      <div key={node.id} style={{display:"flex", flexDirection:"column", alignItems:"center", position:"relative", zIndex: isNodeActive ? 999 : 1}}>
+                      <div key={node.id} style={{display:"flex", flexDirection:"column", alignItems:"center", position:"relative", zIndex: isNodeActive ? 999 : 1, flex: mob?"1 1 calc(50% - 10px)":"none", maxWidth: mob?"calc(50% - 5px)":"none"}}>
                         {/* Vertical Connector Line from row bar to card */}
-                        {!mob && (
-                          <div style={{position:"absolute", top: 0, left: "50%", width: 2, height: 16, background: "var(--sf)", transform:"translateX(-50%)", zIndex:1}} />
-                        )}
+                        <div style={{position:"absolute", top: 0, left: "50%", width: 2, height: mob ? 12 : 16, background: "var(--sf)", transform:"translateX(-50%)", zIndex:1}} />
 
                         {/* Node Card */}
-                        <div style={{marginTop: !mob ? 16 : 0, position:"relative", display:"flex", flexDirection:"column", alignItems:"center"}}>
+                        <div style={{marginTop: mob ? 12 : 16, position:"relative", display:"flex", flexDirection:"column", alignItems:"center", width:"100%"}}>
                           {/* Parent connector ONLY if node has actual children under it */}
-                          {!mob && filteredAdminItems.some(x => x.parentId === node.id) && (
-                            <div style={{position:"absolute", bottom: -20, left: "50%", width: 2, height: 20, background: "var(--sf)", transform:"translateX(-50%)", zIndex:1}} />
+                          {filteredAdminItems.some(x => x.parentId === node.id) && (
+                            <div style={{position:"absolute", bottom: mob ? -16 : -20, left: "50%", width: 2, height: mob ? 16 : 20, background: "var(--sf)", transform:"translateX(-50%)", zIndex:1}} />
                           )}
 
                           <div className="gi" style={{
                             background: draggedItemId === node.id ? "#FFF7ED" : "white",
                             padding: mob?"10px 8px":12, borderRadius: 14, borderTop: "3px solid var(--sf)",
                             border: draggedItemId && draggedItemId !== node.id && filteredAdminItems.find(x => x.id === draggedItemId)?.parentId === node.parentId ? "2px dashed var(--sf)" : undefined,
-                            width: mob?"calc(50% - 6px)":150, maxWidth: mob?160:150, minWidth: mob?130:150, boxSizing:"border-box", textAlign:"center", boxShadow:"0 8px 24px rgba(0,0,0,0.06)",
+                            width: mob?"100%":150, boxSizing:"border-box", textAlign:"center", boxShadow:"0 8px 24px rgba(0,0,0,0.06)",
                             transition:"transform .3s", position:"relative", zIndex:2, cursor:"grab",
                             opacity: draggedItemId === node.id ? 0.5 : 1
                           }}
