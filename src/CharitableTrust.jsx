@@ -9239,6 +9239,7 @@ function AdminTeam({ mob, C, setC, auth }) {
 
                   {rowItems.map((node, i) => {
                     const isNodeActive = menuNode?.id === node.id;
+                    const globalIdx = children.indexOf(node);
                     return (
                       <div key={node.id} style={{display:"flex", flexDirection:"column", alignItems:"center", position:"relative", zIndex: isNodeActive ? 999 : 1}}>
                         {/* Vertical Connector Line from row bar to card */}
@@ -9282,8 +9283,8 @@ function AdminTeam({ mob, C, setC, auth }) {
                               <div style={{fontSize:".7rem", color:"#888", marginBottom:6, textAlign:"center", fontWeight:700, letterSpacing:1}}>REORDER / ADD ROLE</div>
                               {children.length > 1 && (
                                 <div style={{display:"flex", gap: 4, marginBottom: 8}}>
-                                  <button onClick={()=>moveSibling(node, -1)} disabled={i===0} style={{flex:1, padding:"5px", fontSize:".7rem", background:"#f0f4ff", border:"none", borderRadius:4, cursor:i===0?"default":"pointer", opacity:i===0?0.5:1}}>⬅️ Move Left</button>
-                                  <button onClick={()=>moveSibling(node, 1)} disabled={i===children.length-1} style={{flex:1, padding:"5px", fontSize:".7rem", background:"#f0f4ff", border:"none", borderRadius:4, cursor:i===children.length-1?"default":"pointer", opacity:i===children.length-1?0.5:1}}>➡️ Move Right</button>
+                                  <button onClick={()=>moveSibling(node, -1)} disabled={globalIdx===0} style={{flex:1, padding:"5px", fontSize:".7rem", background:"#f0f4ff", border:"none", borderRadius:4, cursor:globalIdx===0?"default":"pointer", opacity:globalIdx===0?0.5:1}}>⬅️ Move Left</button>
+                                  <button onClick={()=>moveSibling(node, 1)} disabled={globalIdx===children.length-1} style={{flex:1, padding:"5px", fontSize:".7rem", background:"#f0f4ff", border:"none", borderRadius:4, cursor:globalIdx===children.length-1?"default":"pointer", opacity:globalIdx===children.length-1?0.5:1}}>➡️ Move Right</button>
                                 </div>
                               )}
                               <button onClick={()=>addBoss(node)} className="gi" style={{display:"block", width:"100%", padding:"6px", fontSize:".75rem", background:"#f9f9f9", border:"none", borderRadius:4, marginBottom:4, cursor:"pointer", textAlign:"left"}}>⬆️ Add Boss (Above)</button>
