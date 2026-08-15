@@ -5577,6 +5577,46 @@ function ContentEditor({ C, setC, setPage, auth, hasAccess, master }) {
                 </div>
               </div>
 
+              {/* Prominent High-Visibility ABOUT THIS EVENT Section */}
+              <div className="cf" style={{gridColumn:"1/-1", margin:"10px 0", padding:12, background:"#FFFDF9", border:"2px solid var(--sf)", borderRadius:12}}>
+                <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:6}}>
+                  <label className="cl" style={{fontSize:".8rem",fontWeight:700,color:"var(--sf)",display:"flex",alignItems:"center",gap:6}}>
+                    <span>ℹ️ ABOUT THIS EVENT / EVENT DESCRIPTION</span>
+                  </label>
+                  <button type="button" onClick={async()=>{
+                    if (!ev.desc) return;
+                    try {
+                      const res = await fetch(`https://translate.googleapis.com/translate_a/single?client=gtx&sl=en&tl=gu&dt=t&q=${encodeURIComponent(ev.desc)}`);
+                      if(!res.ok) throw new Error();
+                      const data = await res.json();
+                      upd(`events.${i}.descGu`, data[0].map(x => x[0]).join(''));
+                    } catch(err) { alert("Translation failed"); }
+                  }} style={{padding:"3px 8px",borderRadius:6,border:"1px solid var(--sf)",background:"#FFF7EC",color:"var(--sf)",fontSize:".7rem",fontWeight:700,cursor:"pointer"}}>
+                    Auto Translate 🌐
+                  </button>
+                </div>
+                <div style={{display:"grid", gridTemplateColumns: mob ? "1fr" : "1fr 1fr", gap: 8}}>
+                  <div>
+                    <label style={{fontSize:".68rem",color:"var(--mu)",fontWeight:600,display:"block",marginBottom:2}}>English Description</label>
+                    <textarea
+                      placeholder="Enter detailed information about this event in English (agenda, chief guests, highlights)..."
+                      value={ev.desc || ""}
+                      onChange={e=>upd(`events.${i}.desc`, e.target.value)}
+                      style={{padding:8, border:"1px solid var(--bd)", borderRadius:8, minHeight:80, resize:"vertical", fontSize:".85rem", fontFamily:"inherit", width:"100%", background:"white"}}
+                    />
+                  </div>
+                  <div>
+                    <label style={{fontSize:".68rem",color:"var(--mu)",fontWeight:600,display:"block",marginBottom:2}}>Gujarati Description</label>
+                    <textarea
+                      placeholder="ઇવેન્ટની વિસ્તૃત માહિતી ગુજરાતીમાં અહીં લખો..."
+                      value={ev.descGu || ""}
+                      onChange={e=>upd(`events.${i}.descGu`, e.target.value)}
+                      style={{padding:8, border:"1px solid var(--bd)", borderRadius:8, minHeight:80, resize:"vertical", fontSize:".85rem", fontFamily:"inherit", width:"100%", background:"white"}}
+                    />
+                  </div>
+                </div>
+              </div>
+
               <div className="cf">
                 <label className="cl" style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
                   <span>Location</span>
@@ -5651,41 +5691,7 @@ function ContentEditor({ C, setC, setPage, auth, hasAccess, master }) {
                 </div>
               </div>
 
-              <div className="cf" style={{gridColumn:"1/-1"}}>
-                <label className="cl">Event Time & Schedule Details (Optional)</label>
-                <BlurInput className="ci" value={ev.time||""} onCommit={v=>upd(`events.${i}.time`,v)} placeholder="e.g. 10:00 AM - 5:00 PM"/>
-              </div>
 
-              <div className="cf" style={{gridColumn:"1/-1", marginTop: 8}}>
-                <label className="cl" style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-                  <span>Event Description & Detailed Information (About This Event)</span>
-                  <button type="button" onClick={async()=>{
-                    if (!ev.desc) return;
-                    try {
-                      const res = await fetch(`https://translate.googleapis.com/translate_a/single?client=gtx&sl=en&tl=gu&dt=t&q=${encodeURIComponent(ev.desc)}`);
-                      if(!res.ok) throw new Error();
-                      const data = await res.json();
-                      upd(`events.${i}.descGu`, data[0].map(x => x[0]).join(''));
-                    } catch(err) { alert("Translation failed"); }
-                  }} style={{padding:"2px 6px",borderRadius:4,border:"1px solid var(--sf)",background:"#FFF7EC",color:"var(--sf)",fontSize:".65rem",fontWeight:600,cursor:"pointer"}}>
-                    Auto Translate 🌐
-                  </button>
-                </label>
-                <div style={{display:"grid", gridTemplateColumns: mob ? "1fr" : "1fr 1fr", gap: 8}}>
-                  <textarea
-                    placeholder="Enter detailed information about this event in English (agenda, chief guests, highlights, instructions)..."
-                    value={ev.desc || ""}
-                    onChange={e=>upd(`events.${i}.desc`, e.target.value)}
-                    style={{padding:8, border:"1px solid var(--bd)", borderRadius:8, minHeight:80, resize:"vertical", fontSize:".85rem", fontFamily:"inherit", width:"100%"}}
-                  />
-                  <textarea
-                    placeholder="ઇવેન્ટની વિસ્તૃત માહિતી ગુજરાતીમાં અહીં લખો..."
-                    value={ev.descGu || ""}
-                    onChange={e=>upd(`events.${i}.descGu`, e.target.value)}
-                    style={{padding:8, border:"1px solid var(--bd)", borderRadius:8, minHeight:80, resize:"vertical", fontSize:".85rem", fontFamily:"inherit", width:"100%"}}
-                  />
-                </div>
-              </div>
 
               <div className="cf" style={{gridColumn:"1/-1", marginTop: 8}}>
                 <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:4}}>
