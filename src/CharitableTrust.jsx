@@ -13501,6 +13501,7 @@ function AdminRegistrations({ mob, C, setC, auth }) {
 
   const [regs, setRegs] = useState([]);
   const [selectedSection, setSelectedSection] = useState("All");
+  const [viewMode, setViewMode] = useState("active"); // "active" | "trash"
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [viewing, setViewing] = useState(null);
@@ -13613,18 +13614,71 @@ function AdminRegistrations({ mob, C, setC, auth }) {
   };
 
   const handleDeleteRegistration = async (r) => {
-    if (!window.confirm("Are you absolutely sure you want to permanently delete this registration? This action cannot be undone.")) return;
+    if (!window.confirm(`Move registration "${r['Transaction ID'] || r.id}" to Trash Bin?\n(You can restore it anytime or delete it permanently from Trash Bin).`)) return;
     try {
-      await fbDeleteRegistration(r.id, auth?.idToken);
-      setRegs(prev => prev.filter(x => x.id !== r.id));
-      alert("Registration deleted successfully.");
+      const updatedBy = auth?.email || "Admin";
+      const cleanData = {
+        ...r,
+        deleted: true,
+        deletedAt: new Date().toISOString(),
+        deletedBy: updatedBy
+      };
+      delete cleanData.id; delete cleanData._submittedAt;
+      await fbUpdateRegistration(r.id, cleanData, auth?.idToken);
+      setRegs(prev => prev.map(x => x.id === r.id ? { ...x, deleted: true, deletedAt: cleanData.deletedAt, deletedBy: updatedBy } : x));
+      alert("Registration moved to Trash Bin.");
     } catch (e) {
-      alert("Failed to delete registration: " + e.message);
+      alert("Failed to move to Trash Bin: " + e.message);
     }
   };
 
+  const handleRestoreRegistration = async (r) => {
+    try {
+      const cleanData = { ...r, deleted: false };
+      delete cleanData.id; delete cleanData._submittedAt;
+      await fbUpdateRegistration(r.id, cleanData, auth?.idToken);
+      setRegs(prev => prev.map(x => x.id === r.id ? { ...x, deleted: false } : x));
+      alert(`Registration ${r['Transaction ID'] || r.id} restored to Active Registrations!`);
+    } catch (e) {
+      alert("Failed to restore registration: " + e.message);
+    }
+  };
+
+  const handlePermanentDeleteRegistration = async (r) => {
+    if (!window.confirm(`Are you SURE you want to PERMANENTLY delete registration ${r['Transaction ID'] || r.id} from database? This CANNOT be undone!`)) return;
+    try {
+      await fbDeleteRegistration(r.id, auth?.idToken);
+      setRegs(prev => prev.filter(x => x.id !== r.id));
+      alert("Registration permanently erased from database.");
+    } catch (e) {
+      alert("Failed to delete permanently: " + e.message);
+    }
+  };
+
+  const handleEmptyTrash = async () => {
+    const deletedList = regs.filter(r => r.deleted);
+    if (deletedList.length === 0) return;
+    if (!window.confirm(`PERMANENTLY ERASE all ${deletedList.length} deleted registrations from database forever? This action CANNOT be undone!`)) return;
+
+    setRefreshing(true);
+    try {
+      for (const r of deletedList) {
+        await fbDeleteRegistration(r.id, auth?.idToken);
+      }
+      setRegs(prev => prev.filter(x => !x.deleted));
+      alert(`Trash emptied. ${deletedList.length} registrations permanently deleted.`);
+    } catch (e) {
+      alert("Failed to empty trash: " + e.message);
+    } finally {
+      setRefreshing(false);
+    }
+  };
+
+  const activeRegsList = regs.filter(r => !r.deleted);
+  const deletedRegsList = regs.filter(r => r.deleted === true);
+
   // 2. Filter registrations based on search query
-  const filteredRegs = regs.filter(r => {
+  const filteredRegs = activeRegsList.filter(r => {
     if(!r) return false;
     if (r.isGlobalGuest || r.isSpecialGuest || r.globalGuestId || r.formId === "global_guest_directory" || r.formId === "global_guest_directory_import") return false;
     
@@ -13753,29 +13807,49 @@ function AdminRegistrations({ mob, C, setC, auth }) {
         {/* Compact Single Control Row */}
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:12}}>
           
-          {/* Left: Title + Section Pills Inline */}
+          {/* Left: Title + View Mode Tabs + Section Pills Inline */}
           <div style={{display:"flex",alignItems:"center",gap:12,flexWrap:"wrap"}}>
             <h2 style={{fontFamily:"'Playfair Display',serif",color:"var(--dt)",margin:0,fontSize:"1.25rem",fontWeight:700}}>Event Registrations</h2>
             
+            {/* View Mode Toggle: Active vs Trash Bin */}
             <div style={{display:"flex",gap:4,background:"#E9ECEF",padding:3,borderRadius:20}}>
-              {Array.from(new Set([
-                "All", 
-                "Default", 
-                ...(C.eventSections || []), 
-                ...(C.events || []).map(e => e.section).filter(Boolean)
-              ])).map(sec => {
-                const isSelected = selectedSection === sec;
-                return (
-                  <button key={sec} onClick={()=>setSelectedSection(sec)} style={{
-                    padding:"4px 12px", borderRadius:16, border:"none",
-                    background:isSelected?"var(--dt)":"transparent", color:isSelected?"white":"var(--tm2)",
-                    fontSize:".78rem", fontWeight:isSelected?700:500, cursor:"pointer", transition:"all 0.2s"
-                  }}>
-                    {sec === "Default" ? "Default Section" : sec === "All" ? "All Groups" : sec}
-                  </button>
-                );
-              })}
+              <button onClick={()=>setViewMode("active")} style={{
+                padding:"4px 12px", borderRadius:16, border:"none",
+                background:viewMode==="active"?"var(--dt)":"transparent", color:viewMode==="active"?"white":"var(--tm2)",
+                fontSize:".78rem", fontWeight:viewMode==="active"?700:500, cursor:"pointer"
+              }}>
+                📋 Active ({activeRegsList.length})
+              </button>
+              <button onClick={()=>setViewMode("trash")} style={{
+                padding:"4px 12px", borderRadius:16, border:"none",
+                background:viewMode==="trash"?"#C0392B":"transparent", color:viewMode==="trash"?"white":"var(--tm2)",
+                fontSize:".78rem", fontWeight:viewMode==="trash"?700:500, cursor:"pointer"
+              }}>
+                🗑️ Trash Bin ({deletedRegsList.length})
+              </button>
             </div>
+
+            {viewMode === "active" && (
+              <div style={{display:"flex",gap:4,background:"#E9ECEF",padding:3,borderRadius:20}}>
+                {Array.from(new Set([
+                  "All", 
+                  "Default", 
+                  ...(C.eventSections || []), 
+                  ...(C.events || []).map(e => e.section).filter(Boolean)
+                ])).map(sec => {
+                  const isSelected = selectedSection === sec;
+                  return (
+                    <button key={sec} onClick={()=>setSelectedSection(sec)} style={{
+                      padding:"4px 12px", borderRadius:16, border:"none",
+                      background:isSelected?"var(--dt)":"transparent", color:isSelected?"white":"var(--tm2)",
+                      fontSize:".78rem", fontWeight:isSelected?700:500, cursor:"pointer", transition:"all 0.2s"
+                    }}>
+                      {sec === "Default" ? "Default Section" : sec === "All" ? "All Groups" : sec}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
           </div>
 
           {/* Right: Search + Refresh + Export + Bulk Tools Toggle */}
@@ -13868,7 +13942,70 @@ function AdminRegistrations({ mob, C, setC, auth }) {
         )}
       </div>
 
-      {loading ? <p>Loading registrations...</p> : (
+      {viewMode === "trash" ? (
+        <div style={{background:"white",borderRadius:16,padding:24,border:"1px solid var(--bd)",boxShadow:"0 10px 30px rgba(0,0,0,0.05)"}}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:20,flexWrap:"wrap",gap:12,paddingBottom:14,borderBottom:"1px solid #f0f0f0"}}>
+            <div>
+              <h3 style={{fontFamily:"'Playfair Display',serif",fontSize:"1.3rem",color:"#C0392B",margin:0,fontWeight:700}}>
+                🗑️ Trash Bin ({deletedRegsList.length} Deleted Registrations)
+              </h3>
+              <p style={{fontSize:".82rem",color:"var(--mu)",margin:"4px 0 0 0"}}>
+                Deleted registrations are stored here safely. You can restore any item to Active Registrations or permanently purge them.
+              </p>
+            </div>
+            {deletedRegsList.length > 0 && (
+              <button onClick={handleEmptyTrash} style={{padding:"8px 16px",borderRadius:8,fontSize:".8rem",fontWeight:700,background:"#C0392B",color:"white",border:"none",cursor:"pointer",boxShadow:"0 4px 12px rgba(192,57,43,0.25)"}}>
+                🔥 Empty Trash Permanently
+              </button>
+            )}
+          </div>
+
+          {deletedRegsList.length === 0 ? (
+            <div style={{textAlign:"center",padding:"48px 20px",color:"var(--mu)"}}>
+              <div style={{fontSize:"3rem",marginBottom:12}}>🎉</div>
+              <div style={{fontWeight:700,fontSize:"1.1rem",color:"var(--dt)"}}>Trash Bin is Empty</div>
+              <div style={{fontSize:".85rem",marginTop:4}}>No deleted registrations found.</div>
+            </div>
+          ) : (
+            <div style={{overflowX:"auto"}}>
+              <table className="admin-table" style={{width:"100%",borderCollapse:"collapse",fontSize:".85rem",minWidth:900}}>
+                <thead>
+                  <tr style={{background:"#FFF5F5",color:"#C0392B"}}>
+                    <th style={{padding:"12px",textAlign:"left"}}>Date Deleted</th>
+                    <th style={{padding:"12px",textAlign:"left"}}>Event</th>
+                    <th style={{padding:"12px",textAlign:"left"}}>Txn ID</th>
+                    <th style={{padding:"12px",textAlign:"left"}}>Submitter Name</th>
+                    <th style={{padding:"12px",textAlign:"left"}}>Deleted By</th>
+                    <th style={{padding:"12px",textAlign:"center"}}>Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {deletedRegsList.map((r, i) => (
+                    <tr key={r.id || i} style={{borderBottom:"1px solid #f0f0f0"}}>
+                      <td style={{padding:"12px",color:"#555"}}>{r.deletedAt ? new Date(r.deletedAt).toLocaleString() : "-"}</td>
+                      <td style={{padding:"12px",fontWeight:600}}>{r.eventName || r.eventTitle || "-"}</td>
+                      <td style={{padding:"12px",fontFamily:"monospace",fontWeight:700,color:"var(--sf)"}}>{r['Transaction ID'] || r.id || "-"}</td>
+                      <td style={{padding:"12px",fontWeight:600}}>{r['Full Name'] || r.name || r['Name'] || r.submitterMob || "-"}</td>
+                      <td style={{padding:"12px",color:"#666"}}>{r.deletedBy || "Admin"}</td>
+                      <td style={{padding:"12px",textAlign:"center"}}>
+                        <div style={{display:"flex",gap:8,justifyContent:"center"}}>
+                          <button onClick={() => handleRestoreRegistration(r)} style={{padding:"6px 14px",borderRadius:6,fontSize:".78rem",fontWeight:700,background:"#E8F5E9",color:"#2E7D32",border:"1px solid #A5D6A7",cursor:"pointer"}}>
+                            ↩️ Restore
+                          </button>
+                          <button onClick={() => handlePermanentDeleteRegistration(r)} style={{padding:"6px 14px",borderRadius:6,fontSize:".78rem",fontWeight:700,background:"#FFEBEE",color:"#C62828",border:"1px solid #EF9A9A",cursor:"pointer"}}>
+                            ❌ Delete Permanently
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      ) : (
+      loading ? <p>Loading registrations...</p> : (
         <>
         <style>{`
           .admin-table tbody tr { transition: background-color 0.2s ease; border-bottom: 1px solid #E0E0E0; }
@@ -14037,7 +14174,7 @@ function AdminRegistrations({ mob, C, setC, auth }) {
           </table>
         </div>
         </>
-      )}
+      ))}
 
       {viewing && (
         <VerificationModal viewing={viewing} setViewing={setViewing} allRegs={regs} saveVerification={saveVerification} C={C} />
