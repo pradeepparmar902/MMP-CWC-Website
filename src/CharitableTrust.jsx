@@ -8951,76 +8951,6 @@ function AdminTeam({ mob, C, setC, auth }) {
 
   const removeNode = (id) => removeNodeAndSubtree(id);
 
-  const updateActiveNode = (field, val) => {
-    setActiveNode(prev => {
-      const nextNode = { ...prev, [field]: val };
-      setItems(currItems => currItems.map(i => i.id === prev.id ? nextNode : i));
-      return nextNode;
-    });
-  };
-
-  const flushNodeUpdate = () => {
-    setActiveNode(currActive => {
-      if (!currActive) return null;
-      setItems(currItems => {
-        const newItems = currItems.map(it => it.id === currActive.id ? currActive : it);
-        setC(currC => {
-          const newC = { ...currC, teamItems: newItems };
-          saveToFb(newC);
-          return newC;
-        });
-        return newItems;
-      });
-      return null;
-    });
-  };
-
-  // Plain layout & Separator actions
-  const addPlain = () => {
-    const newItem = { id: getNewId(), parentId: "plain", name: "New Member", position: "Role", desc: "", image: "", order: items.length, committee: targetCommittee };
-    updItems([...items, newItem]);
-  };
-
-  const addSeparator = () => {
-    const newSep = {
-      id: getNewId(),
-      isSeparator: true,
-      parentId: "plain",
-      title: "--- Sub Teams: Education & Marriage ---",
-      desc: "Specialized committee branches and sub-teams",
-      committee: targetCommittee,
-      order: items.length
-    };
-    updItems([...items, newSep]);
-  };
-
-  const movePlain = (index, dir) => {
-    let arr = [...items];
-    const temp = arr[index];
-    arr[index] = arr[index + dir];
-    arr[index + dir] = temp;
-    arr = arr.map((x,i)=>({...x, order:i}));
-    updItems(arr);
-  };
-
-  const removePlain = (index) => {
-    const target = items[index];
-    const label = target?.isSeparator ? (target.title || "Separator") : (target?.name || "Member");
-
-    setCustomModal({
-      title: `Delete ${target?.isSeparator ? 'Separator' : 'Member'}`,
-      message: `Are you sure you want to delete ${target?.isSeparator ? 'separator' : 'team member'} "${label}"?`,
-      type: "confirm",
-      confirmStyle: "danger",
-      confirmText: "Delete",
-      onConfirm: () => {
-        let arr = [...items];
-        arr.splice(index, 1);
-        updItems(arr);
-      }
-    });
-  };
-
   const filteredAdminItems = activeCommittee === "All"
     ? items
     : items.filter(i => (i.committee || "Central Working Committee (CWC)") === activeCommittee);
@@ -9075,99 +9005,105 @@ function AdminTeam({ mob, C, setC, auth }) {
               </>
             )}
 
-            {rows.map((rowItems, rIdx) => (
-              <div key={`tree_row_${rIdx}`} style={{
-                display:"flex", gap: mob?"8px":"16px", justifyContent:"center",
-                position:"relative", zIndex: 2, width:"100%"
-              }}>
-                {/* Horizontal Branch from Left Bus Line across row */}
-                {!mob && rows.length > 1 && (
-                  <div style={{
-                    position:"absolute", top: 0, left: -24, right: "10%", height: 2,
-                    background: "var(--sf)", zIndex: 1
-                  }} />
-                )}
+            {rows.map((rowItems, rIdx) => {
+              const isRowActive = rowItems.some(n => menuNode?.id === n.id);
+              return (
+                <div key={`tree_row_${rIdx}`} style={{
+                  display:"flex", gap: mob?"8px":"16px", justifyContent:"center",
+                  position:"relative", zIndex: isRowActive ? 999 : 2, width:"100%"
+                }}>
+                  {/* Horizontal Branch from Left Bus Line across row */}
+                  {!mob && rows.length > 1 && (
+                    <div style={{
+                      position:"absolute", top: 0, left: -24, right: "10%", height: 2,
+                      background: "var(--sf)", zIndex: 1
+                    }} />
+                  )}
 
-                {/* Horizontal Connector Line spanning single row */}
-                {!mob && rowItems.length > 1 && rows.length === 1 && (
-                  <div style={{
-                    position:"absolute", top: 0, height: 2, background: "var(--sf)",
-                    left: "10%", right: "10%", zIndex: 1
-                  }} />
-                )}
+                  {/* Horizontal Connector Line spanning single row */}
+                  {!mob && rowItems.length > 1 && rows.length === 1 && (
+                    <div style={{
+                      position:"absolute", top: 0, height: 2, background: "var(--sf)",
+                      left: "10%", right: "10%", zIndex: 1
+                    }} />
+                  )}
 
-                {rowItems.map((node, i) => (
-                  <div key={node.id} style={{display:"flex", flexDirection:"column", alignItems:"center", position:"relative"}}>
-                    {/* Vertical Connector Line from row bar to card */}
-                    {!mob && (
-                      <div style={{position:"absolute", top: 0, left: "50%", width: 2, height: 16, background: "var(--sf)", transform:"translateX(-50%)", zIndex:1}} />
-                    )}
+                  {rowItems.map((node, i) => {
+                    const isNodeActive = menuNode?.id === node.id;
+                    return (
+                      <div key={node.id} style={{display:"flex", flexDirection:"column", alignItems:"center", position:"relative", zIndex: isNodeActive ? 999 : 1}}>
+                        {/* Vertical Connector Line from row bar to card */}
+                        {!mob && (
+                          <div style={{position:"absolute", top: 0, left: "50%", width: 2, height: 16, background: "var(--sf)", transform:"translateX(-50%)", zIndex:1}} />
+                        )}
 
-                    {/* Node Card */}
-                    <div style={{marginTop: !mob ? 16 : 0, position:"relative", display:"flex", flexDirection:"column", alignItems:"center"}}>
-                      {/* Parent connector ONLY if node has actual children under it */}
-                      {!mob && filteredAdminItems.some(x => x.parentId === node.id) && (
-                        <div style={{position:"absolute", bottom: -20, left: "50%", width: 2, height: 20, background: "var(--sf)", transform:"translateX(-50%)", zIndex:1}} />
-                      )}
+                        {/* Node Card */}
+                        <div style={{marginTop: !mob ? 16 : 0, position:"relative", display:"flex", flexDirection:"column", alignItems:"center"}}>
+                          {/* Parent connector ONLY if node has actual children under it */}
+                          {!mob && filteredAdminItems.some(x => x.parentId === node.id) && (
+                            <div style={{position:"absolute", bottom: -20, left: "50%", width: 2, height: 20, background: "var(--sf)", transform:"translateX(-50%)", zIndex:1}} />
+                          )}
 
-                      <div className="gi" style={{
-                        background:"white", padding: "16px 10px 12px 10px", borderRadius: 16, borderTop: "4px solid var(--sf)", 
-                        width: 160, textAlign:"center", boxShadow:"0 8px 24px rgba(0,0,0,0.06)",
-                        transition:"all .2s ease", position:"relative", zIndex:2, cursor:"pointer"
-                      }} onClick={() => setActiveNode(node)}>
+                          <div className="gi" style={{
+                            background:"white", padding: "16px 10px 12px 10px", borderRadius: 16, borderTop: "4px solid var(--sf)", 
+                            width: 160, textAlign:"center", boxShadow:"0 8px 24px rgba(0,0,0,0.06)",
+                            transition:"all .2s ease", position:"relative", zIndex: isNodeActive ? 999 : 2, cursor:"pointer"
+                          }} onClick={() => setActiveNode(node)}>
 
-                        {/* Control Bar on Top of Role Card */}
-                        <div style={{position:"absolute", top: 6, left: 6, right: 6, display:"flex", justifyContent:"space-between", alignItems:"center", zIndex:12}} onClick={e=>e.stopPropagation()}>
-                          {children.length > 1 ? (
-                            <div style={{display:"flex", gap: 3}}>
-                              <button onClick={()=>moveSibling(node, -1)} disabled={i===0} style={{width:22, height:22, borderRadius:6, background: i===0 ? "#F0F0F0" : "#EBF3FF", color: i===0 ? "#CCC" : "var(--dt)", border:"1px solid rgba(0,0,0,0.08)", fontSize:".65rem", cursor: i===0 ? "default" : "pointer", display:"flex", alignItems:"center", justifyContent:"center"}} title="Move Role Left">⬅️</button>
-                              <button onClick={()=>moveSibling(node, 1)} disabled={i===children.length-1} style={{width:22, height:22, borderRadius:6, background: i===children.length-1 ? "#F0F0F0" : "#EBF3FF", color: i===children.length-1 ? "#CCC" : "var(--dt)", border:"1px solid rgba(0,0,0,0.08)", fontSize:".65rem", cursor: i===children.length-1 ? "default" : "pointer", display:"flex", alignItems:"center", justifyContent:"center"}} title="Move Role Right">➡️</button>
+                            {/* Control Bar on Top of Role Card */}
+                            <div style={{position:"absolute", top: 6, left: 6, right: 6, display:"flex", justifyContent:"space-between", alignItems:"center", zIndex:12}} onClick={e=>e.stopPropagation()}>
+                              {children.length > 1 ? (
+                                <div style={{display:"flex", gap: 3}}>
+                                  <button onClick={()=>moveSibling(node, -1)} disabled={i===0} style={{width:22, height:22, borderRadius:6, background: i===0 ? "#F0F0F0" : "#EBF3FF", color: i===0 ? "#CCC" : "var(--dt)", border:"1px solid rgba(0,0,0,0.08)", fontSize:".65rem", cursor: i===0 ? "default" : "pointer", display:"flex", alignItems:"center", justifyContent:"center"}} title="Move Role Left">⬅️</button>
+                                  <button onClick={()=>moveSibling(node, 1)} disabled={i===children.length-1} style={{width:22, height:22, borderRadius:6, background: i===children.length-1 ? "#F0F0F0" : "#EBF3FF", color: i===children.length-1 ? "#CCC" : "var(--dt)", border:"1px solid rgba(0,0,0,0.08)", fontSize:".65rem", cursor: i===children.length-1 ? "default" : "pointer", display:"flex", alignItems:"center", justifyContent:"center"}} title="Move Role Right">➡️</button>
+                                </div>
+                              ) : <div />}
+                              <button onClick={(e)=>{e.stopPropagation(); removeSingleNodeOnly(node.id);}} style={{width:22, height:22, borderRadius:6, background:"#FFF0F0", color:"#D32F2F", border:"1px solid #FFCDCD", fontSize:".65rem", cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"center"}} title="Delete Role">🗑️</button>
                             </div>
-                          ) : <div />}
-                          <button onClick={(e)=>{e.stopPropagation(); removeSingleNodeOnly(node.id);}} style={{width:22, height:22, borderRadius:6, background:"#FFF0F0", color:"#D32F2F", border:"1px solid #FFCDCD", fontSize:".65rem", cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"center"}} title="Delete Role">🗑️</button>
-                        </div>
 
-                        <div style={{width:50, height:50, margin:"16px auto 6px", borderRadius:"50%", overflow:"hidden", border:"2px solid #f0f0f0", background:"#eee"}}>
-                          {node.image ? <img src={node.image} alt={node.name} style={{width:"100%", height:"100%", objectFit:"cover"}}/> : <div style={{width:"100%", height:"100%", display:"flex", alignItems:"center", justifyContent:"center", fontSize:"1.5rem"}}>👤</div>}
-                        </div>
-                        <div style={{fontWeight:700, fontSize:".85rem", color:"var(--dt)", whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis"}}>{node.name || "Name"}</div>
-                        <div style={{fontSize:".7rem", color:"var(--sf)"}}>{node.position || "Position"}</div>
-                        {node.committee && <div style={{fontSize:".6rem", background:"#F0F4FF", color:"var(--dt)", borderRadius:6, padding:"1px 4px", marginTop:3, fontWeight:600, whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis"}}>{node.committee}</div>}
-                        
-                        <button onClick={(e)=>{e.stopPropagation(); setMenuNode(node);}} style={{position:"absolute", bottom: -12, right: -12, width: 26, height: 26, borderRadius:"50%", background:"var(--dt)", color:"white", border:"2px solid white", cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"center", fontSize:"1rem", zIndex:10, boxShadow:"0 2px 8px rgba(0,0,0,0.15)"}} title="Add Role relative (Boss/Sibling/Subordinate)">+</button>
-                      </div>
+                            <div style={{width:50, height:50, margin:"16px auto 6px", borderRadius:"50%", overflow:"hidden", border:"2px solid #f0f0f0", background:"#eee"}}>
+                              {node.image ? <img src={node.image} alt={node.name} style={{width:"100%", height:"100%", objectFit:"cover"}}/> : <div style={{width:"100%", height:"100%", display:"flex", alignItems:"center", justifyContent:"center", fontSize:"1.5rem"}}>👤</div>}
+                            </div>
+                            <div style={{fontWeight:700, fontSize:".85rem", color:"var(--dt)", whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis"}}>{node.name || "Name"}</div>
+                            <div style={{fontSize:".7rem", color:"var(--sf)"}}>{node.position || "Position"}</div>
+                            {node.committee && <div style={{fontSize:".6rem", background:"#F0F4FF", color:"var(--dt)", borderRadius:6, padding:"1px 4px", marginTop:3, fontWeight:600, whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis"}}>{node.committee}</div>}
+                            
+                            <button onClick={(e)=>{e.stopPropagation(); setMenuNode(node);}} style={{position:"absolute", bottom: -12, right: -12, width: 26, height: 26, borderRadius:"50%", background:"var(--dt)", color:"white", border:"2px solid white", cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"center", fontSize:"1rem", zIndex:10, boxShadow:"0 2px 8px rgba(0,0,0,0.15)"}} title="Add Role relative (Boss/Sibling/Subordinate)">+</button>
+                          </div>
 
-                      {/* Action Menu Context */}
-                      {menuNode?.id === node.id && (
-                        <div style={{position:"absolute", top: "100%", left: "50%", transform:"translate(-50%, 15px)", background:"white", borderRadius:12, boxShadow:"0 10px 30px rgba(0,0,0,.2)", zIndex:100, width: 190, padding: 10, border:"1px solid #eee"}} onClick={e=>e.stopPropagation()}>
-                          <div style={{fontSize:".7rem", color:"#888", marginBottom:6, textAlign:"center", fontWeight:700, letterSpacing:1}}>REORDER / ADD ROLE</div>
-                          {children.length > 1 && (
-                            <div style={{display:"flex", gap: 4, marginBottom: 8}}>
-                              <button onClick={()=>moveSibling(node, -1)} disabled={i===0} style={{flex:1, padding:"5px", fontSize:".7rem", background:"#f0f4ff", border:"none", borderRadius:4, cursor:i===0?"default":"pointer", opacity:i===0?0.5:1}}>⬅️ Move Left</button>
-                              <button onClick={()=>moveSibling(node, 1)} disabled={i===children.length-1} style={{flex:1, padding:"5px", fontSize:".7rem", background:"#f0f4ff", border:"none", borderRadius:4, cursor:i===children.length-1?"default":"pointer", opacity:i===children.length-1?0.5:1}}>➡️ Move Right</button>
+                          {/* Action Menu Context */}
+                          {menuNode?.id === node.id && (
+                            <div style={{position:"absolute", top: "100%", left: "50%", transform:"translate(-50%, 15px)", background:"white", borderRadius:12, boxShadow:"0 10px 30px rgba(0,0,0,.25)", zIndex:1000, width: 190, padding: 10, border:"1px solid #eee"}} onClick={e=>e.stopPropagation()}>
+                              <div style={{fontSize:".7rem", color:"#888", marginBottom:6, textAlign:"center", fontWeight:700, letterSpacing:1}}>REORDER / ADD ROLE</div>
+                              {children.length > 1 && (
+                                <div style={{display:"flex", gap: 4, marginBottom: 8}}>
+                                  <button onClick={()=>moveSibling(node, -1)} disabled={i===0} style={{flex:1, padding:"5px", fontSize:".7rem", background:"#f0f4ff", border:"none", borderRadius:4, cursor:i===0?"default":"pointer", opacity:i===0?0.5:1}}>⬅️ Move Left</button>
+                                  <button onClick={()=>moveSibling(node, 1)} disabled={i===children.length-1} style={{flex:1, padding:"5px", fontSize:".7rem", background:"#f0f4ff", border:"none", borderRadius:4, cursor:i===children.length-1?"default":"pointer", opacity:i===children.length-1?0.5:1}}>➡️ Move Right</button>
+                                </div>
+                              )}
+                              <button onClick={()=>addBoss(node)} className="gi" style={{display:"block", width:"100%", padding:"6px", fontSize:".75rem", background:"#f9f9f9", border:"none", borderRadius:4, marginBottom:4, cursor:"pointer", textAlign:"left"}}>⬆️ Add Boss (Above)</button>
+                              <button onClick={()=>addSibling(node, -1)} className="gi" style={{display:"block", width:"100%", padding:"6px", fontSize:".75rem", background:"#f9f9f9", border:"none", borderRadius:4, marginBottom:4, cursor:"pointer", textAlign:"left"}}>⬅️ Add Sibling (Left)</button>
+                              <button onClick={()=>addSibling(node, 1)} className="gi" style={{display:"block", width:"100%", padding:"6px", fontSize:".75rem", background:"#f9f9f9", border:"none", borderRadius:4, marginBottom:4, cursor:"pointer", textAlign:"left"}}>➡️ Add Sibling (Right)</button>
+                              <button onClick={()=>addSubordinate(node)} className="gi" style={{display:"block", width:"100%", padding:"6px", fontSize:".75rem", background:"#f9f9f9", border:"none", borderRadius:4, marginBottom:4, cursor:"pointer", textAlign:"left"}}>⬇️ Add Subordinate</button>
+                              <div style={{height:1, background:"#eee", margin:"6px 0"}}/>
+                              <div style={{fontSize:".65rem", color:"#888", marginBottom:4, textAlign:"center", fontWeight:700}}>DELETE ACTIONS</div>
+                              <button onClick={()=>removeSingleNodeOnly(node.id)} style={{display:"block", width:"100%", padding:"6px", fontSize:".75rem", background:"#FFF5F5", color:"#C53030", border:"none", borderRadius:4, marginBottom:4, cursor:"pointer", textAlign:"left"}}>🗑️ Delete Only This Role</button>
+                              <button onClick={()=>removeNodeAndSubtree(node.id)} style={{display:"block", width:"100%", padding:"6px", fontSize:".75rem", background:"#FFEBEB", color:"#9B2C2C", border:"none", borderRadius:4, cursor:"pointer", textAlign:"left", fontWeight:700}}>💥 Delete Role & Subtree</button>
+                              <button onClick={()=>setMenuNode(null)} style={{display:"block", width:"100%", padding:"6px", fontSize:".75rem", background:"transparent", border:"none", marginTop:4, cursor:"pointer", color:"#666"}}>Cancel</button>
                             </div>
                           )}
-                          <button onClick={()=>addBoss(node)} className="gi" style={{display:"block", width:"100%", padding:"6px", fontSize:".75rem", background:"#f9f9f9", border:"none", borderRadius:4, marginBottom:4, cursor:"pointer", textAlign:"left"}}>⬆️ Add Boss (Above)</button>
-                          <button onClick={()=>addSibling(node, -1)} className="gi" style={{display:"block", width:"100%", padding:"6px", fontSize:".75rem", background:"#f9f9f9", border:"none", borderRadius:4, marginBottom:4, cursor:"pointer", textAlign:"left"}}>⬅️ Add Sibling (Left)</button>
-                          <button onClick={()=>addSibling(node, 1)} className="gi" style={{display:"block", width:"100%", padding:"6px", fontSize:".75rem", background:"#f9f9f9", border:"none", borderRadius:4, marginBottom:4, cursor:"pointer", textAlign:"left"}}>➡️ Add Sibling (Right)</button>
-                          <button onClick={()=>addSubordinate(node)} className="gi" style={{display:"block", width:"100%", padding:"6px", fontSize:".75rem", background:"#f9f9f9", border:"none", borderRadius:4, marginBottom:4, cursor:"pointer", textAlign:"left"}}>⬇️ Add Subordinate</button>
-                          <div style={{height:1, background:"#eee", margin:"6px 0"}}/>
-                          <div style={{fontSize:".65rem", color:"#888", marginBottom:4, textAlign:"center", fontWeight:700}}>DELETE ACTIONS</div>
-                          <button onClick={()=>removeSingleNodeOnly(node.id)} style={{display:"block", width:"100%", padding:"6px", fontSize:".75rem", background:"#FFF5F5", color:"#C53030", border:"none", borderRadius:4, marginBottom:4, cursor:"pointer", textAlign:"left"}}>🗑️ Delete Only This Role</button>
-                          <button onClick={()=>removeNodeAndSubtree(node.id)} style={{display:"block", width:"100%", padding:"6px", fontSize:".75rem", background:"#FFEBEB", color:"#9B2C2C", border:"none", borderRadius:4, cursor:"pointer", textAlign:"left", fontWeight:700}}>💥 Delete Role & Subtree</button>
-                          <button onClick={()=>setMenuNode(null)} style={{display:"block", width:"100%", padding:"6px", fontSize:".75rem", background:"transparent", border:"none", marginTop:4, cursor:"pointer", color:"#666"}}>Cancel</button>
                         </div>
-                      )}
-                    </div>
 
-                    {/* Recursively render children under this node */}
-                    <div style={{marginTop: mob?12:20, display:"flex", justifyContent:"center", width:"100%"}}>
-                      {renderTree(node.id)}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            ))}
+                        {/* Recursively render children under this node */}
+                        <div style={{marginTop: mob?12:20, display:"flex", justifyContent:"center", width:"100%"}}>
+                          {renderTree(node.id)}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              );
+            })}
           </div>
         </div>
       );
