@@ -8670,8 +8670,9 @@ function AdminTeam({ mob, C, setC, auth }) {
       {
         "Level": 1,
         "ID": "1",
+        "Display Order Index": 1,
         "Name": "Ravi Dharia",
-        "Position": "President",
+        "Position": "President MMP CWC and Trustee",
         "Parent Leader Name": "",
         "Committee": "CWC - Central Working Committee",
         "Mobile": "+91 9876543210",
@@ -8684,8 +8685,9 @@ function AdminTeam({ mob, C, setC, auth }) {
       {
         "Level": 2,
         "ID": "2",
-        "Name": "Prakash Gohil",
-        "Position": "Treasurer",
+        "Display Order Index": 1,
+        "Name": "Vinod Makwana",
+        "Position": "TRUSTEE & GENERAL SECRETARY / MAHAMANTRI",
         "Parent Leader Name": "Ravi Dharia",
         "Committee": "CWC - Central Working Committee",
         "Mobile": "+91 9876543211",
@@ -8693,44 +8695,122 @@ function AdminTeam({ mob, C, setC, auth }) {
         "Qualification": "B.Com / CA",
         "Address": "Mumbai, Maharashtra",
         "Photo URL": "",
-        "Description": "Level 2 Subordinate (Row 2 card under Ravi Dharia)"
+        "Description": "Trustee & General Secretary (Card #1 in Row 1)"
       },
       {
         "Level": 2,
         "ID": "3",
-        "Name": "Vasant Padaya",
-        "Position": "Vice President",
+        "Display Order Index": 2,
+        "Name": "Prakash Gohil",
+        "Position": "TRUSTEE AND TREASURER",
         "Parent Leader Name": "Ravi Dharia",
         "Committee": "CWC - Central Working Committee",
         "Mobile": "+91 9876543212",
-        "Profession": "Advocate",
-        "Qualification": "LL.B.",
+        "Profession": "Business",
+        "Qualification": "Graduate",
         "Address": "Mumbai, Maharashtra",
         "Photo URL": "",
-        "Description": "Level 2 Subordinate (Row 2 card under Ravi Dharia)"
+        "Description": "Trustee & Treasurer (Card #2 in Row 1)"
       },
       {
         "Level": 2,
         "ID": "4",
-        "Name": "Vinod Makwana",
-        "Position": "Chief Secretary",
+        "Display Order Index": 3,
+        "Name": "Vasant Padaya",
+        "Position": "TRUSTEE & VICE PRESIDENT",
         "Parent Leader Name": "Ravi Dharia",
         "Committee": "CWC - Central Working Committee",
         "Mobile": "+91 9876543213",
-        "Profession": "Service",
+        "Profession": "Advocate",
+        "Qualification": "LL.B.",
+        "Address": "Mumbai, Maharashtra",
+        "Photo URL": "",
+        "Description": "Trustee & Vice President (Card #3 in Row 1)"
+      },
+      {
+        "Level": 2,
+        "ID": "5",
+        "Display Order Index": 4,
+        "Name": "Bhavanaben Koli",
+        "Position": "TRUSTEE & VICE PRESIDENT",
+        "Parent Leader Name": "Ravi Dharia",
+        "Committee": "CWC - Central Working Committee",
+        "Mobile": "+91 9876543214",
+        "Profession": "Social Work",
         "Qualification": "Graduate",
         "Address": "Mumbai, Maharashtra",
         "Photo URL": "",
-        "Description": "Level 2 Subordinate (Row 2 card under Ravi Dharia)"
+        "Description": "Trustee & Vice President (Card #4 in Row 1)"
+      },
+      {
+        "Level": 2,
+        "ID": "6",
+        "Display Order Index": 5,
+        "Name": "Premjibai Kundhadiya",
+        "Position": "TRUSTEE & VICE PRESIDENT",
+        "Parent Leader Name": "Ravi Dharia",
+        "Committee": "CWC - Central Working Committee",
+        "Mobile": "+91 9876543215",
+        "Profession": "Business",
+        "Qualification": "B.Com",
+        "Address": "Mumbai, Maharashtra",
+        "Photo URL": "",
+        "Description": "Trustee & Vice President (Card #5 in Row 1)"
+      },
+      {
+        "Level": 2,
+        "ID": "7",
+        "Display Order Index": 6,
+        "Name": "Ranjanben",
+        "Position": "TRUSTEE & MANTRI",
+        "Parent Leader Name": "Ravi Dharia",
+        "Committee": "CWC - Central Working Committee",
+        "Mobile": "+91 9876543216",
+        "Profession": "Service",
+        "Qualification": "B.A.",
+        "Address": "Mumbai, Maharashtra",
+        "Photo URL": "",
+        "Description": "Trustee & Mantri (Card #6 in Row 1)"
+      },
+      {
+        "Level": 2,
+        "ID": "8",
+        "Display Order Index": 7,
+        "Name": "Vijaybhai Mahida",
+        "Position": "TRUSTEE & MANTRI",
+        "Parent Leader Name": "Ravi Dharia",
+        "Committee": "CWC - Central Working Committee",
+        "Mobile": "+91 9876543217",
+        "Profession": "Business",
+        "Qualification": "Higher Secondary",
+        "Address": "Mumbai, Maharashtra",
+        "Photo URL": "",
+        "Description": "Trustee & Mantri (Card #7 in Row 1)"
+      },
+      {
+        "Level": 2,
+        "ID": "9",
+        "Display Order Index": 8,
+        "Name": "Devjibhai",
+        "Position": "TRUSTEE & MANTRI",
+        "Parent Leader Name": "Ravi Dharia",
+        "Committee": "CWC - Central Working Committee",
+        "Mobile": "+91 9876543218",
+        "Profession": "Business",
+        "Qualification": "Graduate",
+        "Address": "Mumbai, Maharashtra",
+        "Photo URL": "",
+        "Description": "Trustee & Mantri (Card #8 in Row 1)"
       },
       {
         "Level": 1,
-        "ID": "5",
+        "ID": "10",
+        "Display Order Index": 1,
         "Name": "Pradeep Parmar",
         "Position": "Chairman",
         "Parent Leader Name": "",
         "Committee": "Education Committee",
-        "Mobile": "+91 9876543214",
+        "Mobile": "+91 9876543219",
         "Profession": "Engineer",
         "Qualification": "B.E.",
         "Address": "Mumbai, Maharashtra",
@@ -8785,6 +8865,8 @@ function AdminTeam({ mob, C, setC, auth }) {
           const levelNum = parseInt(String(rawLevel).replace(/\D/g, '')) || 0;
 
           const rawId = getVal("id", "member id", "role id");
+          const rawOrder = getVal("display order index", "display order", "order index", "order", "index", "#");
+          const parsedOrder = rawOrder ? (parseInt(String(rawOrder).replace(/\D/g, ''), 10) || 0) : idx;
           const name = getVal("name", "full name", "member name");
           const position = getVal("position", "title", "designation", "role");
           const parentName = getVal("parent leader name", "parent leader", "parent name", "boss name", "parent id", "parentleader");
@@ -8812,7 +8894,7 @@ function AdminTeam({ mob, C, setC, auth }) {
             image: image,
             desc: desc,
             parentId: null,
-            order: idx,
+            order: parsedOrder,
             _levelNum: levelNum,
             _rawParent: parentName,
             _rawId: rawId || nodeId
