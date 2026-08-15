@@ -145,15 +145,44 @@ const fbSave = async (content, idToken) => {
   return true;
 };
 
+const generateNextTxnId = async (idToken) => {
+  try {
+    const existing = await fbFetchRegistrations(idToken);
+    let maxNum = 1000;
+    if (Array.isArray(existing) && existing.length > 0) {
+      existing.forEach(r => {
+        const idStr = r["Transaction ID"] || r["transactionId"] || r.id || "";
+        const match = idStr.match(/(?:VG|REG|TXN)[-_]?(\d+)/i);
+        if (match) {
+          const num = parseInt(match[1], 10);
+          if (!isNaN(num) && num > maxNum) maxNum = num;
+        }
+      });
+      if (maxNum === 1000) {
+        maxNum = 1000 + existing.length;
+      }
+    }
+    const nextNum = maxNum + 1;
+    return `VG-${nextNum}`;
+  } catch (err) {
+    return `VG-${1001 + Math.floor(Math.random() * 100)}`;
+  }
+};
+
 const fbSubmitRegistration = async (registrationData, idToken) => {
   const REG_URL = `https://firestore.googleapis.com/v1/projects/${getFB().projectId}/databases/(default)/documents/registrations`;
   const headers = { "Content-Type": "application/json" };
   if (idToken) headers["Authorization"] = `Bearer ${idToken}`;
   
-  // Inject Transaction ID and default status
-  const txId = "VG-" + Math.random().toString(36).substring(2, 8).toUpperCase();
+  // Inject clean Sequential Transaction ID (e.g. VG-1001, VG-1002...)
+  let txId = registrationData["Transaction ID"] || registrationData["transactionId"];
+  if (!txId) {
+    txId = await generateNextTxnId(idToken);
+  }
+
   registrationData = { 
     "Transaction ID": txId, 
+    "transactionId": txId,
     "Status": "Pending",
     "Remarks": "",
     ...registrationData 
@@ -1742,8 +1771,11 @@ function Events({ C, lang, globalAuthToken, globalProfile, onPublicLogin, forceS
         console.warn("Firebase save skipped (Update Security Rules to enable database logging). Proceeding to WhatsApp.");
       }
       
-      // Generate clean Transaction ID if not present
-      const txId = formData["Transaction ID"] || formData["transactionId"] || formData["Tx ID"] || ("VG-" + Math.random().toString(36).substring(2, 8).toUpperCase());
+      // Generate clean Sequential Transaction ID if not present (e.g. VG-1001, VG-1002...)
+      let txId = formData["Transaction ID"] || formData["transactionId"] || formData["Tx ID"];
+      if (!txId) {
+        txId = await generateNextTxnId(authToken);
+      }
 
       // Sanitize form values: replace pipe '|' with space, and escape leading '+' to prevent Google Sheets #ERROR! formula parse error
       const sanitizedFormData = {};
@@ -13795,6 +13827,41 @@ function AdminRegistrations({ mob, C, setC, auth }) {
               </button>
               <button onClick={() => setShowSerialModal(true)} style={{padding:"6px 12px",borderRadius:6,fontSize:".8rem",fontWeight:600,display:"flex",alignItems:"center",gap:4,background:"white",border:"1px solid var(--bd)",color:"var(--dt)",cursor:"pointer",whiteSpace:"nowrap"}}>
                 🔢 Generate Serials
+              </button>
+              <button
+                onClick={async () => {
+                  const prefix = prompt("Enter Serial Txn ID Prefix (e.g. VG or REG):", "VG");
+                  if (prefix === null) return;
+                  const startNumInput = prompt("Enter Starting Serial Number (e.g. 1001 or 1):", "1001");
+                  if (startNumInput === null) return;
+                  const startNum = parseInt(startNumInput.trim(), 10) || 1001;
+
+                  if (!confirm(`Are you sure you want to assign sequential Txn IDs (${prefix.toUpperCase()}-${startNum}, ${prefix.toUpperCase()}-${startNum + 1}...) to ALL ${regs.length} registrations sorted chronologically by date?`)) return;
+
+                  const sortedRegs = [...regs].sort((a, b) => new Date(a._submittedAt || 0) - new Date(b._submittedAt || 0));
+
+                  setRefreshing(true);
+                  try {
+                    const cleanPrefix = prefix.trim().toUpperCase();
+                    for (let i = 0; i < sortedRegs.length; i++) {
+                      const r = sortedRegs[i];
+                      const seqTxnId = `${cleanPrefix}-${startNum + i}`;
+                      const updated = { ...r, "Transaction ID": seqTxnId, transactionId: seqTxnId };
+                      delete updated.id; delete updated._submittedAt;
+                      await fbUpdateRegistration(r.id, updated, auth?.idToken);
+                    }
+                    const fresh = await fbFetchRegistrations(auth?.idToken);
+                    setRegs(fresh || []);
+                    alert(`Successfully assigned sequential Txn IDs (${cleanPrefix}-${startNum} to ${cleanPrefix}-${startNum + sortedRegs.length - 1}) to all ${sortedRegs.length} registrations!`);
+                  } catch (err) {
+                    alert("Failed to assign sequential Txn IDs: " + err.message);
+                  } finally {
+                    setRefreshing(false);
+                  }
+                }}
+                style={{padding:"6px 12px",borderRadius:6,fontSize:".8rem",fontWeight:600,display:"flex",alignItems:"center",gap:4,background:"#FFF4EC",color:"var(--sf)",border:"1px solid var(--sf)",cursor:"pointer",whiteSpace:"nowrap"}}
+              >
+                🔢 Sequence Serial Txn IDs
               </button>
             </div>
           </div>
