@@ -2778,7 +2778,7 @@ function Team({ C, lang }) {
                 {/* Horizontal Branch from Left Bus Line across row */}
                 {!mob && rows.length > 1 && (
                   <div style={{
-                    position:"absolute", top: 0, left: 12, right: "10%", height: 2,
+                    position:"absolute", top: 0, left: -24, right: "10%", height: 2,
                     background: "var(--sf)", zIndex: 1
                   }} />
                 )}
@@ -9083,7 +9083,7 @@ function AdminTeam({ mob, C, setC, auth }) {
                 {/* Horizontal Branch from Left Bus Line across row */}
                 {!mob && rows.length > 1 && (
                   <div style={{
-                    position:"absolute", top: 0, left: 12, right: "10%", height: 2,
+                    position:"absolute", top: 0, left: -24, right: "10%", height: 2,
                     background: "var(--sf)", zIndex: 1
                   }} />
                 )}
