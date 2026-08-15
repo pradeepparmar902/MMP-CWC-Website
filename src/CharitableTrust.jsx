@@ -9255,11 +9255,24 @@ function AdminTeam({ mob, C, setC, auth }) {
                           )}
 
                           <div className="gi" style={{
-                            background:"white", padding: 12, borderRadius: 12, borderTop: "3px solid var(--sf)", 
+                            background: draggedItemId === node.id ? "#FFF7ED" : "white",
+                            padding: 12, borderRadius: 12, borderTop: "3px solid var(--sf)",
+                            border: draggedItemId && draggedItemId !== node.id && filteredAdminItems.find(x => x.id === draggedItemId)?.parentId === node.parentId ? "2px dashed var(--sf)" : undefined,
                             width: 150, textAlign:"center", boxShadow:"0 8px 24px rgba(0,0,0,0.06)",
-                            transition:"transform .3s", position:"relative", zIndex:2, cursor:"pointer",
-                            borderColor: activeNode?.id === node.id ? "var(--sf)" : "#eee"
-                          }} onClick={() => setActiveNode(node)}>
+                            transition:"transform .3s", position:"relative", zIndex:2, cursor:"grab",
+                            opacity: draggedItemId === node.id ? 0.5 : 1
+                          }}
+                          draggable
+                          onDragStart={(e) => handleItemDragStart(e, node.id)}
+                          onDragOver={(e) => e.preventDefault()}
+                          onDrop={(e) => {
+                            e.preventDefault();
+                            const from = filteredAdminItems.find(x => x.id === draggedItemId);
+                            if (from && from.parentId === node.parentId) handleItemDrop(e, node.id);
+                            else setDraggedItemId(null);
+                          }}
+                          onDragEnd={() => setDraggedItemId(null)}
+                          onClick={() => setActiveNode(node)}>
                             {/* Card Content */}
                             <div style={{width:44, height:44, margin:"0 auto 8px", borderRadius:"50%", overflow:"hidden", border:"2px solid #f0f0f0", background:"#eee"}}>
                               {node.image ? (
@@ -9318,21 +9331,20 @@ function AdminTeam({ mob, C, setC, auth }) {
 
     return (
       <div style={{display:"flex", gap: "20px", justifyContent:"center", paddingTop: parentId ? 20 : 0, position:"relative"}}>
+        {/* Single horizontal connecting line spanning all children */}
+        {parentId && children.length > 1 && (
+          <div style={{
+            position:"absolute", top: 0, height: 2, background: "var(--sf)",
+            left: "calc(50% / " + children.length + ")",
+            right: "calc(50% / " + children.length + ")",
+            zIndex: 1
+          }} />
+        )}
         {children.map((node, i) => (
           <div key={node.id} style={{display:"flex", flexDirection:"column", alignItems:"center", position:"relative"}}>
-            {/* Connecting lines for children */}
+            {/* Vertical drop line from horizontal bus to each card */}
             {parentId && (
-              <>
-                <div style={{position:"absolute", top: 0, left: "50%", width: 2, height: 20, background: "var(--sf)", transform:"translateX(-50%)"}} />
-                {children.length > 1 && (
-                  <div style={{
-                    position:"absolute", top: 0, height: 2, background: "var(--sf)",
-                    left: i === 0 ? "50%" : 0,
-                    right: i === children.length - 1 ? "50%" : 0,
-                    width: i === 0 || i === children.length - 1 ? "50%" : "100%"
-                  }} />
-                )}
-              </>
+              <div style={{position:"absolute", top: 0, left: "50%", width: 2, height: 20, background: "var(--sf)", transform:"translateX(-50%)"}} />
             )}
             
             {/* The Node */}
@@ -9344,10 +9356,25 @@ function AdminTeam({ mob, C, setC, auth }) {
               
               {/* Card */}
               <div className="gi" style={{
-                background:"white", padding: "16px 10px 12px 10px", borderRadius: 16, borderTop: "4px solid var(--sf)", 
+                background: draggedItemId === node.id ? "#FFF7ED" : "white",
+                padding: "16px 10px 12px 10px", borderRadius: 16,
+                borderTop: "4px solid var(--sf)",
+                border: draggedItemId && draggedItemId !== node.id && filteredAdminItems.find(x => x.id === draggedItemId)?.parentId === node.parentId ? "2px dashed var(--sf)" : undefined,
                 width: 160, textAlign:"center", boxShadow:"0 8px 24px rgba(0,0,0,0.06)",
-                transition:"all .2s ease", position:"relative", zIndex:2, cursor:"pointer"
-              }} onClick={() => setActiveNode(node)}>
+                transition:"all .2s ease", position:"relative", zIndex:2, cursor:"grab",
+                opacity: draggedItemId === node.id ? 0.5 : 1
+              }}
+              draggable
+              onDragStart={(e) => handleItemDragStart(e, node.id)}
+              onDragOver={(e) => e.preventDefault()}
+              onDrop={(e) => {
+                e.preventDefault();
+                const from = filteredAdminItems.find(x => x.id === draggedItemId);
+                if (from && from.parentId === node.parentId) handleItemDrop(e, node.id);
+                else setDraggedItemId(null);
+              }}
+              onDragEnd={() => setDraggedItemId(null)}
+              onClick={() => setActiveNode(node)}>
 
                 {/* Control Bar on Top of Role Card */}
                 <div style={{position:"absolute", top: 6, left: 6, right: 6, display:"flex", justifyContent:"space-between", alignItems:"center", zIndex:12}} onClick={e=>e.stopPropagation()}>
