@@ -2822,7 +2822,7 @@ function Team({ C, lang }) {
             )}
 
             {rows.map((rowItems, rIdx) => {
-              const rLabel = rowLabelsList[rIdx];
+              const rLabel = rowLabelsList.length > 1 ? rowLabelsList[rIdx + 1] : rowLabelsList[rIdx];
               return (
                 <div key={`h_row_wrap_${rIdx}`} style={{display:"flex", flexDirection:"column", alignItems:"center", width:"100%", position:"relative", zIndex: 2}}>
                   {/* Row Group Identity Label Badge */}
@@ -2913,7 +2913,27 @@ function Team({ C, lang }) {
 
     // Classic Horizontal Layout (<= 4 children)
     return (
-      <div style={{display:"flex", gap: mob?"8px":"16px", justifyContent:"center", paddingTop: parentId ? (mob?16:20) : 0, position:"relative", flexWrap:mob?"wrap":"nowrap"}}>
+      <div style={{display:"flex", flexDirection:"column", alignItems:"center", width:"100%"}}>
+        {parentId === null && (() => {
+          const activeLabels = C.commRowLabels?.[activeCommittee] || C.rowLabelsStr || "";
+          const rowLabelsList = activeLabels.split(",").map(s => s.trim()).filter(Boolean);
+          const rootLabel = rowLabelsList.length > 1 ? rowLabelsList[0] : null;
+          return rootLabel ? (
+            <div style={{width: "100%", textAlign: "center", marginBottom: 10, position: "relative", zIndex: 3}}>
+              <span style={{
+                background: "linear-gradient(135deg, #FFF6EE, #FFEAD9)",
+                color: "var(--dt)", border: "1px solid rgba(232,101,10,0.3)",
+                fontSize: ".75rem", fontWeight: 700, padding: "3px 14px",
+                borderRadius: 20, boxShadow: "0 2px 8px rgba(0,0,0,0.04)",
+                letterSpacing: 0.5, display: "inline-flex", alignItems: "center", gap: 6
+              }}>
+                🏷️ {rootLabel}
+              </span>
+            </div>
+          ) : null;
+        })()}
+
+        <div style={{display:"flex", gap: mob?"8px":"16px", justifyContent:"center", paddingTop: parentId ? (mob?16:20) : 0, position:"relative", flexWrap:mob?"wrap":"nowrap"}}>
         {children.map((node, i) => (
           <div key={node.id} style={{display:"flex", flexDirection:"column", alignItems:"center", position:"relative"}}>
             {/* Connecting lines for children */}
@@ -2966,7 +2986,8 @@ function Team({ C, lang }) {
           </div>
         ))}
       </div>
-    );
+    </div>
+  );
   };
 
   const renderPlainGrid = (isFullScreen = false) => (
@@ -9176,7 +9197,7 @@ function AdminTeam({ mob, C, setC, auth }) {
 
             {rows.map((rowItems, rIdx) => {
               const isRowActive = rowItems.some(n => menuNode?.id === n.id);
-              const rLabel = rowLabelsList[rIdx];
+              const rLabel = rowLabelsList.length > 1 ? rowLabelsList[rIdx + 1] : rowLabelsList[rIdx];
               return (
                 <div key={`tree_row_wrap_${rIdx}`} style={{display:"flex", flexDirection:"column", alignItems:"center", width:"100%", position:"relative", zIndex: isRowActive ? 999 : 2}}>
                   {/* Row Group Identity Label Badge */}
@@ -9233,29 +9254,11 @@ function AdminTeam({ mob, C, setC, auth }) {
                           )}
 
                           <div className="gi" style={{
-                            background:"white", padding: "16px 10px 12px 10px", borderRadius: 16, borderTop: "4px solid var(--sf)", 
-                            width: 160, textAlign:"center", boxShadow:"0 8px 24px rgba(0,0,0,0.06)",
-                            transition:"all .2s ease", position:"relative", zIndex: isNodeActive ? 999 : 2, cursor:"pointer"
+                            background:"white", padding: 12, borderRadius: 12, borderTop: "3px solid var(--sf)", 
+                            width: 150, textAlign:"center", boxShadow:"0 8px 24px rgba(0,0,0,0.06)",
+                            transition:"transform .3s", position:"relative", zIndex:2, cursor:"pointer",
+                            borderColor: activeNode?.id === node.id ? "var(--sf)" : "#eee"
                           }} onClick={() => setActiveNode(node)}>
-
-                            {/* Control Bar on Top of Role Card */}
-                            <div style={{position:"absolute", top: 6, left: 6, right: 6, display:"flex", justifyContent:"space-between", alignItems:"center", zIndex:12}} onClick={e=>e.stopPropagation()}>
-                              {children.length > 1 ? (
-                                <div style={{display:"flex", gap: 3}}>
-                                  <button onClick={()=>moveSibling(node, -1)} disabled={i===0} style={{width:22, height:22, borderRadius:6, background: i===0 ? "#F0F0F0" : "#EBF3FF", color: i===0 ? "#CCC" : "var(--dt)", border:"1px solid rgba(0,0,0,0.08)", fontSize:".65rem", cursor: i===0 ? "default" : "pointer", display:"flex", alignItems:"center", justifyContent:"center"}} title="Move Role Left">⬅️</button>
-                                  <button onClick={()=>moveSibling(node, 1)} disabled={i===children.length-1} style={{width:22, height:22, borderRadius:6, background: i===children.length-1 ? "#F0F0F0" : "#EBF3FF", color: i===children.length-1 ? "#CCC" : "var(--dt)", border:"1px solid rgba(0,0,0,0.08)", fontSize:".65rem", cursor: i===children.length-1 ? "default" : "pointer", display:"flex", alignItems:"center", justifyContent:"center"}} title="Move Role Right">➡️</button>
-                                </div>
-                              ) : <div />}
-                              <button onClick={(e)=>{e.stopPropagation(); removeSingleNodeOnly(node.id);}} style={{width:22, height:22, borderRadius:6, background:"#FFF0F0", color:"#D32F2F", border:"1px solid #FFCDCD", fontSize:".65rem", cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"center"}} title="Delete Role">🗑️</button>
-                            </div>
-
-                            <div style={{width:50, height:50, margin:"16px auto 6px", borderRadius:"50%", overflow:"hidden", border:"2px solid #f0f0f0", background:"#eee"}}>
-                              {node.image ? <img src={node.image} alt={node.name} style={{width:"100%", height:"100%", objectFit:"cover"}}/> : <div style={{width:"100%", height:"100%", display:"flex", alignItems:"center", justifyContent:"center", fontSize:"1.5rem"}}>👤</div>}
-                            </div>
-                            <div style={{fontWeight:700, fontSize:".85rem", color:"var(--dt)", whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis"}}>{node.name || "Name"}</div>
-                            <div style={{fontSize:".7rem", color:"var(--sf)"}}>{node.position || "Position"}</div>
-                            {node.committee && <div style={{fontSize:".6rem", background:"#F0F4FF", color:"var(--dt)", borderRadius:6, padding:"1px 4px", marginTop:3, fontWeight:600, whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis"}}>{node.committee}</div>}
-                            
                             <button onClick={(e)=>{e.stopPropagation(); setMenuNode(node);}} style={{position:"absolute", bottom: -12, right: -12, width: 26, height: 26, borderRadius:"50%", background:"var(--dt)", color:"white", border:"2px solid white", cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"center", fontSize:"1rem", zIndex:10, boxShadow:"0 2px 8px rgba(0,0,0,0.15)"}} title="Add Role relative (Boss/Sibling/Subordinate)">+</button>
                           </div>
 
