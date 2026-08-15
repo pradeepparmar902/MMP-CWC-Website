@@ -2788,8 +2788,10 @@ function Team({ C, lang }) {
     // Compact Matrix Layout for Large Hierarchies (> threshold children)
     if (children.length > threshold && threshold < 999) {
       const cols = mob ? 2 : Math.min(threshold, 5);
-      const rows = chunkArrayWithPattern(children, cols, C.rowWrapPattern);
-      const rowLabelsList = (C.rowLabelsStr || "").split(",").map(s => s.trim()).filter(Boolean);
+      const activePattern = C.commRowWrapPattern?.[activeCommittee] || C.rowWrapPattern || "";
+      const activeLabels = C.commRowLabels?.[activeCommittee] || C.rowLabelsStr || "";
+      const rows = chunkArrayWithPattern(children, cols, activePattern);
+      const rowLabelsList = activeLabels.split(",").map(s => s.trim()).filter(Boolean);
 
       return (
         <div style={{display:"flex", flexDirection:"column", alignItems:"center", position:"relative", paddingTop: parentId ? (mob?16:20) : 0, width:"100%"}}>
@@ -9139,8 +9141,10 @@ function AdminTeam({ mob, C, setC, auth }) {
     // Compact Matrix Layout for Large Admin Hierarchies (> threshold children)
     if (children.length > threshold && threshold < 999) {
       const cols = mob ? 2 : Math.min(threshold, 5);
-      const rows = chunkArrayWithPattern(children, cols, C.rowWrapPattern);
-      const rowLabelsList = (C.rowLabelsStr || "").split(",").map(s => s.trim()).filter(Boolean);
+      const activePattern = C.commRowWrapPattern?.[activeCommittee] || C.rowWrapPattern || "";
+      const activeLabels = C.commRowLabels?.[activeCommittee] || C.rowLabelsStr || "";
+      const rows = chunkArrayWithPattern(children, cols, activePattern);
+      const rowLabelsList = activeLabels.split(",").map(s => s.trim()).filter(Boolean);
 
       return (
         <div style={{display:"flex", flexDirection:"column", alignItems:"center", position:"relative", paddingTop: parentId ? (mob?16:20) : 0, width:"100%"}}>
@@ -9670,10 +9674,14 @@ function AdminTeam({ mob, C, setC, auth }) {
                 <input
                   type="text"
                   placeholder="e.g. 2, 4, 6"
-                  value={C.rowWrapPattern || ""}
+                  value={C.commRowWrapPattern?.[activeCommittee] ?? C.rowWrapPattern ?? ""}
                   onChange={(e) => {
                     const val = e.target.value;
-                    const newC = { ...C, rowWrapPattern: val };
+                    const newC = {
+                      ...C,
+                      rowWrapPattern: val,
+                      commRowWrapPattern: { ...(C.commRowWrapPattern || {}), [activeCommittee]: val }
+                    };
                     setC(newC);
                     saveToFb(newC);
                   }}
@@ -9689,10 +9697,14 @@ function AdminTeam({ mob, C, setC, auth }) {
                 <input
                   type="text"
                   placeholder="e.g. Trustees, Mantri, Manad Sabhya"
-                  value={C.rowLabelsStr || ""}
+                  value={C.commRowLabels?.[activeCommittee] ?? C.rowLabelsStr ?? ""}
                   onChange={(e) => {
                     const val = e.target.value;
-                    const newC = { ...C, rowLabelsStr: val };
+                    const newC = {
+                      ...C,
+                      rowLabelsStr: val,
+                      commRowLabels: { ...(C.commRowLabels || {}), [activeCommittee]: val }
+                    };
                     setC(newC);
                     saveToFb(newC);
                   }}
