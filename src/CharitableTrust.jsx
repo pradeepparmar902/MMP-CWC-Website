@@ -2783,12 +2783,12 @@ function Team({ C, lang }) {
       return res;
     };
 
-    const threshold = C.maxHorizontalCards || 5;
+    const threshold = mob ? 2 : (C.maxHorizontalCards || 5);
 
-    // Compact Matrix Layout for Large Hierarchies (> threshold children)
-    if (children.length > threshold && threshold < 999) {
+    // Compact Matrix Layout for Mobile & Hierarchies (> threshold children)
+    if (mob || (children.length > threshold && threshold < 999)) {
       const cols = mob ? 2 : Math.min(threshold, 5);
-      const activePattern = C.commRowWrapPattern?.[activeCommittee] || C.rowWrapPattern || "";
+      const activePattern = mob ? "2" : (C.commRowWrapPattern?.[activeCommittee] || C.rowWrapPattern || "");
       const activeLabels = C.commRowLabels?.[activeCommittee] || C.rowLabelsStr || "";
       const rows = chunkArrayWithPattern(children, cols, activePattern);
       const rowLabelsList = activeLabels.split(",").map(s => s.trim()).filter(Boolean);
@@ -2843,8 +2843,8 @@ function Team({ C, lang }) {
                   )}
 
                   <div key={`h_row_${rIdx}`} style={{
-                    display:"flex", gap: mob?"8px":"16px", justifyContent:"center",
-                    position:"relative", zIndex: 2, width:"100%"
+                    display:"flex", gap: mob?"10px":"16px", justifyContent:"center", flexWrap: mob?"wrap":"nowrap",
+                    position:"relative", zIndex: 2, width:"100%", maxWidth: mob?"100%":"none"
                   }}>
                     {/* Horizontal Branch from Left Bus Line across row */}
                     {!mob && rows.length > 1 && (
@@ -2877,8 +2877,8 @@ function Team({ C, lang }) {
                       )}
 
                       <div className="gi" style={{
-                        background:"white", padding: mob?8:10, borderRadius: 12, borderTop: "3px solid var(--sf)", 
-                        width: mob?125:140, textAlign:"center", boxShadow:"0 8px 24px rgba(0,0,0,0.06)",
+                        background:"white", padding: mob?"10px 8px":10, borderRadius: 14, borderTop: "3px solid var(--sf)", 
+                        width: mob?"calc(50% - 6px)":140, maxWidth: mob?160:140, minWidth: mob?130:140, boxSizing:"border-box", textAlign:"center", boxShadow:"0 6px 20px rgba(0,0,0,0.06)",
                         transition:"transform .3s", position:"relative", zIndex:2, cursor:"pointer"
                       }} onMouseEnter={e=>e.currentTarget.style.transform="translateY(-3px)"} onMouseLeave={e=>e.currentTarget.style.transform="none"} onClick={() => openModal(node)}>
                         <div style={{width:mob?40:50, height:mob?40:50, margin:"0 auto 8px", borderRadius:"50%", overflow:"hidden", border:"2px solid #f0f0f0", background:"#eee"}}>
@@ -2933,7 +2933,7 @@ function Team({ C, lang }) {
           ) : null;
         })()}
 
-        <div style={{display:"flex", gap: mob?"8px":"16px", justifyContent:"center", paddingTop: parentId ? (mob?16:20) : 0, position:"relative", flexWrap:mob?"wrap":"nowrap"}}>
+        <div style={{display:"flex", gap: mob?"10px":"16px", justifyContent:"center", paddingTop: parentId ? (mob?16:20) : 0, position:"relative", flexWrap:mob?"wrap":"nowrap", width: mob?"100%":"auto"}}>
         {children.map((node, i) => (
           <div key={node.id} style={{display:"flex", flexDirection:"column", alignItems:"center", position:"relative"}}>
             {/* Connecting lines for children */}
@@ -2960,8 +2960,8 @@ function Team({ C, lang }) {
               
               {/* Card */}
               <div className="gi" style={{
-                background:"white", padding: mob?8:10, borderRadius: 12, borderTop: "3px solid var(--sf)", 
-                width: mob?110:140, textAlign:"center", boxShadow:"0 8px 24px rgba(0,0,0,0.06)",
+                background:"white", padding: mob?"10px 8px":10, borderRadius: 14, borderTop: "3px solid var(--sf)", 
+                width: mob?"calc(50% - 6px)":140, maxWidth: mob?160:140, minWidth: mob?130:140, boxSizing:"border-box", textAlign:"center", boxShadow:"0 6px 20px rgba(0,0,0,0.06)",
                 transition:"transform .3s", position:"relative", zIndex:2, cursor:"pointer"
               }} onMouseEnter={e=>e.currentTarget.style.transform="translateY(-3px)"} onMouseLeave={e=>e.currentTarget.style.transform="none"} onClick={() => openModal(node)}>
                 <div style={{width:mob?40:50, height:mob?40:50, margin:"0 auto 8px", borderRadius:"50%", overflow:"hidden", border:"2px solid #f0f0f0", background:"#eee"}}>
@@ -3151,19 +3151,8 @@ function Team({ C, lang }) {
                   );
                 })()}
 
-                {mob && (
-                  <div style={{
-                    fontSize: ".75rem", color: "var(--sf)", textAlign: "center",
-                    marginBottom: 12, fontWeight: 700, display: "flex", alignItems: "center",
-                    justifyContent: "center", gap: 6, background: "#FFF6EE", padding: "6px 12px",
-                    borderRadius: 12, border: "1px solid rgba(232,101,10,0.2)"
-                  }}>
-                    <span>↔️ Swipe horizontally to view full org chart</span>
-                  </div>
-                )}
-
                 {filteredItems.filter(i => i.parentId === null).length > 0 ? (
-                  <div style={{minWidth: mob ? "max-content" : 700, width: "100%", overflowX: mob ? "auto" : "visible", WebkitOverflowScrolling: "touch", margin:"0 auto", paddingTop: 10, paddingBottom: 10}}>
+                  <div style={{width: "100%", margin:"0 auto", paddingTop: 10, paddingBottom: 10}}>
                     {renderHierarchy(null)}
                   </div>
                 ) : sortedPlainItems.length > 0 ? (
@@ -9178,12 +9167,12 @@ function AdminTeam({ mob, C, setC, auth }) {
       return res;
     };
 
-    const threshold = C.maxHorizontalCards || 5;
+    const threshold = mob ? 2 : (C.maxHorizontalCards || 5);
 
-    // Compact Matrix Layout for Large Admin Hierarchies (> threshold children)
-    if (children.length > threshold && threshold < 999) {
+    // Compact Matrix Layout for Mobile & Large Admin Hierarchies (> threshold children)
+    if (mob || (children.length > threshold && threshold < 999)) {
       const cols = mob ? 2 : Math.min(threshold, 5);
-      const activePattern = C.commRowWrapPattern?.[activeCommittee] || C.rowWrapPattern || "";
+      const activePattern = mob ? "2" : (C.commRowWrapPattern?.[activeCommittee] || C.rowWrapPattern || "");
       const activeLabels = C.commRowLabels?.[activeCommittee] || C.rowLabelsStr || "";
       const rows = chunkArrayWithPattern(children, cols, activePattern);
       const rowLabelsList = activeLabels.split(",").map(s => s.trim()).filter(Boolean);
@@ -9239,8 +9228,8 @@ function AdminTeam({ mob, C, setC, auth }) {
                   )}
 
                   <div key={`tree_row_${rIdx}`} style={{
-                    display:"flex", gap: mob?"8px":"16px", justifyContent:"center",
-                    position:"relative", zIndex: isRowActive ? 999 : 2, width:"100%"
+                    display:"flex", gap: mob?"10px":"16px", justifyContent:"center", flexWrap: mob?"wrap":"nowrap",
+                    position:"relative", zIndex: isRowActive ? 999 : 2, width:"100%", maxWidth: mob?"100%":"none"
                   }}>
                     {/* Horizontal Branch from Left Bus Line across row */}
                     {!mob && rows.length > 1 && (
@@ -9277,9 +9266,9 @@ function AdminTeam({ mob, C, setC, auth }) {
 
                           <div className="gi" style={{
                             background: draggedItemId === node.id ? "#FFF7ED" : "white",
-                            padding: 12, borderRadius: 12, borderTop: "3px solid var(--sf)",
+                            padding: mob?"10px 8px":12, borderRadius: 14, borderTop: "3px solid var(--sf)",
                             border: draggedItemId && draggedItemId !== node.id && filteredAdminItems.find(x => x.id === draggedItemId)?.parentId === node.parentId ? "2px dashed var(--sf)" : undefined,
-                            width: 150, textAlign:"center", boxShadow:"0 8px 24px rgba(0,0,0,0.06)",
+                            width: mob?"calc(50% - 6px)":150, maxWidth: mob?160:150, minWidth: mob?130:150, boxSizing:"border-box", textAlign:"center", boxShadow:"0 8px 24px rgba(0,0,0,0.06)",
                             transition:"transform .3s", position:"relative", zIndex:2, cursor:"grab",
                             opacity: draggedItemId === node.id ? 0.5 : 1
                           }}
