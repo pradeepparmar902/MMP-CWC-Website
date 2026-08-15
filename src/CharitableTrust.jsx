@@ -2658,7 +2658,6 @@ function Achievements({ C, lang }) {
           ))}
         </div>
       </div>
-
       {activeItem && (
         <div style={{position:"fixed",top:0,left:0,right:0,bottom:0,background:"rgba(0,0,0,.85)",zIndex:9999,display:"flex",alignItems:"center",justifyContent:"center",padding:mob?16:40}}>
           {items.length > 1 && <button onClick={(e)=>{e.stopPropagation(); navigate(-1);}} style={{position:"absolute",left:mob?10:40,top:"50%",transform:"translateY(-50%)",background:"rgba(255,255,255,.1)",border:"1px solid rgba(255,255,255,.2)",color:"white",fontSize:"1.5rem",cursor:"pointer",padding:mob?"8px 12px":"12px 18px",borderRadius:8,zIndex:10001,backdropFilter:"blur(4px)"}}>&#10094;</button>}
@@ -3186,29 +3185,45 @@ function Team({ C, lang }) {
             {/* Instant Interactive Search & Filter Bar */}
             <div style={{position: "relative", width: "100%", marginBottom: 16, zIndex: 100}}>
               <div style={{
-                display: "flex", alignItems: "center", gap: 10, background: "white",
-                padding: "10px 16px", borderRadius: 16,
+                display: "flex", alignItems: "center", gap: 8, background: "white",
+                padding: "8px 12px", borderRadius: 16,
                 border: "2px solid " + (searchTerm ? "var(--sf)" : "var(--bd)"),
-                boxShadow: searchTerm ? "0 8px 24px rgba(232,101,10,0.15)" : "0 2px 10px rgba(0,0,0,0.03)"
+                boxShadow: searchTerm ? "0 8px 24px rgba(232,101,10,0.15)" : "0 2px 10px rgba(0,0,0,0.03)",
+                flexWrap: mob ? "wrap" : "nowrap"
               }}>
-                <span style={{fontSize: "1.2rem"}}>🔍</span>
-                <input
-                  type="text"
-                  placeholder="Search member by name, role (Trustee, Mantri), mobile..."
-                  value={searchTerm}
-                  onChange={(e) => {
-                    setSearchTerm(e.target.value);
+                {/* Search Scope Toggle */}
+                <select
+                  value={searchScope}
+                  onChange={(e) => setSearchScope(e.target.value)}
+                  style={{
+                    padding: "6px 10px", borderRadius: 10, border: "1px solid var(--bd)",
+                    background: "#FFF6EE", color: "var(--sf)", fontWeight: 700, fontSize: ".78rem",
+                    cursor: "pointer", outline: "none", flexShrink: 0
                   }}
-                  style={{width: "100%", border: "none", outline: "none", fontSize: ".92rem", fontWeight: 600, color: "var(--dt)", background: "transparent"}}
-                />
-                {searchTerm && (
-                  <button
-                    onClick={() => setSearchTerm("")}
-                    style={{background: "#eee", border: "none", color: "#555", borderRadius: "50%", width: 24, height: 24, fontSize: ".8rem", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center"}}
-                  >
-                    ✕
-                  </button>
-                )}
+                  title="Search across all workspaces or only in current workspace"
+                >
+                  <option value="all">🌐 All Workspaces</option>
+                  <option value="current">🏛️ Current Workspace</option>
+                </select>
+
+                <div style={{display: "flex", alignItems: "center", gap: 8, flex: 1, minWidth: 160}}>
+                  <span style={{fontSize: "1.1rem"}}>🔍</span>
+                  <input
+                    type="text"
+                    placeholder={searchScope === "all" ? "Search member across all workspaces..." : `Search in ${activeCommittee}...`}
+                    value={searchTerm}
+                    onChange={(e) => setSearchTerm(e.target.value)}
+                    style={{width: "100%", border: "none", outline: "none", fontSize: ".9rem", fontWeight: 600, color: "var(--dt)", background: "transparent"}}
+                  />
+                  {searchTerm && (
+                    <button
+                      onClick={() => setSearchTerm("")}
+                      style={{background: "#eee", border: "none", color: "#555", borderRadius: "50%", width: 22, height: 22, fontSize: ".75rem", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0}}
+                    >
+                      ✕
+                    </button>
+                  )}
+                </div>
               </div>
 
               {/* Instant Search Results Dropdown Panel */}
@@ -3221,24 +3236,28 @@ function Team({ C, lang }) {
                 }}>
                   <div style={{display: "flex", justifyContent: "space-between", alignItems: "center", padding: "4px 8px 8px", borderBottom: "1px solid #f0f0f0", marginBottom: 8}}>
                     <span style={{fontSize: ".75rem", fontWeight: 700, color: "var(--sf)", textTransform: "uppercase", letterSpacing: 0.5}}>
-                      🎯 Search Results ({filteredItems.filter(isSearchMatch).length})
+                      🎯 Search Results ({matchingMembers.length}) {searchScope === "all" ? "• All Workspaces" : `• ${activeCommittee}`}
                     </span>
                     <button onClick={() => setSearchTerm("")} style={{background: "none", border: "none", color: "#888", fontSize: ".75rem", cursor: "pointer", fontWeight: 600}}>
                       Clear ✕
                     </button>
                   </div>
 
-                  {filteredItems.filter(isSearchMatch).length === 0 ? (
+                  {matchingMembers.length === 0 ? (
                     <div style={{padding: "20px 12px", textAlign: "center", color: "#888", fontSize: ".85rem"}}>
-                      No members found matching "{searchTerm}"
+                      No members found matching "{searchTerm}" {searchScope === "current" ? `in ${activeCommittee}` : "across workspaces"}
                     </div>
                   ) : (
                     <div style={{display: "flex", flexDirection: "column", gap: 6}}>
-                      {filteredItems.filter(isSearchMatch).map(member => (
+                      {matchingMembers.map(member => (
                         <div
                           key={member.id}
                           onClick={() => {
+                            if (member.committee && member.committee !== activeCommittee) {
+                              setActiveCommittee(member.committee);
+                            }
                             openModal(member);
+                            setSearchTerm("");
                           }}
                           style={{
                             display: "flex", alignItems: "center", gap: 12, padding: "8px 12px",
@@ -3257,6 +3276,9 @@ function Team({ C, lang }) {
                             </div>
                             <div style={{color: "var(--sf)", fontSize: ".72rem", fontWeight: 600, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis"}}>
                               {member.position || "Member"}
+                            </div>
+                            <div style={{fontSize: ".65rem", color: "#666", fontWeight: 600, marginTop: 2, display: "flex", alignItems: "center", gap: 4}}>
+                              <span>🌐 {member.committee || "CWC - Central Working Committee"}</span>
                             </div>
                           </div>
                           <div style={{fontSize: ".7rem", background: "#FFF0E6", color: "var(--sf)", padding: "4px 10px", borderRadius: 8, fontWeight: 700, flexShrink: 0}}>
@@ -8626,6 +8648,7 @@ function AdminTeam({ mob, C, setC, auth }) {
   const [draggedComm, setDraggedComm] = useState(null);
   const [draggedItemId, setDraggedItemId] = useState(null);
   const [searchTerm, setSearchTerm] = useState("");
+  const [searchScope, setSearchScope] = useState("all"); // "all" | "current"
 
   const isSearchMatch = (node) => {
     if (!searchTerm || !searchTerm.trim()) return false;
@@ -9982,33 +10005,117 @@ function AdminTeam({ mob, C, setC, auth }) {
       {layout === "hierarchy" ? (
         <div style={{background:"white",borderRadius:24,padding:mob?20:32,boxShadow:"0 12px 40px rgba(0,0,0,0.04)", overflowX:"auto", minHeight: 400}}>
           {/* Admin Search & Filter Bar */}
-          <div style={{
-            display: "flex", alignItems: "center", gap: 10, marginBottom: 16, width: "100%", flexWrap: "wrap",
-            background: "#F8FAFC", padding: "10px 14px", borderRadius: 16, border: "1px solid var(--bd)"
-          }}>
-            <div style={{display: "flex", alignItems: "center", gap: 8, flex: 1, minWidth: 200, background: "white", padding: "8px 14px", borderRadius: 12, border: "1px solid var(--bd)"}}>
-              <span style={{fontSize: "1.1rem"}}>🔍</span>
-              <input
-                type="text"
-                placeholder="Search member by name, position, committee, mobile..."
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                style={{width: "100%", border: "none", outline: "none", fontSize: ".9rem", fontWeight: 600, color: "var(--dt)", background: "transparent"}}
-              />
-              {searchTerm && (
-                <button onClick={() => setSearchTerm("")} style={{background: "none", border: "none", color: "#888", fontSize: "1rem", cursor: "pointer", padding: "0 4px"}}>✕</button>
-              )}
+          <div style={{position: "relative", width: "100%", marginBottom: 16, zIndex: 100}}>
+            <div style={{
+              display: "flex", alignItems: "center", gap: 8, background: "white",
+              padding: "8px 12px", borderRadius: 16,
+              border: "2px solid " + (searchTerm ? "var(--sf)" : "var(--bd)"),
+              boxShadow: searchTerm ? "0 8px 24px rgba(232,101,10,0.15)" : "0 2px 10px rgba(0,0,0,0.03)",
+              flexWrap: mob ? "wrap" : "nowrap"
+            }}>
+              {/* Search Scope Toggle */}
+              <select
+                value={searchScope}
+                onChange={(e) => setSearchScope(e.target.value)}
+                style={{
+                  padding: "6px 10px", borderRadius: 10, border: "1px solid var(--bd)",
+                  background: "#FFF6EE", color: "var(--sf)", fontWeight: 700, fontSize: ".78rem",
+                  cursor: "pointer", outline: "none", flexShrink: 0
+                }}
+                title="Search across all workspaces or only in current workspace"
+              >
+                <option value="all">🌐 All Workspaces</option>
+                <option value="current">🏛️ Current Workspace</option>
+              </select>
+
+              <div style={{display: "flex", alignItems: "center", gap: 8, flex: 1, minWidth: 160}}>
+                <span style={{fontSize: "1.1rem"}}>🔍</span>
+                <input
+                  type="text"
+                  placeholder={searchScope === "all" ? "Search member across all workspaces..." : `Search in ${activeCommittee}...`}
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  style={{width: "100%", border: "none", outline: "none", fontSize: ".9rem", fontWeight: 600, color: "var(--dt)", background: "transparent"}}
+                />
+                {searchTerm && (
+                  <button
+                    onClick={() => setSearchTerm("")}
+                    style={{background: "#eee", border: "none", color: "#555", borderRadius: "50%", width: 22, height: 22, fontSize: ".75rem", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0}}
+                  >
+                    ✕
+                  </button>
+                )}
+              </div>
             </div>
 
-            {searchTerm.trim() !== "" && (
-              <div style={{
-                fontSize: ".78rem", fontWeight: 700, color: "var(--sf)", background: "#FFF6EE",
-                padding: "6px 12px", borderRadius: 10, border: "1px solid rgba(232,101,10,0.3)",
-                display: "flex", alignItems: "center", gap: 6, whiteSpace: "nowrap"
-              }}>
-                <span>🎯 {filteredAdminItems.filter(isSearchMatch).length} matching {filteredAdminItems.filter(isSearchMatch).length === 1 ? "member" : "members"}</span>
-              </div>
-            )}
+            {/* Instant Search Results Dropdown Panel */}
+            {searchTerm.trim() !== "" && (() => {
+              const adminPool = searchScope === "current" ? filteredAdminItems.filter(i => !i.isSeparator) : items.filter(i => !i.isSeparator);
+              const adminMatches = adminPool.filter(isSearchMatch);
+              return (
+                <div style={{
+                  position: "absolute", top: "100%", left: 0, right: 0, marginTop: 6,
+                  background: "white", borderRadius: 16, border: "1px solid var(--bd)",
+                  boxShadow: "0 12px 36px rgba(0,0,0,0.18)", zIndex: 9999, maxHeight: 340, overflowY: "auto",
+                  padding: 10
+                }}>
+                  <div style={{display: "flex", justifyContent: "space-between", alignItems: "center", padding: "4px 8px 8px", borderBottom: "1px solid #f0f0f0", marginBottom: 8}}>
+                    <span style={{fontSize: ".75rem", fontWeight: 700, color: "var(--sf)", textTransform: "uppercase", letterSpacing: 0.5}}>
+                      🎯 Search Results ({adminMatches.length}) {searchScope === "all" ? "• All Workspaces" : `• ${activeCommittee}`}
+                    </span>
+                    <button onClick={() => setSearchTerm("")} style={{background: "none", border: "none", color: "#888", fontSize: ".75rem", cursor: "pointer", fontWeight: 600}}>
+                      Clear ✕
+                    </button>
+                  </div>
+
+                  {adminMatches.length === 0 ? (
+                    <div style={{padding: "20px 12px", textAlign: "center", color: "#888", fontSize: ".85rem"}}>
+                      No members found matching "{searchTerm}" {searchScope === "current" ? `in ${activeCommittee}` : "across workspaces"}
+                    </div>
+                  ) : (
+                    <div style={{display: "flex", flexDirection: "column", gap: 6}}>
+                      {adminMatches.map(member => (
+                        <div
+                          key={member.id}
+                          onClick={() => {
+                            if (member.committee && member.committee !== activeCommittee) {
+                              setActiveCommittee(member.committee);
+                            }
+                            setActiveNode(member);
+                            setSearchTerm("");
+                          }}
+                          style={{
+                            display: "flex", alignItems: "center", gap: 12, padding: "8px 12px",
+                            borderRadius: 12, border: "1px solid #f0f0f0", background: "#FDFDFD",
+                            cursor: "pointer", transition: "all 0.2s ease"
+                          }}
+                          onMouseEnter={e => e.currentTarget.style.background = "#FFF6EE"}
+                          onMouseLeave={e => e.currentTarget.style.background = "#FDFDFD"}
+                        >
+                          <div style={{width: 38, height: 38, borderRadius: "50%", overflow: "hidden", border: "1.5px solid #ddd", flexShrink: 0, background: "#eee"}}>
+                            {member.image ? <img src={member.image} alt={member.name} style={{width: "100%", height: "100%", objectFit: "cover"}} /> : <div style={{width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "1.1rem"}}>👤</div>}
+                          </div>
+                          <div style={{flex: 1, minWidth: 0}}>
+                            <div style={{fontWeight: 700, color: "var(--dt)", fontSize: ".88rem", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis"}}>
+                              {member.name}
+                            </div>
+                            <div style={{color: "var(--sf)", fontSize: ".72rem", fontWeight: 600, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis"}}>
+                              {member.position || "Member"}
+                            </div>
+                            <div style={{fontSize: ".65rem", color: "#666", fontWeight: 600, marginTop: 2, display: "flex", alignItems: "center", gap: 4}}>
+                              <span>🌐 {member.committee || "CWC - Central Working Committee"}</span>
+                            </div>
+                          </div>
+                          <div style={{fontSize: ".7rem", background: "#FFF0E6", color: "var(--sf)", padding: "4px 10px", borderRadius: 8, fontWeight: 700, flexShrink: 0}}>
+                            Edit Member ➔
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              );
+            })()}
           </div>
 
           <div style={{display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:20, flexWrap:"wrap", gap:12, paddingBottom:16, borderBottom:"1px solid #f0f0f0"}}>
