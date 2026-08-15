@@ -1742,12 +1742,38 @@ function Events({ C, lang, globalAuthToken, globalProfile, onPublicLogin, forceS
         console.warn("Firebase save skipped (Update Security Rules to enable database logging). Proceeding to WhatsApp.");
       }
       
+      // Generate clean Transaction ID if not present
+      const txId = formData["Transaction ID"] || formData["transactionId"] || formData["Tx ID"] || ("VG-" + Math.random().toString(36).substring(2, 8).toUpperCase());
+
+      // Sanitize form values: replace pipe '|' with space, and escape leading '+' to prevent Google Sheets #ERROR! formula parse error
+      const sanitizedFormData = {};
+      Object.entries(formData).forEach(([k, v]) => {
+        if (typeof v === 'string') {
+          // Replace pipe '|' with space (e.g., "jyoti|Pradeep|Parmar" -> "jyoti Pradeep Parmar")
+          let cleanV = v.replace(/\|/g, ' ').replace(/\s+/g, ' ').trim();
+          // Fix Google Sheets #ERROR! for phone numbers / strings starting with '+'
+          if (cleanV.startsWith('+')) {
+            cleanV = "'" + cleanV;
+          }
+          sanitizedFormData[k] = cleanV;
+        } else {
+          sanitizedFormData[k] = v;
+        }
+      });
+
+      // Ensure explicit Transaction ID fields are set
+      sanitizedFormData["Transaction ID"] = txId;
+      sanitizedFormData["transactionId"] = txId;
+
       // Option C: Google Sheets & Drive Integration via Webhook
       if (selectedEvent?.event?.googleSheetsWebhookUrl) {
         try {
           const payload = {
+            "Transaction ID": txId,
+            transactionId: txId,
+            txId: txId,
             eventName: selectedEvent.event.title,
-            ...formData
+            ...sanitizedFormData
           };
           
           if (selectedEvent.event.saveToGoogleDrive) {
