@@ -2829,7 +2829,7 @@ function Team({ C, lang }) {
             )}
 
             {rows.map((rowItems, rIdx) => {
-              const rLabel = rowLabelsList.length > 1 ? rowLabelsList[rIdx + 1] : rowLabelsList[rIdx];
+              const rLabel = rowLabelsList[rIdx] || "";
               return (
                 <div key={`h_row_wrap_${rIdx}`} style={{display:"flex", flexDirection:"column", alignItems:"center", width:"100%", position:"relative", zIndex: 2}}>
                   {/* Row Group Identity Label Badge */}
@@ -9123,6 +9123,28 @@ function AdminTeam({ mob, C, setC, auth }) {
 
   const removeNode = (id) => removeNodeAndSubtree(id);
 
+  const splitRowAfterCard = (node, count) => {
+    const currentPattern = C.commRowWrapPattern?.[activeCommittee] ?? C.rowWrapPattern ?? "";
+    const currentLabels = C.commRowLabels?.[activeCommittee] ?? C.rowLabelsStr ?? "";
+    
+    const labelInput = prompt(`✂️ Split Row after Card #${count}.\n\nEnter group label for this section (e.g. Trustee, Mantri, Active Member):`, "Mantri");
+    if (labelInput === null) return;
+    
+    const newPattern = currentPattern ? `${currentPattern}, ${count}` : `${count}`;
+    const newLabels = currentLabels ? `${currentLabels}, ${labelInput.trim()}` : `${labelInput.trim()}`;
+    
+    const newC = {
+      ...C,
+      rowWrapPattern: newPattern,
+      commRowWrapPattern: { ...(C.commRowWrapPattern || {}), [activeCommittee]: newPattern },
+      rowLabelsStr: newLabels,
+      commRowLabels: { ...(C.commRowLabels || {}), [activeCommittee]: newLabels }
+    };
+    setC(newC);
+    saveToFb(newC);
+    setMenuNode(null);
+  };
+
   const updateActiveNode = (field, val) => {
     setActiveNode(prev => {
       if (!prev) return null;
@@ -9236,7 +9258,7 @@ function AdminTeam({ mob, C, setC, auth }) {
 
             {rows.map((rowItems, rIdx) => {
               const isRowActive = rowItems.some(n => menuNode?.id === n.id);
-              const rLabel = rowLabelsList.length > 1 ? rowLabelsList[rIdx + 1] : rowLabelsList[rIdx];
+              const rLabel = rowLabelsList[rIdx] || "";
               return (
                 <div key={`tree_row_wrap_${rIdx}`} style={{display:"flex", flexDirection:"column", alignItems:"center", width:"100%", position:"relative", zIndex: isRowActive ? 999 : 2}}>
                   {/* Row Group Identity Label Badge */}
@@ -9345,6 +9367,7 @@ function AdminTeam({ mob, C, setC, auth }) {
                               <button onClick={()=>addSibling(node, -1)} className="gi" style={{display:"block", width:"100%", padding:"6px", fontSize:".75rem", background:"#f9f9f9", border:"none", borderRadius:4, marginBottom:4, cursor:"pointer", textAlign:"left"}}>⬅️ Add Sibling (Left)</button>
                               <button onClick={()=>addSibling(node, 1)} className="gi" style={{display:"block", width:"100%", padding:"6px", fontSize:".75rem", background:"#f9f9f9", border:"none", borderRadius:4, marginBottom:4, cursor:"pointer", textAlign:"left"}}>➡️ Add Sibling (Right)</button>
                               <button onClick={()=>addSubordinate(node)} className="gi" style={{display:"block", width:"100%", padding:"6px", fontSize:".75rem", background:"#f9f9f9", border:"none", borderRadius:4, marginBottom:4, cursor:"pointer", textAlign:"left"}}>⬇️ Add Subordinate</button>
+                              <button onClick={()=>splitRowAfterCard(node, globalIdx + 1)} className="gi" style={{display:"block", width:"100%", padding:"6px 8px", fontSize:".75rem", background:"#FFF6EE", color:"var(--sf)", border:"1px solid rgba(232,101,10,0.3)", borderRadius:4, marginBottom:4, cursor:"pointer", textAlign:"left", fontWeight:700}}>✂️ Split Row After Card #{globalIdx + 1}</button>
                               <div style={{height:1, background:"#eee", margin:"6px 0"}}/>
                               <div style={{fontSize:".65rem", color:"#888", marginBottom:4, textAlign:"center", fontWeight:700}}>DELETE ACTIONS</div>
                               <button onClick={()=>removeSingleNodeOnly(node.id)} style={{display:"block", width:"100%", padding:"6px", fontSize:".75rem", background:"#FFF5F5", color:"#C53030", border:"none", borderRadius:4, marginBottom:4, cursor:"pointer", textAlign:"left"}}>🗑️ Delete Only This Role</button>
