@@ -2735,9 +2735,11 @@ function Team({ C, lang }) {
       return res;
     };
 
-    // Compact Matrix Layout for Large Hierarchies (> 4 children)
-    if (children.length > 4) {
-      const cols = mob ? 2 : 4;
+    const threshold = C.maxHorizontalCards || 5;
+
+    // Compact Matrix Layout for Large Hierarchies (> threshold children)
+    if (children.length > threshold && threshold < 999) {
+      const cols = mob ? 2 : Math.min(threshold, 5);
       const rows = chunkArray(children, cols);
 
       return (
@@ -9011,6 +9013,106 @@ function AdminTeam({ mob, C, setC, auth }) {
     
     if(children.length === 0) return null;
 
+    const chunkArray = (arr, size) => {
+      const res = [];
+      for (let i = 0; i < arr.length; i += size) {
+        res.push(arr.slice(i, i + size));
+      }
+      return res;
+    };
+
+    const threshold = C.maxHorizontalCards || 5;
+
+    // Compact Matrix Layout for Large Admin Hierarchies (> threshold children)
+    if (children.length > threshold && threshold < 999) {
+      const cols = mob ? 2 : Math.min(threshold, 5);
+      const rows = chunkArray(children, cols);
+
+      return (
+        <div style={{display:"flex", flexDirection:"column", alignItems:"center", position:"relative", paddingTop: parentId ? (mob?16:20) : 0, width:"100%"}}>
+          {/* Central Top Connector line from Parent */}
+          {parentId && !mob && (
+            <div style={{position:"absolute", top: 0, left: "50%", width: 2, height: 20, background: "var(--sf)", transform:"translateX(-50%)", zIndex:1}} />
+          )}
+
+          {/* Container holding rows */}
+          <div style={{position:"relative", display:"flex", flexDirection:"column", gap: mob?20:28, alignItems:"center", width:"100%", marginTop: (parentId && !mob) ? 20 : 0}}>
+            {/* Central Vertical Trunk Line extending through rows */}
+            {!mob && rows.length > 1 && (
+              <div style={{
+                position:"absolute", top: 0, bottom: 40, left: "50%", width: 2,
+                background: "var(--sf)", transform:"translateX(-50%)", zIndex: 1
+              }} />
+            )}
+
+            {rows.map((rowItems, rIdx) => (
+              <div key={`tree_row_${rIdx}`} style={{
+                display:"flex", gap: mob?"8px":"16px", justifyContent:"center",
+                position:"relative", zIndex: 2, width:"100%"
+              }}>
+                {/* Horizontal Connector Line spanning across this row */}
+                {!mob && rowItems.length > 1 && (
+                  <div style={{
+                    position:"absolute", top: 0, height: 2, background: "var(--sf)",
+                    left: "10%", right: "10%", zIndex: 1
+                  }} />
+                )}
+
+                {rowItems.map((node, i) => (
+                  <div key={node.id} style={{display:"flex", flexDirection:"column", alignItems:"center", position:"relative"}}>
+                    {/* Vertical Connector Line from row bar to card */}
+                    {!mob && (
+                      <div style={{position:"absolute", top: 0, left: "50%", width: 2, height: 16, background: "var(--sf)", transform:"translateX(-50%)", zIndex:1}} />
+                    )}
+
+                    {/* Node Card */}
+                    <div style={{marginTop: !mob ? 16 : 0, position:"relative", display:"flex", flexDirection:"column", alignItems:"center"}}>
+                      {/* Parent connector for children under this node */}
+                      {!mob && filteredAdminItems.find(x=>x.parentId===node.id) && (
+                        <div style={{position:"absolute", bottom: -20, left: "50%", width: 2, height: 20, background: "var(--sf)", transform:"translateX(-50%)", zIndex:1}} />
+                      )}
+
+                      <div className="gi" style={{
+                        background:"white", padding: "16px 10px 12px 10px", borderRadius: 16, borderTop: "4px solid var(--sf)", 
+                        width: 160, textAlign:"center", boxShadow:"0 8px 24px rgba(0,0,0,0.06)",
+                        transition:"all .2s ease", position:"relative", zIndex:2, cursor:"pointer"
+                      }} onClick={() => setActiveNode(node)}>
+
+                        {/* Control Bar on Top of Role Card */}
+                        <div style={{position:"absolute", top: 6, left: 6, right: 6, display:"flex", justifyContent:"space-between", alignItems:"center", zIndex:12}} onClick={e=>e.stopPropagation()}>
+                          {children.length > 1 ? (
+                            <div style={{display:"flex", gap: 3}}>
+                              <button onClick={()=>moveSibling(node, -1)} disabled={i===0} style={{width:22, height:22, borderRadius:6, background: i===0 ? "#F0F0F0" : "#EBF3FF", color: i===0 ? "#CCC" : "var(--dt)", border:"1px solid rgba(0,0,0,0.08)", fontSize:".65rem", cursor: i===0 ? "default" : "pointer", display:"flex", alignItems:"center", justifyContent:"center"}} title="Move Role Left">⬅️</button>
+                              <button onClick={()=>moveSibling(node, 1)} disabled={i===children.length-1} style={{width:22, height:22, borderRadius:6, background: i===children.length-1 ? "#F0F0F0" : "#EBF3FF", color: i===children.length-1 ? "#CCC" : "var(--dt)", border:"1px solid rgba(0,0,0,0.08)", fontSize:".65rem", cursor: i===children.length-1 ? "default" : "pointer", display:"flex", alignItems:"center", justifyContent:"center"}} title="Move Role Right">➡️</button>
+                            </div>
+                          ) : <div />}
+                          <button onClick={(e)=>{e.stopPropagation(); removeSingleNodeOnly(node.id);}} style={{width:22, height:22, borderRadius:6, background:"#FFF0F0", color:"#D32F2F", border:"1px solid #FFCDCD", fontSize:".65rem", cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"center"}} title="Delete Role">🗑️</button>
+                        </div>
+
+                        <div style={{width:50, height:50, margin:"16px auto 6px", borderRadius:"50%", overflow:"hidden", border:"2px solid #f0f0f0", background:"#eee"}}>
+                          {node.image ? <img src={node.image} alt={node.name} style={{width:"100%", height:"100%", objectFit:"cover"}}/> : <div style={{width:"100%", height:"100%", display:"flex", alignItems:"center", justifyContent:"center", fontSize:"1.5rem"}}>👤</div>}
+                        </div>
+                        <div style={{fontWeight:700, fontSize:".85rem", color:"var(--dt)", whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis"}}>{node.name || "Name"}</div>
+                        <div style={{fontSize:".7rem", color:"var(--sf)"}}>{node.position || "Position"}</div>
+                        {node.committee && <div style={{fontSize:".6rem", background:"#F0F4FF", color:"var(--dt)", borderRadius:6, padding:"1px 4px", marginTop:3, fontWeight:600, whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis"}}>{node.committee}</div>}
+                        
+                        <button onClick={(e)=>{e.stopPropagation(); setMenuNode(node);}} style={{position:"absolute", bottom: -12, right: -12, width: 26, height: 26, borderRadius:"50%", background:"var(--dt)", color:"white", border:"2px solid white", cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"center", fontSize:"1rem", zIndex:10, boxShadow:"0 2px 8px rgba(0,0,0,0.15)"}} title="Add Role relative (Boss/Sibling/Subordinate)">+</button>
+                      </div>
+                    </div>
+
+                    {/* Recursively render children under this node */}
+                    <div style={{marginTop: mob?12:20, display:"flex", justifyContent:"center", width:"100%"}}>
+                      {renderTree(node.id)}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ))}
+          </div>
+        </div>
+      );
+    }
+
     return (
       <div style={{display:"flex", gap: "20px", justifyContent:"center", paddingTop: parentId ? 20 : 0, position:"relative"}}>
         {children.map((node, i) => (
@@ -9350,7 +9452,39 @@ function AdminTeam({ mob, C, setC, auth }) {
       </div>
 
       {layout === "hierarchy" ? (
-        <div style={{background:"white",borderRadius:24,padding:32,boxShadow:"0 12px 40px rgba(0,0,0,0.04)", overflowX:"auto", minHeight: 400}}>
+        <div style={{background:"white",borderRadius:24,padding:mob?20:32,boxShadow:"0 12px 40px rgba(0,0,0,0.04)", overflowX:"auto", minHeight: 400}}>
+          <div style={{display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:20, flexWrap:"wrap", gap:12, paddingBottom:16, borderBottom:"1px solid #f0f0f0"}}>
+            <div>
+              <h3 style={{fontFamily:"'Playfair Display',serif", color:"var(--dt)", margin:0, fontSize:"1.3rem", fontWeight:700}}>Organization Chart ({activeCommittee})</h3>
+              <p style={{fontSize:".85rem", color:"var(--mu)", marginTop:2}}>Configure hierarchy layout and set maximum cards before wrapping to vertical matrix.</p>
+            </div>
+            <div style={{display:"flex", alignItems:"center", gap:10}}>
+              <label style={{fontSize:".85rem", fontWeight:700, color:"var(--dt)", display:"flex", alignItems:"center", gap:8, background:"#F7FAFC", padding:"6px 14px", borderRadius:12, border:"1px solid var(--bd)"}}>
+                <span>📐 Wrap to Vertical Matrix after:</span>
+                <select
+                  value={C.maxHorizontalCards || 5}
+                  onChange={(e) => {
+                    const val = parseInt(e.target.value);
+                    const newC = { ...C, maxHorizontalCards: val };
+                    setC(newC);
+                    saveToFb(newC);
+                  }}
+                  style={{
+                    padding:"4px 10px", borderRadius:8, border:"1px solid var(--bd)",
+                    fontSize:".85rem", fontWeight:700, color:"var(--dt)", background:"white", cursor:"pointer"
+                  }}
+                >
+                  <option value={3}>3 Cards (Wrap &gt; 3)</option>
+                  <option value={4}>4 Cards (Wrap &gt; 4)</option>
+                  <option value={5}>5 Cards (Default - Wrap &gt; 5)</option>
+                  <option value={6}>6 Cards (Wrap &gt; 6)</option>
+                  <option value={8}>8 Cards (Wrap &gt; 8)</option>
+                  <option value={10}>10 Cards (Wrap &gt; 10)</option>
+                  <option value={999}>Single Line (No Wrap)</option>
+                </select>
+              </label>
+            </div>
+          </div>
           {filteredAdminItems.filter(i => i.parentId === null).length === 0 ? (
             <div style={{textAlign:"center", padding: 60}}>
               <div style={{fontSize:"3rem", marginBottom:16}}>🌳</div>
