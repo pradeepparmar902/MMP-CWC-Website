@@ -2705,6 +2705,7 @@ function Team({ C, lang }) {
     : (storedCommittees[0] || "Central Working Committee (CWC)");
 
   const [activeCommittee, setActiveCommittee] = useState(initialDefault);
+  const [searchTerm, setSearchTerm] = useState("");
 
   useEffect(() => {
     if (C.defaultCommittee && storedCommittees.includes(C.defaultCommittee)) {
@@ -2721,6 +2722,20 @@ function Team({ C, lang }) {
   const primaryCommittee = initialDefault;
   const allCommittees = ["All", ...storedCommittees];
 
+  const isSearchMatch = (node) => {
+    if (!searchTerm || !searchTerm.trim()) return false;
+    const t = searchTerm.toLowerCase().trim();
+    return (
+      (node.name || "").toLowerCase().includes(t) ||
+      (node.position || "").toLowerCase().includes(t) ||
+      (node.committee || "").toLowerCase().includes(t) ||
+      (node.mobile || "").toLowerCase().includes(t) ||
+      (node.profession || "").toLowerCase().includes(t) ||
+      (node.qualification || "").toLowerCase().includes(t) ||
+      (node.address || "").toLowerCase().includes(t)
+    );
+  };
+
   const getCommitteeCount = (comm) => {
     if (comm === "All") return items.filter(i => !i.isSeparator).length;
     return items.filter(i => !i.isSeparator && (i.committee || primaryCommittee) === comm).length;
@@ -2729,6 +2744,8 @@ function Team({ C, lang }) {
   const filteredItems = activeCommittee === "All"
     ? items
     : items.filter(i => (i.committee || primaryCommittee) === activeCommittee);
+  
+  const searchMatchCount = filteredItems.filter(isSearchMatch).length;
 
   const plainItems = filteredItems.filter(i => i.parentId === "plain" || typeof i.parentId === "undefined");
   const sortedPlainItems = [...plainItems].sort((a,b)=>(a.order||0)-(b.order||0));
@@ -3075,67 +3092,127 @@ function Team({ C, lang }) {
             <div style={{fontSize: ".75rem", fontWeight: 700, color: "var(--sf)", textTransform: "uppercase", letterSpacing: 1.5, marginBottom: 14, paddingLeft: 4}}>
               Committees & Workspaces
             </div>
-            <div style={{
-              display: "flex",
-              flexDirection: mob ? "row" : "column",
-              gap: mob ? 8 : 10,
-              overflowX: mob ? "auto" : "visible",
-              paddingBottom: mob ? 10 : 0,
-              WebkitOverflowScrolling: "touch",
-              scrollbarWidth: "none"
-            }}>
-              {allCommittees.map(comm => {
-                const count = getCommitteeCount(comm);
-                if (comm !== "All" && count === 0) return null;
-                const isActive = activeCommittee === comm;
-                const nameLower = comm.toLowerCase();
-                const icon = comm === "All" ? "🌐" : (nameLower.includes("cwc") ? "🏛️" : (nameLower.includes("education") ? "📚" : (nameLower.includes("marriage") ? "💒" : "💼")));
+            {mob ? (
+              <div style={{width: "100%"}}>
+                <select
+                  value={activeCommittee}
+                  onChange={(e) => setActiveCommittee(e.target.value)}
+                  style={{
+                    width: "100%",
+                    padding: "12px 14px",
+                    borderRadius: 14,
+                    border: "2px solid var(--sf)",
+                    background: "linear-gradient(135deg, #FFF6EE 0%, #FFFFFF 100%)",
+                    color: "var(--dt)",
+                    fontWeight: 700,
+                    fontSize: ".92rem",
+                    boxShadow: "0 4px 14px rgba(232,101,10,0.15)",
+                    cursor: "pointer",
+                    outline: "none"
+                  }}
+                >
+                  {allCommittees.map(comm => {
+                    const count = getCommitteeCount(comm);
+                    if (comm !== "All" && count === 0) return null;
+                    const nameLower = comm.toLowerCase();
+                    const icon = comm === "All" ? "🌐" : (nameLower.includes("cwc") ? "🏛️" : (nameLower.includes("education") ? "📚" : (nameLower.includes("marriage") ? "💒" : "💼")));
+                    return (
+                      <option key={comm} value={comm}>
+                        {icon} {comm} ({count} {count === 1 ? "Member" : "Members"})
+                      </option>
+                    );
+                  })}
+                </select>
+              </div>
+            ) : (
+              <div style={{
+                display: "flex",
+                flexDirection: "column",
+                gap: 10
+              }}>
+                {allCommittees.map(comm => {
+                  const count = getCommitteeCount(comm);
+                  if (comm !== "All" && count === 0) return null;
+                  const isActive = activeCommittee === comm;
+                  const nameLower = comm.toLowerCase();
+                  const icon = comm === "All" ? "🌐" : (nameLower.includes("cwc") ? "🏛️" : (nameLower.includes("education") ? "📚" : (nameLower.includes("marriage") ? "💒" : "💼")));
 
-                return (
-                  <button
-                    key={comm}
-                    onClick={() => setActiveCommittee(comm)}
-                    title={comm}
-                    style={{
-                      width: mob ? "auto" : "100%",
-                      flexShrink: 0,
-                      whiteSpace: mob ? "nowrap" : "normal",
-                      padding: mob ? "9px 16px" : "12px 16px",
-                      borderRadius: mob ? 20 : 16,
-                      border: isActive ? "2px solid var(--sf)" : "1px solid var(--bd)",
-                      background: isActive ? "var(--sf)" : "#FDFDFD",
-                      color: isActive ? "white" : "var(--dt)",
-                      fontWeight: isActive ? 700 : 600,
-                      fontSize: mob ? ".82rem" : ".88rem",
-                      cursor: "pointer",
-                      transition: "all 0.2s ease",
-                      display: "inline-flex",
-                      alignItems: "center",
-                      justifyContent: "space-between",
-                      gap: 8,
-                      boxShadow: isActive ? "0 6px 18px rgba(232,101,10,0.25)" : "none",
-                      textAlign: "left"
-                    }}
-                  >
-                    <div style={{display: "flex", alignItems: "center", gap: 8, minWidth: 0}}>
-                      <span style={{fontSize: mob ? "1rem" : "1.1rem", flexShrink: 0}}>{icon}</span>
-                      <span style={{whiteSpace: mob ? "nowrap" : "normal", wordBreak: mob ? "normal" : "break-word", lineHeight: 1.35}}>{comm}</span>
-                    </div>
-                    <span style={{
-                      background: isActive ? "rgba(255,255,255,0.25)" : "#F0F0F0",
-                      color: isActive ? "white" : "var(--mu)",
-                      padding: "2px 8px", borderRadius: 12, fontSize: ".72rem", fontWeight: 700, flexShrink: 0
-                    }}>
-                      {count}
-                    </span>
-                  </button>
-                );
-              })}
-            </div>
+                  return (
+                    <button
+                      key={comm}
+                      onClick={() => setActiveCommittee(comm)}
+                      title={comm}
+                      style={{
+                        width: "100%",
+                        flexShrink: 0,
+                        whiteSpace: "normal",
+                        padding: "12px 16px",
+                        borderRadius: 16,
+                        border: isActive ? "2px solid var(--sf)" : "1px solid var(--bd)",
+                        background: isActive ? "var(--sf)" : "#FDFDFD",
+                        color: isActive ? "white" : "var(--dt)",
+                        fontWeight: isActive ? 700 : 600,
+                        fontSize: ".88rem",
+                        cursor: "pointer",
+                        transition: "all 0.2s ease",
+                        display: "inline-flex",
+                        alignItems: "center",
+                        justifyContent: "space-between",
+                        gap: 8,
+                        boxShadow: isActive ? "0 6px 18px rgba(232,101,10,0.25)" : "none",
+                        textAlign: "left"
+                      }}
+                    >
+                      <div style={{display: "flex", alignItems: "center", gap: 8, minWidth: 0}}>
+                        <span style={{fontSize: "1.1rem", flexShrink: 0}}>{icon}</span>
+                        <span style={{whiteSpace: "normal", wordBreak: "break-word", lineHeight: 1.35}}>{comm}</span>
+                      </div>
+                      <span style={{
+                        background: isActive ? "rgba(255,255,255,0.25)" : "#F0F0F0",
+                        color: isActive ? "white" : "var(--mu)",
+                        padding: "2px 8px", borderRadius: 12, fontSize: ".72rem", fontWeight: 700, flexShrink: 0
+                      }}>
+                        {count}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
           </div>
 
           {/* Right Panel (Hierarchy Area - Clean Single Container) */}
           <div style={{flex: 1, minWidth: 0, width: "100%"}}>
+            {/* Search & Filter Bar */}
+            <div style={{
+              display: "flex", alignItems: "center", gap: 10, marginBottom: 16, width: "100%", flexWrap: "wrap",
+              background: "#F8FAFC", padding: "10px 14px", borderRadius: 16, border: "1px solid var(--bd)"
+            }}>
+              <div style={{display: "flex", alignItems: "center", gap: 8, flex: 1, minWidth: 200, background: "white", padding: "8px 14px", borderRadius: 12, border: "1px solid var(--bd)"}}>
+                <span style={{fontSize: "1.1rem"}}>🔍</span>
+                <input
+                  type="text"
+                  placeholder="Search member by name, position, committee, mobile..."
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  style={{width: "100%", border: "none", outline: "none", fontSize: ".9rem", fontWeight: 600, color: "var(--dt)", background: "transparent"}}
+                />
+                {searchTerm && (
+                  <button onClick={() => setSearchTerm("")} style={{background: "none", border: "none", color: "#888", fontSize: "1rem", cursor: "pointer", padding: "0 4px"}}>✕</button>
+                )}
+              </div>
+
+              {searchTerm.trim() !== "" && (
+                <div style={{
+                  fontSize: ".78rem", fontWeight: 700, color: "var(--sf)", background: "#FFF6EE",
+                  padding: "6px 12px", borderRadius: 10, border: "1px solid rgba(232,101,10,0.3)",
+                  display: "flex", alignItems: "center", gap: 6, whiteSpace: "nowrap"
+                }}>
+                  <span>🎯 {searchMatchCount} matching {searchMatchCount === 1 ? "member" : "members"}</span>
+                </div>
+              )}
+            </div>
+
             <div style={{position:"relative", width: "100%"}}>
               <div style={{overflow:"auto", maxHeight:"580px", padding: mob ? "16px" : "24px", background:"white", borderRadius:24, border:"1px solid var(--bd)", boxShadow:"inset 0 4px 24px rgba(0,0,0,0.03)"}}>
                 
@@ -8491,6 +8568,21 @@ function AdminTeam({ mob, C, setC, auth }) {
   const [activeCommittee, setActiveCommittee] = useState("All");
   const [draggedComm, setDraggedComm] = useState(null);
   const [draggedItemId, setDraggedItemId] = useState(null);
+  const [searchTerm, setSearchTerm] = useState("");
+
+  const isSearchMatch = (node) => {
+    if (!searchTerm || !searchTerm.trim()) return false;
+    const t = searchTerm.toLowerCase().trim();
+    return (
+      (node.name || "").toLowerCase().includes(t) ||
+      (node.position || "").toLowerCase().includes(t) ||
+      (node.committee || "").toLowerCase().includes(t) ||
+      (node.mobile || "").toLowerCase().includes(t) ||
+      (node.profession || "").toLowerCase().includes(t) ||
+      (node.qualification || "").toLowerCase().includes(t) ||
+      (node.address || "").toLowerCase().includes(t)
+    );
+  };
 
   const [customModal, setCustomModal] = useState(null);
 
@@ -9387,6 +9479,7 @@ function AdminTeam({ mob, C, setC, auth }) {
                   {rowItems.map((node, i) => {
                     const isNodeActive = menuNode?.id === node.id;
                     const globalIdx = children.indexOf(node);
+                    const matched = isSearchMatch(node);
                     return (
                       <div key={node.id} style={{display:"flex", flexDirection:"column", alignItems:"center", position:"relative", zIndex: isNodeActive ? 999 : 1, width:"100%", minWidth:0}}>
                         {/* Vertical Connector Line from row bar to card */}
@@ -9400,10 +9493,12 @@ function AdminTeam({ mob, C, setC, auth }) {
                           )}
 
                           <div className="gi" style={{
-                            background: draggedItemId === node.id ? "#FFF7ED" : "white",
-                            padding: mob?"10px 4px":12, borderRadius: 14, borderTop: "3px solid var(--sf)",
-                            border: draggedItemId && draggedItemId !== node.id && filteredAdminItems.find(x => x.id === draggedItemId)?.parentId === node.parentId ? "2px dashed var(--sf)" : undefined,
-                            width: "100%", minWidth: 0, boxSizing:"border-box", textAlign:"center", boxShadow:"0 8px 24px rgba(0,0,0,0.06)",
+                            background: matched ? "linear-gradient(135deg, #FFF6EE 0%, #FFFFFF 100%)" : (draggedItemId === node.id ? "#FFF7ED" : "white"),
+                            padding: mob?"10px 4px":12, borderRadius: 14,
+                            borderTop: matched ? "4px solid var(--sf)" : "3px solid var(--sf)",
+                            border: matched ? "2px solid var(--sf)" : (draggedItemId && draggedItemId !== node.id && filteredAdminItems.find(x => x.id === draggedItemId)?.parentId === node.parentId ? "2px dashed var(--sf)" : undefined),
+                            width: "100%", minWidth: 0, boxSizing:"border-box", textAlign:"center",
+                            boxShadow: matched ? "0 8px 26px rgba(232,101,10,0.3)" : "0 8px 24px rgba(0,0,0,0.06)",
                             transition:"transform .3s", position:"relative", zIndex:2, cursor:"grab",
                             opacity: draggedItemId === node.id ? 0.5 : 1
                           }}
@@ -9829,6 +9924,36 @@ function AdminTeam({ mob, C, setC, auth }) {
 
       {layout === "hierarchy" ? (
         <div style={{background:"white",borderRadius:24,padding:mob?20:32,boxShadow:"0 12px 40px rgba(0,0,0,0.04)", overflowX:"auto", minHeight: 400}}>
+          {/* Admin Search & Filter Bar */}
+          <div style={{
+            display: "flex", alignItems: "center", gap: 10, marginBottom: 16, width: "100%", flexWrap: "wrap",
+            background: "#F8FAFC", padding: "10px 14px", borderRadius: 16, border: "1px solid var(--bd)"
+          }}>
+            <div style={{display: "flex", alignItems: "center", gap: 8, flex: 1, minWidth: 200, background: "white", padding: "8px 14px", borderRadius: 12, border: "1px solid var(--bd)"}}>
+              <span style={{fontSize: "1.1rem"}}>🔍</span>
+              <input
+                type="text"
+                placeholder="Search member by name, position, committee, mobile..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                style={{width: "100%", border: "none", outline: "none", fontSize: ".9rem", fontWeight: 600, color: "var(--dt)", background: "transparent"}}
+              />
+              {searchTerm && (
+                <button onClick={() => setSearchTerm("")} style={{background: "none", border: "none", color: "#888", fontSize: "1rem", cursor: "pointer", padding: "0 4px"}}>✕</button>
+              )}
+            </div>
+
+            {searchTerm.trim() !== "" && (
+              <div style={{
+                fontSize: ".78rem", fontWeight: 700, color: "var(--sf)", background: "#FFF6EE",
+                padding: "6px 12px", borderRadius: 10, border: "1px solid rgba(232,101,10,0.3)",
+                display: "flex", alignItems: "center", gap: 6, whiteSpace: "nowrap"
+              }}>
+                <span>🎯 {filteredAdminItems.filter(isSearchMatch).length} matching {filteredAdminItems.filter(isSearchMatch).length === 1 ? "member" : "members"}</span>
+              </div>
+            )}
+          </div>
+
           <div style={{display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:20, flexWrap:"wrap", gap:12, paddingBottom:16, borderBottom:"1px solid #f0f0f0"}}>
             <div>
               <h3 style={{fontFamily:"'Playfair Display',serif", color:"var(--dt)", margin:0, fontSize:"1.3rem", fontWeight:700}}>Organization Chart ({activeCommittee})</h3>
