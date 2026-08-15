@@ -3275,14 +3275,19 @@ function Team({ C, lang }) {
                             {member.image ? <img src={member.image} alt={member.name} style={{width: "100%", height: "100%", objectFit: "cover"}} /> : <div style={{width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "1.1rem"}}>👤</div>}
                           </div>
                           <div style={{flex: 1, minWidth: 0}}>
-                            <div style={{fontWeight: 700, color: "var(--dt)", fontSize: ".88rem", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis"}}>
+                            <div style={{fontWeight: 700, color: "var(--dt)", fontSize: ".92rem", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis"}}>
                               {member.name}
                             </div>
-                            <div style={{color: "var(--sf)", fontSize: ".72rem", fontWeight: 600, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis"}}>
+                            <div style={{color: "var(--sf)", fontSize: ".76rem", fontWeight: 700, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", marginTop: 1}}>
                               {member.position || "Member"}
                             </div>
-                            <div style={{fontSize: ".65rem", color: "#666", fontWeight: 600, marginTop: 2, display: "flex", alignItems: "center", gap: 4}}>
-                              <span>🌐 {member.committee || "CWC - Central Working Committee"}</span>
+                            <div style={{
+                              display: "inline-flex", alignItems: "center", gap: 6, padding: "3px 10px", borderRadius: 8,
+                              background: "linear-gradient(135deg, #FFFDF9 0%, #FFF7F0 100%)", border: "1px solid rgba(232,101,10,0.3)",
+                              color: "var(--dt)", fontWeight: 700, fontSize: ".75rem", marginTop: 4
+                            }}>
+                              <span>🏛️ Workspace:</span>
+                              <span style={{color: "var(--sf)", fontWeight: 800}}>{member.committee || primaryCommittee}</span>
                             </div>
                           </div>
                           <div style={{fontSize: ".7rem", background: "#FFF0E6", color: "var(--sf)", padding: "4px 10px", borderRadius: 8, fontWeight: 700, flexShrink: 0}}>
@@ -3400,8 +3405,18 @@ function Team({ C, lang }) {
             </div>
             
             <div style={{width:mob?"100%":"55%", padding:mob?24:40, overflowY:"auto", display:"flex", flexDirection:"column", justifyContent:"center"}}>
-              <h2 style={{fontFamily:"'Playfair Display',serif", color:"var(--dt)", margin:"0 0 8px 0", fontSize:"2rem"}}>{activeMember.name}</h2>
-              <div style={{color:"var(--sf)", fontWeight:700, fontSize:"1.1rem", textTransform:"uppercase", letterSpacing:1, marginBottom:24}}>{activeMember.position}</div>
+              <h2 style={{fontFamily:"'Playfair Display',serif", color:"var(--dt)", margin:"0 0 4px 0", fontSize:"2rem"}}>{activeMember.name}</h2>
+              <div style={{color:"var(--sf)", fontWeight:700, fontSize:"1.1rem", textTransform:"uppercase", letterSpacing:1, marginBottom:12}}>{activeMember.position}</div>
+              
+              <div style={{
+                display: "inline-flex", alignItems: "center", gap: 6, padding: "6px 14px", borderRadius: 12,
+                background: "linear-gradient(135deg, #FFFDF9 0%, #FFF7F0 100%)", border: "1px solid rgba(232,101,10,0.35)",
+                color: "var(--dt)", fontWeight: 700, fontSize: ".88rem", marginBottom: 20, width: "fit-content",
+                boxShadow: "0 2px 8px rgba(232,101,10,0.08)"
+              }}>
+                <span>🏛️ Workspace:</span>
+                <span style={{color: "var(--sf)", fontWeight: 800}}>{activeMember.committee || primaryCommittee}</span>
+              </div>
               
               <div style={{background:"#f8f9fa", padding:20, borderRadius:16, border:"1px solid var(--bd)", display:"flex", flexDirection:"column", gap:14}}>
                 <h4 style={{margin:"0 0 4px 0", color:"var(--dt)", fontSize:"1.05rem", fontWeight:700}}>Member Profile Details</h4>
@@ -10100,14 +10115,19 @@ function AdminTeam({ mob, C, setC, auth }) {
                             {member.image ? <img src={member.image} alt={member.name} style={{width: "100%", height: "100%", objectFit: "cover"}} /> : <div style={{width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "1.1rem"}}>👤</div>}
                           </div>
                           <div style={{flex: 1, minWidth: 0}}>
-                            <div style={{fontWeight: 700, color: "var(--dt)", fontSize: ".88rem", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis"}}>
+                            <div style={{fontWeight: 700, color: "var(--dt)", fontSize: ".92rem", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis"}}>
                               {member.name}
                             </div>
-                            <div style={{color: "var(--sf)", fontSize: ".72rem", fontWeight: 600, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis"}}>
+                            <div style={{color: "var(--sf)", fontSize: ".76rem", fontWeight: 700, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", marginTop: 1}}>
                               {member.position || "Member"}
                             </div>
-                            <div style={{fontSize: ".65rem", color: "#666", fontWeight: 600, marginTop: 2, display: "flex", alignItems: "center", gap: 4}}>
-                              <span>🌐 {member.committee || "CWC - Central Working Committee"}</span>
+                            <div style={{
+                              display: "inline-flex", alignItems: "center", gap: 6, padding: "3px 10px", borderRadius: 8,
+                              background: "linear-gradient(135deg, #FFFDF9 0%, #FFF7F0 100%)", border: "1px solid rgba(232,101,10,0.3)",
+                              color: "var(--dt)", fontWeight: 700, fontSize: ".75rem", marginTop: 4
+                            }}>
+                              <span>🏛️ Workspace:</span>
+                              <span style={{color: "var(--sf)", fontWeight: 800}}>{member.committee || (C.committees?.[0] || "CWC")}</span>
                             </div>
                           </div>
                           <div style={{fontSize: ".7rem", background: "#FFF0E6", color: "var(--sf)", padding: "4px 10px", borderRadius: 8, fontWeight: 700, flexShrink: 0}}>
