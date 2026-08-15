@@ -2710,7 +2710,7 @@ function Team({ C, lang }) {
     if (C.defaultCommittee && storedCommittees.includes(C.defaultCommittee)) {
       setActiveCommittee(C.defaultCommittee);
     }
-  }, [C.defaultCommittee, C.committees]);
+  }, [C.defaultCommittee]);
 
   const items = C.teamItems || [];
   const layout = C.teamLayout || "plain";
@@ -13210,7 +13210,7 @@ function AdminRegistrations({ mob, C, setC, auth }) {
                 const existingGroups = [...new Set(regs.map(r => r.Group).filter(Boolean))];
                 return (
                   <datalist id="group-suggestions">
-                    {existingGroups.map(g => <option key={g} value={g} />)}
+                    {existingGroups.map((g, idx) => <option key={`${g}-${idx}`} value={g} />)}
                   </datalist>
                 );
               })()}
@@ -13274,7 +13274,7 @@ function AdminRegistrations({ mob, C, setC, auth }) {
                           style={{width:"100%", padding:"4px 6px", fontSize:".75rem", border:"1px solid #CCC", borderRadius:4, boxSizing:"border-box", minWidth: 80, background:"white", outline:"none"}}
                         >
                           <option value="">All</option>
-                          {uniqueVals.map(uv => <option key={uv} value={uv}>{uv}</option>)}
+                          {uniqueVals.map((uv, uvIdx) => <option key={`${uv}-${uvIdx}`} value={uv}>{uv}</option>)}
                         </select>
                       ) : (
                         <input 
@@ -13570,7 +13570,7 @@ function AdminRegistrations({ mob, C, setC, auth }) {
                         {level.val.length > 0 && (
                           <div style={{display:"flex",flexDirection:"column",gap:4,marginTop:4}}>
                             {level.val.map((v, vIdx) => (
-                              <div key={v} style={{display:"flex",alignItems:"center",gap:6,background:"white",padding:"4px 8px",borderRadius:4,border:"1px solid #E0E0E0",fontSize:".8rem"}}>
+                              <div key={`${v}-${vIdx}`} style={{display:"flex",alignItems:"center",gap:6,background:"white",padding:"4px 8px",borderRadius:4,border:"1px solid #E0E0E0",fontSize:".8rem"}}>
                                 <span style={{fontWeight:600,color:"#999",width:20}}>{vIdx+1}.</span>
                                 <span style={{flex:1}}>{v}</span>
                                 <div style={{display:"flex",gap:2}}>
