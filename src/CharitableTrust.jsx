@@ -8951,6 +8951,31 @@ function AdminTeam({ mob, C, setC, auth }) {
 
   const removeNode = (id) => removeNodeAndSubtree(id);
 
+  const updateActiveNode = (field, val) => {
+    setActiveNode(prev => {
+      if (!prev) return null;
+      const nextNode = { ...prev, [field]: val };
+      setItems(currItems => currItems.map(i => i.id === prev.id ? nextNode : i));
+      return nextNode;
+    });
+  };
+
+  const flushNodeUpdate = () => {
+    setActiveNode(currActive => {
+      if (!currActive) return null;
+      setItems(currItems => {
+        const newItems = currItems.map(it => it.id === currActive.id ? currActive : it);
+        setC(currC => {
+          const newC = { ...currC, teamItems: newItems };
+          saveToFb(newC);
+          return newC;
+        });
+        return newItems;
+      });
+      return null;
+    });
+  };
+
   const filteredAdminItems = activeCommittee === "All"
     ? items
     : items.filter(i => (i.committee || "Central Working Committee (CWC)") === activeCommittee);
