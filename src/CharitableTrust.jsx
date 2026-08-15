@@ -2727,6 +2727,97 @@ function Team({ C, lang }) {
     
     if(children.length === 0) return null;
 
+    const chunkArray = (arr, size) => {
+      const res = [];
+      for (let i = 0; i < arr.length; i += size) {
+        res.push(arr.slice(i, i + size));
+      }
+      return res;
+    };
+
+    // Compact Matrix Layout for Large Hierarchies (> 4 children)
+    if (children.length > 4) {
+      const cols = mob ? 2 : 4;
+      const rows = chunkArray(children, cols);
+
+      return (
+        <div style={{display:"flex", flexDirection:"column", alignItems:"center", position:"relative", paddingTop: parentId ? (mob?16:20) : 0, width:"100%"}}>
+          {/* Central Top Connector line from Parent */}
+          {parentId && !mob && (
+            <div style={{position:"absolute", top: 0, left: "50%", width: 2, height: 20, background: "var(--sf)", transform:"translateX(-50%)", zIndex:1}} />
+          )}
+
+          {/* Container holding rows */}
+          <div style={{position:"relative", display:"flex", flexDirection:"column", gap: mob?20:28, alignItems:"center", width:"100%", marginTop: (parentId && !mob) ? 20 : 0}}>
+            {/* Central Vertical Trunk Line extending through rows */}
+            {!mob && rows.length > 1 && (
+              <div style={{
+                position:"absolute", top: 0, bottom: 40, left: "50%", width: 2,
+                background: "var(--sf)", transform:"translateX(-50%)", zIndex: 1
+              }} />
+            )}
+
+            {rows.map((rowItems, rIdx) => (
+              <div key={`h_row_${rIdx}`} style={{
+                display:"flex", gap: mob?"8px":"16px", justifyContent:"center",
+                position:"relative", zIndex: 2, width:"100%"
+              }}>
+                {/* Horizontal Connector Line spanning across this row */}
+                {!mob && rowItems.length > 1 && (
+                  <div style={{
+                    position:"absolute", top: 0, height: 2, background: "var(--sf)",
+                    left: "10%", right: "10%", zIndex: 1
+                  }} />
+                )}
+
+                {rowItems.map((node) => (
+                  <div key={node.id} style={{display:"flex", flexDirection:"column", alignItems:"center", position:"relative"}}>
+                    {/* Vertical Connector Line from row bar to card */}
+                    {!mob && (
+                      <div style={{position:"absolute", top: 0, left: "50%", width: 2, height: 16, background: "var(--sf)", transform:"translateX(-50%)", zIndex:1}} />
+                    )}
+
+                    {/* Card Node */}
+                    <div style={{marginTop: !mob ? 16 : 0, position:"relative", display:"flex", flexDirection:"column", alignItems:"center"}}>
+                      {/* Parent connector for children under this node */}
+                      {!mob && filteredItems.find(x=>x.parentId===node.id) && (
+                        <div style={{position:"absolute", bottom: -20, left: "50%", width: 2, height: 20, background: "var(--sf)", transform:"translateX(-50%)", zIndex:1}} />
+                      )}
+
+                      <div className="gi" style={{
+                        background:"white", padding: mob?8:10, borderRadius: 12, borderTop: "3px solid var(--sf)", 
+                        width: mob?110:140, textAlign:"center", boxShadow:"0 8px 24px rgba(0,0,0,0.06)",
+                        transition:"transform .3s", position:"relative", zIndex:2, cursor:"pointer"
+                      }} onMouseEnter={e=>e.currentTarget.style.transform="translateY(-3px)"} onMouseLeave={e=>e.currentTarget.style.transform="none"} onClick={() => openModal(node)}>
+                        <div style={{width:mob?40:50, height:mob?40:50, margin:"0 auto 8px", borderRadius:"50%", overflow:"hidden", border:"2px solid #f0f0f0", background:"#eee"}}>
+                          {node.image ? (
+                            <img src={node.image} alt={node.name} style={{width:"100%", height:"100%", objectFit:"cover"}}/>
+                          ) : (
+                            <div style={{width:"100%", height:"100%", display:"flex", alignItems:"center", justifyContent:"center", fontSize:"1.5rem"}}>👤</div>
+                          )}
+                        </div>
+                        <h4 style={{fontFamily:"'Playfair Display',serif", color:"var(--dt)", margin:"0 0 2px 0", fontSize:mob?".75rem":".85rem", fontWeight:700}}>{node.name}</h4>
+                        <div style={{fontSize:mob?".6rem":".65rem", color:"var(--sf)", fontWeight:600, textTransform:"uppercase", letterSpacing:1}}>{node.position}</div>
+                        {activeCommittee === "All" && node.committee && (
+                          <div style={{fontSize:".55rem", background:"#F0F4FF", color:"var(--dt)", borderRadius:8, padding:"1px 4px", marginTop:4, display:"inline-block", fontWeight:600}}>{node.committee}</div>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Recursively render children under this node */}
+                    <div style={{marginTop: mob?12:20, display:"flex", justifyContent:"center", width:"100%"}}>
+                      {renderHierarchy(node.id)}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ))}
+          </div>
+        </div>
+      );
+    }
+
+    // Classic Horizontal Layout (<= 4 children)
     return (
       <div style={{display:"flex", gap: mob?"8px":"16px", justifyContent:"center", paddingTop: parentId ? (mob?16:20) : 0, position:"relative", flexWrap:mob?"wrap":"nowrap"}}>
         {children.map((node, i) => (
