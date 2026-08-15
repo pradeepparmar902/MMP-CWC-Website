@@ -2978,7 +2978,7 @@ function Team({ C, lang }) {
         <div style={{display: mob ? "block" : "flex", gap: 28, alignItems: "flex-start", marginTop: 24}}>
           {/* Left Side Panel (Committees / Workspaces) */}
           <div style={{
-            width: mob ? "100%" : 280, flexShrink: 0, background: "white",
+            width: mob ? "100%" : 320, flexShrink: 0, background: "white",
             borderRadius: 24, padding: mob ? 16 : 20, border: "1px solid var(--bd)",
             boxShadow: "0 8px 30px rgba(0,0,0,0.04)", marginBottom: mob ? 24 : 0
           }}>
@@ -2997,6 +2997,7 @@ function Team({ C, lang }) {
                   <button
                     key={comm}
                     onClick={() => setActiveCommittee(comm)}
+                    title={comm}
                     style={{
                       width: mob ? "auto" : "100%",
                       padding: "12px 16px",
@@ -3016,9 +3017,9 @@ function Team({ C, lang }) {
                       textAlign: "left"
                     }}
                   >
-                    <div style={{display: "flex", alignItems: "center", gap: 10, overflow: "hidden"}}>
-                      <span style={{fontSize: "1.1rem"}}>{icon}</span>
-                      <span style={{whiteSpace: "nowrap", overflow: "hidden", textOverflow:"ellipsis"}}>{comm}</span>
+                    <div style={{display: "flex", alignItems: "center", gap: 10, flex: 1, minWidth: 0}}>
+                      <span style={{fontSize: "1.1rem", flexShrink: 0}}>{icon}</span>
+                      <span style={{whiteSpace: "normal", wordBreak: "break-word", lineHeight: 1.35}}>{comm}</span>
                     </div>
                     <span style={{
                       background: isActive ? "rgba(255,255,255,0.25)" : "#F0F0F0",
@@ -3036,7 +3037,42 @@ function Team({ C, lang }) {
           {/* Right Panel (Hierarchy Area - Clean Single Container) */}
           <div style={{flex: 1, minWidth: 0, width: "100%"}}>
             <div style={{position:"relative", width: "100%"}}>
-              <div style={{overflow:"auto", maxHeight:"560px", padding: mob ? "16px" : "28px", background:"white", borderRadius:24, border:"1px solid var(--bd)", boxShadow:"inset 0 4px 24px rgba(0,0,0,0.03)"}}>
+              <div style={{overflow:"auto", maxHeight:"580px", padding: mob ? "16px" : "24px", background:"white", borderRadius:24, border:"1px solid var(--bd)", boxShadow:"inset 0 4px 24px rgba(0,0,0,0.03)"}}>
+                
+                {/* Active Committee Header Banner (Visible in Normal & Full Screen Mode) */}
+                {(() => {
+                  const nameLower = activeCommittee.toLowerCase();
+                  const commIcon = activeCommittee === "All" ? "🌐" : (nameLower.includes("cwc") ? "🏛️" : (nameLower.includes("education") ? "📚" : (nameLower.includes("marriage") ? "💒" : "💼")));
+                  return (
+                    <div style={{
+                      display: "flex", alignItems: "center", justifyContent: "space-between",
+                      padding: mob ? "10px 14px" : "12px 20px", marginBottom: 20,
+                      background: "linear-gradient(135deg, #FFFDF9, #FFF7F0)",
+                      borderRadius: 16, border: "1px solid rgba(232,101,10,0.2)",
+                      boxShadow: "0 4px 16px rgba(0,0,0,0.03)", flexWrap: "wrap", gap: 12
+                    }}>
+                      <div style={{display: "flex", alignItems: "center", gap: 12}}>
+                        <span style={{fontSize: "1.4rem"}}>{commIcon}</span>
+                        <div>
+                          <h3 style={{fontFamily: "'Playfair Display',serif", fontSize: mob ? "1.05rem" : "1.25rem", color: "var(--dt)", margin: 0, fontWeight: 700}}>
+                            {activeCommittee === "All" ? "All Committee Workspaces" : activeCommittee}
+                          </h3>
+                          <div style={{fontSize: ".78rem", color: "var(--sf)", fontWeight: 600, marginTop: 2}}>
+                            {filteredItems.length} {filteredItems.length === 1 ? 'Role Member' : 'Role Members'} Listed
+                          </div>
+                        </div>
+                      </div>
+                      <div style={{
+                        fontSize: ".75rem", background: "white", color: "var(--dt)",
+                        padding: "5px 14px", borderRadius: 20, border: "1px solid var(--bd)", fontWeight: 700,
+                        boxShadow: "0 2px 6px rgba(0,0,0,0.04)"
+                      }}>
+                        🏛️ {C.trust?.title || "Community Trust"}
+                      </div>
+                    </div>
+                  );
+                })()}
+
                 {filteredItems.filter(i => i.parentId === null).length > 0 ? (
                   <div style={{minWidth: mob ? 300 : 700, margin:"0 auto", paddingTop: 10, paddingBottom: 10}}>
                     {renderHierarchy(null)}
@@ -3060,16 +3096,26 @@ function Team({ C, lang }) {
       {/* Full Screen Layout Modal */}
       {fullScreenMode && (
         <div style={{position:"fixed",top:0,left:0,right:0,bottom:0,background:"#F9FBFD",zIndex:99999,display:"flex",flexDirection:"column",padding:mob?16:32,overflow:"hidden"}}>
-          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:24,maxWidth:1600,margin:"0 auto 24px",width:"100%"}}>
-            <h2 style={{fontFamily:"'Playfair Display',serif",fontSize:mob?"1.5rem":"2rem",color:"var(--dt)",margin:0}}>
-              {fullScreenMode === "hierarchy" ? "Organization Chart" : "Team Members"}
-            </h2>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:20,maxWidth:1600,margin:"0 auto 20px",width:"100%"}}>
+            <div style={{display:"flex", alignItems:"center", gap: 12}}>
+              <span style={{fontSize: "1.8rem"}}>
+                {activeCommittee === "All" ? "🌐" : (activeCommittee.toLowerCase().includes("cwc") ? "🏛️" : (activeCommittee.toLowerCase().includes("education") ? "📚" : "💼"))}
+              </span>
+              <div>
+                <h2 style={{fontFamily:"'Playfair Display',serif",fontSize:mob?"1.4rem":"1.9rem",color:"var(--dt)",margin:0, fontWeight:700}}>
+                  {activeCommittee === "All" ? "Organization Chart — All Workspaces" : `Organization Chart — ${activeCommittee}`}
+                </h2>
+                <div style={{fontSize: ".85rem", color: "var(--sf)", fontWeight: 600, marginTop: 2}}>
+                  {filteredItems.length} {filteredItems.length === 1 ? 'Member' : 'Members'} in this workspace
+                </div>
+              </div>
+            </div>
             <button onClick={()=>setFullScreenMode(null)} style={{background:"white",border:"1px solid var(--bd)",borderRadius:"50%",width:44,height:44,fontSize:"1.2rem",cursor:"pointer",color:"#333",display:"flex",alignItems:"center",justifyContent:"center", boxShadow:"0 2px 8px rgba(0,0,0,0.1)"}}>✕</button>
           </div>
           
           <div style={{flex:1, overflow:"auto", background:"white", borderRadius:24, border:"1px solid var(--bd)", boxShadow:"inset 0 4px 24px rgba(0,0,0,0.03)", padding:mob?16:32, maxWidth:1600, margin:"0 auto", width:"100%"}}>
             {fullScreenMode === "hierarchy" ? (
-              <div style={{minWidth: mob?300:1000, margin:"0 auto", paddingTop: 20, paddingBottom: 40}}>
+              <div style={{minWidth: mob?300:1000, margin:"0 auto", paddingTop: 10, paddingBottom: 40}}>
                  {renderHierarchy(null)}
               </div>
             ) : (
