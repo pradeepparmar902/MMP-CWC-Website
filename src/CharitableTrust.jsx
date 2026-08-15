@@ -2753,10 +2753,32 @@ function Team({ C, lang }) {
     
     if(children.length === 0) return null;
 
-    const chunkArray = (arr, size) => {
+    const chunkArrayWithPattern = (arr, defaultSize, patternStr) => {
+      if (!patternStr || !patternStr.trim()) {
+        const res = [];
+        for (let i = 0; i < arr.length; i += defaultSize) {
+          res.push(arr.slice(i, i + defaultSize));
+        }
+        return res;
+      }
+      
+      const pattern = patternStr.split(',').map(s => parseInt(s.trim(), 10)).filter(n => !isNaN(n) && n > 0);
+      if (pattern.length === 0) {
+        const res = [];
+        for (let i = 0; i < arr.length; i += defaultSize) {
+          res.push(arr.slice(i, i + defaultSize));
+        }
+        return res;
+      }
+
       const res = [];
-      for (let i = 0; i < arr.length; i += size) {
-        res.push(arr.slice(i, i + size));
+      let currentIndex = 0;
+      let patternIdx = 0;
+      while (currentIndex < arr.length) {
+        const chunkSize = pattern[patternIdx] !== undefined ? pattern[patternIdx] : (pattern[pattern.length - 1] || defaultSize);
+        res.push(arr.slice(currentIndex, currentIndex + chunkSize));
+        currentIndex += chunkSize;
+        if (patternIdx < pattern.length - 1) patternIdx++;
       }
       return res;
     };
@@ -2766,7 +2788,8 @@ function Team({ C, lang }) {
     // Compact Matrix Layout for Large Hierarchies (> threshold children)
     if (children.length > threshold && threshold < 999) {
       const cols = mob ? 2 : Math.min(threshold, 5);
-      const rows = chunkArray(children, cols);
+      const rows = chunkArrayWithPattern(children, cols, C.rowWrapPattern);
+      const rowLabelsList = (C.rowLabelsStr || "").split(",").map(s => s.trim()).filter(Boolean);
 
       return (
         <div style={{display:"flex", flexDirection:"column", alignItems:"center", position:"relative", paddingTop: parentId ? (mob?16:20) : 0, width:"100%"}}>
@@ -2796,18 +2819,38 @@ function Team({ C, lang }) {
               </>
             )}
 
-            {rows.map((rowItems, rIdx) => (
-              <div key={`h_row_${rIdx}`} style={{
-                display:"flex", gap: mob?"8px":"16px", justifyContent:"center",
-                position:"relative", zIndex: 2, width:"100%"
-              }}>
-                {/* Horizontal Branch from Left Bus Line across row */}
-                {!mob && rows.length > 1 && (
-                  <div style={{
-                    position:"absolute", top: 0, left: -24, right: "10%", height: 2,
-                    background: "var(--sf)", zIndex: 1
-                  }} />
-                )}
+            {rows.map((rowItems, rIdx) => {
+              const rLabel = rowLabelsList[rIdx];
+              return (
+                <div key={`h_row_wrap_${rIdx}`} style={{display:"flex", flexDirection:"column", alignItems:"center", width:"100%", position:"relative", zIndex: 2}}>
+                  {/* Row Group Identity Label Badge */}
+                  {rLabel && (
+                    <div style={{
+                      width: "100%", textAlign: "center", marginBottom: 6, position: "relative", zIndex: 3
+                    }}>
+                      <span style={{
+                        background: "linear-gradient(135deg, #FFF6EE, #FFEAD9)",
+                        color: "var(--dt)", border: "1px solid rgba(232,101,10,0.3)",
+                        fontSize: ".75rem", fontWeight: 700, padding: "3px 14px",
+                        borderRadius: 20, boxShadow: "0 2px 8px rgba(0,0,0,0.04)",
+                        letterSpacing: 0.5, display: "inline-flex", alignItems: "center", gap: 6
+                      }}>
+                        🏷️ {rLabel}
+                      </span>
+                    </div>
+                  )}
+
+                  <div key={`h_row_${rIdx}`} style={{
+                    display:"flex", gap: mob?"8px":"16px", justifyContent:"center",
+                    position:"relative", zIndex: 2, width:"100%"
+                  }}>
+                    {/* Horizontal Branch from Left Bus Line across row */}
+                    {!mob && rows.length > 1 && (
+                      <div style={{
+                        position:"absolute", top: 0, left: -24, right: "10%", height: 2,
+                        background: "var(--sf)", zIndex: 1
+                      }} />
+                    )}
 
                 {/* Horizontal Connector Line spanning single row */}
                 {!mob && rowItems.length > 1 && rows.length === 1 && (
@@ -2858,7 +2901,9 @@ function Team({ C, lang }) {
                   </div>
                 ))}
               </div>
-            ))}
+            </div>
+          );
+        })}
           </div>
         </div>
       );
@@ -9059,10 +9104,32 @@ function AdminTeam({ mob, C, setC, auth }) {
     
     if(children.length === 0) return null;
 
-    const chunkArray = (arr, size) => {
+    const chunkArrayWithPattern = (arr, defaultSize, patternStr) => {
+      if (!patternStr || !patternStr.trim()) {
+        const res = [];
+        for (let i = 0; i < arr.length; i += defaultSize) {
+          res.push(arr.slice(i, i + defaultSize));
+        }
+        return res;
+      }
+      
+      const pattern = patternStr.split(',').map(s => parseInt(s.trim(), 10)).filter(n => !isNaN(n) && n > 0);
+      if (pattern.length === 0) {
+        const res = [];
+        for (let i = 0; i < arr.length; i += defaultSize) {
+          res.push(arr.slice(i, i + defaultSize));
+        }
+        return res;
+      }
+
       const res = [];
-      for (let i = 0; i < arr.length; i += size) {
-        res.push(arr.slice(i, i + size));
+      let currentIndex = 0;
+      let patternIdx = 0;
+      while (currentIndex < arr.length) {
+        const chunkSize = pattern[patternIdx] !== undefined ? pattern[patternIdx] : (pattern[pattern.length - 1] || defaultSize);
+        res.push(arr.slice(currentIndex, currentIndex + chunkSize));
+        currentIndex += chunkSize;
+        if (patternIdx < pattern.length - 1) patternIdx++;
       }
       return res;
     };
@@ -9072,7 +9139,8 @@ function AdminTeam({ mob, C, setC, auth }) {
     // Compact Matrix Layout for Large Admin Hierarchies (> threshold children)
     if (children.length > threshold && threshold < 999) {
       const cols = mob ? 2 : Math.min(threshold, 5);
-      const rows = chunkArray(children, cols);
+      const rows = chunkArrayWithPattern(children, cols, C.rowWrapPattern);
+      const rowLabelsList = (C.rowLabelsStr || "").split(",").map(s => s.trim()).filter(Boolean);
 
       return (
         <div style={{display:"flex", flexDirection:"column", alignItems:"center", position:"relative", paddingTop: parentId ? (mob?16:20) : 0, width:"100%"}}>
@@ -9104,18 +9172,37 @@ function AdminTeam({ mob, C, setC, auth }) {
 
             {rows.map((rowItems, rIdx) => {
               const isRowActive = rowItems.some(n => menuNode?.id === n.id);
+              const rLabel = rowLabelsList[rIdx];
               return (
-                <div key={`tree_row_${rIdx}`} style={{
-                  display:"flex", gap: mob?"8px":"16px", justifyContent:"center",
-                  position:"relative", zIndex: isRowActive ? 999 : 2, width:"100%"
-                }}>
-                  {/* Horizontal Branch from Left Bus Line across row */}
-                  {!mob && rows.length > 1 && (
+                <div key={`tree_row_wrap_${rIdx}`} style={{display:"flex", flexDirection:"column", alignItems:"center", width:"100%", position:"relative", zIndex: isRowActive ? 999 : 2}}>
+                  {/* Row Group Identity Label Badge */}
+                  {rLabel && (
                     <div style={{
-                      position:"absolute", top: 0, left: -24, right: "10%", height: 2,
-                      background: "var(--sf)", zIndex: 1
-                    }} />
+                      width: "100%", textAlign: "center", marginBottom: 6, position: "relative", zIndex: 3
+                    }}>
+                      <span style={{
+                        background: "linear-gradient(135deg, #FFF6EE, #FFEAD9)",
+                        color: "var(--dt)", border: "1px solid rgba(232,101,10,0.3)",
+                        fontSize: ".75rem", fontWeight: 700, padding: "3px 14px",
+                        borderRadius: 20, boxShadow: "0 2px 8px rgba(0,0,0,0.04)",
+                        letterSpacing: 0.5, display: "inline-flex", alignItems: "center", gap: 6
+                      }}>
+                        🏷️ {rLabel}
+                      </span>
+                    </div>
                   )}
+
+                  <div key={`tree_row_${rIdx}`} style={{
+                    display:"flex", gap: mob?"8px":"16px", justifyContent:"center",
+                    position:"relative", zIndex: isRowActive ? 999 : 2, width:"100%"
+                  }}>
+                    {/* Horizontal Branch from Left Bus Line across row */}
+                    {!mob && rows.length > 1 && (
+                      <div style={{
+                        position:"absolute", top: 0, left: -24, right: "10%", height: 2,
+                        background: "var(--sf)", zIndex: 1
+                      }} />
+                    )}
 
                   {/* Horizontal Connector Line spanning single row */}
                   {!mob && rowItems.length > 1 && rows.length === 1 && (
@@ -9199,8 +9286,9 @@ function AdminTeam({ mob, C, setC, auth }) {
                     );
                   })}
                 </div>
-              );
-            })}
+              </div>
+            );
+          })}
           </div>
         </div>
       );
@@ -9551,9 +9639,9 @@ function AdminTeam({ mob, C, setC, auth }) {
               <h3 style={{fontFamily:"'Playfair Display',serif", color:"var(--dt)", margin:0, fontSize:"1.3rem", fontWeight:700}}>Organization Chart ({activeCommittee})</h3>
               <p style={{fontSize:".85rem", color:"var(--mu)", marginTop:2}}>Configure hierarchy layout and set maximum cards before wrapping to vertical matrix.</p>
             </div>
-            <div style={{display:"flex", alignItems:"center", gap:10}}>
+            <div style={{display:"flex", alignItems:"center", gap:10, flexWrap:"wrap"}}>
               <label style={{fontSize:".85rem", fontWeight:700, color:"var(--dt)", display:"flex", alignItems:"center", gap:8, background:"#F7FAFC", padding:"6px 14px", borderRadius:12, border:"1px solid var(--bd)"}}>
-                <span>📐 Wrap to Vertical Matrix after:</span>
+                <span>📐 Wrap Threshold:</span>
                 <select
                   value={C.maxHorizontalCards || 5}
                   onChange={(e) => {
@@ -9575,6 +9663,44 @@ function AdminTeam({ mob, C, setC, auth }) {
                   <option value={10}>10 Cards (Wrap &gt; 10)</option>
                   <option value={999}>Single Line (No Wrap)</option>
                 </select>
+              </label>
+
+              <label style={{fontSize:".85rem", fontWeight:700, color:"var(--dt)", display:"flex", alignItems:"center", gap:8, background:"#F7FAFC", padding:"6px 14px", borderRadius:12, border:"1px solid var(--bd)"}} title="Set custom card counts per row (e.g. 2, 4, 6 for Trustees, Mantris, Members)">
+                <span>🔢 Row Break Pattern:</span>
+                <input
+                  type="text"
+                  placeholder="e.g. 2, 4, 6"
+                  value={C.rowWrapPattern || ""}
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    const newC = { ...C, rowWrapPattern: val };
+                    setC(newC);
+                    saveToFb(newC);
+                  }}
+                  style={{
+                    width: 90, padding:"4px 8px", borderRadius:8, border:"1px solid var(--bd)",
+                    fontSize:".85rem", fontWeight:700, color:"var(--dt)", background:"white"
+                  }}
+                />
+              </label>
+
+              <label style={{fontSize:".85rem", fontWeight:700, color:"var(--dt)", display:"flex", alignItems:"center", gap:8, background:"#F7FAFC", padding:"6px 14px", borderRadius:12, border:"1px solid var(--bd)"}} title="Set group identity labels for each row (e.g. Trustees, Mantri, Manad Sabhya)">
+                <span>🏷️ Row Group Labels:</span>
+                <input
+                  type="text"
+                  placeholder="e.g. Trustees, Mantri, Manad Sabhya"
+                  value={C.rowLabelsStr || ""}
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    const newC = { ...C, rowLabelsStr: val };
+                    setC(newC);
+                    saveToFb(newC);
+                  }}
+                  style={{
+                    width: 220, padding:"4px 8px", borderRadius:8, border:"1px solid var(--bd)",
+                    fontSize:".85rem", fontWeight:700, color:"var(--dt)", background:"white"
+                  }}
+                />
               </label>
             </div>
           </div>
