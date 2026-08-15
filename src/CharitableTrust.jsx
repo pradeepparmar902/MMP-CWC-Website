@@ -2749,14 +2749,25 @@ function Team({ C, lang }) {
             <div style={{position:"absolute", top: 0, left: "50%", width: 2, height: 20, background: "var(--sf)", transform:"translateX(-50%)", zIndex:1}} />
           )}
 
-          {/* Container holding rows */}
-          <div style={{position:"relative", display:"flex", flexDirection:"column", gap: mob?20:28, alignItems:"center", width:"100%", marginTop: (parentId && !mob) ? 20 : 0}}>
-            {/* Left Vertical Bus Line connecting all rows */}
+          {/* Container holding rows with Clear Side Padding */}
+          <div style={{
+            position:"relative", display:"flex", flexDirection:"column", gap: mob?20:32,
+            alignItems:"center", width:"100%", marginTop: (parentId && !mob) ? 20 : 0,
+            paddingLeft: mob ? 0 : 36, paddingRight: mob ? 0 : 36
+          }}>
+            {/* Left Vertical Bus Line in 36px Margin */}
             {!mob && rows.length > 1 && (
-              <div style={{
-                position:"absolute", top: 0, bottom: 24, left: 4, width: 2,
-                background: "var(--sf)", zIndex: 1
-              }} />
+              <>
+                <div style={{
+                  position:"absolute", top: 0, bottom: 24, left: 12, width: 2,
+                  background: "var(--sf)", zIndex: 1
+                }} />
+                {/* Horizontal connection from parent drop to left bus */}
+                <div style={{
+                  position:"absolute", top: 0, left: 12, right: "50%", height: 2,
+                  background: "var(--sf)", zIndex: 1
+                }} />
+              </>
             )}
 
             {rows.map((rowItems, rIdx) => (
@@ -2764,16 +2775,16 @@ function Team({ C, lang }) {
                 display:"flex", gap: mob?"8px":"16px", justifyContent:"center",
                 position:"relative", zIndex: 2, width:"100%"
               }}>
-                {/* Horizontal Branch from Left Bus Line to Row Bar */}
+                {/* Horizontal Branch from Left Bus Line across row */}
                 {!mob && rows.length > 1 && (
                   <div style={{
-                    position:"absolute", top: 0, left: 4, width: "calc(10% - 4px)", height: 2,
+                    position:"absolute", top: 0, left: 12, right: "10%", height: 2,
                     background: "var(--sf)", zIndex: 1
                   }} />
                 )}
 
-                {/* Horizontal Connector Line spanning across this row */}
-                {!mob && rowItems.length > 1 && (
+                {/* Horizontal Connector Line spanning single row */}
+                {!mob && rowItems.length > 1 && rows.length === 1 && (
                   <div style={{
                     position:"absolute", top: 0, height: 2, background: "var(--sf)",
                     left: "10%", right: "10%", zIndex: 1
@@ -9043,14 +9054,25 @@ function AdminTeam({ mob, C, setC, auth }) {
             <div style={{position:"absolute", top: 0, left: "50%", width: 2, height: 20, background: "var(--sf)", transform:"translateX(-50%)", zIndex:1}} />
           )}
 
-          {/* Container holding rows */}
-          <div style={{position:"relative", display:"flex", flexDirection:"column", gap: mob?20:28, alignItems:"center", width:"100%", marginTop: (parentId && !mob) ? 20 : 0}}>
-            {/* Left Vertical Bus Line connecting all rows */}
+          {/* Container holding rows with Clear Side Padding */}
+          <div style={{
+            position:"relative", display:"flex", flexDirection:"column", gap: mob?20:32,
+            alignItems:"center", width:"100%", marginTop: (parentId && !mob) ? 20 : 0,
+            paddingLeft: mob ? 0 : 36, paddingRight: mob ? 0 : 36
+          }}>
+            {/* Left Vertical Bus Line in 36px Margin */}
             {!mob && rows.length > 1 && (
-              <div style={{
-                position:"absolute", top: 0, bottom: 24, left: 4, width: 2,
-                background: "var(--sf)", zIndex: 1
-              }} />
+              <>
+                <div style={{
+                  position:"absolute", top: 0, bottom: 24, left: 12, width: 2,
+                  background: "var(--sf)", zIndex: 1
+                }} />
+                {/* Horizontal connection from parent drop to left bus */}
+                <div style={{
+                  position:"absolute", top: 0, left: 12, right: "50%", height: 2,
+                  background: "var(--sf)", zIndex: 1
+                }} />
+              </>
             )}
 
             {rows.map((rowItems, rIdx) => (
@@ -9058,16 +9080,16 @@ function AdminTeam({ mob, C, setC, auth }) {
                 display:"flex", gap: mob?"8px":"16px", justifyContent:"center",
                 position:"relative", zIndex: 2, width:"100%"
               }}>
-                {/* Horizontal Branch from Left Bus Line to Row Bar */}
+                {/* Horizontal Branch from Left Bus Line across row */}
                 {!mob && rows.length > 1 && (
                   <div style={{
-                    position:"absolute", top: 0, left: 4, width: "calc(10% - 4px)", height: 2,
+                    position:"absolute", top: 0, left: 12, right: "10%", height: 2,
                     background: "var(--sf)", zIndex: 1
                   }} />
                 )}
 
-                {/* Horizontal Connector Line spanning across this row */}
-                {!mob && rowItems.length > 1 && (
+                {/* Horizontal Connector Line spanning single row */}
+                {!mob && rowItems.length > 1 && rows.length === 1 && (
                   <div style={{
                     position:"absolute", top: 0, height: 2, background: "var(--sf)",
                     left: "10%", right: "10%", zIndex: 1
