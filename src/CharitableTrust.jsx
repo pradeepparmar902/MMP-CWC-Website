@@ -2806,7 +2806,7 @@ function Team({ C, lang }) {
     };
 
     const threshold = mob ? 2 : (C.maxHorizontalCards || 5);
-    const activePattern = mob ? "2" : (C.commRowWrapPattern?.[activeCommittee] ?? C.rowWrapPattern ?? "");
+    const activePattern = C.commRowWrapPattern?.[activeCommittee] ?? C.rowWrapPattern ?? "";
     const activeLabels = C.commRowLabels?.[activeCommittee] ?? C.rowLabelsStr ?? "";
 
     // Compact Matrix Layout for Mobile, Custom Row Patterns & Hierarchies
@@ -3183,32 +3183,89 @@ function Team({ C, lang }) {
 
           {/* Right Panel (Hierarchy Area - Clean Single Container) */}
           <div style={{flex: 1, minWidth: 0, width: "100%"}}>
-            {/* Search & Filter Bar */}
-            <div style={{
-              display: "flex", alignItems: "center", gap: 10, marginBottom: 16, width: "100%", flexWrap: "wrap",
-              background: "#F8FAFC", padding: "10px 14px", borderRadius: 16, border: "1px solid var(--bd)"
-            }}>
-              <div style={{display: "flex", alignItems: "center", gap: 8, flex: 1, minWidth: 200, background: "white", padding: "8px 14px", borderRadius: 12, border: "1px solid var(--bd)"}}>
-                <span style={{fontSize: "1.1rem"}}>🔍</span>
+            {/* Instant Interactive Search & Filter Bar */}
+            <div style={{position: "relative", width: "100%", marginBottom: 16, zIndex: 100}}>
+              <div style={{
+                display: "flex", alignItems: "center", gap: 10, background: "white",
+                padding: "10px 16px", borderRadius: 16,
+                border: "2px solid " + (searchTerm ? "var(--sf)" : "var(--bd)"),
+                boxShadow: searchTerm ? "0 8px 24px rgba(232,101,10,0.15)" : "0 2px 10px rgba(0,0,0,0.03)"
+              }}>
+                <span style={{fontSize: "1.2rem"}}>🔍</span>
                 <input
                   type="text"
-                  placeholder="Search member by name, position, committee, mobile..."
+                  placeholder="Search member by name, role (Trustee, Mantri), mobile..."
                   value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
-                  style={{width: "100%", border: "none", outline: "none", fontSize: ".9rem", fontWeight: 600, color: "var(--dt)", background: "transparent"}}
+                  onChange={(e) => {
+                    setSearchTerm(e.target.value);
+                  }}
+                  style={{width: "100%", border: "none", outline: "none", fontSize: ".92rem", fontWeight: 600, color: "var(--dt)", background: "transparent"}}
                 />
                 {searchTerm && (
-                  <button onClick={() => setSearchTerm("")} style={{background: "none", border: "none", color: "#888", fontSize: "1rem", cursor: "pointer", padding: "0 4px"}}>✕</button>
+                  <button
+                    onClick={() => setSearchTerm("")}
+                    style={{background: "#eee", border: "none", color: "#555", borderRadius: "50%", width: 24, height: 24, fontSize: ".8rem", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center"}}
+                  >
+                    ✕
+                  </button>
                 )}
               </div>
 
+              {/* Instant Search Results Dropdown Panel */}
               {searchTerm.trim() !== "" && (
                 <div style={{
-                  fontSize: ".78rem", fontWeight: 700, color: "var(--sf)", background: "#FFF6EE",
-                  padding: "6px 12px", borderRadius: 10, border: "1px solid rgba(232,101,10,0.3)",
-                  display: "flex", alignItems: "center", gap: 6, whiteSpace: "nowrap"
+                  position: "absolute", top: "100%", left: 0, right: 0, marginTop: 6,
+                  background: "white", borderRadius: 16, border: "1px solid var(--bd)",
+                  boxShadow: "0 12px 36px rgba(0,0,0,0.18)", zIndex: 9999, maxHeight: 340, overflowY: "auto",
+                  padding: 10
                 }}>
-                  <span>🎯 {searchMatchCount} matching {searchMatchCount === 1 ? "member" : "members"}</span>
+                  <div style={{display: "flex", justifyContent: "space-between", alignItems: "center", padding: "4px 8px 8px", borderBottom: "1px solid #f0f0f0", marginBottom: 8}}>
+                    <span style={{fontSize: ".75rem", fontWeight: 700, color: "var(--sf)", textTransform: "uppercase", letterSpacing: 0.5}}>
+                      🎯 Search Results ({filteredItems.filter(isSearchMatch).length})
+                    </span>
+                    <button onClick={() => setSearchTerm("")} style={{background: "none", border: "none", color: "#888", fontSize: ".75rem", cursor: "pointer", fontWeight: 600}}>
+                      Clear ✕
+                    </button>
+                  </div>
+
+                  {filteredItems.filter(isSearchMatch).length === 0 ? (
+                    <div style={{padding: "20px 12px", textAlign: "center", color: "#888", fontSize: ".85rem"}}>
+                      No members found matching "{searchTerm}"
+                    </div>
+                  ) : (
+                    <div style={{display: "flex", flexDirection: "column", gap: 6}}>
+                      {filteredItems.filter(isSearchMatch).map(member => (
+                        <div
+                          key={member.id}
+                          onClick={() => {
+                            openModal(member);
+                          }}
+                          style={{
+                            display: "flex", alignItems: "center", gap: 12, padding: "8px 12px",
+                            borderRadius: 12, border: "1px solid #f0f0f0", background: "#FDFDFD",
+                            cursor: "pointer", transition: "all 0.2s ease"
+                          }}
+                          onMouseEnter={e => e.currentTarget.style.background = "#FFF6EE"}
+                          onMouseLeave={e => e.currentTarget.style.background = "#FDFDFD"}
+                        >
+                          <div style={{width: 38, height: 38, borderRadius: "50%", overflow: "hidden", border: "1.5px solid #ddd", flexShrink: 0, background: "#eee"}}>
+                            {member.image ? <img src={member.image} alt={member.name} style={{width: "100%", height: "100%", objectFit: "cover"}} /> : <div style={{width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "1.1rem"}}>👤</div>}
+                          </div>
+                          <div style={{flex: 1, minWidth: 0}}>
+                            <div style={{fontWeight: 700, color: "var(--dt)", fontSize: ".88rem", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis"}}>
+                              {member.name}
+                            </div>
+                            <div style={{color: "var(--sf)", fontSize: ".72rem", fontWeight: 600, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis"}}>
+                              {member.position || "Member"}
+                            </div>
+                          </div>
+                          <div style={{fontSize: ".7rem", background: "#FFF0E6", color: "var(--sf)", padding: "4px 10px", borderRadius: 8, fontWeight: 700, flexShrink: 0}}>
+                            View Member ➔
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
               )}
             </div>
@@ -9391,7 +9448,7 @@ function AdminTeam({ mob, C, setC, auth }) {
     };
 
     const threshold = mob ? 2 : (C.maxHorizontalCards || 5);
-    const activePattern = mob ? "2" : (C.commRowWrapPattern?.[activeCommittee] ?? C.rowWrapPattern ?? "");
+    const activePattern = C.commRowWrapPattern?.[activeCommittee] ?? C.rowWrapPattern ?? "";
     const activeLabels = C.commRowLabels?.[activeCommittee] ?? C.rowLabelsStr ?? "";
 
     // Compact Matrix Layout for Mobile, Custom Row Patterns & Hierarchies
