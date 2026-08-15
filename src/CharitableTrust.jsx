@@ -9136,6 +9136,28 @@ function AdminTeam({ mob, C, setC, auth }) {
                         
                         <button onClick={(e)=>{e.stopPropagation(); setMenuNode(node);}} style={{position:"absolute", bottom: -12, right: -12, width: 26, height: 26, borderRadius:"50%", background:"var(--dt)", color:"white", border:"2px solid white", cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"center", fontSize:"1rem", zIndex:10, boxShadow:"0 2px 8px rgba(0,0,0,0.15)"}} title="Add Role relative (Boss/Sibling/Subordinate)">+</button>
                       </div>
+
+                      {/* Action Menu Context */}
+                      {menuNode?.id === node.id && (
+                        <div style={{position:"absolute", top: "100%", left: "50%", transform:"translate(-50%, 15px)", background:"white", borderRadius:12, boxShadow:"0 10px 30px rgba(0,0,0,.2)", zIndex:100, width: 190, padding: 10, border:"1px solid #eee"}} onClick={e=>e.stopPropagation()}>
+                          <div style={{fontSize:".7rem", color:"#888", marginBottom:6, textAlign:"center", fontWeight:700, letterSpacing:1}}>REORDER / ADD ROLE</div>
+                          {children.length > 1 && (
+                            <div style={{display:"flex", gap: 4, marginBottom: 8}}>
+                              <button onClick={()=>moveSibling(node, -1)} disabled={i===0} style={{flex:1, padding:"5px", fontSize:".7rem", background:"#f0f4ff", border:"none", borderRadius:4, cursor:i===0?"default":"pointer", opacity:i===0?0.5:1}}>⬅️ Move Left</button>
+                              <button onClick={()=>moveSibling(node, 1)} disabled={i===children.length-1} style={{flex:1, padding:"5px", fontSize:".7rem", background:"#f0f4ff", border:"none", borderRadius:4, cursor:i===children.length-1?"default":"pointer", opacity:i===children.length-1?0.5:1}}>➡️ Move Right</button>
+                            </div>
+                          )}
+                          <button onClick={()=>addBoss(node)} className="gi" style={{display:"block", width:"100%", padding:"6px", fontSize:".75rem", background:"#f9f9f9", border:"none", borderRadius:4, marginBottom:4, cursor:"pointer", textAlign:"left"}}>⬆️ Add Boss (Above)</button>
+                          <button onClick={()=>addSibling(node, -1)} className="gi" style={{display:"block", width:"100%", padding:"6px", fontSize:".75rem", background:"#f9f9f9", border:"none", borderRadius:4, marginBottom:4, cursor:"pointer", textAlign:"left"}}>⬅️ Add Sibling (Left)</button>
+                          <button onClick={()=>addSibling(node, 1)} className="gi" style={{display:"block", width:"100%", padding:"6px", fontSize:".75rem", background:"#f9f9f9", border:"none", borderRadius:4, marginBottom:4, cursor:"pointer", textAlign:"left"}}>➡️ Add Sibling (Right)</button>
+                          <button onClick={()=>addSubordinate(node)} className="gi" style={{display:"block", width:"100%", padding:"6px", fontSize:".75rem", background:"#f9f9f9", border:"none", borderRadius:4, marginBottom:4, cursor:"pointer", textAlign:"left"}}>⬇️ Add Subordinate</button>
+                          <div style={{height:1, background:"#eee", margin:"6px 0"}}/>
+                          <div style={{fontSize:".65rem", color:"#888", marginBottom:4, textAlign:"center", fontWeight:700}}>DELETE ACTIONS</div>
+                          <button onClick={()=>removeSingleNodeOnly(node.id)} style={{display:"block", width:"100%", padding:"6px", fontSize:".75rem", background:"#FFF5F5", color:"#C53030", border:"none", borderRadius:4, marginBottom:4, cursor:"pointer", textAlign:"left"}}>🗑️ Delete Only This Role</button>
+                          <button onClick={()=>removeNodeAndSubtree(node.id)} style={{display:"block", width:"100%", padding:"6px", fontSize:".75rem", background:"#FFEBEB", color:"#9B2C2C", border:"none", borderRadius:4, cursor:"pointer", textAlign:"left", fontWeight:700}}>💥 Delete Role & Subtree</button>
+                          <button onClick={()=>setMenuNode(null)} style={{display:"block", width:"100%", padding:"6px", fontSize:".75rem", background:"transparent", border:"none", marginTop:4, cursor:"pointer", color:"#666"}}>Cancel</button>
+                        </div>
+                      )}
                     </div>
 
                     {/* Recursively render children under this node */}
