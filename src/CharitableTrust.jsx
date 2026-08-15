@@ -9259,6 +9259,20 @@ function AdminTeam({ mob, C, setC, auth }) {
                             transition:"transform .3s", position:"relative", zIndex:2, cursor:"pointer",
                             borderColor: activeNode?.id === node.id ? "var(--sf)" : "#eee"
                           }} onClick={() => setActiveNode(node)}>
+                            {/* Card Content */}
+                            <div style={{width:44, height:44, margin:"0 auto 8px", borderRadius:"50%", overflow:"hidden", border:"2px solid #f0f0f0", background:"#eee"}}>
+                              {node.image ? (
+                                <img src={node.image} alt={node.name} style={{width:"100%", height:"100%", objectFit:"cover"}}/>
+                              ) : (
+                                <div style={{width:"100%", height:"100%", display:"flex", alignItems:"center", justifyContent:"center", fontSize:"1.3rem"}}>👤</div>
+                              )}
+                            </div>
+                            <h4 style={{fontFamily:"'Playfair Display',serif", color:"var(--dt)", margin:"0 0 2px 0", fontSize:".85rem", fontWeight:700}}>{node.name || "Name"}</h4>
+                            <div style={{fontSize:".65rem", color:"var(--sf)", fontWeight:600, textTransform:"uppercase", letterSpacing:1}}>{node.position || "Position"}</div>
+                            {activeCommittee === "All" && node.committee && (
+                              <div style={{fontSize:".55rem", background:"#F0F4FF", color:"var(--dt)", borderRadius:8, padding:"1px 4px", marginTop:4, display:"inline-block", fontWeight:600, whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis"}}>{node.committee}</div>
+                            )}
+
                             <button onClick={(e)=>{e.stopPropagation(); setMenuNode(node);}} style={{position:"absolute", bottom: -12, right: -12, width: 26, height: 26, borderRadius:"50%", background:"var(--dt)", color:"white", border:"2px solid white", cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"center", fontSize:"1rem", zIndex:10, boxShadow:"0 2px 8px rgba(0,0,0,0.15)"}} title="Add Role relative (Boss/Sibling/Subordinate)">+</button>
                           </div>
 
