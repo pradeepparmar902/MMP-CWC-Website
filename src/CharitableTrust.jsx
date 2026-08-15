@@ -2753,10 +2753,32 @@ function Team({ C, lang }) {
     
     if(children.length === 0) return null;
 
-    const chunkArray = (arr, size) => {
+    const chunkArrayWithPattern = (arr, defaultSize, patternStr) => {
+      if (!patternStr || !patternStr.trim()) {
+        const res = [];
+        for (let i = 0; i < arr.length; i += defaultSize) {
+          res.push(arr.slice(i, i + defaultSize));
+        }
+        return res;
+      }
+      
+      const pattern = patternStr.split(',').map(s => parseInt(s.trim(), 10)).filter(n => !isNaN(n) && n > 0);
+      if (pattern.length === 0) {
+        const res = [];
+        for (let i = 0; i < arr.length; i += defaultSize) {
+          res.push(arr.slice(i, i + defaultSize));
+        }
+        return res;
+      }
+
       const res = [];
-      for (let i = 0; i < arr.length; i += size) {
-        res.push(arr.slice(i, i + size));
+      let currentIndex = 0;
+      let patternIdx = 0;
+      while (currentIndex < arr.length) {
+        const chunkSize = pattern[patternIdx] !== undefined ? pattern[patternIdx] : (pattern[pattern.length - 1] || defaultSize);
+        res.push(arr.slice(currentIndex, currentIndex + chunkSize));
+        currentIndex += chunkSize;
+        if (patternIdx < pattern.length - 1) patternIdx++;
       }
       return res;
     };
@@ -2766,7 +2788,10 @@ function Team({ C, lang }) {
     // Compact Matrix Layout for Large Hierarchies (> threshold children)
     if (children.length > threshold && threshold < 999) {
       const cols = mob ? 2 : Math.min(threshold, 5);
-      const rows = chunkArray(children, cols);
+      const activePattern = C.commRowWrapPattern?.[activeCommittee] || C.rowWrapPattern || "";
+      const activeLabels = C.commRowLabels?.[activeCommittee] || C.rowLabelsStr || "";
+      const rows = chunkArrayWithPattern(children, cols, activePattern);
+      const rowLabelsList = activeLabels.split(",").map(s => s.trim()).filter(Boolean);
 
       return (
         <div style={{display:"flex", flexDirection:"column", alignItems:"center", position:"relative", paddingTop: parentId ? (mob?16:20) : 0, width:"100%"}}>
@@ -2796,18 +2821,38 @@ function Team({ C, lang }) {
               </>
             )}
 
-            {rows.map((rowItems, rIdx) => (
-              <div key={`h_row_${rIdx}`} style={{
-                display:"flex", gap: mob?"8px":"16px", justifyContent:"center",
-                position:"relative", zIndex: 2, width:"100%"
-              }}>
-                {/* Horizontal Branch from Left Bus Line across row */}
-                {!mob && rows.length > 1 && (
-                  <div style={{
-                    position:"absolute", top: 0, left: -24, right: "10%", height: 2,
-                    background: "var(--sf)", zIndex: 1
-                  }} />
-                )}
+            {rows.map((rowItems, rIdx) => {
+              const rLabel = rowLabelsList.length > 1 ? rowLabelsList[rIdx + 1] : rowLabelsList[rIdx];
+              return (
+                <div key={`h_row_wrap_${rIdx}`} style={{display:"flex", flexDirection:"column", alignItems:"center", width:"100%", position:"relative", zIndex: 2}}>
+                  {/* Row Group Identity Label Badge */}
+                  {rLabel && (
+                    <div style={{
+                      width: "100%", textAlign: "center", marginBottom: 6, position: "relative", zIndex: 3
+                    }}>
+                      <span style={{
+                        background: "linear-gradient(135deg, #FFF6EE, #FFEAD9)",
+                        color: "var(--dt)", border: "1px solid rgba(232,101,10,0.3)",
+                        fontSize: ".75rem", fontWeight: 700, padding: "3px 14px",
+                        borderRadius: 20, boxShadow: "0 2px 8px rgba(0,0,0,0.04)",
+                        letterSpacing: 0.5, display: "inline-flex", alignItems: "center", gap: 6
+                      }}>
+                        🏷️ {rLabel}
+                      </span>
+                    </div>
+                  )}
+
+                  <div key={`h_row_${rIdx}`} style={{
+                    display:"flex", gap: mob?"8px":"16px", justifyContent:"center",
+                    position:"relative", zIndex: 2, width:"100%"
+                  }}>
+                    {/* Horizontal Branch from Left Bus Line across row */}
+                    {!mob && rows.length > 1 && (
+                      <div style={{
+                        position:"absolute", top: 0, left: -24, right: "10%", height: 2,
+                        background: "var(--sf)", zIndex: 1
+                      }} />
+                    )}
 
                 {/* Horizontal Connector Line spanning single row */}
                 {!mob && rowItems.length > 1 && rows.length === 1 && (
@@ -2858,7 +2903,9 @@ function Team({ C, lang }) {
                   </div>
                 ))}
               </div>
-            ))}
+            </div>
+          );
+        })}
           </div>
         </div>
       );
@@ -2866,7 +2913,27 @@ function Team({ C, lang }) {
 
     // Classic Horizontal Layout (<= 4 children)
     return (
-      <div style={{display:"flex", gap: mob?"8px":"16px", justifyContent:"center", paddingTop: parentId ? (mob?16:20) : 0, position:"relative", flexWrap:mob?"wrap":"nowrap"}}>
+      <div style={{display:"flex", flexDirection:"column", alignItems:"center", width:"100%"}}>
+        {parentId === null && (() => {
+          const activeLabels = C.commRowLabels?.[activeCommittee] || C.rowLabelsStr || "";
+          const rowLabelsList = activeLabels.split(",").map(s => s.trim()).filter(Boolean);
+          const rootLabel = rowLabelsList.length > 1 ? rowLabelsList[0] : null;
+          return rootLabel ? (
+            <div style={{width: "100%", textAlign: "center", marginBottom: 10, position: "relative", zIndex: 3}}>
+              <span style={{
+                background: "linear-gradient(135deg, #FFF6EE, #FFEAD9)",
+                color: "var(--dt)", border: "1px solid rgba(232,101,10,0.3)",
+                fontSize: ".75rem", fontWeight: 700, padding: "3px 14px",
+                borderRadius: 20, boxShadow: "0 2px 8px rgba(0,0,0,0.04)",
+                letterSpacing: 0.5, display: "inline-flex", alignItems: "center", gap: 6
+              }}>
+                🏷️ {rootLabel}
+              </span>
+            </div>
+          ) : null;
+        })()}
+
+        <div style={{display:"flex", gap: mob?"8px":"16px", justifyContent:"center", paddingTop: parentId ? (mob?16:20) : 0, position:"relative", flexWrap:mob?"wrap":"nowrap"}}>
         {children.map((node, i) => (
           <div key={node.id} style={{display:"flex", flexDirection:"column", alignItems:"center", position:"relative"}}>
             {/* Connecting lines for children */}
@@ -2919,7 +2986,8 @@ function Team({ C, lang }) {
           </div>
         ))}
       </div>
-    );
+    </div>
+  );
   };
 
   const renderPlainGrid = (isFullScreen = false) => (
@@ -2978,7 +3046,7 @@ function Team({ C, lang }) {
         <div style={{display: mob ? "block" : "flex", gap: 28, alignItems: "flex-start", marginTop: 24}}>
           {/* Left Side Panel (Committees / Workspaces) */}
           <div style={{
-            width: mob ? "100%" : 280, flexShrink: 0, background: "white",
+            width: mob ? "100%" : 320, flexShrink: 0, background: "white",
             borderRadius: 24, padding: mob ? 16 : 20, border: "1px solid var(--bd)",
             boxShadow: "0 8px 30px rgba(0,0,0,0.04)", marginBottom: mob ? 24 : 0
           }}>
@@ -2997,6 +3065,7 @@ function Team({ C, lang }) {
                   <button
                     key={comm}
                     onClick={() => setActiveCommittee(comm)}
+                    title={comm}
                     style={{
                       width: mob ? "auto" : "100%",
                       padding: "12px 16px",
@@ -3016,9 +3085,9 @@ function Team({ C, lang }) {
                       textAlign: "left"
                     }}
                   >
-                    <div style={{display: "flex", alignItems: "center", gap: 10, overflow: "hidden"}}>
-                      <span style={{fontSize: "1.1rem"}}>{icon}</span>
-                      <span style={{whiteSpace: "nowrap", overflow: "hidden", textOverflow:"ellipsis"}}>{comm}</span>
+                    <div style={{display: "flex", alignItems: "center", gap: 10, flex: 1, minWidth: 0}}>
+                      <span style={{fontSize: "1.1rem", flexShrink: 0}}>{icon}</span>
+                      <span style={{whiteSpace: "normal", wordBreak: "break-word", lineHeight: 1.35}}>{comm}</span>
                     </div>
                     <span style={{
                       background: isActive ? "rgba(255,255,255,0.25)" : "#F0F0F0",
@@ -3036,7 +3105,42 @@ function Team({ C, lang }) {
           {/* Right Panel (Hierarchy Area - Clean Single Container) */}
           <div style={{flex: 1, minWidth: 0, width: "100%"}}>
             <div style={{position:"relative", width: "100%"}}>
-              <div style={{overflow:"auto", maxHeight:"560px", padding: mob ? "16px" : "28px", background:"white", borderRadius:24, border:"1px solid var(--bd)", boxShadow:"inset 0 4px 24px rgba(0,0,0,0.03)"}}>
+              <div style={{overflow:"auto", maxHeight:"580px", padding: mob ? "16px" : "24px", background:"white", borderRadius:24, border:"1px solid var(--bd)", boxShadow:"inset 0 4px 24px rgba(0,0,0,0.03)"}}>
+                
+                {/* Active Committee Header Banner (Visible in Normal & Full Screen Mode) */}
+                {(() => {
+                  const nameLower = activeCommittee.toLowerCase();
+                  const commIcon = activeCommittee === "All" ? "🌐" : (nameLower.includes("cwc") ? "🏛️" : (nameLower.includes("education") ? "📚" : (nameLower.includes("marriage") ? "💒" : "💼")));
+                  return (
+                    <div style={{
+                      display: "flex", alignItems: "center", justifyContent: "space-between",
+                      padding: mob ? "10px 14px" : "12px 20px", marginBottom: 20,
+                      background: "linear-gradient(135deg, #FFFDF9, #FFF7F0)",
+                      borderRadius: 16, border: "1px solid rgba(232,101,10,0.2)",
+                      boxShadow: "0 4px 16px rgba(0,0,0,0.03)", flexWrap: "wrap", gap: 12
+                    }}>
+                      <div style={{display: "flex", alignItems: "center", gap: 12}}>
+                        <span style={{fontSize: "1.4rem"}}>{commIcon}</span>
+                        <div>
+                          <h3 style={{fontFamily: "'Playfair Display',serif", fontSize: mob ? "1.05rem" : "1.25rem", color: "var(--dt)", margin: 0, fontWeight: 700}}>
+                            {activeCommittee === "All" ? "All Committee Workspaces" : activeCommittee}
+                          </h3>
+                          <div style={{fontSize: ".78rem", color: "var(--sf)", fontWeight: 600, marginTop: 2}}>
+                            {filteredItems.length} {filteredItems.length === 1 ? 'Role Member' : 'Role Members'} Listed
+                          </div>
+                        </div>
+                      </div>
+                      <div style={{
+                        fontSize: ".75rem", background: "white", color: "var(--dt)",
+                        padding: "5px 14px", borderRadius: 20, border: "1px solid var(--bd)", fontWeight: 700,
+                        boxShadow: "0 2px 6px rgba(0,0,0,0.04)"
+                      }}>
+                        🏛️ {C.trust?.title || "Community Trust"}
+                      </div>
+                    </div>
+                  );
+                })()}
+
                 {filteredItems.filter(i => i.parentId === null).length > 0 ? (
                   <div style={{minWidth: mob ? 300 : 700, margin:"0 auto", paddingTop: 10, paddingBottom: 10}}>
                     {renderHierarchy(null)}
@@ -3060,16 +3164,26 @@ function Team({ C, lang }) {
       {/* Full Screen Layout Modal */}
       {fullScreenMode && (
         <div style={{position:"fixed",top:0,left:0,right:0,bottom:0,background:"#F9FBFD",zIndex:99999,display:"flex",flexDirection:"column",padding:mob?16:32,overflow:"hidden"}}>
-          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:24,maxWidth:1600,margin:"0 auto 24px",width:"100%"}}>
-            <h2 style={{fontFamily:"'Playfair Display',serif",fontSize:mob?"1.5rem":"2rem",color:"var(--dt)",margin:0}}>
-              {fullScreenMode === "hierarchy" ? "Organization Chart" : "Team Members"}
-            </h2>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:20,maxWidth:1600,margin:"0 auto 20px",width:"100%"}}>
+            <div style={{display:"flex", alignItems:"center", gap: 12}}>
+              <span style={{fontSize: "1.8rem"}}>
+                {activeCommittee === "All" ? "🌐" : (activeCommittee.toLowerCase().includes("cwc") ? "🏛️" : (activeCommittee.toLowerCase().includes("education") ? "📚" : "💼"))}
+              </span>
+              <div>
+                <h2 style={{fontFamily:"'Playfair Display',serif",fontSize:mob?"1.4rem":"1.9rem",color:"var(--dt)",margin:0, fontWeight:700}}>
+                  {activeCommittee === "All" ? "Organization Chart — All Workspaces" : `Organization Chart — ${activeCommittee}`}
+                </h2>
+                <div style={{fontSize: ".85rem", color: "var(--sf)", fontWeight: 600, marginTop: 2}}>
+                  {filteredItems.length} {filteredItems.length === 1 ? 'Member' : 'Members'} in this workspace
+                </div>
+              </div>
+            </div>
             <button onClick={()=>setFullScreenMode(null)} style={{background:"white",border:"1px solid var(--bd)",borderRadius:"50%",width:44,height:44,fontSize:"1.2rem",cursor:"pointer",color:"#333",display:"flex",alignItems:"center",justifyContent:"center", boxShadow:"0 2px 8px rgba(0,0,0,0.1)"}}>✕</button>
           </div>
           
           <div style={{flex:1, overflow:"auto", background:"white", borderRadius:24, border:"1px solid var(--bd)", boxShadow:"inset 0 4px 24px rgba(0,0,0,0.03)", padding:mob?16:32, maxWidth:1600, margin:"0 auto", width:"100%"}}>
             {fullScreenMode === "hierarchy" ? (
-              <div style={{minWidth: mob?300:1000, margin:"0 auto", paddingTop: 20, paddingBottom: 40}}>
+              <div style={{minWidth: mob?300:1000, margin:"0 auto", paddingTop: 10, paddingBottom: 40}}>
                  {renderHierarchy(null)}
               </div>
             ) : (
@@ -9013,10 +9127,32 @@ function AdminTeam({ mob, C, setC, auth }) {
     
     if(children.length === 0) return null;
 
-    const chunkArray = (arr, size) => {
+    const chunkArrayWithPattern = (arr, defaultSize, patternStr) => {
+      if (!patternStr || !patternStr.trim()) {
+        const res = [];
+        for (let i = 0; i < arr.length; i += defaultSize) {
+          res.push(arr.slice(i, i + defaultSize));
+        }
+        return res;
+      }
+      
+      const pattern = patternStr.split(',').map(s => parseInt(s.trim(), 10)).filter(n => !isNaN(n) && n > 0);
+      if (pattern.length === 0) {
+        const res = [];
+        for (let i = 0; i < arr.length; i += defaultSize) {
+          res.push(arr.slice(i, i + defaultSize));
+        }
+        return res;
+      }
+
       const res = [];
-      for (let i = 0; i < arr.length; i += size) {
-        res.push(arr.slice(i, i + size));
+      let currentIndex = 0;
+      let patternIdx = 0;
+      while (currentIndex < arr.length) {
+        const chunkSize = pattern[patternIdx] !== undefined ? pattern[patternIdx] : (pattern[pattern.length - 1] || defaultSize);
+        res.push(arr.slice(currentIndex, currentIndex + chunkSize));
+        currentIndex += chunkSize;
+        if (patternIdx < pattern.length - 1) patternIdx++;
       }
       return res;
     };
@@ -9026,7 +9162,10 @@ function AdminTeam({ mob, C, setC, auth }) {
     // Compact Matrix Layout for Large Admin Hierarchies (> threshold children)
     if (children.length > threshold && threshold < 999) {
       const cols = mob ? 2 : Math.min(threshold, 5);
-      const rows = chunkArray(children, cols);
+      const activePattern = C.commRowWrapPattern?.[activeCommittee] || C.rowWrapPattern || "";
+      const activeLabels = C.commRowLabels?.[activeCommittee] || C.rowLabelsStr || "";
+      const rows = chunkArrayWithPattern(children, cols, activePattern);
+      const rowLabelsList = activeLabels.split(",").map(s => s.trim()).filter(Boolean);
 
       return (
         <div style={{display:"flex", flexDirection:"column", alignItems:"center", position:"relative", paddingTop: parentId ? (mob?16:20) : 0, width:"100%"}}>
@@ -9058,18 +9197,37 @@ function AdminTeam({ mob, C, setC, auth }) {
 
             {rows.map((rowItems, rIdx) => {
               const isRowActive = rowItems.some(n => menuNode?.id === n.id);
+              const rLabel = rowLabelsList.length > 1 ? rowLabelsList[rIdx + 1] : rowLabelsList[rIdx];
               return (
-                <div key={`tree_row_${rIdx}`} style={{
-                  display:"flex", gap: mob?"8px":"16px", justifyContent:"center",
-                  position:"relative", zIndex: isRowActive ? 999 : 2, width:"100%"
-                }}>
-                  {/* Horizontal Branch from Left Bus Line across row */}
-                  {!mob && rows.length > 1 && (
+                <div key={`tree_row_wrap_${rIdx}`} style={{display:"flex", flexDirection:"column", alignItems:"center", width:"100%", position:"relative", zIndex: isRowActive ? 999 : 2}}>
+                  {/* Row Group Identity Label Badge */}
+                  {rLabel && (
                     <div style={{
-                      position:"absolute", top: 0, left: -24, right: "10%", height: 2,
-                      background: "var(--sf)", zIndex: 1
-                    }} />
+                      width: "100%", textAlign: "center", marginBottom: 6, position: "relative", zIndex: 3
+                    }}>
+                      <span style={{
+                        background: "linear-gradient(135deg, #FFF6EE, #FFEAD9)",
+                        color: "var(--dt)", border: "1px solid rgba(232,101,10,0.3)",
+                        fontSize: ".75rem", fontWeight: 700, padding: "3px 14px",
+                        borderRadius: 20, boxShadow: "0 2px 8px rgba(0,0,0,0.04)",
+                        letterSpacing: 0.5, display: "inline-flex", alignItems: "center", gap: 6
+                      }}>
+                        🏷️ {rLabel}
+                      </span>
+                    </div>
                   )}
+
+                  <div key={`tree_row_${rIdx}`} style={{
+                    display:"flex", gap: mob?"8px":"16px", justifyContent:"center",
+                    position:"relative", zIndex: isRowActive ? 999 : 2, width:"100%"
+                  }}>
+                    {/* Horizontal Branch from Left Bus Line across row */}
+                    {!mob && rows.length > 1 && (
+                      <div style={{
+                        position:"absolute", top: 0, left: -24, right: "10%", height: 2,
+                        background: "var(--sf)", zIndex: 1
+                      }} />
+                    )}
 
                   {/* Horizontal Connector Line spanning single row */}
                   {!mob && rowItems.length > 1 && rows.length === 1 && (
@@ -9081,6 +9239,7 @@ function AdminTeam({ mob, C, setC, auth }) {
 
                   {rowItems.map((node, i) => {
                     const isNodeActive = menuNode?.id === node.id;
+                    const globalIdx = children.indexOf(node);
                     return (
                       <div key={node.id} style={{display:"flex", flexDirection:"column", alignItems:"center", position:"relative", zIndex: isNodeActive ? 999 : 1}}>
                         {/* Vertical Connector Line from row bar to card */}
@@ -9096,29 +9255,38 @@ function AdminTeam({ mob, C, setC, auth }) {
                           )}
 
                           <div className="gi" style={{
-                            background:"white", padding: "16px 10px 12px 10px", borderRadius: 16, borderTop: "4px solid var(--sf)", 
-                            width: 160, textAlign:"center", boxShadow:"0 8px 24px rgba(0,0,0,0.06)",
-                            transition:"all .2s ease", position:"relative", zIndex: isNodeActive ? 999 : 2, cursor:"pointer"
-                          }} onClick={() => setActiveNode(node)}>
-
-                            {/* Control Bar on Top of Role Card */}
-                            <div style={{position:"absolute", top: 6, left: 6, right: 6, display:"flex", justifyContent:"space-between", alignItems:"center", zIndex:12}} onClick={e=>e.stopPropagation()}>
-                              {children.length > 1 ? (
-                                <div style={{display:"flex", gap: 3}}>
-                                  <button onClick={()=>moveSibling(node, -1)} disabled={i===0} style={{width:22, height:22, borderRadius:6, background: i===0 ? "#F0F0F0" : "#EBF3FF", color: i===0 ? "#CCC" : "var(--dt)", border:"1px solid rgba(0,0,0,0.08)", fontSize:".65rem", cursor: i===0 ? "default" : "pointer", display:"flex", alignItems:"center", justifyContent:"center"}} title="Move Role Left">⬅️</button>
-                                  <button onClick={()=>moveSibling(node, 1)} disabled={i===children.length-1} style={{width:22, height:22, borderRadius:6, background: i===children.length-1 ? "#F0F0F0" : "#EBF3FF", color: i===children.length-1 ? "#CCC" : "var(--dt)", border:"1px solid rgba(0,0,0,0.08)", fontSize:".65rem", cursor: i===children.length-1 ? "default" : "pointer", display:"flex", alignItems:"center", justifyContent:"center"}} title="Move Role Right">➡️</button>
-                                </div>
-                              ) : <div />}
-                              <button onClick={(e)=>{e.stopPropagation(); removeSingleNodeOnly(node.id);}} style={{width:22, height:22, borderRadius:6, background:"#FFF0F0", color:"#D32F2F", border:"1px solid #FFCDCD", fontSize:".65rem", cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"center"}} title="Delete Role">🗑️</button>
+                            background: draggedItemId === node.id ? "#FFF7ED" : "white",
+                            padding: 12, borderRadius: 12, borderTop: "3px solid var(--sf)",
+                            border: draggedItemId && draggedItemId !== node.id && filteredAdminItems.find(x => x.id === draggedItemId)?.parentId === node.parentId ? "2px dashed var(--sf)" : undefined,
+                            width: 150, textAlign:"center", boxShadow:"0 8px 24px rgba(0,0,0,0.06)",
+                            transition:"transform .3s", position:"relative", zIndex:2, cursor:"grab",
+                            opacity: draggedItemId === node.id ? 0.5 : 1
+                          }}
+                          draggable
+                          onDragStart={(e) => handleItemDragStart(e, node.id)}
+                          onDragOver={(e) => e.preventDefault()}
+                          onDrop={(e) => {
+                            e.preventDefault();
+                            const from = filteredAdminItems.find(x => x.id === draggedItemId);
+                            if (from && from.parentId === node.parentId) handleItemDrop(e, node.id);
+                            else setDraggedItemId(null);
+                          }}
+                          onDragEnd={() => setDraggedItemId(null)}
+                          onClick={() => setActiveNode(node)}>
+                            {/* Card Content */}
+                            <div style={{width:44, height:44, margin:"0 auto 8px", borderRadius:"50%", overflow:"hidden", border:"2px solid #f0f0f0", background:"#eee"}}>
+                              {node.image ? (
+                                <img src={node.image} alt={node.name} style={{width:"100%", height:"100%", objectFit:"cover"}}/>
+                              ) : (
+                                <div style={{width:"100%", height:"100%", display:"flex", alignItems:"center", justifyContent:"center", fontSize:"1.3rem"}}>👤</div>
+                              )}
                             </div>
+                            <h4 style={{fontFamily:"'Playfair Display',serif", color:"var(--dt)", margin:"0 0 2px 0", fontSize:".85rem", fontWeight:700}}>{node.name || "Name"}</h4>
+                            <div style={{fontSize:".65rem", color:"var(--sf)", fontWeight:600, textTransform:"uppercase", letterSpacing:1}}>{node.position || "Position"}</div>
+                            {activeCommittee === "All" && node.committee && (
+                              <div style={{fontSize:".55rem", background:"#F0F4FF", color:"var(--dt)", borderRadius:8, padding:"1px 4px", marginTop:4, display:"inline-block", fontWeight:600, whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis"}}>{node.committee}</div>
+                            )}
 
-                            <div style={{width:50, height:50, margin:"16px auto 6px", borderRadius:"50%", overflow:"hidden", border:"2px solid #f0f0f0", background:"#eee"}}>
-                              {node.image ? <img src={node.image} alt={node.name} style={{width:"100%", height:"100%", objectFit:"cover"}}/> : <div style={{width:"100%", height:"100%", display:"flex", alignItems:"center", justifyContent:"center", fontSize:"1.5rem"}}>👤</div>}
-                            </div>
-                            <div style={{fontWeight:700, fontSize:".85rem", color:"var(--dt)", whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis"}}>{node.name || "Name"}</div>
-                            <div style={{fontSize:".7rem", color:"var(--sf)"}}>{node.position || "Position"}</div>
-                            {node.committee && <div style={{fontSize:".6rem", background:"#F0F4FF", color:"var(--dt)", borderRadius:6, padding:"1px 4px", marginTop:3, fontWeight:600, whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis"}}>{node.committee}</div>}
-                            
                             <button onClick={(e)=>{e.stopPropagation(); setMenuNode(node);}} style={{position:"absolute", bottom: -12, right: -12, width: 26, height: 26, borderRadius:"50%", background:"var(--dt)", color:"white", border:"2px solid white", cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"center", fontSize:"1rem", zIndex:10, boxShadow:"0 2px 8px rgba(0,0,0,0.15)"}} title="Add Role relative (Boss/Sibling/Subordinate)">+</button>
                           </div>
 
@@ -9128,8 +9296,8 @@ function AdminTeam({ mob, C, setC, auth }) {
                               <div style={{fontSize:".7rem", color:"#888", marginBottom:6, textAlign:"center", fontWeight:700, letterSpacing:1}}>REORDER / ADD ROLE</div>
                               {children.length > 1 && (
                                 <div style={{display:"flex", gap: 4, marginBottom: 8}}>
-                                  <button onClick={()=>moveSibling(node, -1)} disabled={i===0} style={{flex:1, padding:"5px", fontSize:".7rem", background:"#f0f4ff", border:"none", borderRadius:4, cursor:i===0?"default":"pointer", opacity:i===0?0.5:1}}>⬅️ Move Left</button>
-                                  <button onClick={()=>moveSibling(node, 1)} disabled={i===children.length-1} style={{flex:1, padding:"5px", fontSize:".7rem", background:"#f0f4ff", border:"none", borderRadius:4, cursor:i===children.length-1?"default":"pointer", opacity:i===children.length-1?0.5:1}}>➡️ Move Right</button>
+                                  <button onClick={()=>moveSibling(node, -1)} disabled={globalIdx===0} style={{flex:1, padding:"5px", fontSize:".7rem", background:"#f0f4ff", border:"none", borderRadius:4, cursor:globalIdx===0?"default":"pointer", opacity:globalIdx===0?0.5:1}}>⬅️ Move Left</button>
+                                  <button onClick={()=>moveSibling(node, 1)} disabled={globalIdx===children.length-1} style={{flex:1, padding:"5px", fontSize:".7rem", background:"#f0f4ff", border:"none", borderRadius:4, cursor:globalIdx===children.length-1?"default":"pointer", opacity:globalIdx===children.length-1?0.5:1}}>➡️ Move Right</button>
                                 </div>
                               )}
                               <button onClick={()=>addBoss(node)} className="gi" style={{display:"block", width:"100%", padding:"6px", fontSize:".75rem", background:"#f9f9f9", border:"none", borderRadius:4, marginBottom:4, cursor:"pointer", textAlign:"left"}}>⬆️ Add Boss (Above)</button>
@@ -9153,8 +9321,9 @@ function AdminTeam({ mob, C, setC, auth }) {
                     );
                   })}
                 </div>
-              );
-            })}
+              </div>
+            );
+          })}
           </div>
         </div>
       );
@@ -9162,21 +9331,20 @@ function AdminTeam({ mob, C, setC, auth }) {
 
     return (
       <div style={{display:"flex", gap: "20px", justifyContent:"center", paddingTop: parentId ? 20 : 0, position:"relative"}}>
+        {/* Single horizontal connecting line spanning all children */}
+        {parentId && children.length > 1 && (
+          <div style={{
+            position:"absolute", top: 0, height: 2, background: "var(--sf)",
+            left: "calc(50% / " + children.length + ")",
+            right: "calc(50% / " + children.length + ")",
+            zIndex: 1
+          }} />
+        )}
         {children.map((node, i) => (
           <div key={node.id} style={{display:"flex", flexDirection:"column", alignItems:"center", position:"relative"}}>
-            {/* Connecting lines for children */}
+            {/* Vertical drop line from horizontal bus to each card */}
             {parentId && (
-              <>
-                <div style={{position:"absolute", top: 0, left: "50%", width: 2, height: 20, background: "var(--sf)", transform:"translateX(-50%)"}} />
-                {children.length > 1 && (
-                  <div style={{
-                    position:"absolute", top: 0, height: 2, background: "var(--sf)",
-                    left: i === 0 ? "50%" : 0,
-                    right: i === children.length - 1 ? "50%" : 0,
-                    width: i === 0 || i === children.length - 1 ? "50%" : "100%"
-                  }} />
-                )}
-              </>
+              <div style={{position:"absolute", top: 0, left: "50%", width: 2, height: 20, background: "var(--sf)", transform:"translateX(-50%)"}} />
             )}
             
             {/* The Node */}
@@ -9188,10 +9356,25 @@ function AdminTeam({ mob, C, setC, auth }) {
               
               {/* Card */}
               <div className="gi" style={{
-                background:"white", padding: "16px 10px 12px 10px", borderRadius: 16, borderTop: "4px solid var(--sf)", 
+                background: draggedItemId === node.id ? "#FFF7ED" : "white",
+                padding: "16px 10px 12px 10px", borderRadius: 16,
+                borderTop: "4px solid var(--sf)",
+                border: draggedItemId && draggedItemId !== node.id && filteredAdminItems.find(x => x.id === draggedItemId)?.parentId === node.parentId ? "2px dashed var(--sf)" : undefined,
                 width: 160, textAlign:"center", boxShadow:"0 8px 24px rgba(0,0,0,0.06)",
-                transition:"all .2s ease", position:"relative", zIndex:2, cursor:"pointer"
-              }} onClick={() => setActiveNode(node)}>
+                transition:"all .2s ease", position:"relative", zIndex:2, cursor:"grab",
+                opacity: draggedItemId === node.id ? 0.5 : 1
+              }}
+              draggable
+              onDragStart={(e) => handleItemDragStart(e, node.id)}
+              onDragOver={(e) => e.preventDefault()}
+              onDrop={(e) => {
+                e.preventDefault();
+                const from = filteredAdminItems.find(x => x.id === draggedItemId);
+                if (from && from.parentId === node.parentId) handleItemDrop(e, node.id);
+                else setDraggedItemId(null);
+              }}
+              onDragEnd={() => setDraggedItemId(null)}
+              onClick={() => setActiveNode(node)}>
 
                 {/* Control Bar on Top of Role Card */}
                 <div style={{position:"absolute", top: 6, left: 6, right: 6, display:"flex", justifyContent:"space-between", alignItems:"center", zIndex:12}} onClick={e=>e.stopPropagation()}>
@@ -9505,9 +9688,9 @@ function AdminTeam({ mob, C, setC, auth }) {
               <h3 style={{fontFamily:"'Playfair Display',serif", color:"var(--dt)", margin:0, fontSize:"1.3rem", fontWeight:700}}>Organization Chart ({activeCommittee})</h3>
               <p style={{fontSize:".85rem", color:"var(--mu)", marginTop:2}}>Configure hierarchy layout and set maximum cards before wrapping to vertical matrix.</p>
             </div>
-            <div style={{display:"flex", alignItems:"center", gap:10}}>
+            <div style={{display:"flex", alignItems:"center", gap:10, flexWrap:"wrap"}}>
               <label style={{fontSize:".85rem", fontWeight:700, color:"var(--dt)", display:"flex", alignItems:"center", gap:8, background:"#F7FAFC", padding:"6px 14px", borderRadius:12, border:"1px solid var(--bd)"}}>
-                <span>📐 Wrap to Vertical Matrix after:</span>
+                <span>📐 Wrap Threshold:</span>
                 <select
                   value={C.maxHorizontalCards || 5}
                   onChange={(e) => {
@@ -9529,6 +9712,52 @@ function AdminTeam({ mob, C, setC, auth }) {
                   <option value={10}>10 Cards (Wrap &gt; 10)</option>
                   <option value={999}>Single Line (No Wrap)</option>
                 </select>
+              </label>
+
+              <label style={{fontSize:".85rem", fontWeight:700, color:"var(--dt)", display:"flex", alignItems:"center", gap:8, background:"#F7FAFC", padding:"6px 14px", borderRadius:12, border:"1px solid var(--bd)"}} title="Set custom card counts per row (e.g. 2, 4, 6 for Trustees, Mantris, Members)">
+                <span>🔢 Row Break Pattern:</span>
+                <input
+                  type="text"
+                  placeholder="e.g. 2, 4, 6"
+                  value={C.commRowWrapPattern?.[activeCommittee] ?? C.rowWrapPattern ?? ""}
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    const newC = {
+                      ...C,
+                      rowWrapPattern: val,
+                      commRowWrapPattern: { ...(C.commRowWrapPattern || {}), [activeCommittee]: val }
+                    };
+                    setC(newC);
+                    saveToFb(newC);
+                  }}
+                  style={{
+                    width: 90, padding:"4px 8px", borderRadius:8, border:"1px solid var(--bd)",
+                    fontSize:".85rem", fontWeight:700, color:"var(--dt)", background:"white"
+                  }}
+                />
+              </label>
+
+              <label style={{fontSize:".85rem", fontWeight:700, color:"var(--dt)", display:"flex", alignItems:"center", gap:8, background:"#F7FAFC", padding:"6px 14px", borderRadius:12, border:"1px solid var(--bd)"}} title="Set group identity labels for each row (e.g. Trustees, Mantri, Manad Sabhya)">
+                <span>🏷️ Row Group Labels:</span>
+                <input
+                  type="text"
+                  placeholder="e.g. Trustees, Mantri, Manad Sabhya"
+                  value={C.commRowLabels?.[activeCommittee] ?? C.rowLabelsStr ?? ""}
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    const newC = {
+                      ...C,
+                      rowLabelsStr: val,
+                      commRowLabels: { ...(C.commRowLabels || {}), [activeCommittee]: val }
+                    };
+                    setC(newC);
+                    saveToFb(newC);
+                  }}
+                  style={{
+                    width: 220, padding:"4px 8px", borderRadius:8, border:"1px solid var(--bd)",
+                    fontSize:".85rem", fontWeight:700, color:"var(--dt)", background:"white"
+                  }}
+                />
               </label>
             </div>
           </div>
