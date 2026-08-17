@@ -12721,6 +12721,8 @@ function AdminAccess({ C, setC, master, auth }) {
 
 
 function VerificationModal({ viewing, setViewing, allRegs, saveVerification, C }) {
+  const w = useW();
+  const mob = w < 768;
   const [eventFilter, setEventFilter] = useState(viewing.eventName || viewing.eventTitle || viewing.eventId || "");
   const [statusFilter, setStatusFilter] = useState(viewing['Status'] || "Pending");
 
@@ -12781,12 +12783,15 @@ function VerificationModal({ viewing, setViewing, allRegs, saveVerification, C }
     }
   });
 
+  const [activeTab, setActiveTab] = useState(docItems.length > 0 ? "docs" : "details");
+
   useEffect(() => {
     setActiveDoc(docItems.length > 0 ? docItems[0].url : null);
     setStatus(viewing['Status'] || 'Pending');
     setRemarks(viewing['Remarks'] || '');
     setEditedReg(viewing);
     setIsEditing(false);
+    setActiveTab(docItems.length > 0 ? "docs" : "details");
   }, [viewing]);
 
   const handleSave = async () => {
@@ -12873,413 +12878,476 @@ function VerificationModal({ viewing, setViewing, allRegs, saveVerification, C }
   const isPdf = activeDoc && activeDoc.toLowerCase().includes('.pdf');
 
   return (
-    <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.7)",zIndex:9999,display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
-      <div style={{background:"white",width:"100%",maxWidth:1200,height:"90vh",borderRadius:12,display:"flex",flexDirection:"column",overflow:"hidden",boxShadow:"0 24px 48px rgba(0,0,0,0.2)"}}>
+    <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.8)",zIndex:99999,display:"flex",alignItems:"center",justifyContent:"center",padding:mob?0:16,boxSizing:"border-box"}}>
+      <div style={{background:"white",width:"100%",maxWidth:1200,height:mob?"100dvh":"90vh",maxHeight:"100dvh",borderRadius:mob?0:12,display:"flex",flexDirection:"column",overflow:"hidden",boxShadow:"0 24px 48px rgba(0,0,0,0.3)"}}>
         
-        {/* Header */}
-        <div style={{padding:"12px 24px",background:"var(--dt)",color:"white",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-          <div style={{display:"flex",alignItems:"center",gap:24}}>
-             <div>
-               <h3 style={{fontSize:"1.1rem",fontWeight:700,margin:0,whiteSpace:"nowrap"}}>Verification Workflow</h3>
-               <div style={{fontSize:".75rem",opacity:0.8,marginTop:2}}>ID: {viewing['Transaction ID'] || "N/A"}</div>
-             </div>
-             
-             {/* Filter Dropdowns */}
-             <div style={{display:"flex",gap:8,alignItems:"center",borderLeft:"1px solid rgba(255,255,255,0.2)",paddingLeft:24}}>
-               <span style={{fontSize:".75rem",fontWeight:600,textTransform:"uppercase",opacity:0.8}}>Filter:</span>
-               <select value={eventFilter} onChange={e=>handleFilterChange('event', e.target.value)} style={{padding:"6px 12px",borderRadius:6,border:"none",fontSize:".8rem",outline:"none",background:"rgba(255,255,255,0.1)",color:"white"}}>
-                 <option value="" style={{color:"black"}}>All Events</option>
-                 {uniqueEvents.map(e => <option key={e} value={e} style={{color:"black"}}>{e}</option>)}
-               </select>
+        {/* Header - Mobile Responsive */}
+        <div style={{padding:mob?"10px 14px":"12px 24px",background:"var(--dt)",color:"white",display:"flex",flexDirection:"column",gap:8,flexShrink:0}}>
+          {/* Top Row: Title, ID & Always Visible Close X Button */}
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",width:"100%"}}>
+            <div style={{minWidth:0,flex:1,paddingRight:8}}>
+              <h3 style={{fontSize:mob?"1rem":"1.1rem",fontWeight:700,margin:0,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>
+                Verification Workflow
+              </h3>
+              <div style={{fontSize:".72rem",opacity:0.85,marginTop:1,fontFamily:"monospace"}}>
+                ID: {viewing['Transaction ID'] || viewing.id || "N/A"}
+              </div>
+            </div>
 
-               <select value={statusFilter} onChange={e=>handleFilterChange('status', e.target.value)} style={{padding:"6px 12px",borderRadius:6,border:"none",fontSize:".8rem",outline:"none",background:"rgba(255,255,255,0.1)",color:"white"}}>
-                 <option value="All" style={{color:"black"}}>All Status</option>
-                 <option value="Pending" style={{color:"black"}}>Pending</option>
-                 <option value="Needs Info" style={{color:"black"}}>Needs Info</option>
-                 <option value="Approved" style={{color:"black"}}>Approved</option>
-                 <option value="Disapproved" style={{color:"black"}}>Disapproved</option>
-               </select>
-             </div>
+            <button 
+              onClick={() => setViewing(null)} 
+              style={{
+                background:"rgba(255,255,255,0.25)",
+                border:"none",
+                color:"white",
+                width:34,
+                height:34,
+                borderRadius:"50%",
+                fontSize:"1.2rem",
+                cursor:"pointer",
+                display:"flex",
+                alignItems:"center",
+                justifyContent:"center",
+                flexShrink:0
+              }}
+              title="Close Modal"
+            >
+              ✕
+            </button>
           </div>
-          
-          <div style={{display:"flex",alignItems:"center",gap:20}}>
-             <div style={{fontSize:".8rem",fontWeight:600,display:"flex",alignItems:"center",gap:8,background:"rgba(0,0,0,0.2)",padding:"4px 12px",borderRadius:20}}>
-               <button onClick={goPrev} disabled={currentIndex <= 0} style={{background:"none",border:"none",color:"white",cursor:currentIndex<=0?"not-allowed":"pointer",opacity:currentIndex<=0?0.3:1}}>◄ Prev</button>
-               <span>{currentIndex >= 0 ? currentIndex + 1 : 0} of {filteredList.length}</span>
-               <button onClick={goNext} disabled={currentIndex === -1 || currentIndex >= filteredList.length - 1} style={{background:"none",border:"none",color:"white",cursor:(currentIndex===-1||currentIndex>=filteredList.length-1)?"not-allowed":"pointer",opacity:(currentIndex===-1||currentIndex>=filteredList.length-1)?0.3:1}}>Next ►</button>
-             </div>
-             <button onClick={()=>setViewing(null)} style={{background:"rgba(255,255,255,0.2)",border:"none",color:"white",width:32,height:32,borderRadius:"50%",fontSize:"1.1rem",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center"}} onMouseOver={e=>e.target.style.background="rgba(255,255,255,0.3)"} onMouseOut={e=>e.target.style.background="rgba(255,255,255,0.2)"}>✕</button>
+
+          {/* Bottom Row: Filters & Prev/Next Counter */}
+          <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:8,flexWrap:"wrap",borderTop:"1px solid rgba(255,255,255,0.15)",paddingTop:6}}>
+            <div style={{display:"flex",gap:6,alignItems:"center",flexWrap:"wrap"}}>
+              <select value={eventFilter} onChange={e=>handleFilterChange('event', e.target.value)} style={{padding:"4px 8px",borderRadius:6,border:"none",fontSize:".75rem",outline:"none",background:"rgba(255,255,255,0.15)",color:"white",maxWidth:mob?130:200}}>
+                <option value="" style={{color:"black"}}>All Events</option>
+                {uniqueEvents.map(e => <option key={e} value={e} style={{color:"black"}}>{e}</option>)}
+              </select>
+
+              <select value={statusFilter} onChange={e=>handleFilterChange('status', e.target.value)} style={{padding:"4px 8px",borderRadius:6,border:"none",fontSize:".75rem",outline:"none",background:"rgba(255,255,255,0.15)",color:"white"}}>
+                <option value="All" style={{color:"black"}}>All Status</option>
+                <option value="Pending" style={{color:"black"}}>Pending</option>
+                <option value="Needs Info" style={{color:"black"}}>Needs Info</option>
+                <option value="Approved" style={{color:"black"}}>Approved</option>
+                <option value="Disapproved" style={{color:"black"}}>Disapproved</option>
+              </select>
+            </div>
+
+            <div style={{fontSize:".75rem",fontWeight:600,display:"flex",alignItems:"center",gap:6,background:"rgba(0,0,0,0.25)",padding:"3px 10px",borderRadius:16}}>
+              <button onClick={goPrev} disabled={currentIndex <= 0} style={{background:"none",border:"none",color:"white",cursor:currentIndex<=0?"not-allowed":"pointer",opacity:currentIndex<=0?0.3:1}}>◄ Prev</button>
+              <span>{currentIndex >= 0 ? currentIndex + 1 : 0} / {filteredList.length}</span>
+              <button onClick={goNext} disabled={currentIndex === -1 || currentIndex >= filteredList.length - 1} style={{background:"none",border:"none",color:"white",cursor:(currentIndex===-1||currentIndex>=filteredList.length-1)?"not-allowed":"pointer",opacity:(currentIndex===-1||currentIndex>=filteredList.length-1)?0.3:1}}>Next ►</button>
+            </div>
           </div>
         </div>
 
-        {/* Split Screen Body */}
-        <div style={{display:"flex",flex:1,overflow:"hidden"}}>
-          
-          {/* Left: Document Viewer */}
-          <div style={{flex:1,borderRight:"1px solid var(--bd)",display:"flex",flexDirection:"column",background:"#F5F5F7"}}>
-            {docItems.length > 0 ? (
-              <>
-                <div style={{padding:"12px 16px",background:"white",borderBottom:"1px solid var(--bd)",display:"flex",gap:8,overflowX:"auto",alignItems:"center"}}>
-                  <span style={{fontSize:".75rem",fontWeight:700,color:"var(--dt)",textTransform:"uppercase",letterSpacing:.5,marginRight:4}}>
-                    Attached Documents ({docItems.length}):
-                  </span>
-                  {docItems.map((item, idx) => {
-                    const active = activeDoc === item.url;
-                    return (
-                      <button key={idx} onClick={()=>setActiveDoc(item.url)} style={{padding:"6px 14px",borderRadius:20,border:`1.5px solid ${active?"var(--sf)":"var(--bd)"}`,background:active?"var(--sf)":"white",color:active?"white":"var(--dt)",fontSize:".8rem",fontWeight:700,cursor:"pointer",whiteSpace:"nowrap",display:"flex",alignItems:"center",gap:6,transition:"all .2s"}}>
-                        <span>📄</span>
-                        <span>{item.label}</span>
-                      </button>
-                    );
-                  })}
-                </div>
-
-                <div style={{flex:1,padding:16,display:"flex",alignItems:"center",justifyContent:"center",overflow:"hidden"}}>
-                  {isPdf ? (
-                    <iframe src={activeDoc} style={{width:"100%",height:"100%",border:"none",borderRadius:8,background:"white",boxShadow:"0 4px 12px rgba(0,0,0,0.05)"}} title="Document" />
-                  ) : (
-                    <img src={activeDoc} alt="Document" style={{maxWidth:"100%",maxHeight:"100%",objectFit:"contain",borderRadius:8,boxShadow:"0 4px 12px rgba(0,0,0,0.05)"}} />
-                  )}
-                </div>
-              </>
-            ) : (
-              <div style={{flex:1,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",color:"var(--mu)",padding:40,textAlign:"center"}}>
-                <div style={{fontSize:"3rem",marginBottom:16,opacity:0.5}}>📄</div>
-                <h4 style={{margin:0,fontSize:"1.1rem",fontWeight:600,color:"var(--dt)"}}>No Documents Provided</h4>
-                <p style={{fontSize:".9rem",marginTop:8}}>This registration does not contain any uploaded files or images.</p>
-              </div>
-            )}
+        {/* Mobile View Tab Bar Switcher */}
+        {mob && (
+          <div style={{display:"flex",background:"#F0F4F8",borderBottom:"1px solid var(--bd)",flexShrink:0}}>
+            <button 
+              onClick={() => setActiveTab("docs")} 
+              style={{
+                flex:1, padding:"10px 6px", border:"none",
+                background:activeTab==="docs"?"white":"transparent",
+                color:activeTab==="docs"?"var(--sf)":"var(--dt)",
+                fontWeight:activeTab==="docs"?700:600, fontSize:".8rem",
+                borderBottom:activeTab==="docs"?"3px solid var(--sf)":"none",
+                cursor:"pointer"
+              }}
+            >
+              📄 Documents ({docItems.length})
+            </button>
+            <button 
+              onClick={() => setActiveTab("details")} 
+              style={{
+                flex:1, padding:"10px 6px", border:"none",
+                background:activeTab==="details"?"white":"transparent",
+                color:activeTab==="details"?"var(--sf)":"var(--dt)",
+                fontWeight:activeTab==="details"?700:600, fontSize:".8rem",
+                borderBottom:activeTab==="details"?"3px solid var(--sf)":"none",
+                cursor:"pointer"
+              }}
+            >
+              📋 Details & Action
+            </button>
           </div>
+        )}
 
-          {/* Right: Data & Verification Controls */}
-          <div style={{width:400,display:"flex",flexDirection:"column",background:"white"}}>
-            
-            {/* Input Data List */}
-            <div style={{flex:1,overflowY:"auto",padding:"24px"}}>
-              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16}}>
-                <h4 style={{fontSize:".95rem",fontWeight:700,color:"var(--dt)",margin:0,textTransform:"uppercase",letterSpacing:1}}>Submitted Details</h4>
-                <button 
-                  onClick={() => setIsEditing(!isEditing)} 
-                  style={{
-                    background: "none", 
-                    border: "none", 
-                    color: "var(--dt)", 
-                    cursor: "pointer", 
-                    fontSize: ".85rem", 
-                    fontWeight: 600,
-                    display: "flex",
-                    alignItems: "center",
-                    gap: 4
-                  }}
-                >
-                  {isEditing ? "👁 Read Only" : "✏️ Edit Fields"}
-                </button>
-              </div>
-              <div style={{display:"flex",flexDirection:"column",gap:16}}>
-                {fieldsToRender.map(f => {
-                  const val = (editedReg || viewing)[f.key];
-                  if (typeof val === 'string' && val.startsWith('http')) return null; // Skip docs
-                  const displayVal = typeof val === 'string' ? val.replace(/\|/g, ' ') : String(val);
-
-                  if (isEditing) {
-                    if (f.type === 'dropdown') {
+        {/* Modal Body */}
+        <div style={{display:"flex",flexDirection:mob?"column":"row",flex:1,overflow:"hidden"}}>
+          
+          {/* Document Viewer (Shown if !mob OR if mob and activeTab === 'docs') */}
+          {(!mob || activeTab === "docs") && (
+            <div style={{flex:1,borderRight:mob?"none":"1px solid var(--bd)",display:"flex",flexDirection:"column",background:"#F5F5F7",height:mob?"100%":"auto",overflow:"hidden"}}>
+              {docItems.length > 0 ? (
+                <>
+                  <div style={{padding:"10px 14px",background:"white",borderBottom:"1px solid var(--bd)",display:"flex",gap:8,overflowX:"auto",alignItems:"center",flexShrink:0}}>
+                    <span style={{fontSize:".75rem",fontWeight:700,color:"var(--dt)",textTransform:"uppercase",letterSpacing:.5,marginRight:4,whiteSpace:"nowrap"}}>
+                      Attached ({docItems.length}):
+                    </span>
+                    {docItems.map((item, idx) => {
+                      const active = activeDoc === item.url;
                       return (
-                        <div key={f.key}>
-                          <div style={{fontSize:".75rem",color:"var(--mu)",fontWeight:600,marginBottom:4}}>{f.label}</div>
-                          <select 
-                            value={editedReg[f.key] || ""} 
-                            onChange={(e) => setEditedReg(prev => ({ ...prev, [f.key]: e.target.value }))}
-                            style={{
-                              width: "100%",
-                              padding: "10px",
-                              borderRadius: 6,
-                              border: "1px solid var(--bd)",
-                              fontFamily: "inherit",
-                              fontSize: ".9rem",
-                              background: "#fff",
-                              outline: "none"
-                            }}
-                          >
-                            <option value="">-- Select --</option>
-                            {(f.options || "").split(",").map((opt, oi) => opt.trim() && <option key={oi} value={opt.trim()}>{opt.trim()}</option>)}
-                          </select>
-                        </div>
+                        <button key={idx} onClick={()=>setActiveDoc(item.url)} style={{padding:"4px 12px",borderRadius:20,border:`1.5px solid ${active?"var(--sf)":"var(--bd)"}`,background:active?"var(--sf)":"white",color:active?"white":"var(--dt)",fontSize:".75rem",fontWeight:700,cursor:"pointer",whiteSpace:"nowrap",display:"flex",alignItems:"center",gap:6,transition:"all .2s"}}>
+                          <span>📄</span>
+                          <span>{item.label}</span>
+                        </button>
                       );
-                    }
-                    
-                    if (f.type === 'gender') {
-                      return (
-                        <div key={f.key}>
-                          <div style={{fontSize:".75rem",color:"var(--mu)",fontWeight:600,marginBottom:4}}>{f.label}</div>
-                          <select 
-                            value={editedReg[f.key] || ""} 
-                            onChange={(e) => setEditedReg(prev => ({ ...prev, [f.key]: e.target.value }))}
-                            style={{
-                              width: "100%",
-                              padding: "10px",
-                              borderRadius: 6,
-                              border: "1px solid var(--bd)",
-                              fontFamily: "inherit",
-                              fontSize: ".9rem",
-                              background: "#fff",
-                              outline: "none"
-                            }}
-                          >
-                            <option value="">-- Select Gender --</option>
-                            <option value="Male">Male</option>
-                            <option value="Female">Female</option>
-                            <option value="Other">Other</option>
-                          </select>
-                        </div>
-                      );
-                    }
+                    })}
+                  </div>
 
-                    if (f.type === 'fullname') {
-                      const parts = (editedReg[f.key] || "||").split("|");
-                      return (
-                        <div key={f.key}>
-                          <div style={{fontSize:".75rem",color:"var(--mu)",fontWeight:600,marginBottom:4}}>{f.label}</div>
-                          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:12}}>
-                            <input 
-                              placeholder="First" 
-                              value={parts[0] || ""} 
-                              onChange={e => {
-                                const newParts = [...parts]; newParts[0] = e.target.value;
-                                setEditedReg(prev => ({ ...prev, [f.key]: newParts.join("|") }));
-                              }} 
-                              style={{width:"100%",padding:"10px",borderRadius:6,border: "1px solid var(--bd)",fontFamily:"inherit",fontSize:".9rem"}}
-                            />
-                            <input 
-                              placeholder="Middle" 
-                              value={parts[1] || ""} 
-                              onChange={e => {
-                                const newParts = [...parts]; newParts[1] = e.target.value;
-                                setEditedReg(prev => ({ ...prev, [f.key]: newParts.join("|") }));
-                              }} 
-                              style={{width:"100%",padding:"10px",borderRadius:6,border: "1px solid var(--bd)",fontFamily:"inherit",fontSize:".9rem"}}
-                            />
-                            <input 
-                              placeholder="Last" 
-                              value={parts[2] || ""} 
-                              onChange={e => {
-                                const newParts = [...parts]; newParts[2] = e.target.value;
-                                setEditedReg(prev => ({ ...prev, [f.key]: newParts.join("|") }));
-                              }} 
-                              style={{width:"100%",padding:"10px",borderRadius:6,border: "1px solid var(--bd)",fontFamily:"inherit",fontSize:".9rem"}}
-                            />
+                  <div style={{flex:1,padding:mob?8:16,display:"flex",alignItems:"center",justifyContent:"center",overflow:"hidden"}}>
+                    {isPdf ? (
+                      <iframe src={activeDoc} style={{width:"100%",height:"100%",border:"none",borderRadius:8,background:"white",boxShadow:"0 4px 12px rgba(0,0,0,0.05)"}} title="Document" />
+                    ) : (
+                      <img src={activeDoc} alt="Document" style={{maxWidth:"100%",maxHeight:"100%",objectFit:"contain",borderRadius:8,boxShadow:"0 4px 12px rgba(0,0,0,0.05)"}} />
+                    )}
+                  </div>
+                </>
+              ) : (
+                <div style={{flex:1,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",color:"var(--mu)",padding:30,textAlign:"center"}}>
+                  <div style={{fontSize:"2.5rem",marginBottom:12,opacity:0.5}}>📄</div>
+                  <h4 style={{margin:0,fontSize:"1rem",fontWeight:600,color:"var(--dt)"}}>No Documents Provided</h4>
+                  <p style={{fontSize:".85rem",marginTop:6}}>This registration does not contain any uploaded files or images.</p>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Right: Data & Verification Controls (Shown if !mob OR if mob and activeTab === 'details') */}
+          {(!mob || activeTab === "details") && (
+            <div style={{width:mob?"100%":400,display:"flex",flexDirection:"column",background:"white",height:mob?"100%":"auto",overflow:"hidden"}}>
+              
+              {/* Input Data List */}
+              <div style={{flex:1,overflowY:"auto",padding:mob?"16px":"24px"}}>
+                <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16}}>
+                  <h4 style={{fontSize:".95rem",fontWeight:700,color:"var(--dt)",margin:0,textTransform:"uppercase",letterSpacing:1}}>Submitted Details</h4>
+                  <button 
+                    onClick={() => setIsEditing(!isEditing)} 
+                    style={{
+                      background: "none", 
+                      border: "none", 
+                      color: "var(--dt)", 
+                      cursor: "pointer", 
+                      fontSize: ".85rem", 
+                      fontWeight: 600,
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 4
+                    }}
+                  >
+                    {isEditing ? "👁 Read Only" : "✏️ Edit Fields"}
+                  </button>
+                </div>
+                <div style={{display:"flex",flexDirection:"column",gap:16}}>
+                  {fieldsToRender.map(f => {
+                    const val = (editedReg || viewing)[f.key];
+                    if (typeof val === 'string' && val.startsWith('http')) return null; // Skip docs
+                    const displayVal = typeof val === 'string' ? val.replace(/\|/g, ' ') : String(val);
+
+                    if (isEditing) {
+                      if (f.type === 'dropdown') {
+                        return (
+                          <div key={f.key}>
+                            <div style={{fontSize:".75rem",color:"var(--mu)",fontWeight:600,marginBottom:4}}>{f.label}</div>
+                            <select 
+                              value={editedReg[f.key] || ""} 
+                              onChange={(e) => setEditedReg(prev => ({ ...prev, [f.key]: e.target.value }))}
+                              style={{
+                                width: "100%",
+                                padding: "10px",
+                                borderRadius: 6,
+                                border: "1px solid var(--bd)",
+                                fontFamily: "inherit",
+                                fontSize: ".9rem",
+                                background: "#fff",
+                                outline: "none"
+                              }}
+                            >
+                              <option value="">-- Select --</option>
+                              {(f.options || "").split(",").map((opt, oi) => opt.trim() && <option key={oi} value={opt.trim()}>{opt.trim()}</option>)}
+                            </select>
                           </div>
+                        );
+                      }
+                      
+                      if (f.type === 'gender') {
+                        return (
+                          <div key={f.key}>
+                            <div style={{fontSize:".75rem",color:"var(--mu)",fontWeight:600,marginBottom:4}}>{f.label}</div>
+                            <select 
+                              value={editedReg[f.key] || ""} 
+                              onChange={(e) => setEditedReg(prev => ({ ...prev, [f.key]: e.target.value }))}
+                              style={{
+                                width: "100%",
+                                padding: "10px",
+                                borderRadius: 6,
+                                border: "1px solid var(--bd)",
+                                fontFamily: "inherit",
+                                fontSize: ".9rem",
+                                background: "#fff",
+                                outline: "none"
+                              }}
+                            >
+                              <option value="">-- Select Gender --</option>
+                              <option value="Male">Male</option>
+                              <option value="Female">Female</option>
+                              <option value="Other">Other</option>
+                            </select>
+                          </div>
+                        );
+                      }
+
+                      if (f.type === 'fullname') {
+                        const parts = (editedReg[f.key] || "||").split("|");
+                        return (
+                          <div key={f.key}>
+                            <div style={{fontSize:".75rem",color:"var(--mu)",fontWeight:600,marginBottom:4}}>{f.label}</div>
+                            <div style={{display:"grid",gridTemplateColumns:mob?"1fr":"1fr 1fr 1fr",gap:8}}>
+                              <input 
+                                placeholder="First Name" 
+                                value={parts[0] || ""} 
+                                onChange={e => {
+                                  const newParts = [...parts]; newParts[0] = e.target.value;
+                                  setEditedReg(prev => ({ ...prev, [f.key]: newParts.join("|") }));
+                                }} 
+                                style={{width:"100%",padding:"8px 10px",borderRadius:6,border: "1px solid var(--bd)",fontFamily:"inherit",fontSize:".88rem"}}
+                              />
+                              <input 
+                                placeholder="Middle Name" 
+                                value={parts[1] || ""} 
+                                onChange={e => {
+                                  const newParts = [...parts]; newParts[1] = e.target.value;
+                                  setEditedReg(prev => ({ ...prev, [f.key]: newParts.join("|") }));
+                                }} 
+                                style={{width:"100%",padding:"8px 10px",borderRadius:6,border: "1px solid var(--bd)",fontFamily:"inherit",fontSize:".88rem"}}
+                              />
+                              <input 
+                                placeholder="Last Name" 
+                                value={parts[2] || ""} 
+                                onChange={e => {
+                                  const newParts = [...parts]; newParts[2] = e.target.value;
+                                  setEditedReg(prev => ({ ...prev, [f.key]: newParts.join("|") }));
+                                }} 
+                                style={{width:"100%",padding:"8px 10px",borderRadius:6,border: "1px solid var(--bd)",fontFamily:"inherit",fontSize:".88rem"}}
+                              />
+                            </div>
+                          </div>
+                        );
+                      }
+
+                      const isLong = f.type === 'address' || String(val).length > 50 || f.key.toLowerCase().includes("address") || f.key.toLowerCase().includes("remark");
+                      return (
+                        <div key={f.key}>
+                          <div style={{fontSize:".75rem",color:"var(--mu)",fontWeight:600,marginBottom:4}}>{f.label}</div>
+                          {isLong ? (
+                            <textarea 
+                              value={editedReg[f.key] || ""} 
+                              onChange={(e) => setEditedReg(prev => ({ ...prev, [f.key]: e.target.value }))}
+                              rows={3}
+                              style={{
+                                width: "100%",
+                                fontSize: ".9rem",
+                                color: "var(--tx)",
+                                background: "#fff",
+                                padding: "8px 12px",
+                                borderRadius: 6,
+                                border: "1px solid var(--bd)",
+                                boxSizing: "border-box",
+                                outline: "none",
+                                resize: "vertical",
+                                fontFamily: "inherit",
+                                boxShadow: "inset 0 1px 3px rgba(0,0,0,0.05)"
+                              }} 
+                            />
+                          ) : (
+                            <input 
+                              type="text" 
+                              value={editedReg[f.key] || ""} 
+                              onChange={(e) => setEditedReg(prev => ({ ...prev, [f.key]: e.target.value }))}
+                              style={{
+                                width: "100%",
+                                fontSize: ".9rem",
+                                color: "var(--tx)",
+                                background: "#fff",
+                                padding: "8px 12px",
+                                borderRadius: 6,
+                                border: "1px solid var(--bd)",
+                                boxSizing: "border-box",
+                                outline: "none",
+                                boxShadow: "inset 0 1px 3px rgba(0,0,0,0.05)"
+                              }} 
+                            />
+                          )}
                         </div>
                       );
                     }
 
-                    const isLong = f.type === 'address' || String(val).length > 50 || f.key.toLowerCase().includes("address") || f.key.toLowerCase().includes("remark");
                     return (
                       <div key={f.key}>
                         <div style={{fontSize:".75rem",color:"var(--mu)",fontWeight:600,marginBottom:4}}>{f.label}</div>
-                        {isLong ? (
-                          <textarea 
-                            value={editedReg[f.key] || ""} 
-                            onChange={(e) => setEditedReg(prev => ({ ...prev, [f.key]: e.target.value }))}
-                            rows={3}
-                            style={{
-                              width: "100%",
-                              fontSize: ".95rem",
-                              color: "var(--tx)",
-                              background: "#fff",
-                              padding: "8px 12px",
-                              borderRadius: 6,
-                              border: "1px solid var(--bd)",
-                              boxSizing: "border-box",
-                              outline: "none",
-                              resize: "vertical",
-                              fontFamily: "inherit",
-                              boxShadow: "inset 0 1px 3px rgba(0,0,0,0.05)"
-                            }} 
-                          />
-                        ) : (
-                          <input 
-                            type="text" 
-                            value={editedReg[f.key] || ""} 
-                            onChange={(e) => setEditedReg(prev => ({ ...prev, [f.key]: e.target.value }))}
-                            style={{
-                              width: "100%",
-                              fontSize: ".95rem",
-                              color: "var(--tx)",
-                              background: "#fff",
-                              padding: "8px 12px",
-                              borderRadius: 6,
-                              border: "1px solid var(--bd)",
-                              boxSizing: "border-box",
-                              outline: "none",
-                              boxShadow: "inset 0 1px 3px rgba(0,0,0,0.05)"
-                            }} 
-                          />
-                        )}
+                        <div style={{fontSize:".9rem",color:"var(--tx)",wordBreak:"break-word",background:"#FAFAFA",padding:"8px 12px",borderRadius:6,border:"1px solid #EEE"}}>{displayVal || "-"}</div>
                       </div>
                     );
-                  }
+                  })}
 
-                  return (
-                    <div key={f.key}>
-                      <div style={{fontSize:".75rem",color:"var(--mu)",fontWeight:600,marginBottom:4}}>{f.label}</div>
-                      <div style={{fontSize:".95rem",color:"var(--tx)",wordBreak:"break-word",background:"#FAFAFA",padding:"8px 12px",borderRadius:6,border:"1px solid #EEE"}}>{displayVal || "-"}</div>
-                    </div>
-                  );
-                })}
-
-                {isEditing && (
-                  <button 
-                    onClick={async () => {
-                      setSaving(true);
-                      await saveVerification(editedReg, status, remarks);
-                      setSaving(false);
-                      setIsEditing(false);
-                    }}
-                    disabled={saving}
-                    style={{
-                      marginTop: 12,
-                      width: "100%",
-                      padding: "12px",
-                      borderRadius: 8,
-                      background: "#333",
-                      color: "white",
-                      border: "none",
-                      fontWeight: 700,
-                      fontSize: ".9rem",
-                      cursor: "pointer",
-                      boxShadow: "0 2px 6px rgba(0,0,0,0.15)"
-                    }}
-                  >
-                    {saving ? "Saving..." : "💾 Save Details Only"}
-                  </button>
-                )}
-
-                {/* Audit Timeline / History Logs */}
-                <div style={{marginTop:24,paddingTop:16,borderTop:"1px dashed var(--bd)"}}>
-                  <div style={{fontSize:".85rem",fontWeight:700,color:"var(--dt)",marginBottom:12,display:"flex",alignItems:"center",gap:6}}>
-                    <span>📜 Activity & Verification Log History</span>
-                  </div>
-                  {(!viewing.logHistory || viewing.logHistory.length === 0) ? (
-                    <div style={{fontSize:".8rem",color:"var(--mu)",fontStyle:"italic",padding:"10px 12px",background:"#FAFAFA",borderRadius:8,border:"1px solid #EEE"}}>
-                      1st Entry Submitted on {new Date(viewing.timestamp || viewing._submittedAt || Date.now()).toLocaleString()}
-                    </div>
-                  ) : (
-                    <div style={{display:"flex",flexDirection:"column",gap:10}}>
-                      {viewing.logHistory.map((lg, lgIdx) => (
-                        <div key={lgIdx} style={{background:"#FAFAFA",border:"1px solid var(--bd)",borderRadius:8,padding:"10px 12px",position:"relative"}}>
-                          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:4}}>
-                            <span style={{fontSize:".75rem",fontWeight:800,color:lg.actor === 'User' ? "var(--sf)" : "#1E3A8A"}}>
-                              {lg.actor === 'User' ? "👤 User Action" : `🛡️ Admin (${lg.actor || 'Admin'})`}
-                            </span>
-                            <span style={{fontSize:".7rem",color:"var(--mu)"}}>
-                              {lg.timestamp ? new Date(lg.timestamp).toLocaleString() : ""}
-                            </span>
-                          </div>
-                          <div style={{fontSize:".82rem",fontWeight:700,color:"var(--dt)",marginBottom:2}}>
-                            {lg.action || lg.status || "Updated"}
-                          </div>
-                          <div style={{fontSize:".78rem",color:"var(--mu)",lineHeight:1.4}}>
-                            {lg.remarks || "No additional remarks"}
-                          </div>
-                        </div>
-                      ))}
-                    </div>
+                  {isEditing && (
+                    <button 
+                      onClick={async () => {
+                        setSaving(true);
+                        await saveVerification(editedReg, status, remarks);
+                        setSaving(false);
+                        setIsEditing(false);
+                      }}
+                      disabled={saving}
+                      style={{
+                        marginTop: 12,
+                        width: "100%",
+                        padding: "12px",
+                        borderRadius: 8,
+                        background: "#333",
+                        color: "white",
+                        border: "none",
+                        fontWeight: 700,
+                        fontSize: ".9rem",
+                        cursor: "pointer",
+                        boxShadow: "0 2px 6px rgba(0,0,0,0.15)"
+                      }}
+                    >
+                      {saving ? "Saving..." : "💾 Save Details Only"}
+                    </button>
                   )}
-                </div>
-              </div>
-            </div>
 
-            {/* Verification Controls */}
-            <div style={{padding:"16px 20px",background:"#FAFAFA",borderTop:"1px solid var(--bd)"}}>
-              <h4 style={{fontSize:".95rem",fontWeight:700,color:"var(--dt)",marginBottom:12}}>Verification Action</h4>
-              
-              <div style={{display:"grid",gridTemplateColumns:"120px 1fr",gap:12,marginBottom:12}}>
-                {/* Column 1: Vertical Buttons */}
-                <div style={{display:"flex",flexDirection:"column",gap:6}}>
-                  <button 
-                    onClick={()=>setStatus('Approved')} 
-                    style={{
-                      padding:"8px",
-                      borderRadius:6,
-                      fontWeight:600,
-                      fontSize:".8rem",
-                      cursor:"pointer",
-                      border:status==='Approved'?"2px solid #2E7D32":"1px solid #CCC",
-                      background:status==='Approved'?"#E8F5E9":"white",
-                      color:status==='Approved'?"#2E7D32":"var(--mu)",
-                      transition:"0.2s",
-                      textAlign:"left",
-                      paddingLeft:"10px"
-                    }}
-                  >
-                    ✓ Approve
-                  </button>
-                  <button 
-                    onClick={()=>setStatus('Needs Info')} 
-                    style={{
-                      padding:"8px",
-                      borderRadius:6,
-                      fontWeight:600,
-                      fontSize:".8rem",
-                      cursor:"pointer",
-                      border:status==='Needs Info'?"2px solid #EF6C00":"1px solid #CCC",
-                      background:status==='Needs Info'?"#FFF3E0":"white",
-                      color:status==='Needs Info'?"#EF6C00":"var(--mu)",
-                      transition:"0.2s",
-                      textAlign:"left",
-                      paddingLeft:"10px"
-                    }}
-                  >
-                    ⏸ Pause
-                  </button>
-                  <button 
-                    onClick={()=>setStatus('Disapproved')} 
-                    style={{
-                      padding:"8px",
-                      borderRadius:6,
-                      fontWeight:600,
-                      fontSize:".8rem",
-                      cursor:"pointer",
-                      border:status==='Disapproved'?"2px solid #C62828":"1px solid #CCC",
-                      background:status==='Disapproved'?"#FFEBEE":"white",
-                      color:status==='Disapproved'?"#C62828":"var(--mu)",
-                      transition:"0.2s",
-                      textAlign:"left",
-                      paddingLeft:"10px"
-                    }}
-                  >
-                    ✕ Reject
-                  </button>
-                </div>
-
-                {/* Column 2: Remarks TextArea */}
-                <div style={{display:"flex",flexDirection:"column"}}>
-                  <textarea 
-                    value={remarks} 
-                    onChange={e=>setRemarks(e.target.value)} 
-                    placeholder="Remarks / Reason (Optional)" 
-                    style={{
-                      width:"100%",
-                      height:"100%",
-                      minHeight:"92px",
-                      padding:"8px 10px",
-                      borderRadius:6,
-                      border:"1px solid var(--bd)",
-                      fontSize:".8rem",
-                      fontFamily:"inherit",
-                      resize:"none",
-                      boxSizing:"border-box"
-                    }} 
-                  />
+                  {/* Audit Timeline / History Logs */}
+                  <div style={{marginTop:24,paddingTop:16,borderTop:"1px dashed var(--bd)"}}>
+                    <div style={{fontSize:".85rem",fontWeight:700,color:"var(--dt)",marginBottom:12,display:"flex",alignItems:"center",gap:6}}>
+                      <span>📜 Activity & Verification Log History</span>
+                    </div>
+                    {(!viewing.logHistory || viewing.logHistory.length === 0) ? (
+                      <div style={{fontSize:".8rem",color:"var(--mu)",fontStyle:"italic",padding:"10px 12px",background:"#FAFAFA",borderRadius:8,border:"1px solid #EEE"}}>
+                        1st Entry Submitted on {new Date(viewing.timestamp || viewing._submittedAt || Date.now()).toLocaleString()}
+                      </div>
+                    ) : (
+                      <div style={{display:"flex",flexDirection:"column",gap:10}}>
+                        {viewing.logHistory.map((lg, lgIdx) => (
+                          <div key={lgIdx} style={{background:"#FAFAFA",border:"1px solid var(--bd)",borderRadius:8,padding:"10px 12px",position:"relative"}}>
+                            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:4}}>
+                              <span style={{fontSize:".75rem",fontWeight:800,color:lg.actor === 'User' ? "var(--sf)" : "#1E3A8A"}}>
+                                {lg.actor === 'User' ? "👤 User Action" : `🛡️ Admin (${lg.actor || 'Admin'})`}
+                              </span>
+                              <span style={{fontSize:".7rem",color:"var(--mu)"}}>
+                                {lg.timestamp ? new Date(lg.timestamp).toLocaleString() : ""}
+                              </span>
+                            </div>
+                            <div style={{fontSize:".82rem",fontWeight:700,color:"var(--dt)",marginBottom:2}}>
+                              {lg.action || lg.status || "Updated"}
+                            </div>
+                            <div style={{fontSize:".78rem",color:"var(--mu)",lineHeight:1.4}}>
+                              {lg.remarks || "No additional remarks"}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
                 </div>
               </div>
 
-              <button onClick={handleSave} disabled={saving} style={{width:"100%",padding:"12px",borderRadius:8,background:"var(--dt)",color:"white",border:"none",fontWeight:700,fontSize:".9rem",cursor:"pointer",opacity:saving?0.7:1,boxShadow:"0 4px 12px rgba(0,0,0,0.15)"}}>
-                {saving ? "Saving..." : "Save Verification"}
-              </button>
-            </div>
+              {/* Verification Controls */}
+              <div style={{padding:mob?"12px 14px":"16px 20px",background:"#FAFAFA",borderTop:"1px solid var(--bd)",flexShrink:0}}>
+                <h4 style={{fontSize:".9rem",fontWeight:700,color:"var(--dt)",marginBottom:8,marginTop:0}}>Verification Action</h4>
+                
+                <div style={{display:"grid",gridTemplateColumns:mob?"1fr":"120px 1fr",gap:10,marginBottom:10}}>
+                  {/* Column 1: Action Buttons */}
+                  <div style={{display:"flex",flexDirection:mob?"row":"column",gap:6}}>
+                    <button 
+                      onClick={()=>setStatus('Approved')} 
+                      style={{
+                        flex:mob?1:"none",
+                        padding:"8px 6px",
+                        borderRadius:6,
+                        fontWeight:600,
+                        fontSize:".78rem",
+                        cursor:"pointer",
+                        border:status==='Approved'?"2px solid #2E7D32":"1px solid #CCC",
+                        background:status==='Approved'?"#E8F5E9":"white",
+                        color:status==='Approved'?"#2E7D32":"var(--mu)",
+                        transition:"0.2s",
+                        textAlign:mob?"center":"left",
+                        paddingLeft:mob?6:10
+                      }}
+                    >
+                      ✓ Approve
+                    </button>
+                    <button 
+                      onClick={()=>setStatus('Needs Info')} 
+                      style={{
+                        flex:mob?1:"none",
+                        padding:"8px 6px",
+                        borderRadius:6,
+                        fontWeight:600,
+                        fontSize:".78rem",
+                        cursor:"pointer",
+                        border:status==='Needs Info'?"2px solid #EF6C00":"1px solid #CCC",
+                        background:status==='Needs Info'?"#FFF3E0":"white",
+                        color:status==='Needs Info'?"#EF6C00":"var(--mu)",
+                        transition:"0.2s",
+                        textAlign:mob?"center":"left",
+                        paddingLeft:mob?6:10
+                      }}
+                    >
+                      ⏸ Pause
+                    </button>
+                    <button 
+                      onClick={()=>setStatus('Disapproved')} 
+                      style={{
+                        flex:mob?1:"none",
+                        padding:"8px 6px",
+                        borderRadius:6,
+                        fontWeight:600,
+                        fontSize:".78rem",
+                        cursor:"pointer",
+                        border:status==='Disapproved'?"2px solid #C62828":"1px solid #CCC",
+                        background:status==='Disapproved'?"#FFEBEE":"white",
+                        color:status==='Disapproved'?"#C62828":"var(--mu)",
+                        transition:"0.2s",
+                        textAlign:mob?"center":"left",
+                        paddingLeft:mob?6:10
+                      }}
+                    >
+                      ✕ Reject
+                    </button>
+                  </div>
 
-          </div>
+                  {/* Column 2: Remarks TextArea */}
+                  <div style={{display:"flex",flexDirection:"column"}}>
+                    <textarea 
+                      value={remarks} 
+                      onChange={e=>setRemarks(e.target.value)} 
+                      placeholder="Remarks / Reason (Optional)" 
+                      style={{
+                        width:"100%",
+                        height:"100%",
+                        minHeight:mob?"60px":"92px",
+                        padding:"8px 10px",
+                        borderRadius:6,
+                        border:"1px solid var(--bd)",
+                        fontSize:".8rem",
+                        fontFamily:"inherit",
+                        resize:"none",
+                        boxSizing:"border-box"
+                      }} 
+                    />
+                  </div>
+                </div>
+
+                <button onClick={handleSave} disabled={saving} style={{width:"100%",padding:"12px",borderRadius:8,background:"var(--dt)",color:"white",border:"none",fontWeight:700,fontSize:".9rem",cursor:"pointer",opacity:saving?0.7:1,boxShadow:"0 4px 12px rgba(0,0,0,0.15)"}}>
+                  {saving ? "Saving..." : "Save Verification"}
+                </button>
+              </div>
+
+            </div>
+          )}
         </div>
       </div>
     </div>
