@@ -147,19 +147,21 @@ const fbSave = async (content, idToken) => {
 
 const generateNextTxnId = async (idToken) => {
   try {
-    const existing = await fbFetchRegistrations(idToken);
-    let maxNum = 1000;
-    if (Array.isArray(existing) && existing.length > 0) {
+    const rawExisting = await fbFetchRegistrations(idToken);
+    // Ignore trashed/deleted registrations
+    const existing = (Array.isArray(rawExisting) ? rawExisting : []).filter(r => !r.deleted);
+    let maxNum = 0;
+    if (existing.length > 0) {
       existing.forEach(r => {
         const idStr = r["Transaction ID"] || r["transactionId"] || r.id || "";
-        const match = idStr.match(/(?:VG|REG|TXN)[-_]?(\d+)/i);
+        const match = idStr.match(/[-_]?(\d+)$/);
         if (match) {
           const num = parseInt(match[1], 10);
           if (!isNaN(num) && num > maxNum) maxNum = num;
         }
       });
-      if (maxNum === 1000) {
-        maxNum = 1000 + existing.length;
+      if (maxNum === 0) {
+        maxNum = existing.length;
       }
     }
     const nextNum = maxNum + 1;
@@ -13904,15 +13906,21 @@ function AdminRegistrations({ mob, C, setC, auth }) {
               </button>
               <button
                 onClick={async () => {
+                  const targetRegs = filteredRegs;
+                  if (targetRegs.length === 0) {
+                    alert("No active registrations found to sequence.");
+                    return;
+                  }
+
                   const prefix = prompt("Enter Serial Txn ID Prefix (e.g. VG or REG):", "VG");
                   if (prefix === null) return;
-                  const startNumInput = prompt("Enter Starting Serial Number (e.g. 1001 or 1):", "1001");
+                  const startNumInput = prompt("Enter Starting Serial Number (e.g. 1 or 1001):", "1");
                   if (startNumInput === null) return;
-                  const startNum = parseInt(startNumInput.trim(), 10) || 1001;
+                  const startNum = parseInt(startNumInput.trim(), 10) || 1;
 
-                  if (!confirm(`Are you sure you want to assign sequential Txn IDs (${prefix.toUpperCase()}-${startNum}, ${prefix.toUpperCase()}-${startNum + 1}...) to ALL ${regs.length} registrations sorted chronologically by date?`)) return;
+                  if (!confirm(`Are you sure you want to assign sequential Txn IDs (${prefix.toUpperCase()}-${startNum}, ${prefix.toUpperCase()}-${startNum + 1}...) to ALL ${targetRegs.length} active registrations sorted chronologically by date?`)) return;
 
-                  const sortedRegs = [...regs].sort((a, b) => new Date(a._submittedAt || 0) - new Date(b._submittedAt || 0));
+                  const sortedRegs = [...targetRegs].sort((a, b) => new Date(a._submittedAt || 0) - new Date(b._submittedAt || 0));
 
                   setRefreshing(true);
                   try {
@@ -13926,7 +13934,7 @@ function AdminRegistrations({ mob, C, setC, auth }) {
                     }
                     const fresh = await fbFetchRegistrations(auth?.idToken);
                     setRegs(fresh || []);
-                    alert(`Successfully assigned sequential Txn IDs (${cleanPrefix}-${startNum} to ${cleanPrefix}-${startNum + sortedRegs.length - 1}) to all ${sortedRegs.length} registrations!`);
+                    alert(`Successfully assigned sequential Txn IDs (${cleanPrefix}-${startNum} to ${cleanPrefix}-${startNum + sortedRegs.length - 1}) to all ${sortedRegs.length} active registrations!`);
                   } catch (err) {
                     alert("Failed to assign sequential Txn IDs: " + err.message);
                   } finally {
