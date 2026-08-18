@@ -1750,42 +1750,84 @@ function Events({ C, lang, globalAuthToken, globalProfile, onPublicLogin, forceS
   const submitForm = async (e) => {
     e.preventDefault();
     setSubmitting(true);
-    try {
-      // Option B: Save to Firebase (fails gracefully if Security Rules aren't set)
+    
+    // 1. Mandatory Session Validation & Fresh Token Retrieval
+    let activeToken = authToken;
+    const currentUser = fbAuth?.currentUser;
+
+    if (currentUser) {
       try {
-        const initialLog = {
-          timestamp: new Date().toISOString(),
-          actor: "User",
-          action: "1st Entry Submitted",
-          status: "Pending",
-          remarks: "Initial form submission"
-        };
+        // Force refresh ID token to ensure it hasn't expired during form completion
+        activeToken = await currentUser.getIdToken(true);
+      } catch (tokErr) {
+        console.warn("Failed to refresh token:", tokErr);
+      }
+    }
+
+    if (!currentUser || !activeToken) {
+      setSubmitting(false);
+      alert("🔒 Your login session has expired or you are logged out.\n\nPlease log in again to complete and submit your registration. Your filled form data will be preserved!");
+      setAuthStep('login');
+      return;
+    }
+
+    // 2. Generate clean Sequential Transaction ID before saving (e.g. VG-1001, VG-1002...)
+    let txId = formData["Transaction ID"] || formData["transactionId"] || formData["Tx ID"];
+    if (!txId) {
+      txId = await generateNextTxnId(activeToken);
+    }
+    
+    // 3. MANDATORY DATABASE SUBMISSION (DO NOT PROCEED IF THIS FAILS!)
+    const initialLog = {
+      timestamp: new Date().toISOString(),
+      actor: "User",
+      action: "1st Entry Submitted",
+      status: "Pending",
+      remarks: "Initial form submission"
+    };
+
+    try {
+      await fbSubmitRegistration({
+        eventId: selectedEvent.event.id,
+        eventTitle: selectedEvent.event.title,
+        submitterMob: (globalProfile?.mobile || `${countryCode} ${mobile.replace(/\D/g, '').slice(-10)}`),
+        formData: {
+          ...formData,
+          "Transaction ID": txId,
+          transactionId: txId,
+          logHistory: [initialLog]
+        }
+      }, activeToken);
+    } catch (fbErr) {
+      console.error("Firebase registration save error:", fbErr);
+      // Attempt retry once with fresh token
+      try {
+        const freshToken = await currentUser.getIdToken(true);
         await fbSubmitRegistration({
           eventId: selectedEvent.event.id,
           eventTitle: selectedEvent.event.title,
           submitterMob: (globalProfile?.mobile || `${countryCode} ${mobile.replace(/\D/g, '').slice(-10)}`),
           formData: {
             ...formData,
+            "Transaction ID": txId,
+            transactionId: txId,
             logHistory: [initialLog]
           }
-        }, authToken);
-      } catch (fbErr) {
-        console.warn("Firebase save skipped (Update Security Rules to enable database logging). Proceeding to WhatsApp.");
+        }, freshToken);
+      } catch (retryErr) {
+        setSubmitting(false);
+        alert("⚠️ Registration Error: Could not save your registration to the database.\n\nReason: " + (retryErr.message || "Login session expired. Please log in again to save."));
+        setAuthStep('login');
+        return; // STOP EXECUTION HERE! DO NOT PROCEED TO SUCCESS SCREEN!
       }
-      
-      // Generate clean Sequential Transaction ID if not present (e.g. VG-1001, VG-1002...)
-      let txId = formData["Transaction ID"] || formData["transactionId"] || formData["Tx ID"];
-      if (!txId) {
-        txId = await generateNextTxnId(authToken);
-      }
+    }
 
-      // Sanitize form values: replace pipe '|' with space, and escape leading '+' to prevent Google Sheets #ERROR! formula parse error
+    // 4. Sanitize form values and send to Google Sheets / Webhook & WhatsApp
+    try {
       const sanitizedFormData = {};
       Object.entries(formData).forEach(([k, v]) => {
         if (typeof v === 'string') {
-          // Replace pipe '|' with space (e.g., "jyoti|Pradeep|Parmar" -> "jyoti Pradeep Parmar")
           let cleanV = v.replace(/\|/g, ' ').replace(/\s+/g, ' ').trim();
-          // Fix Google Sheets #ERROR! for phone numbers / strings starting with '+'
           if (cleanV.startsWith('+')) {
             cleanV = "'" + cleanV;
           }
@@ -1795,11 +1837,9 @@ function Events({ C, lang, globalAuthToken, globalProfile, onPublicLogin, forceS
         }
       });
 
-      // Ensure explicit Transaction ID fields are set
       sanitizedFormData["Transaction ID"] = txId;
       sanitizedFormData["transactionId"] = txId;
 
-      // Option C: Google Sheets & Drive Integration via Webhook
       if (selectedEvent?.event?.googleSheetsWebhookUrl) {
         try {
           const payload = {
@@ -1833,8 +1873,8 @@ function Events({ C, lang, globalAuthToken, globalProfile, onPublicLogin, forceS
         }
       }
 
-      // Option A: WhatsApp redirection
       let msg = `*New Registration: ${selectedEvent.event.title}*\n\n`;
+      msg += `*Txn ID:* ${txId}\n`;
       Object.entries(formData).forEach(([k,v]) => {
         const displayV = typeof v === 'string' ? v.replace(/\|/g, ' ').replace(/\s+/g, ' ').trim() : v;
         msg += `*${k}:* ${displayV}\n`;
@@ -1842,8 +1882,9 @@ function Events({ C, lang, globalAuthToken, globalProfile, onPublicLogin, forceS
       const waLink = `https://wa.me/?text=${encodeURIComponent(msg)}`;
       setWaMessageLink(waLink);
       setDone(true);
-    } catch(err) {
-      alert("Submission failed. Please try again.");
+    } catch (err) {
+      console.error("Post-submission webhook error:", err);
+      setDone(true);
     } finally {
       setSubmitting(false);
     }
