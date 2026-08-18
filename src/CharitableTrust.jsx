@@ -11140,7 +11140,36 @@ function Public({ C, lang, setLang, setPage, auth, onShowLogin }) {
     setGlobalProfile(null);
     localStorage.removeItem("trustPublicAuthToken");
     localStorage.removeItem("trustPublicProfile");
+    if (fbAuth?.currentUser) {
+      try { fbAuth.signOut(); } catch (e) {}
+    }
   };
+
+  // Real-time Firebase Auth Synchronization
+  // Keeps UI Header (Welcome Pradeep / Logout) 100% in sync with actual Firebase Auth state
+  useEffect(() => {
+    if (!fbAuth) return;
+    const unsubscribe = onAuthStateChanged(fbAuth, async (user) => {
+      if (user) {
+        try {
+          const freshToken = await user.getIdToken();
+          setGlobalAuthToken(freshToken);
+          localStorage.setItem("trustPublicAuthToken", freshToken);
+        } catch (e) {
+          console.warn("Auth sync notice:", e);
+        }
+      } else {
+        // Firebase user signed out or session destroyed!
+        // Automatically sync website state & header UI to logged out state immediately!
+        setGlobalAuthToken("");
+        setGlobalProfile(null);
+        localStorage.removeItem("trustPublicAuthToken");
+        localStorage.removeItem("trustPublicProfile");
+      }
+    });
+
+    return () => unsubscribe();
+  }, []);
 
   const [showDashboard, setShowDashboard] = useState(false);
   const [showUserLogin, setShowUserLogin] = useState("");
