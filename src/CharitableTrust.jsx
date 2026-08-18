@@ -1621,6 +1621,140 @@ function Events({ C, lang, globalAuthToken, globalProfile, onPublicLogin, forceS
     }
   };
 
+  const getForm = (id) => C.forms?.find(f => f.id === id) || { fields: [] };
+
+  const [otp, setOtp] = useState("");
+  const [otpSent, setOtpSent] = useState(false);
+  const [confirmationResult, setConfirmationResult] = useState(null);
+
+  const handleSendOtp = async (e) => {
+    e.preventDefault();
+    if (!mobile || mobile.length < 10) { setAuthError("Please enter a valid 10-digit mobile number"); return; }
+    
+    if (!fbAuth) {
+      try {
+        const initFB = getFB();
+        fbApp = getApps().length === 0 ? initializeApp({
+          apiKey: initFB.apiKey.trim(),
+          projectId: initFB.projectId?.trim(),
+          authDomain: `${initFB.projectId?.trim()}.firebaseapp.com`
+        }) : getApp();
+        fbAuth = getAuth(fbApp);
+        setPersistence(fbAuth, browserLocalPersistence).catch(() => null);
+      } catch (err) {
+        setAuthError("Failed to initialize Firebase Auth: " + err.message);
+        return;
+      }
+    }
+
+    if (!window.recaptchaVerifierEvent) {
+      try {
+        window.recaptchaVerifierEvent = new RecaptchaVerifier(fbAuth, 'recaptcha-container-event', {
+          'size': 'invisible',
+        });
+      } catch (err) {
+        console.error("Recaptcha Init Error:", err);
+      }
+    }
+    
+    setSubmitting(true); setAuthError("");
+    try {
+      const cleanNum = mobile.replace(/\D/g, '').slice(-10);
+      if (cleanNum.length < 10) { setAuthError("Please enter a valid 10-digit mobile number"); return; }
+      const phoneNumber = `${countryCode}${cleanNum}`;
+      const appVerifier = window.recaptchaVerifierEvent;
+      const result = await signInWithPhoneNumber(fbAuth, phoneNumber, appVerifier);
+      setConfirmationResult(result);
+      setOtpSent(true);
+      setAuthError("");
+    } catch (error) {
+      console.error(error);
+      setAuthError(error.message.includes("auth/billing-not-enabled") ? "SMS quota exceeded. Please contact admin." : error.message.includes("auth/invalid-phone-number") ? "Invalid phone number." : error.message);
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const handleVerifyOtp = async (e) => {
+    e.preventDefault();
+    if (!otp) return;
+    setSubmitting(true); setAuthError("");
+    try {
+      const result = await confirmationResult.confirm(otp);
+      const user = result.user;
+      const idToken = await user.getIdToken();
+      
+      setAuthToken(idToken); // Temp save for profile creation
+      
+      const pData = await fbFetchUserProfile(user.uid, idToken);
+      const fullMobile = `${countryCode} ${mobile.replace(/\D/g, '').slice(-10)}`;
+      if (pData && pData.name && pData.address) {
+        // Profile exists, proceed to form
+        if (onPublicLogin) onPublicLogin(idToken, pData);
+        setAuthStep(1);
+        
+        const newForm = {...formData, "Submitted By": pData.name || fullMobile};
+        const formSpec = getForm(selectedEvent?.event?.formId);
+        formSpec.fields.forEach(f => {
+          const fKey = f.label?.trim() || "Field";
+          const kLow = fKey.toLowerCase();
+          if (f.type === 'tel' || kLow.includes('mobile') || kLow.includes('phone')) newForm[fKey] = pData.mobile || fullMobile;
+          if (kLow.includes('name') && !kLow.includes('event')) newForm[fKey] = pData.name || "";
+          if (kLow.includes('address')) newForm[fKey] = pData.address || "";
+          if (kLow.includes('gender') || kLow === 'sex') newForm[fKey] = pData.gender || "";
+        });
+        setFormData(newForm);
+      } else {
+        // No profile, ask to complete profile
+        setAuthStep('complete_profile');
+      }
+    } catch(err) {
+      setAuthError(err.message.includes("invalid-verification-code") ? "Invalid OTP code." : err.message);
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const handleSaveProfile = async (e) => {
+    e.preventDefault();
+    if (!regName || !regAddress || !regGender) { setAuthError("Please fill out Name, Address, and Gender."); return; }
+    setSubmitting(true); setAuthError("");
+    try {
+      let pUrl = "";
+      if (regImageFile) {
+        pUrl = await fbUploadPublicFile(regImageFile, authToken).catch(()=>"");
+      }
+      
+      const user = fbAuth.currentUser;
+      if (!user) throw new Error("Not authenticated");
+      
+      const fullMobile = `${countryCode} ${mobile.replace(/\D/g, '').slice(-10)}`;
+      let profileData = { name: regName, address: regAddress, gender: regGender, mobile: fullMobile, photoUrl: pUrl };
+      
+      await fbUpdateProfile(authToken, regName, pUrl).catch(()=>null);
+      await fbSaveUserProfile(user.uid, profileData, authToken).catch(()=>null);
+      
+      if (onPublicLogin) onPublicLogin(authToken, profileData);
+      setAuthStep(1);
+      // Auto-fill form
+      const newForm = {...formData, "Submitted By": profileData.name || fullMobile};
+      const formSpec = getForm(selectedEvent?.event?.formId);
+      formSpec.fields.forEach(f => {
+        const fKey = f.label?.trim() || "Field";
+        const kLow = fKey.toLowerCase();
+        if (f.type === 'tel' || kLow.includes('mobile') || kLow.includes('phone')) newForm[fKey] = profileData.mobile;
+        if (kLow.includes('name') && !kLow.includes('event')) newForm[fKey] = profileData.name || "";
+        if (kLow.includes('address')) newForm[fKey] = profileData.address || "";
+        if (kLow.includes('gender') || kLow === 'sex') newForm[fKey] = profileData.gender || "";
+      });
+      setFormData(newForm);
+    } catch (err) {
+      setAuthError(err.message);
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
   const [validationErrors, setValidationErrors] = useState([]);
   const [validationLabels, setValidationLabels] = useState([]);
 
