@@ -76,7 +76,7 @@ import * as XLSX from "xlsx";
 import ReactQuill from "react-quill-new";
 import "react-quill-new/dist/quill.snow.css";
 import { initializeApp, getApp, getApps } from "firebase/app";
-import { getAuth, RecaptchaVerifier, signInWithPhoneNumber, sendPasswordResetEmail } from "firebase/auth";
+import { getAuth, RecaptchaVerifier, signInWithPhoneNumber, sendPasswordResetEmail, setPersistence, browserLocalPersistence, onAuthStateChanged } from "firebase/auth";
 import { marked } from "marked";
 import DOMPurify from "dompurify";
 
