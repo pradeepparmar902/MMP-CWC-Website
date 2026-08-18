@@ -1766,6 +1766,8 @@ function Events({ C, lang, globalAuthToken, globalProfile, onPublicLogin, forceS
     const missingKeys = [];
     const missingLabels = [];
 
+    const normKey = (k) => String(k || "").trim().toLowerCase().replace(/[\s_*]+/g, "");
+
     formFields.forEach((f, idx) => {
       let shouldShow = true;
       let logicRules = [];
@@ -1783,13 +1785,15 @@ function Events({ C, lang, globalAuthToken, globalProfile, onPublicLogin, forceS
             const firstIdx = formFields.findIndex(ff => ((ff.dataKey || ff.label)?.trim()) === parentKey);
             if (firstIdx !== -1 && firstIdx !== parentIdx) parentKey = `${parentKey}_${parentIdx + 1}`;
           }
-          const parentVal = formData[parentKey];
+          const parentVal = formData[parentKey] !== undefined ? formData[parentKey] : formData[rule.dependsOn];
           if (parentVal === undefined || parentVal === null) return false;
           return String(parentVal).trim().toLowerCase() === String(rule.dependsValue).trim().toLowerCase();
         });
       }
 
-      if (!shouldShow || !f.required) return;
+      const isReq = (f.required === true || String(f.required).toLowerCase() === 'true' || String(f.required) === '1' || (f.label || "").trim().endsWith("*"));
+
+      if (!shouldShow || !isReq) return;
 
       let fKey = (f.dataKey || f.label)?.trim() || `Field_${idx + 1}`;
       const firstMatchingIdx = formFields.findIndex(ff => ((ff.dataKey || ff.label)?.trim()) === fKey);
@@ -1798,6 +1802,12 @@ function Events({ C, lang, globalAuthToken, globalProfile, onPublicLogin, forceS
       }
 
       let val = formData[fKey];
+      if (val === undefined || val === null || val === "") {
+        if (formData[f.label?.trim()] !== undefined) val = formData[f.label?.trim()];
+        else if (formData[f.dataKey?.trim()] !== undefined) val = formData[f.dataKey?.trim()];
+        else if (f.id && formData[f.id] !== undefined) val = formData[f.id];
+      }
+
       let isMissing = false;
 
       if (f.type === 'fullname') {
@@ -1805,8 +1815,8 @@ function Events({ C, lang, globalAuthToken, globalProfile, onPublicLogin, forceS
         if (!parts[0] || !parts[0].trim() || !parts[2] || !parts[2].trim()) {
           isMissing = true;
         }
-      } else if (f.type === 'image' || f.type === 'file') {
-        const urls = val ? val.split(",").map(s => s.trim()).filter(Boolean) : [];
+      } else if (f.type === 'image' || f.type === 'file' || (f.label || "").toLowerCase().includes("document") || (f.label || "").toLowerCase().includes("photo")) {
+        const urls = val ? String(val).split(",").map(s => s.trim()).filter(Boolean) : [];
         if (urls.length === 0) isMissing = true;
       } else if (f.type === 'tel' || (f.label || "").toLowerCase().includes("phone") || (f.label || "").toLowerCase().includes("mobile") || fKey.toLowerCase().includes("phone") || fKey.toLowerCase().includes("mobile")) {
         const num = val ? String(val).replace(/\D/g, "") : "";
@@ -1817,7 +1827,7 @@ function Events({ C, lang, globalAuthToken, globalProfile, onPublicLogin, forceS
 
       if (isMissing) {
         missingKeys.push(fKey);
-        missingLabels.push(f.label || fKey);
+        missingLabels.push((f.label || fKey).replace(/\s*\*+$/, "").trim());
       }
     });
 
@@ -1827,7 +1837,7 @@ function Events({ C, lang, globalAuthToken, globalProfile, onPublicLogin, forceS
       
       const firstMissingIndex = formFields.findIndex(f => {
         const k = (f.dataKey || f.label)?.trim();
-        return missingKeys.includes(k) || missingKeys.some(m => m.startsWith(k));
+        return missingKeys.some(m => normKey(m) === normKey(k) || normKey(m) === normKey(f.label) || normKey(m) === normKey(f.dataKey));
       });
       if (firstMissingIndex !== -1) {
         const firstEl = document.getElementById(`form_field_${firstMissingIndex}`);
@@ -2137,7 +2147,8 @@ function Events({ C, lang, globalAuthToken, globalProfile, onPublicLogin, forceS
                       fKey = `${fKey}_${idx + 1}`;
                   }
                   const spanFull = f.type === 'address' || f.type === 'file' || f.type === 'image' || f.type === 'fullname';
-                  const isError = validationErrors.includes(fKey);
+                  const normK = (k) => String(k || "").trim().toLowerCase().replace(/[\s_*]+/g, "");
+                  const isError = validationErrors.some(errKey => normK(errKey) === normK(fKey) || normK(errKey) === normK(f.label) || normK(errKey) === normK(f.dataKey));
                   return (
                   <div key={idx} id={`form_field_${idx}`} style={{animation:"fadeIn 0.4s ease-out", gridColumn: (spanFull || mob) ? "1 / -1" : "auto"}}>
                     <label className="modern-label" style={{color: isError ? "#DC2626" : "var(--dt)", fontWeight: isError ? 800 : 600, display:"flex", alignItems:"center", gap:6}}>
@@ -2746,7 +2757,8 @@ function Events({ C, lang, globalAuthToken, globalProfile, onPublicLogin, forceS
                           fKey = `${fKey}_${idx + 1}`;
                       }
                       const spanFull = f.type === 'address' || f.type === 'file' || f.type === 'image' || f.type === 'fullname';
-                      const isError = validationErrors.includes(fKey);
+                      const normK = (k) => String(k || "").trim().toLowerCase().replace(/[\s_*]+/g, "");
+                      const isError = validationErrors.some(errKey => normK(errKey) === normK(fKey) || normK(errKey) === normK(f.label) || normK(errKey) === normK(f.dataKey));
                       return (
                       <div key={idx} id={`form_field_${idx}`} style={{animation:"fadeIn 0.4s ease-out", gridColumn: (spanFull || mob) ? "1 / -1" : "auto"}}>
                         <label className="modern-label" style={{color: isError ? "#DC2626" : "var(--dt)", fontWeight: isError ? 800 : 600, display:"flex", alignItems:"center", gap:6}}>
