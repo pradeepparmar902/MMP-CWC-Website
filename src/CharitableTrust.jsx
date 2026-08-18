@@ -106,12 +106,14 @@ try {
       fbApp = getApp();
     }
     fbAuth = getAuth(fbApp);
+    setPersistence(fbAuth, browserLocalPersistence).catch(() => null);
   }
 } catch (e) {
   console.warn("Firebase could not be initialized:", e);
   try {
     fbApp = getApp();
     fbAuth = getAuth(fbApp);
+    setPersistence(fbAuth, browserLocalPersistence).catch(() => null);
   } catch (err) {}
 }
 
@@ -1751,20 +1753,23 @@ function Events({ C, lang, globalAuthToken, globalProfile, onPublicLogin, forceS
     e.preventDefault();
     setSubmitting(true);
     
-    // 1. Mandatory Session Validation & Fresh Token Retrieval
-    let activeToken = authToken;
+    // 1. Resilient Session Token Retrieval (Check currentUser, props, and localStorage)
+    let activeToken = authToken || localStorage.getItem("trustPublicAuthToken") || "";
     const currentUser = fbAuth?.currentUser;
 
     if (currentUser) {
       try {
-        // Force refresh ID token to ensure it hasn't expired during form completion
-        activeToken = await currentUser.getIdToken(true);
+        const fresh = await currentUser.getIdToken(true);
+        if (fresh) activeToken = fresh;
       } catch (tokErr) {
-        console.warn("Failed to refresh token:", tokErr);
+        console.warn("Token refresh notice:", tokErr);
       }
     }
 
-    if (!currentUser || !activeToken) {
+    const hasStoredProfile = globalProfile || localStorage.getItem("trustPublicProfile");
+
+    // Only block if user is completely unauthenticated (no currentUser, no profile, no token)
+    if (!currentUser && !hasStoredProfile && !activeToken) {
       setSubmitting(false);
       alert("🔒 Your login session has expired or you are logged out.\n\nPlease log in again to complete and submit your registration. Your filled form data will be preserved!");
       setAuthStep('login');
@@ -1786,6 +1791,7 @@ function Events({ C, lang, globalAuthToken, globalProfile, onPublicLogin, forceS
       remarks: "Initial form submission"
     };
 
+    let saveSuccess = false;
     try {
       await fbSubmitRegistration({
         eventId: selectedEvent.event.id,
@@ -1798,28 +1804,36 @@ function Events({ C, lang, globalAuthToken, globalProfile, onPublicLogin, forceS
           logHistory: [initialLog]
         }
       }, activeToken);
+      saveSuccess = true;
     } catch (fbErr) {
-      console.error("Firebase registration save error:", fbErr);
-      // Attempt retry once with fresh token
-      try {
-        const freshToken = await currentUser.getIdToken(true);
-        await fbSubmitRegistration({
-          eventId: selectedEvent.event.id,
-          eventTitle: selectedEvent.event.title,
-          submitterMob: (globalProfile?.mobile || `${countryCode} ${mobile.replace(/\D/g, '').slice(-10)}`),
-          formData: {
-            ...formData,
-            "Transaction ID": txId,
-            transactionId: txId,
-            logHistory: [initialLog]
-          }
-        }, freshToken);
-      } catch (retryErr) {
-        setSubmitting(false);
-        alert("⚠️ Registration Error: Could not save your registration to the database.\n\nReason: " + (retryErr.message || "Login session expired. Please log in again to save."));
-        setAuthStep('login');
-        return; // STOP EXECUTION HERE! DO NOT PROCEED TO SUCCESS SCREEN!
+      console.warn("First save attempt notice:", fbErr);
+      // Retry once with fresh token if currentUser is available
+      if (currentUser) {
+        try {
+          const freshToken = await currentUser.getIdToken(true);
+          await fbSubmitRegistration({
+            eventId: selectedEvent.event.id,
+            eventTitle: selectedEvent.event.title,
+            submitterMob: (globalProfile?.mobile || `${countryCode} ${mobile.replace(/\D/g, '').slice(-10)}`),
+            formData: {
+              ...formData,
+              "Transaction ID": txId,
+              transactionId: txId,
+              logHistory: [initialLog]
+            }
+          }, freshToken);
+          saveSuccess = true;
+        } catch (retryErr) {
+          console.error("Retry save error:", retryErr);
+        }
       }
+    }
+
+    if (!saveSuccess) {
+      setSubmitting(false);
+      alert("⚠️ Session Notice: Your login session timed out while editing.\n\nPlease log in again to confirm and complete your registration. All your entered form fields are safely preserved!");
+      setAuthStep('login');
+      return; // DO NOT PROCEED TO SUCCESS SCREEN IF DATABASE SAVE WAS NOT 100% SUCCESSFUL!
     }
 
     // 4. Sanitize form values and send to Google Sheets / Webhook & WhatsApp
