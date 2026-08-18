@@ -2087,7 +2087,7 @@ function Events({ C, lang, globalAuthToken, globalProfile, onPublicLogin, forceS
                 )}
               </form>
             ) : (
-              <form onSubmit={submitForm} style={{display:"grid",gridTemplateColumns: mob ? "1fr" : "1fr 1fr",gap:12, rowGap:16}}>
+              <form noValidate onSubmit={submitForm} style={{display:"grid",gridTemplateColumns: mob ? "1fr" : "1fr 1fr",gap:12, rowGap:16}}>
                 {(() => {
                   const formObj = getForm(selectedEvent.event.formId);
                   return (
@@ -2694,7 +2694,7 @@ function Events({ C, lang, globalAuthToken, globalProfile, onPublicLogin, forceS
                     </button>
                   </div>
                 ) : (
-                  <form onSubmit={submitForm} style={{display:"grid",gridTemplateColumns: mob ? "1fr" : "1fr 1fr",gap:12, rowGap:16}}>
+                  <form noValidate onSubmit={submitForm} style={{display:"grid",gridTemplateColumns: mob ? "1fr" : "1fr 1fr",gap:12, rowGap:16}}>
                     {(() => {
                       const formObj = getForm(selectedEvent.event.formId);
                       return (
