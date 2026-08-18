@@ -1,7 +1,7 @@
 import { QRCodeCanvas } from "qrcode.react";
 import { useState, useEffect, useRef, createContext, useContext } from "react";
 
-const SearchableDropdown = ({ value, onChange, options, placeholder, required }) => {
+const SearchableDropdown = ({ value, onChange, options, placeholder, required, isError }) => {
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState(value || "");
   const wrapperRef = useRef(null);
@@ -35,7 +35,12 @@ const SearchableDropdown = ({ value, onChange, options, placeholder, required })
         onFocus={() => setOpen(true)}
         placeholder={placeholder || "-- Select --"}
         className="modern-input" 
-        style={{paddingRight: 32}}
+        style={{
+          paddingRight: 32,
+          border: isError ? "2px solid #EF4444" : undefined,
+          background: isError ? "#FFF5F5" : undefined,
+          boxShadow: isError ? "0 0 0 3px rgba(239, 68, 68, 0.2)" : undefined
+        }}
       />
       <div 
         onClick={() => setOpen(!open)}
@@ -1616,141 +1621,91 @@ function Events({ C, lang, globalAuthToken, globalProfile, onPublicLogin, forceS
     }
   };
 
-  const getForm = (id) => C.forms?.find(f => f.id === id) || { fields: [] };
-
-  const [otp, setOtp] = useState("");
-  const [otpSent, setOtpSent] = useState(false);
-  const [confirmationResult, setConfirmationResult] = useState(null);
-
-  const handleSendOtp = async (e) => {
-    e.preventDefault();
-    if (!mobile || mobile.length < 10) { setAuthError("Please enter a valid 10-digit mobile number"); return; }
-    
-    if (!fbAuth) {
-      try {
-        const initFB = getFB();
-        fbApp = getApps().length === 0 ? initializeApp({
-          apiKey: initFB.apiKey.trim(),
-          projectId: initFB.projectId?.trim(),
-          authDomain: `${initFB.projectId?.trim()}.firebaseapp.com`
-        }) : getApp();
-        fbAuth = getAuth(fbApp);
-      } catch (err) {
-        setAuthError("Failed to initialize Firebase Auth: " + err.message);
-        return;
-      }
-    }
-
-    if (!window.recaptchaVerifierEvent) {
-      try {
-        window.recaptchaVerifierEvent = new RecaptchaVerifier(fbAuth, 'recaptcha-container-event', {
-          'size': 'invisible',
-        });
-      } catch (err) {
-        console.error("Recaptcha Init Error:", err);
-      }
-    }
-    
-    setSubmitting(true); setAuthError("");
-    try {
-      const cleanNum = mobile.replace(/\D/g, '').slice(-10);
-      if (cleanNum.length < 10) { setAuthError("Please enter a valid 10-digit mobile number"); return; }
-      const phoneNumber = `${countryCode}${cleanNum}`;
-      const appVerifier = window.recaptchaVerifierEvent;
-      const result = await signInWithPhoneNumber(fbAuth, phoneNumber, appVerifier);
-      setConfirmationResult(result);
-      setOtpSent(true);
-      setAuthError("");
-    } catch (error) {
-      console.error(error);
-      setAuthError(error.message.includes("auth/billing-not-enabled") ? "SMS quota exceeded. Please contact admin." : error.message.includes("auth/invalid-phone-number") ? "Invalid phone number." : error.message);
-    } finally {
-      setSubmitting(false);
-    }
-  };
-
-  const handleVerifyOtp = async (e) => {
-    e.preventDefault();
-    if (!otp) return;
-    setSubmitting(true); setAuthError("");
-    try {
-      const result = await confirmationResult.confirm(otp);
-      const user = result.user;
-      const idToken = await user.getIdToken();
-      
-      setAuthToken(idToken); // Temp save for profile creation
-      
-      const pData = await fbFetchUserProfile(user.uid, idToken);
-      const fullMobile = `${countryCode} ${mobile.replace(/\D/g, '').slice(-10)}`;
-      if (pData && pData.name && pData.address) {
-        // Profile exists, proceed to form
-        if (onPublicLogin) onPublicLogin(idToken, pData);
-        setAuthStep(1);
-        
-        const newForm = {...formData, "Submitted By": pData.name || fullMobile};
-        const formSpec = getForm(selectedEvent?.event?.formId);
-        formSpec.fields.forEach(f => {
-          const fKey = f.label?.trim() || "Field";
-          const kLow = fKey.toLowerCase();
-          if (f.type === 'tel' || kLow.includes('mobile') || kLow.includes('phone')) newForm[fKey] = pData.mobile || fullMobile;
-          if (kLow.includes('name') && !kLow.includes('event')) newForm[fKey] = pData.name || "";
-          if (kLow.includes('address')) newForm[fKey] = pData.address || "";
-          if (kLow.includes('gender') || kLow === 'sex') newForm[fKey] = pData.gender || "";
-        });
-        setFormData(newForm);
-      } else {
-        // No profile, ask to complete profile
-        setAuthStep('complete_profile');
-      }
-    } catch(err) {
-      setAuthError(err.message.includes("invalid-verification-code") ? "Invalid OTP code." : err.message);
-    } finally {
-      setSubmitting(false);
-    }
-  };
-
-  const handleSaveProfile = async (e) => {
-    e.preventDefault();
-    if (!regName || !regAddress || !regGender) { setAuthError("Please fill out Name, Address, and Gender."); return; }
-    setSubmitting(true); setAuthError("");
-    try {
-      let pUrl = "";
-      if (regImageFile) {
-        pUrl = await fbUploadPublicFile(regImageFile, authToken).catch(()=>"");
-      }
-      
-      const user = fbAuth.currentUser;
-      if (!user) throw new Error("Not authenticated");
-      
-      const fullMobile = `${countryCode} ${mobile.replace(/\D/g, '').slice(-10)}`;
-      let profileData = { name: regName, address: regAddress, gender: regGender, mobile: fullMobile, photoUrl: pUrl };
-      
-      await fbUpdateProfile(authToken, regName, pUrl).catch(()=>null);
-      await fbSaveUserProfile(user.uid, profileData, authToken).catch(()=>null);
-      
-      if (onPublicLogin) onPublicLogin(authToken, profileData);
-      setAuthStep(1);
-      // Auto-fill form
-      const newForm = {...formData, "Submitted By": profileData.name || fullMobile};
-      const formSpec = getForm(selectedEvent?.event?.formId);
-      formSpec.fields.forEach(f => {
-        const fKey = f.label?.trim() || "Field";
-        const kLow = fKey.toLowerCase();
-        if (f.type === 'tel' || kLow.includes('mobile') || kLow.includes('phone')) newForm[fKey] = profileData.mobile;
-        if (kLow.includes('name') && !kLow.includes('event')) newForm[fKey] = profileData.name || "";
-        if (kLow.includes('address')) newForm[fKey] = profileData.address || "";
-        if (kLow.includes('gender') || kLow === 'sex') newForm[fKey] = profileData.gender || "";
-      });
-      setFormData(newForm);
-    } catch (err) {
-      setAuthError(err.message);
-    } finally {
-      setSubmitting(false);
-    }
-  };
+  const [validationErrors, setValidationErrors] = useState([]);
+  const [validationLabels, setValidationLabels] = useState([]);
 
   const submitForm = async (e) => {
     e.preventDefault();
+
+    // 0. Validate Mandatory Required Fields
+    const formFields = getForm(selectedEvent?.event?.formId)?.fields || [];
+    const missingKeys = [];
+    const missingLabels = [];
+
+    formFields.forEach((f, idx) => {
+      let shouldShow = true;
+      let logicRules = [];
+      if (f.logicRules && f.logicRules.length > 0) {
+        logicRules = f.logicRules.filter(r => r.dependsOn && r.dependsValue);
+      } else if (f.dependsOn && f.dependsValue) {
+        logicRules = [{ dependsOn: f.dependsOn, dependsValue: f.dependsValue }];
+      }
+      if (logicRules.length > 0) {
+        shouldShow = (f.logicCondition === "AND" ? logicRules.every : logicRules.some).call(logicRules, rule => {
+          const parentIdx = formFields.findIndex(ff => ff.label === rule.dependsOn || ff.dataKey === rule.dependsOn);
+          const parentField = parentIdx !== -1 ? formFields[parentIdx] : null;
+          let parentKey = parentField ? (parentField.dataKey || parentField.label)?.trim() : rule.dependsOn;
+          if (parentField && parentIdx !== -1) {
+            const firstIdx = formFields.findIndex(ff => ((ff.dataKey || ff.label)?.trim()) === parentKey);
+            if (firstIdx !== -1 && firstIdx !== parentIdx) parentKey = `${parentKey}_${parentIdx + 1}`;
+          }
+          const parentVal = formData[parentKey];
+          if (parentVal === undefined || parentVal === null) return false;
+          return String(parentVal).trim().toLowerCase() === String(rule.dependsValue).trim().toLowerCase();
+        });
+      }
+
+      if (!shouldShow || !f.required) return;
+
+      let fKey = (f.dataKey || f.label)?.trim() || `Field_${idx + 1}`;
+      const firstMatchingIdx = formFields.findIndex(ff => ((ff.dataKey || ff.label)?.trim()) === fKey);
+      if (firstMatchingIdx !== -1 && firstMatchingIdx !== idx) {
+        fKey = `${fKey}_${idx + 1}`;
+      }
+
+      let val = formData[fKey];
+      let isMissing = false;
+
+      if (f.type === 'fullname') {
+        const parts = (val || "||").split("|");
+        if (!parts[0] || !parts[0].trim() || !parts[2] || !parts[2].trim()) {
+          isMissing = true;
+        }
+      } else if (f.type === 'image' || f.type === 'file') {
+        const urls = val ? val.split(",").map(s => s.trim()).filter(Boolean) : [];
+        if (urls.length === 0) isMissing = true;
+      } else if (f.type === 'tel' || (f.label || "").toLowerCase().includes("phone") || (f.label || "").toLowerCase().includes("mobile") || fKey.toLowerCase().includes("phone") || fKey.toLowerCase().includes("mobile")) {
+        const num = val ? String(val).replace(/\D/g, "") : "";
+        if (!num || num.length < 5) isMissing = true;
+      } else {
+        if (!val || String(val).trim() === "") isMissing = true;
+      }
+
+      if (isMissing) {
+        missingKeys.push(fKey);
+        missingLabels.push(f.label || fKey);
+      }
+    });
+
+    if (missingKeys.length > 0) {
+      setValidationErrors(missingKeys);
+      setValidationLabels(missingLabels);
+      
+      const firstMissingIndex = formFields.findIndex(f => {
+        const k = (f.dataKey || f.label)?.trim();
+        return missingKeys.includes(k) || missingKeys.some(m => m.startsWith(k));
+      });
+      if (firstMissingIndex !== -1) {
+        const firstEl = document.getElementById(`form_field_${firstMissingIndex}`);
+        if (firstEl) {
+          firstEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }
+      }
+      return;
+    }
+
+    setValidationErrors([]);
+    setValidationLabels([]);
     setSubmitting(true);
     
     // 1. Resilient Session Token Retrieval (Check currentUser, props, and localStorage)
@@ -2048,21 +2003,58 @@ function Events({ C, lang, globalAuthToken, globalProfile, onPublicLogin, forceS
                       fKey = `${fKey}_${idx + 1}`;
                   }
                   const spanFull = f.type === 'address' || f.type === 'file' || f.type === 'image' || f.type === 'fullname';
+                  const isError = validationErrors.includes(fKey);
                   return (
                   <div key={idx} id={`form_field_${idx}`} style={{animation:"fadeIn 0.4s ease-out", gridColumn: (spanFull || mob) ? "1 / -1" : "auto"}}>
-                    <label className="modern-label">{f.label || fKey} {f.required&&<span style={{color:"red"}}>*</span>}</label>
+                    <label className="modern-label" style={{color: isError ? "#DC2626" : "var(--dt)", fontWeight: isError ? 800 : 600, display:"flex", alignItems:"center", gap:6}}>
+                      <span>{f.label || fKey}</span>
+                      {f.required && <span style={{color:"red"}}>*</span>}
+                      {isError && <span style={{color:"#DC2626", fontSize:".75rem", fontWeight:700, background:"#FEE2E2", padding:"2px 8px", borderRadius:12, border:"1px solid #FCA5A5"}}>⚠️ Required Field Missed</span>}
+                    </label>
                     {f.type === 'address' ? (
-                      <textarea required={f.required} value={formData[fKey]||""} onChange={e=>setFormData({...formData, [fKey]:e.target.value})} className="modern-input" style={{minHeight:100,resize:"vertical"}}/>
+                      <textarea 
+                        required={f.required} 
+                        value={formData[fKey]||""} 
+                        onChange={e=>{
+                          setFormData({...formData, [fKey]:e.target.value});
+                          if (isError) setValidationErrors(prev => prev.filter(k => k !== fKey));
+                        }} 
+                        className="modern-input" 
+                        style={{
+                          minHeight:100,
+                          resize:"vertical",
+                          border: isError ? "2px solid #EF4444" : undefined,
+                          background: isError ? "#FFF5F5" : undefined,
+                          boxShadow: isError ? "0 0 0 3px rgba(239, 68, 68, 0.2)" : undefined
+                        }}
+                      />
                     ) : f.type === 'dropdown' ? (
                       <SearchableDropdown 
                         required={f.required} 
                         value={formData[fKey]||""} 
-                        onChange={val => setFormData({...formData, [fKey]:val})} 
+                        isError={isError}
+                        onChange={val => {
+                          setFormData({...formData, [fKey]:val});
+                          if (isError && val) setValidationErrors(prev => prev.filter(k => k !== fKey));
+                        }} 
                         options={(f.options||"").split(",").map(o=>o.trim()).filter(Boolean)} 
                         placeholder="-- Search & Select --" 
                       />
                     ) : f.type === 'gender' ? (
-                      <select required={f.required} value={formData[fKey]||""} onChange={e=>setFormData({...formData, [fKey]:e.target.value})} className="modern-input" >
+                      <select 
+                        required={f.required} 
+                        value={formData[fKey]||""} 
+                        onChange={e=>{
+                          setFormData({...formData, [fKey]:e.target.value});
+                          if (isError) setValidationErrors(prev => prev.filter(k => k !== fKey));
+                        }} 
+                        className="modern-input"
+                        style={{
+                          border: isError ? "2px solid #EF4444" : undefined,
+                          background: isError ? "#FFF5F5" : undefined,
+                          boxShadow: isError ? "0 0 0 3px rgba(239, 68, 68, 0.2)" : undefined
+                        }}
+                      >
                         <option value="">-- Select Gender --</option>
                         <option value="Male">Male</option>
                         <option value="Female">Female</option>
@@ -2070,18 +2062,54 @@ function Events({ C, lang, globalAuthToken, globalProfile, onPublicLogin, forceS
                       </select>
                     ) : f.type === 'fullname' ? (
                       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:12}}>
-                        <input placeholder="First" required={f.required} value={(formData[fKey]?.split("|")[0])||""} onChange={e=>{
-                          const parts = (formData[fKey]||"||").split("|"); parts[0] = e.target.value; setFormData({...formData, [fKey]:parts.join("|")});
-                        }} className="modern-input" />
-                        <input placeholder="Middle" value={(formData[fKey]?.split("|")[1])||""} onChange={e=>{
-                          const parts = (formData[fKey]||"||").split("|"); parts[1] = e.target.value; setFormData({...formData, [fKey]:parts.join("|")});
-                        }} className="modern-input" />
-                        <input placeholder="Last" required={f.required} value={(formData[fKey]?.split("|")[2])||""} onChange={e=>{
-                          const parts = (formData[fKey]||"||").split("|"); parts[2] = e.target.value; setFormData({...formData, [fKey]:parts.join("|")});
-                        }} className="modern-input" />
+                        <input 
+                          placeholder="First" 
+                          required={f.required} 
+                          value={(formData[fKey]?.split("|")[0])||""} 
+                          onChange={e=>{
+                            const parts = (formData[fKey]||"||").split("|"); parts[0] = e.target.value; setFormData({...formData, [fKey]:parts.join("|")});
+                            if (isError) setValidationErrors(prev => prev.filter(k => k !== fKey));
+                          }} 
+                          className="modern-input" 
+                          style={{
+                            border: isError && !((formData[fKey]?.split("|")[0])||"").trim() ? "2px solid #EF4444" : undefined,
+                            background: isError && !((formData[fKey]?.split("|")[0])||"").trim() ? "#FFF5F5" : undefined
+                          }}
+                        />
+                        <input 
+                          placeholder="Middle" 
+                          value={(formData[fKey]?.split("|")[1])||""} 
+                          onChange={e=>{
+                            const parts = (formData[fKey]||"||").split("|"); parts[1] = e.target.value; setFormData({...formData, [fKey]:parts.join("|")});
+                          }} 
+                          className="modern-input" 
+                        />
+                        <input 
+                          placeholder="Last" 
+                          required={f.required} 
+                          value={(formData[fKey]?.split("|")[2])||""} 
+                          onChange={e=>{
+                            const parts = (formData[fKey]||"||").split("|"); parts[2] = e.target.value; setFormData({...formData, [fKey]:parts.join("|")});
+                            if (isError) setValidationErrors(prev => prev.filter(k => k !== fKey));
+                          }} 
+                          className="modern-input" 
+                          style={{
+                            border: isError && !((formData[fKey]?.split("|")[2])||"").trim() ? "2px solid #EF4444" : undefined,
+                            background: isError && !((formData[fKey]?.split("|")[2])||"").trim() ? "#FFF5F5" : undefined
+                          }}
+                        />
                       </div>
                     ) : f.type === 'image' || f.type === 'file' ? (
-                      <div style={{padding:"16px",borderRadius:12,border:"2px dashed #CBD5E1",background:"#F8FAFC",transition:"all 0.2s ease"}} onMouseEnter={e => e.currentTarget.style.borderColor="#3B82F6"} onMouseLeave={e => e.currentTarget.style.borderColor="#CBD5E1"}>
+                      <div 
+                        style={{
+                          padding:"16px",
+                          borderRadius:12,
+                          border: isError ? "2px dashed #EF4444" : "2px dashed #CBD5E1",
+                          background: isError ? "#FEF2F2" : "#F8FAFC",
+                          boxShadow: isError ? "0 0 0 3px rgba(239, 68, 68, 0.2)" : "none",
+                          transition:"all 0.2s ease"
+                        }}
+                      >
                         {(() => {
                           const uploadedUrls = formData[fKey] ? formData[fKey].split(",").map(s => s.trim()).filter(Boolean) : [];
                           return (
@@ -2115,14 +2143,24 @@ function Events({ C, lang, globalAuthToken, globalProfile, onPublicLogin, forceS
                                   <div style={{width:14,height:14,border:"2px solid var(--bd)",borderTopColor:"var(--dt)",borderRadius:"50%",animation:"spin 1s linear infinite"}}/> Uploading file(s)...
                                 </div>
                               ) : (
-                                <div style={{display:"flex",alignItems:"center",gap:10,marginTop:uploadedUrls.length > 0 ? 4 : 0}}>
-                                  <label style={{padding:"8px 16px",background:"var(--dt)",color:"white",borderRadius:6,fontSize:".8rem",fontWeight:600,cursor:"pointer",display:"inline-block"}}>
-                                    {uploadedUrls.length > 0 ? '➕ Add More Files / Photos' : (f.type === 'image' ? '📸 Choose Photo' : '📎 Choose Document')}
-                                    <input type="file" multiple required={f.required && uploadedUrls.length === 0} accept={f.type==='image'?"image/*":"image/*,.pdf,.doc,.docx,.png,.jpg,.jpeg"} onChange={e=>handleFileUpload(e, fKey)} style={{display:"none"}}/>
-                                  </label>
-                                  <span style={{fontSize:".75rem",color:"var(--mu)"}}>
-                                    {uploadedUrls.length > 0 ? `${uploadedUrls.length} file(s) attached` : (f.type === 'image' ? 'JPG, PNG, Camera, etc.' : 'PDF, DOC, Photo, Camera, etc.')}
-                                  </span>
+                                <div style={{display:"flex",flexDirection:"column",gap:6}}>
+                                  <div style={{display:"flex",alignItems:"center",gap:10,marginTop:uploadedUrls.length > 0 ? 4 : 0}}>
+                                    <label style={{padding:"8px 16px",background:isError?"#DC2626":"var(--dt)",color:"white",borderRadius:6,fontSize:".8rem",fontWeight:600,cursor:"pointer",display:"inline-block"}}>
+                                      {uploadedUrls.length > 0 ? '➕ Add More Files / Photos' : (f.type === 'image' ? '📸 Choose Photo' : '📎 Choose Document')}
+                                      <input type="file" multiple required={f.required && uploadedUrls.length === 0} accept={f.type==='image'?"image/*":"image/*,.pdf,.doc,.docx,.png,.jpg,.jpeg"} onChange={e=>{
+                                        handleFileUpload(e, fKey);
+                                        if (isError) setValidationErrors(prev => prev.filter(k => k !== fKey));
+                                      }} style={{display:"none"}}/>
+                                    </label>
+                                    <span style={{fontSize:".75rem",color:isError?"#DC2626":"var(--mu)",fontWeight:isError?700:400}}>
+                                      {uploadedUrls.length > 0 ? `${uploadedUrls.length} file(s) attached` : (f.type === 'image' ? 'JPG, PNG, Camera, etc.' : 'PDF, DOC, Photo, Camera, etc.')}
+                                    </span>
+                                  </div>
+                                  {isError && uploadedUrls.length === 0 && (
+                                    <div style={{color:"#DC2626",fontSize:".78rem",fontWeight:700,display:"flex",alignItems:"center",gap:6,background:"#FEE2E2",padding:"6px 10px",borderRadius:6,border:"1px solid #FCA5A5"}}>
+                                      <span>⚠️ Required: Please choose and attach at least 1 document file / photo.</span>
+                                    </div>
+                                  )}
                                 </div>
                               )}
                             </div>
@@ -2131,7 +2169,26 @@ function Events({ C, lang, globalAuthToken, globalProfile, onPublicLogin, forceS
                       </div>
                     ) : f.type === 'percentage' ? (
                       <div style={{position:"relative",display:"flex",alignItems:"center"}}>
-                        <input type="number" step="0.01" min="0" max="100" placeholder="e.g. 85.50" required={f.required} value={formData[fKey]||""} onChange={e=>setFormData({...formData, [fKey]:e.target.value})} className="modern-input" style={{paddingRight:32}}/>
+                        <input 
+                          type="number" 
+                          step="0.01" 
+                          min="0" 
+                          max="100" 
+                          placeholder="e.g. 85.50" 
+                          required={f.required} 
+                          value={formData[fKey]||""} 
+                          onChange={e=>{
+                            setFormData({...formData, [fKey]:e.target.value});
+                            if (isError) setValidationErrors(prev => prev.filter(k => k !== fKey));
+                          }} 
+                          className="modern-input" 
+                          style={{
+                            paddingRight:32,
+                            border: isError ? "2px solid #EF4444" : undefined,
+                            background: isError ? "#FFF5F5" : undefined,
+                            boxShadow: isError ? "0 0 0 3px rgba(239, 68, 68, 0.2)" : undefined
+                          }}
+                        />
                         <span style={{position:"absolute",right:12,fontWeight:700,color:"var(--dt)",fontSize:".9rem",pointerEvents:"none"}}>%</span>
                       </div>
                     ) : (f.type === 'tel' || (f.label || "").toLowerCase().includes("phone") || (f.label || "").toLowerCase().includes("mobile") || fKey.toLowerCase().includes("phone") || fKey.toLowerCase().includes("mobile")) ? (
@@ -2144,24 +2201,24 @@ function Events({ C, lang, globalAuthToken, globalProfile, onPublicLogin, forceS
                             const spaceIdx = rawVal.indexOf(" ");
                             if (spaceIdx !== -1) {
                               currentCode = rawVal.substring(0, spaceIdx);
-                              currentNum = rawVal.substring(spaceIdx + 1).replace(/\\D/g, "");
+                              currentNum = rawVal.substring(spaceIdx + 1).replace(/\D/g, "");
                             } else {
                               if (rawVal.startsWith("+91") && rawVal.length > 3) {
                                 currentCode = "+91";
-                                currentNum = rawVal.substring(3).replace(/\\D/g, "");
+                                currentNum = rawVal.substring(3).replace(/\D/g, "");
                               } else {
-                                currentNum = rawVal.replace(/\\D/g, "");
+                                currentNum = rawVal.replace(/\D/g, "");
                               }
                             }
                           } else {
-                            currentNum = rawVal.replace(/\\D/g, "");
+                            currentNum = rawVal.replace(/\D/g, "");
                           }
                           return (
                             <>
                               <select 
                                 value={currentCode} 
                                 onChange={e => setFormData({...formData, [fKey]: `${e.target.value} ${currentNum}`})}
-                                style={{padding:"14px 8px", borderRadius:12, border:"1px solid #E2E8F0", fontSize:".95rem", fontWeight:700, background:"#F8FAFC", color:"#1E293B", outline:"none", cursor:"pointer", width: 85, boxSizing: "border-box"}}
+                                style={{padding:"14px 8px", borderRadius:12, border: isError ? "2px solid #EF4444" : "1px solid #E2E8F0", fontSize:".95rem", fontWeight:700, background: isError ? "#FFF5F5" : "#F8FAFC", color:"#1E293B", outline:"none", cursor:"pointer", width: 85, boxSizing: "border-box"}}
                               >
                                 <option value="+91">+91</option>
                                 <option value="+1">+1</option>
@@ -2176,11 +2233,17 @@ function Events({ C, lang, globalAuthToken, globalProfile, onPublicLogin, forceS
                                 required={f.required} 
                                 value={currentNum} 
                                 onChange={e => {
-                                  const val = e.target.value.replace(/\\D/g, "").slice(0, 10);
+                                  const val = e.target.value.replace(/\D/g, "").slice(0, 10);
                                   setFormData({...formData, [fKey]: `${currentCode} ${val}`});
+                                  if (isError && val) setValidationErrors(prev => prev.filter(k => k !== fKey));
                                 }} 
                                 className="modern-input" 
-                                style={{flex:1}} 
+                                style={{
+                                  flex:1,
+                                  border: isError ? "2px solid #EF4444" : undefined,
+                                  background: isError ? "#FFF5F5" : undefined,
+                                  boxShadow: isError ? "0 0 0 3px rgba(239, 68, 68, 0.2)" : undefined
+                                }} 
                                 autoComplete="tel" 
                               />
                             </>
@@ -2188,10 +2251,36 @@ function Events({ C, lang, globalAuthToken, globalProfile, onPublicLogin, forceS
                         })()}
                       </div>
                     ) : (
-                      <input type={f.type} required={f.required} value={formData[fKey]||""} onChange={e=>setFormData({...formData, [fKey]:e.target.value})} className="modern-input" autoComplete={f.type === 'email' ? 'email' : 'off'} />
+                      <input 
+                        type={f.type} 
+                        required={f.required} 
+                        value={formData[fKey]||""} 
+                        onChange={e=>{
+                          setFormData({...formData, [fKey]:e.target.value});
+                          if (isError) setValidationErrors(prev => prev.filter(k => k !== fKey));
+                        }} 
+                        className="modern-input" 
+                        style={{
+                          border: isError ? "2px solid #EF4444" : undefined,
+                          background: isError ? "#FFF5F5" : undefined,
+                          boxShadow: isError ? "0 0 0 3px rgba(239, 68, 68, 0.2)" : undefined
+                        }}
+                        autoComplete={f.type === 'email' ? 'email' : 'off'} 
+                      />
                     )}
                   </div>
                 )})}
+                {validationErrors.length > 0 && (
+                  <div style={{gridColumn:"1 / -1", background:"#FEF2F2", border:"2px solid #EF4444", padding:"14px 18px", borderRadius:10, color:"#991B1B", fontWeight:700, fontSize:".9rem", display:"flex", alignItems:"center", gap:12, boxShadow:"0 4px 14px rgba(239,68,68,0.2)", animation:"fadeIn 0.3s ease-out"}}>
+                    <span style={{fontSize:"1.6rem"}}>⚠️</span>
+                    <div>
+                      <div style={{fontSize:".95rem", fontWeight:800, color:"#991B1B"}}>Mandatory Required Fields Missing!</div>
+                      <div style={{fontSize:".85rem", fontWeight:500, marginTop:2, color:"#7F1D1D"}}>
+                        Please fill out or attach files for the required field(s) highlighted in red above: <strong>{validationLabels.join(", ")}</strong>
+                      </div>
+                    </div>
+                  </div>
+                )}
                 {getForm(selectedEvent.event.formId)?.footerNotes && (
                   <div className="rich-instructions" style={{gridColumn:"1/-1", marginBottom: 14, background: "#FFF0F0", border: "1px solid #FFCDCD", padding: "14px 18px", borderRadius: 8, fontSize: ".9rem", color: "#C0392B", lineHeight: 1.5}} dangerouslySetInnerHTML={{__html: cleanFormInstructions(getForm(selectedEvent.event.formId).footerNotes)}} />
                 )}
@@ -2523,21 +2612,58 @@ function Events({ C, lang, globalAuthToken, globalProfile, onPublicLogin, forceS
                           fKey = `${fKey}_${idx + 1}`;
                       }
                       const spanFull = f.type === 'address' || f.type === 'file' || f.type === 'image' || f.type === 'fullname';
+                      const isError = validationErrors.includes(fKey);
                       return (
                       <div key={idx} id={`form_field_${idx}`} style={{animation:"fadeIn 0.4s ease-out", gridColumn: (spanFull || mob) ? "1 / -1" : "auto"}}>
-                        <label className="modern-label">{f.label || fKey} {f.required&&<span style={{color:"red"}}>*</span>}</label>
+                        <label className="modern-label" style={{color: isError ? "#DC2626" : "var(--dt)", fontWeight: isError ? 800 : 600, display:"flex", alignItems:"center", gap:6}}>
+                          <span>{f.label || fKey}</span>
+                          {f.required && <span style={{color:"red"}}>*</span>}
+                          {isError && <span style={{color:"#DC2626", fontSize:".75rem", fontWeight:700, background:"#FEE2E2", padding:"2px 8px", borderRadius:12, border:"1px solid #FCA5A5"}}>⚠️ Required Field Missed</span>}
+                        </label>
                         {f.type === 'address' ? (
-                          <textarea required={f.required} value={formData[fKey]||""} onChange={e=>setFormData({...formData, [fKey]:e.target.value})} className="modern-input" style={{minHeight:100,resize:"vertical"}}/>
+                          <textarea 
+                            required={f.required} 
+                            value={formData[fKey]||""} 
+                            onChange={e=>{
+                              setFormData({...formData, [fKey]:e.target.value});
+                              if (isError) setValidationErrors(prev => prev.filter(k => k !== fKey));
+                            }} 
+                            className="modern-input" 
+                            style={{
+                              minHeight:100,
+                              resize:"vertical",
+                              border: isError ? "2px solid #EF4444" : undefined,
+                              background: isError ? "#FFF5F5" : undefined,
+                              boxShadow: isError ? "0 0 0 3px rgba(239, 68, 68, 0.2)" : undefined
+                            }}
+                          />
                         ) : f.type === 'dropdown' ? (
                           <SearchableDropdown 
                             required={f.required} 
                             value={formData[fKey]||""} 
-                            onChange={val => setFormData({...formData, [fKey]:val})} 
+                            isError={isError}
+                            onChange={val => {
+                              setFormData({...formData, [fKey]:val});
+                              if (isError && val) setValidationErrors(prev => prev.filter(k => k !== fKey));
+                            }} 
                             options={(f.options||"").split(",").map(o=>o.trim()).filter(Boolean)} 
                             placeholder="-- Search & Select --" 
                           />
                         ) : f.type === 'gender' ? (
-                          <select required={f.required} value={formData[fKey]||""} onChange={e=>setFormData({...formData, [fKey]:e.target.value})} className="modern-input" >
+                          <select 
+                            required={f.required} 
+                            value={formData[fKey]||""} 
+                            onChange={e=>{
+                              setFormData({...formData, [fKey]:e.target.value});
+                              if (isError) setValidationErrors(prev => prev.filter(k => k !== fKey));
+                            }} 
+                            className="modern-input" 
+                            style={{
+                              border: isError ? "2px solid #EF4444" : undefined,
+                              background: isError ? "#FFF5F5" : undefined,
+                              boxShadow: isError ? "0 0 0 3px rgba(239, 68, 68, 0.2)" : undefined
+                            }}
+                          >
                             <option value="">-- Select Gender --</option>
                             <option value="Male">Male</option>
                             <option value="Female">Female</option>
@@ -2545,18 +2671,54 @@ function Events({ C, lang, globalAuthToken, globalProfile, onPublicLogin, forceS
                           </select>
                         ) : f.type === 'fullname' ? (
                           <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:12}}>
-                            <input placeholder="First" required={f.required} value={(formData[fKey]?.split("|")[0])||""} onChange={e=>{
-                              const parts = (formData[fKey]||"||").split("|"); parts[0] = e.target.value; setFormData({...formData, [fKey]:parts.join("|")});
-                            }} className="modern-input" />
-                            <input placeholder="Middle" value={(formData[fKey]?.split("|")[1])||""} onChange={e=>{
-                              const parts = (formData[fKey]||"||").split("|"); parts[1] = e.target.value; setFormData({...formData, [fKey]:parts.join("|")});
-                            }} className="modern-input" />
-                            <input placeholder="Last" required={f.required} value={(formData[fKey]?.split("|")[2])||""} onChange={e=>{
-                              const parts = (formData[fKey]||"||").split("|"); parts[2] = e.target.value; setFormData({...formData, [fKey]:parts.join("|")});
-                            }} className="modern-input" />
+                            <input 
+                              placeholder="First" 
+                              required={f.required} 
+                              value={(formData[fKey]?.split("|")[0])||""} 
+                              onChange={e=>{
+                                const parts = (formData[fKey]||"||").split("|"); parts[0] = e.target.value; setFormData({...formData, [fKey]:parts.join("|")});
+                                if (isError) setValidationErrors(prev => prev.filter(k => k !== fKey));
+                              }} 
+                              className="modern-input" 
+                              style={{
+                                border: isError && !((formData[fKey]?.split("|")[0])||"").trim() ? "2px solid #EF4444" : undefined,
+                                background: isError && !((formData[fKey]?.split("|")[0])||"").trim() ? "#FFF5F5" : undefined
+                              }}
+                            />
+                            <input 
+                              placeholder="Middle" 
+                              value={(formData[fKey]?.split("|")[1])||""} 
+                              onChange={e=>{
+                                const parts = (formData[fKey]||"||").split("|"); parts[1] = e.target.value; setFormData({...formData, [fKey]:parts.join("|")});
+                              }} 
+                              className="modern-input" 
+                            />
+                            <input 
+                              placeholder="Last" 
+                              required={f.required} 
+                              value={(formData[fKey]?.split("|")[2])||""} 
+                              onChange={e=>{
+                                const parts = (formData[fKey]||"||").split("|"); parts[2] = e.target.value; setFormData({...formData, [fKey]:parts.join("|")});
+                                if (isError) setValidationErrors(prev => prev.filter(k => k !== fKey));
+                              }} 
+                              className="modern-input" 
+                              style={{
+                                border: isError && !((formData[fKey]?.split("|")[2])||"").trim() ? "2px solid #EF4444" : undefined,
+                                background: isError && !((formData[fKey]?.split("|")[2])||"").trim() ? "#FFF5F5" : undefined
+                              }}
+                            />
                           </div>
                         ) : f.type === 'image' || f.type === 'file' ? (
-                          <div style={{padding:"16px",borderRadius:12,border:"2px dashed #CBD5E1",background:"#F8FAFC",transition:"all 0.2s ease"}} onMouseEnter={e => e.currentTarget.style.borderColor="#3B82F6"} onMouseLeave={e => e.currentTarget.style.borderColor="#CBD5E1"}>
+                          <div 
+                            style={{
+                              padding:"16px",
+                              borderRadius:12,
+                              border: isError ? "2px dashed #EF4444" : "2px dashed #CBD5E1",
+                              background: isError ? "#FEF2F2" : "#F8FAFC",
+                              boxShadow: isError ? "0 0 0 3px rgba(239, 68, 68, 0.2)" : "none",
+                              transition:"all 0.2s ease"
+                            }}
+                          >
                             {(() => {
                               const uploadedUrls = formData[fKey] ? formData[fKey].split(",").map(s => s.trim()).filter(Boolean) : [];
                               return (
@@ -2590,14 +2752,24 @@ function Events({ C, lang, globalAuthToken, globalProfile, onPublicLogin, forceS
                                       <div style={{width:14,height:14,border:"2px solid var(--bd)",borderTopColor:"var(--dt)",borderRadius:"50%",animation:"spin 1s linear infinite"}}/> Uploading file(s)...
                                     </div>
                                   ) : (
-                                    <div style={{display:"flex",alignItems:"center",gap:10,marginTop:uploadedUrls.length > 0 ? 4 : 0}}>
-                                      <label style={{padding:"8px 16px",background:"var(--dt)",color:"white",borderRadius:6,fontSize:".8rem",fontWeight:600,cursor:"pointer",display:"inline-block"}}>
-                                        {uploadedUrls.length > 0 ? '➕ Add More Files / Photos' : (f.type === 'image' ? '📸 Choose Photo' : '📎 Choose Document')}
-                                        <input type="file" multiple required={f.required && uploadedUrls.length === 0} accept={f.type==='image'?"image/*":"image/*,.pdf,.doc,.docx,.png,.jpg,.jpeg"} onChange={e=>handleFileUpload(e, fKey)} style={{display:"none"}}/>
-                                      </label>
-                                      <span style={{fontSize:".75rem",color:"var(--mu)"}}>
-                                        {uploadedUrls.length > 0 ? `${uploadedUrls.length} file(s) attached` : (f.type === 'image' ? 'JPG, PNG, Camera, etc.' : 'PDF, DOC, Photo, Camera, etc.')}
-                                      </span>
+                                    <div style={{display:"flex",flexDirection:"column",gap:6}}>
+                                      <div style={{display:"flex",alignItems:"center",gap:10,marginTop:uploadedUrls.length > 0 ? 4 : 0}}>
+                                        <label style={{padding:"8px 16px",background:isError?"#DC2626":"var(--dt)",color:"white",borderRadius:6,fontSize:".8rem",fontWeight:600,cursor:"pointer",display:"inline-block"}}>
+                                          {uploadedUrls.length > 0 ? '➕ Add More Files / Photos' : (f.type === 'image' ? '📸 Choose Photo' : '📎 Choose Document')}
+                                          <input type="file" multiple required={f.required && uploadedUrls.length === 0} accept={f.type==='image'?"image/*":"image/*,.pdf,.doc,.docx,.png,.jpg,.jpeg"} onChange={e=>{
+                                            handleFileUpload(e, fKey);
+                                            if (isError) setValidationErrors(prev => prev.filter(k => k !== fKey));
+                                          }} style={{display:"none"}}/>
+                                        </label>
+                                        <span style={{fontSize:".75rem",color:isError?"#DC2626":"var(--mu)",fontWeight:isError?700:400}}>
+                                          {uploadedUrls.length > 0 ? `${uploadedUrls.length} file(s) attached` : (f.type === 'image' ? 'JPG, PNG, Camera, etc.' : 'PDF, DOC, Photo, Camera, etc.')}
+                                        </span>
+                                      </div>
+                                      {isError && uploadedUrls.length === 0 && (
+                                        <div style={{color:"#DC2626",fontSize:".78rem",fontWeight:700,display:"flex",alignItems:"center",gap:6,background:"#FEE2E2",padding:"6px 10px",borderRadius:6,border:"1px solid #FCA5A5"}}>
+                                          <span>⚠️ Required: Please choose and attach at least 1 document file / photo.</span>
+                                        </div>
+                                      )}
                                     </div>
                                   )}
                                 </div>
@@ -2607,7 +2779,26 @@ function Events({ C, lang, globalAuthToken, globalProfile, onPublicLogin, forceS
 
                         ) : f.type === 'percentage' ? (
                           <div style={{position:"relative",display:"flex",alignItems:"center"}}>
-                            <input type="number" step="0.01" min="0" max="100" placeholder="e.g. 85.50" required={f.required} value={formData[fKey]||""} onChange={e=>setFormData({...formData, [fKey]:e.target.value})} className="modern-input" style={{paddingRight:32}}/>
+                            <input 
+                              type="number" 
+                              step="0.01" 
+                              min="0" 
+                              max="100" 
+                              placeholder="e.g. 85.50" 
+                              required={f.required} 
+                              value={formData[fKey]||""} 
+                              onChange={e=>{
+                                setFormData({...formData, [fKey]:e.target.value});
+                                if (isError) setValidationErrors(prev => prev.filter(k => k !== fKey));
+                              }} 
+                              className="modern-input" 
+                              style={{
+                                paddingRight:32,
+                                border: isError ? "2px solid #EF4444" : undefined,
+                                background: isError ? "#FFF5F5" : undefined,
+                                boxShadow: isError ? "0 0 0 3px rgba(239, 68, 68, 0.2)" : undefined
+                              }}
+                            />
                             <span style={{position:"absolute",right:12,fontWeight:700,color:"var(--dt)",fontSize:".9rem",pointerEvents:"none"}}>%</span>
                           </div>
                         ) : (f.type === 'tel' || (f.label || "").toLowerCase().includes("phone") || (f.label || "").toLowerCase().includes("mobile") || fKey.toLowerCase().includes("phone") || fKey.toLowerCase().includes("mobile")) ? (
@@ -2637,7 +2828,7 @@ function Events({ C, lang, globalAuthToken, globalProfile, onPublicLogin, forceS
                                   <select 
                                     value={currentCode} 
                                     onChange={e => setFormData({...formData, [fKey]: `${e.target.value} ${currentNum}`})}
-                                    style={{padding:"14px 8px", borderRadius:12, border:"1px solid #E2E8F0", fontSize:".95rem", fontWeight:700, background:"#F8FAFC", color:"#1E293B", outline:"none", cursor:"pointer", width: 85, boxSizing: "border-box"}}
+                                    style={{padding:"14px 8px", borderRadius:12, border: isError ? "2px solid #EF4444" : "1px solid #E2E8F0", fontSize:".95rem", fontWeight:700, background: isError ? "#FFF5F5" : "#F8FAFC", color:"#1E293B", outline:"none", cursor:"pointer", width: 85, boxSizing: "border-box"}}
                                   >
                                     <option value="+91">+91</option>
                                     <option value="+1">+1</option>
@@ -2654,9 +2845,15 @@ function Events({ C, lang, globalAuthToken, globalProfile, onPublicLogin, forceS
                                     onChange={e => {
                                       const val = e.target.value.replace(/\D/g, "").slice(0, 10);
                                       setFormData({...formData, [fKey]: `${currentCode} ${val}`});
+                                      if (isError && val) setValidationErrors(prev => prev.filter(k => k !== fKey));
                                     }} 
                                     className="modern-input" 
-                                    style={{flex:1}} 
+                                    style={{
+                                      flex:1,
+                                      border: isError ? "2px solid #EF4444" : undefined,
+                                      background: isError ? "#FFF5F5" : undefined,
+                                      boxShadow: isError ? "0 0 0 3px rgba(239, 68, 68, 0.2)" : undefined
+                                    }} 
                                     autoComplete="tel" 
                                   />
                                 </>
@@ -2664,10 +2861,36 @@ function Events({ C, lang, globalAuthToken, globalProfile, onPublicLogin, forceS
                             })()}
                           </div>
                         ) : (
-                          <input type={f.type} required={f.required} value={formData[fKey]||""} onChange={e=>setFormData({...formData, [fKey]:e.target.value})} className="modern-input" autoComplete={f.type === 'email' ? 'email' : 'off'} />
+                          <input 
+                            type={f.type} 
+                            required={f.required} 
+                            value={formData[fKey]||""} 
+                            onChange={e=>{
+                              setFormData({...formData, [fKey]:e.target.value});
+                              if (isError) setValidationErrors(prev => prev.filter(k => k !== fKey));
+                            }} 
+                            className="modern-input" 
+                            style={{
+                              border: isError ? "2px solid #EF4444" : undefined,
+                              background: isError ? "#FFF5F5" : undefined,
+                              boxShadow: isError ? "0 0 0 3px rgba(239, 68, 68, 0.2)" : undefined
+                            }}
+                            autoComplete={f.type === 'email' ? 'email' : 'off'} 
+                          />
                         )}
                       </div>
                     )})}
+                    {validationErrors.length > 0 && (
+                      <div style={{gridColumn:"1 / -1", background:"#FEF2F2", border:"2px solid #EF4444", padding:"14px 18px", borderRadius:10, color:"#991B1B", fontWeight:700, fontSize:".9rem", display:"flex", alignItems:"center", gap:12, boxShadow:"0 4px 14px rgba(239,68,68,0.2)", animation:"fadeIn 0.3s ease-out"}}>
+                        <span style={{fontSize:"1.6rem"}}>⚠️</span>
+                        <div>
+                          <div style={{fontSize:".95rem", fontWeight:800, color:"#991B1B"}}>Mandatory Required Fields Missing!</div>
+                          <div style={{fontSize:".85rem", fontWeight:500, marginTop:2, color:"#7F1D1D"}}>
+                            Please fill out or attach files for the required field(s) highlighted in red above: <strong>{validationLabels.join(", ")}</strong>
+                          </div>
+                        </div>
+                      </div>
+                    )}
                     {getForm(selectedEvent.event.formId)?.footerNotes && (
                       <div className="rich-instructions" style={{gridColumn: "1 / -1", marginBottom: 14, background: "#FFF0F0", border: "1px solid #FFCDCD", padding: "14px 18px", borderRadius: 8, fontSize: ".9rem", color: "#C0392B", lineHeight: 1.5}} dangerouslySetInnerHTML={{__html: cleanFormInstructions(getForm(selectedEvent.event.formId).footerNotes)}} />
                     )}
