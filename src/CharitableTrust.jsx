@@ -304,54 +304,50 @@ const fbSave = async (content, idToken) => {
   return true;
 };
 
-const generateNextTxnId = async (idToken, preferredPrefix = null) => {
+const generateNextTxnId = async (idToken, preferredPrefix = null, targetEventId = null) => {
   try {
     const rawExisting = await fbFetchRegistrations(idToken);
-    // Ignore trashed/deleted registrations
-    const existing = (Array.isArray(rawExisting) ? rawExisting : []).filter(r => !r.deleted);
+    // Ignore trashed/deleted registrations and global guest directory
+    const existing = (Array.isArray(rawExisting) ? rawExisting : []).filter(r => {
+      if (!r) return false;
+      if (r.deleted === true || r.deleted === "true" || r.isDeleted === true || r.isTrash === true || r.status === "Deleted" || r.Status === "Deleted") return false;
+      return true;
+    });
     
-    let activePrefix = preferredPrefix ? preferredPrefix.trim().toUpperCase().replace(/[-_]$/, "") : null;
-
-    // Detect prefix from existing registrations
-    if (!activePrefix && existing.length > 0) {
-      // Look for EDU26 or most recently used prefix pattern
-      const sorted = [...existing].sort((a, b) => new Date(b._submittedAt || 0) - new Date(a._submittedAt || 0));
-      for (const r of sorted) {
-        const idStr = String(r["Transaction ID"] || r["transactionId"] || r.id || "").trim();
-        const match = idStr.match(/^([A-Za-z0-9_]+)[-_](\d+)$/);
-        if (match && match[1]) {
-          const p = match[1].toUpperCase();
-          if (p === "EDU26" || p === "EDU" || p === "MMP") {
-            activePrefix = p;
-            break;
-          }
-          if (!activePrefix) activePrefix = p;
-        }
-      }
-    }
-
-    if (!activePrefix) {
-      activePrefix = "EDU26";
-    }
+    let activePrefix = preferredPrefix ? preferredPrefix.trim().toUpperCase().replace(/[-_]$/, "") : "EDU26";
+    const prefixRegex = new RegExp(`^${activePrefix}[-_](\\d+)$`, 'i');
 
     let maxNum = 0;
-    if (existing.length > 0) {
+    existing.forEach(r => {
+      const tId = String(r["Transaction ID"] || r["transactionId"] || "").trim();
+      const match = tId.match(prefixRegex);
+      if (match) {
+        const num = parseInt(match[1], 10);
+        // Only accept sequential numbers (< 10000) to ignore any accidental random 6-digit IDs
+        if (!isNaN(num) && num > 0 && num < 10000 && num > maxNum) {
+          maxNum = num;
+        }
+      }
+    });
+
+    // If activePrefix is EDU26 and maxNum is low, also check historical VG- numbering so we don't start below existing entries
+    if (activePrefix === "EDU26") {
       existing.forEach(r => {
-        const idStr = String(r["Transaction ID"] || r["transactionId"] || r.id || "").trim();
-        const match = idStr.match(/[-_]?(\d+)$/);
-        if (match) {
-          const num = parseInt(match[1], 10);
-          if (!isNaN(num) && num > maxNum) maxNum = num;
+        const tId = String(r["Transaction ID"] || r["transactionId"] || "").trim();
+        const vgMatch = tId.match(/^VG[-_](\\d+)$/i);
+        if (vgMatch) {
+          const num = parseInt(vgMatch[1], 10);
+          if (!isNaN(num) && num > 0 && num < 10000 && num > maxNum) {
+            maxNum = num;
+          }
         }
       });
-      if (maxNum === 0) {
-        maxNum = existing.length;
-      }
     }
+
     const nextNum = maxNum + 1;
     return `${activePrefix}-${nextNum}`;
   } catch (err) {
-    return `EDU26-${1001 + Math.floor(Math.random() * 100)}`;
+    return `${preferredPrefix || "EDU26"}-1`;
   }
 };
 
@@ -2071,7 +2067,7 @@ function Events({ C, lang, globalAuthToken, globalProfile, onPublicLogin, forceS
     let txId = formData["Transaction ID"] || formData["transactionId"] || formData["Tx ID"];
     if (!txId) {
       const preferredPrefix = selectedEvent?.event?.txnPrefix || C?.txnPrefix || "EDU26";
-      txId = await generateNextTxnId(activeToken, preferredPrefix);
+      txId = await generateNextTxnId(activeToken, preferredPrefix, selectedEvent?.event?.id);
     }
     
     // 3. MANDATORY DATABASE SUBMISSION (DO NOT PROCEED IF THIS FAILS!)
@@ -4852,6 +4848,7 @@ function TemplateMapper({ imgUrl, mapData, fontSize, onChange }) {
           onBlur={handleFontSizeSave}
           style={{flex: 1, minWidth: 200, cursor: "pointer"}} 
         />
+        
       </div>
     </div>
   );
@@ -6626,7 +6623,7 @@ const ANAV = [
   {id:"backup",icon:"💾",label:"Backup & Restore"},
   {id:"profile",icon:"👤",label:"My Profile"},
   {id:"meritlist",label:"Reports & Lists",icon:"📊"},
-  {id:"inviteletters",label:"Letters & Certificates",icon:"📑"}
+  {id:"inviteletters",label:"Letters, Invites & Passes",icon:"💌"}
 ];
 
 const ADMIN_MANUAL_DATA = {
@@ -10261,6 +10258,25 @@ function AdminEvents({ mob, C, setC, auth }) {
                   {ev.certBgUrl && <div style={{fontSize:".7rem",color:"var(--sf)",marginTop:6}}>✅ Template mapped successfully.</div>}
                 </div>
                 
+                {/* Transaction ID Prefix & Numbering Setting */}
+                <div style={{gridColumn:"1/-1", marginTop: 8, padding: 12, background: "#F8FAFC", borderRadius: 8, border: "1px solid #CBD5E1", display:"flex", gap:12, alignItems:"center", flexWrap:"wrap"}}>
+                  <div style={{flex: 1, minWidth: 160}}>
+                    <label style={{display:"block", fontSize:".75rem", fontWeight:700, color:"#334155", marginBottom:4}}>
+                      🏷️ Transaction ID Prefix (Stored in Firebase):
+                    </label>
+                    <input
+                      type="text"
+                      value={ev.txnPrefix || ""}
+                      onChange={e => updateItem(i, "txnPrefix", e.target.value.toUpperCase().trim())}
+                      placeholder="e.g. EDU26, VG, CWC"
+                      style={{width:"100%", padding:"6px 10px", borderRadius:6, border:"1px solid #CBD5E1", fontSize:".82rem", fontWeight:700, fontFamily:"monospace", boxSizing:"border-box"}}
+                    />
+                  </div>
+                  <div style={{fontSize:".72rem", color:"#64748B", flexBasis:"100%", marginTop:2}}>
+                    New applicants for this event will receive sequential IDs: <strong>{(ev.txnPrefix || "EDU26")}-1</strong>, <strong>{(ev.txnPrefix || "EDU26")}-2</strong>...
+                  </div>
+                </div>
+
                 {/* Internal Admin Workspace Checkbox */}
                 <div style={{gridColumn:"1/-1", marginTop: 8, padding: 10, background: ev.isInternalOnly ? "#EFF6FF" : "#F8FAFC", borderRadius: 8, border: ev.isInternalOnly ? "1.5px solid #60A5FA" : "1px solid #E2E8F0"}}>
                   <label style={{fontSize:".78rem",fontWeight:800,display:"flex",alignItems:"center",gap:8,cursor:"pointer",color:ev.isInternalOnly ? "#1D4ED8" : "#334155"}}>
@@ -17234,11 +17250,17 @@ function AdminAccess({ C, setC, master, auth }) {
 }
 
 
-function VerificationModal({ viewing, setViewing, allRegs, saveVerification, C }) {
+function VerificationModal({ viewing, setViewing, allRegs, saveVerification, C, auth }) {
   const w = useW();
   const mob = w < 768;
   const [eventFilter, setEventFilter] = useState(viewing.eventName || viewing.eventTitle || viewing.eventId || "");
   const [statusFilter, setStatusFilter] = useState(viewing['Status'] || "Pending");
+  const [showDocUploadModal, setShowDocUploadModal] = useState(false);
+  const [showAdminUserPortal, setShowAdminUserPortal] = useState(false);
+  const [uploadingDoc, setUploadingDoc] = useState(false);
+  const [uploadDocTarget, setUploadDocTarget] = useState("Marksheet");
+  const [customDocLabel, setCustomDocLabel] = useState("");
+  const [selectedUploadFile, setSelectedUploadFile] = useState(null);
 
   const handleFilterChange = (type, val) => {
     if (type === 'event') setEventFilter(val);
@@ -17282,31 +17304,119 @@ function VerificationModal({ viewing, setViewing, allRegs, saveVerification, C }
   const [editedReg, setEditedReg] = useState(viewing);
   const [isEditing, setIsEditing] = useState(false);
 
-  // Process uploaded documents (including multi-file comma-separated URLs)
-  const docItems = [];
-  Object.keys(viewing).forEach(k => {
-    const val = viewing[k];
-    if (typeof val === 'string' && val.includes('http')) {
-      const urls = val.split(',').map(s => s.trim()).filter(s => s.startsWith('http'));
-      urls.forEach((url, idx) => {
-        docItems.push({
-          label: urls.length > 1 ? `${k} (${idx + 1})` : k,
-          url: url
+  const getDocItemsFromObj = (obj) => {
+    if (!obj) return [];
+    const items = [];
+    Object.keys(obj).forEach(k => {
+      if (k.startsWith('_') || ['id','eventId','eventName','Status','status','Remarks','remarks','Updated By','updatedBy','logHistory','submitterMob','transactionId'].includes(k)) return;
+      const val = obj[k];
+      if (typeof val === 'string' && (val.includes('http') || val.startsWith('data:image') || val.startsWith('data:application/pdf') || val.startsWith('blob:'))) {
+        const urls = val.split(',').map(s => s.trim()).filter(s => s.startsWith('http') || s.startsWith('data:') || s.startsWith('blob:'));
+        urls.forEach((url, idx) => {
+          const isRevised = k.toLowerCase().includes('revised') || k.toLowerCase().includes('additional');
+          const displayLabel = urls.length > 1 ? `${k} (${idx + 1})` : k;
+          items.push({
+            key: k,
+            label: displayLabel,
+            isRevised,
+            url: url
+          });
         });
-      });
+      }
+    });
+    return items;
+  };
+
+  const docItems = getDocItemsFromObj(editedReg?.id === viewing?.id ? (editedReg || viewing) : viewing);
+
+  const handleDirectDocUpload = async (file, targetField) => {
+    if (!file) {
+      alert("Please select a file (PDF, PNG, JPG) to upload.");
+      return;
     }
-  });
+    setUploadingDoc(true);
+    try {
+      let uploadedUrl = "";
+      try {
+        uploadedUrl = await fbUploadPublicFile(file, auth?.idToken);
+      } catch (err) {
+        console.warn("Storage upload fallback to base64:", err);
+        const reader = new FileReader();
+        uploadedUrl = await new Promise((resolve, reject) => {
+          reader.onload = () => resolve(reader.result);
+          reader.onerror = reject;
+          reader.readAsDataURL(file);
+        });
+      }
+
+      if (!uploadedUrl) throw new Error("Upload failed to return URL.");
+
+      // Clean field name
+      let baseField = (targetField === "__custom__" ? customDocLabel : targetField).trim();
+      if (!baseField) baseField = "Supporting Document";
+
+      // Build unique revised field key to keep original document untouched for audit
+      let docKey = baseField;
+      if (!docKey.toLowerCase().startsWith("revised") && !docKey.toLowerCase().startsWith("additional")) {
+        docKey = `Revised ${docKey}`;
+      }
+
+      // If that revised key already exists with another document, add revision number
+      if (editedReg[docKey] && editedReg[docKey] !== uploadedUrl) {
+        let rev = 2;
+        while (editedReg[`${docKey} (${rev})`]) {
+          rev++;
+        }
+        docKey = `${docKey} (${rev})`;
+      }
+
+      const existingLogs = Array.isArray(editedReg.logHistory) ? editedReg.logHistory : [];
+      const updatedBy = auth?.email || "Admin";
+      const docLog = {
+        timestamp: new Date().toISOString(),
+        actor: updatedBy,
+        action: `Revised Document Attached: ${docKey}`,
+        status: status || editedReg.Status || "Pending",
+        remarks: `Admin uploaded revised document (${file.name}) on behalf of applicant. Original document preserved for audit.`
+      };
+
+      const updatedReg = {
+        ...editedReg,
+        [docKey]: uploadedUrl,
+        "Updated By": updatedBy,
+        logHistory: [...existingLogs, docLog]
+      };
+
+      setEditedReg(updatedReg);
+      setViewing(updatedReg);
+      setActiveDoc(uploadedUrl);
+      setActiveTab("docs");
+      
+      // Save directly to database
+      await saveVerification(updatedReg, status || editedReg.Status || "Pending", remarks || editedReg.Remarks || "");
+      alert(`✅ Revised document "${docKey}" attached successfully! Original document is preserved.`);
+      setShowDocUploadModal(false);
+      setSelectedUploadFile(null);
+      setCustomDocLabel("");
+    } catch (e) {
+      alert("Failed to upload document: " + e.message);
+    } finally {
+      setUploadingDoc(false);
+    }
+  };
 
   const [activeTab, setActiveTab] = useState(docItems.length > 0 ? "docs" : "details");
 
   useEffect(() => {
-    setActiveDoc(docItems.length > 0 ? docItems[0].url : null);
+    if (!viewing) return;
+    const freshDocs = getDocItemsFromObj(viewing);
+    setActiveDoc(freshDocs.length > 0 ? freshDocs[0].url : null);
     setStatus(viewing['Status'] || 'Pending');
     setRemarks(viewing['Remarks'] || '');
     setEditedReg(viewing);
     setIsEditing(false);
-    setActiveTab(docItems.length > 0 ? "docs" : "details");
-  }, [viewing]);
+    setActiveTab(freshDocs.length > 0 ? "docs" : "details");
+  }, [viewing?.id, viewing?.['Transaction ID']]);
 
   const handleSave = async () => {
     if (status !== 'Approved' && status !== 'Needs Info' && status !== 'Disapproved') {
@@ -17389,7 +17499,7 @@ function VerificationModal({ viewing, setViewing, allRegs, saveVerification, C }
     }
   });
 
-  const isPdf = activeDoc && activeDoc.toLowerCase().includes('.pdf');
+  const isPdf = activeDoc && (activeDoc.toLowerCase().includes('.pdf') || activeDoc.startsWith('data:application/pdf'));
 
   return (
     <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.8)",zIndex:99999,display:"flex",alignItems:"center",justifyContent:"center",padding:mob?0:16,boxSizing:"border-box"}}>
@@ -17495,19 +17605,43 @@ function VerificationModal({ viewing, setViewing, allRegs, saveVerification, C }
             <div style={{flex:1,borderRight:mob?"none":"1px solid var(--bd)",display:"flex",flexDirection:"column",background:"#F5F5F7",height:mob?"100%":"auto",overflow:"hidden"}}>
               {docItems.length > 0 ? (
                 <>
-                  <div style={{padding:"10px 14px",background:"white",borderBottom:"1px solid var(--bd)",display:"flex",gap:8,overflowX:"auto",alignItems:"center",flexShrink:0}}>
-                    <span style={{fontSize:".75rem",fontWeight:700,color:"var(--dt)",textTransform:"uppercase",letterSpacing:.5,marginRight:4,whiteSpace:"nowrap"}}>
-                      Attached ({docItems.length}):
-                    </span>
-                    {docItems.map((item, idx) => {
-                      const active = activeDoc === item.url;
-                      return (
-                        <button key={idx} onClick={()=>setActiveDoc(item.url)} style={{padding:"4px 12px",borderRadius:20,border:`1.5px solid ${active?"var(--sf)":"var(--bd)"}`,background:active?"var(--sf)":"white",color:active?"white":"var(--dt)",fontSize:".75rem",fontWeight:700,cursor:"pointer",whiteSpace:"nowrap",display:"flex",alignItems:"center",gap:6,transition:"all .2s"}}>
-                          <span>📄</span>
-                          <span>{item.label}</span>
-                        </button>
-                      );
-                    })}
+                  <div style={{padding:"10px 14px",background:"white",borderBottom:"1px solid var(--bd)",display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:8,flexShrink:0}}>
+                    <div style={{display:"flex",gap:8,overflowX:"auto",alignItems:"center"}}>
+                      <span style={{fontSize:".75rem",fontWeight:700,color:"var(--dt)",textTransform:"uppercase",letterSpacing:.5,marginRight:4,whiteSpace:"nowrap"}}>
+                        Attached ({docItems.length}):
+                      </span>
+                      {docItems.map((item, idx) => {
+                        const active = activeDoc === item.url;
+                        return (
+                          <button key={idx} onClick={()=>setActiveDoc(item.url)} style={{padding:"5px 13px",borderRadius:20,border:`1.5px solid ${active ? (item.isRevised ? "#059669" : "var(--sf)") : (item.isRevised ? "#A7F3D0" : "var(--bd)")}`,background:active ? (item.isRevised ? "#059669" : "var(--sf)") : (item.isRevised ? "#ECFDF5" : "white"),color:active ? "white" : (item.isRevised ? "#065F46" : "var(--dt)"),fontSize:".75rem",fontWeight:700,cursor:"pointer",whiteSpace:"nowrap",display:"flex",alignItems:"center",gap:6,transition:"all .2s",boxShadow:active ? "0 2px 6px rgba(0,0,0,0.15)" : "none"}}>
+                            <span>{item.isRevised ? "🆕" : "📄"}</span>
+                            <span>{item.label}</span>
+                            {item.isRevised && <span style={{fontSize:".65rem",background:active?"rgba(255,255,255,0.25)":"#D1FAE5",color:active?"white":"#047857",padding:"1px 5px",borderRadius:10,fontWeight:800}}>Revised</span>}
+                          </button>
+                        );
+                      })}
+                    </div>
+                    <button
+                      onClick={() => setShowDocUploadModal(true)}
+                      style={{
+                        padding:"5px 12px",
+                        borderRadius:6,
+                        background:"#0D4B5E",
+                        color:"white",
+                        border:"none",
+                        fontSize:".75rem",
+                        fontWeight:700,
+                        cursor:"pointer",
+                        display:"flex",
+                        alignItems:"center",
+                        gap:5,
+                        whiteSpace:"nowrap",
+                        boxShadow:"0 2px 6px rgba(13,75,94,0.25)"
+                      }}
+                      title="Upload or replace revised marksheet/document received via WhatsApp or email"
+                    >
+                      <span>📎</span> Upload / Replace Doc
+                    </button>
                   </div>
 
                   <div style={{flex:1,padding:mob?8:16,display:"flex",alignItems:"center",justifyContent:"center",overflow:"hidden"}}>
@@ -17534,24 +17668,48 @@ function VerificationModal({ viewing, setViewing, allRegs, saveVerification, C }
               
               {/* Input Data List */}
               <div style={{flex:1,overflowY:"auto",padding:mob?"16px":"24px"}}>
-                <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16}}>
+                <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16,flexWrap:"wrap",gap:8}}>
                   <h4 style={{fontSize:".95rem",fontWeight:700,color:"var(--dt)",margin:0,textTransform:"uppercase",letterSpacing:1}}>Submitted Details</h4>
-                  <button 
-                    onClick={() => setIsEditing(!isEditing)} 
-                    style={{
-                      background: "none", 
-                      border: "none", 
-                      color: "var(--dt)", 
-                      cursor: "pointer", 
-                      fontSize: ".85rem", 
-                      fontWeight: 600,
-                      display: "flex",
-                      alignItems: "center",
-                      gap: 4
-                    }}
-                  >
-                    {isEditing ? "👁 Read Only" : "✏️ Edit Fields"}
-                  </button>
+                  <div style={{display:"flex",gap:6,alignItems:"center"}}>
+                    <button 
+                      onClick={() => setShowAdminUserPortal(true)} 
+                      style={{
+                        background: "#EFF6FF", 
+                        border: "1.5px solid #60A5FA", 
+                        color: "#1D4ED8", 
+                        cursor: "pointer", 
+                        fontSize: ".76rem", 
+                        fontWeight: 800,
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 4,
+                        padding: "4px 10px",
+                        borderRadius: 6,
+                        boxShadow: "0 1px 3px rgba(37,99,235,0.15)"
+                      }}
+                      title="Open full Applicant Registration Dashboard & Form to edit all fields and upload documents on behalf of applicant"
+                    >
+                      <span>👤</span> Applicant Portal
+                    </button>
+                    <button 
+                      onClick={() => setIsEditing(!isEditing)} 
+                      style={{
+                        background: isEditing ? "#FEF3C7" : "#F8FAFC", 
+                        border: isEditing ? "1.5px solid #F59E0B" : "1px solid #CBD5E1", 
+                        color: isEditing ? "#B45309" : "#334155", 
+                        cursor: "pointer", 
+                        fontSize: ".76rem", 
+                        fontWeight: 700,
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 4,
+                        padding: "4px 10px",
+                        borderRadius: 6
+                      }}
+                    >
+                      {isEditing ? "👁 Read Only" : "✏️ Quick Edit"}
+                    </button>
+                  </div>
                 </div>
                 <div style={{display:"flex",flexDirection:"column",gap:16}}>
                   {fieldsToRender.map(f => {
@@ -17864,6 +18022,277 @@ function VerificationModal({ viewing, setViewing, allRegs, saveVerification, C }
           )}
         </div>
       </div>
+
+{/* ── Modal 1: Upload / Replace Document Modal ── */}
+        {showDocUploadModal && (
+          <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.6)",zIndex:100001,display:"flex",alignItems:"center",justifyContent:"center",padding:16}}>
+            <div style={{background:"white",borderRadius:12,width:"100%",maxWidth:480,padding:24,boxShadow:"0 20px 40px rgba(0,0,0,0.25)",boxSizing:"border-box"}}>
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16}}>
+                <h3 style={{margin:0,fontSize:"1.1rem",color:"#0F172A",fontWeight:800,display:"flex",alignItems:"center",gap:6}}>
+                  <span>📎</span> Upload / Replace Document
+                </h3>
+                <button onClick={() => { setShowDocUploadModal(false); setSelectedUploadFile(null); }} style={{background:"none",border:"none",fontSize:"1.2rem",cursor:"pointer",color:"#64748B"}}>✕</button>
+              </div>
+
+              <div style={{fontSize:".8rem",color:"#475569",marginBottom:16,background:"#F1F5F9",padding:"10px 12px",borderRadius:8}}>
+                Upload the revised document (e.g. received from applicant on WhatsApp) for <strong>{editedReg['Full Name'] || editedReg.name || 'Applicant'}</strong> ({editedReg['Transaction ID'] || editedReg.id}).
+              </div>
+
+              <div style={{display:"flex",flexDirection:"column",gap:14}}>
+                <div>
+                  <label style={{display:"block",fontSize:".78rem",fontWeight:700,color:"#334155",marginBottom:4}}>
+                    Select Document Type / Field:
+                  </label>
+                  <select
+                    value={uploadDocTarget}
+                    onChange={e => setUploadDocTarget(e.target.value)}
+                    style={{width:"100%",padding:"9px 10px",borderRadius:6,border:"1px solid #CBD5E1",fontSize:".85rem",fontWeight:600}}
+                  >
+                    <option value="Marksheet">Marksheet / Result Sheet</option>
+                    <option value="Photo">Passport Photo / Picture</option>
+                    <option value="Caste Certificate">Caste Certificate</option>
+                    <option value="Aadhar Card">Aadhar Card</option>
+                    <option value="Fee Receipt">Fee Receipt / College ID</option>
+                    {docItems.map((d, di) => (
+                      <option key={di} value={d.key}>Existing: {d.label}</option>
+                    ))}
+                    <option value="__custom__">+ Custom Field Name...</option>
+                  </select>
+                </div>
+
+                {uploadDocTarget === "__custom__" && (
+                  <div>
+                    <label style={{display:"block",fontSize:".78rem",fontWeight:700,color:"#334155",marginBottom:4}}>
+                      Custom Field Name:
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="e.g. Revised Semester 2 Marksheet"
+                      value={customDocLabel}
+                      onChange={e => setCustomDocLabel(e.target.value)}
+                      style={{width:"100%",padding:"8px 10px",borderRadius:6,border:"1px solid #CBD5E1",fontSize:".85rem",boxSizing:"border-box"}}
+                    />
+                  </div>
+                )}
+
+                <div>
+                  <label style={{display:"block",fontSize:".78rem",fontWeight:700,color:"#334155",marginBottom:4}}>
+                    Choose File (PDF, PNG, JPG):
+                  </label>
+                  <input
+                    type="file"
+                    accept=".pdf,image/png,image/jpeg,image/jpg"
+                    onChange={e => setSelectedUploadFile(e.target.files[0] || null)}
+                    style={{width:"100%",padding:"8px",borderRadius:6,border:"1px dashed #94A3B8",fontSize:".82rem",background:"#F8FAFC"}}
+                  />
+                  {selectedUploadFile && (
+                    <div style={{fontSize:".75rem",color:"#15803D",fontWeight:600,marginTop:4}}>
+                      ✓ Selected: {selectedUploadFile.name} ({(selectedUploadFile.size / 1024).toFixed(1)} KB)
+                    </div>
+                  )}
+                </div>
+
+                <div style={{display:"flex",justifyContent:"flex-end",gap:10,marginTop:8}}>
+                  <button
+                    onClick={() => { setShowDocUploadModal(false); setSelectedUploadFile(null); }}
+                    style={{padding:"8px 16px",borderRadius:6,border:"1px solid #CBD5E1",background:"white",color:"#475569",fontSize:".85rem",fontWeight:600,cursor:"pointer"}}
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={() => handleDirectDocUpload(selectedUploadFile, uploadDocTarget)}
+                    disabled={uploadingDoc || !selectedUploadFile}
+                    style={{
+                      padding:"8px 18px",
+                      borderRadius:6,
+                      border:"none",
+                      background: uploadingDoc ? "#94A3B8" : "#0D4B5E",
+                      color:"white",
+                      fontSize:".85rem",
+                      fontWeight:700,
+                      cursor: (uploadingDoc || !selectedUploadFile) ? "not-allowed" : "pointer",
+                      boxShadow:"0 2px 6px rgba(13,75,94,0.2)"
+                    }}
+                  >
+                    {uploadingDoc ? "Uploading..." : "Upload & Save"}
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* ── Modal 2: Full Applicant Portal & Registration Editor (On Behalf of User) ── */}
+        {showAdminUserPortal && (
+          <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.85)",zIndex:100001,display:"flex",alignItems:"center",justifyContent:"center",padding:mob?0:20}}>
+            <div style={{background:"white",borderRadius:mob?0:12,width:"100%",maxWidth:900,height:mob?"100dvh":"92vh",maxHeight:"100dvh",display:"flex",flexDirection:"column",overflow:"hidden",boxShadow:"0 24px 48px rgba(0,0,0,0.35)"}}>
+              {/* Header */}
+              <div style={{padding:"14px 20px",background:"linear-gradient(135deg, #0D4B5E, #164E63)",color:"white",display:"flex",justifyContent:"space-between",alignItems:"center",flexShrink:0}}>
+                <div>
+                  <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
+                    <h3 style={{margin:0,fontSize:"1.1rem",fontWeight:800}}>👤 Applicant Portal (On Behalf of User)</h3>
+                    <span style={{background:"#FEF08A",color:"#854D0E",fontSize:".7rem",fontWeight:800,padding:"2px 8px",borderRadius:12}}>
+                      🛡️ Admin Assisted Mode
+                    </span>
+                  </div>
+                  <div style={{fontSize:".76rem",opacity:0.9,marginTop:2}}>
+                    Editing: <strong>{editedReg['Full Name'] || editedReg.name || 'Applicant'}</strong> ({editedReg['Transaction ID'] || editedReg.id}) | Mobile: +91 {editedReg['Mobile Number'] || editedReg.submitterMob || '-'}
+                  </div>
+                </div>
+                <button onClick={() => setShowAdminUserPortal(false)} style={{background:"rgba(255,255,255,0.2)",border:"none",color:"white",width:32,height:32,borderRadius:"50%",fontSize:"1.1rem",cursor:"pointer"}}>✕</button>
+              </div>
+
+              {/* Notice Banner */}
+              <div style={{background:"#EFF6FF",borderBottom:"1px solid #BFDBFE",padding:"8px 20px",fontSize:".78rem",color:"#1E40AF",display:"flex",alignItems:"center",gap:6,flexShrink:0}}>
+                <span>ℹ️</span> You have full administrative access to correct applicant details, change streams/marks, and replace uploaded marksheets or photos on behalf of the applicant.
+              </div>
+
+              {/* Form Content */}
+              <div style={{flex:1,overflowY:"auto",padding:mob?"16px":"24px",background:"#F8FAFC"}}>
+                <div style={{background:"white",padding:"20px",borderRadius:10,border:"1px solid #E2E8F0",marginBottom:20}}>
+                  <h4 style={{margin:"0 0 16px 0",fontSize:".95rem",color:"#0F172A",fontWeight:800,borderBottom:"1px solid #F1F5F9",paddingBottom:8}}>
+                    📝 Personal & Academic Details
+                  </h4>
+                  <div style={{display:"grid",gridTemplateColumns:mob?"1fr":"1fr 1fr",gap:16}}>
+                    {fieldsToRender.map(f => {
+                      const val = (editedReg || viewing)[f.key];
+                      if (typeof val === 'string' && val.startsWith('http')) return null; // Rendered in docs section
+
+                      if (f.type === 'fullname') {
+                        const parts = (editedReg[f.key] || "||").split("|");
+                        return (
+                          <div key={f.key} style={{gridColumn:mob?"auto":"1/-1"}}>
+                            <label style={{display:"block",fontSize:".76rem",fontWeight:700,color:"#334155",marginBottom:4}}>{f.label}</label>
+                            <div style={{display:"grid",gridTemplateColumns:mob?"1fr":"1fr 1fr 1fr",gap:8}}>
+                              <input placeholder="First Name" value={parts[0] || ""} onChange={e => { const np = [...parts]; np[0] = e.target.value; setEditedReg(p => ({ ...p, [f.key]: np.join("|") })); }} style={{padding:"8px 10px",borderRadius:6,border:"1px solid #CBD5E1",fontSize:".88rem"}} />
+                              <input placeholder="Middle Name" value={parts[1] || ""} onChange={e => { const np = [...parts]; np[1] = e.target.value; setEditedReg(p => ({ ...p, [f.key]: np.join("|") })); }} style={{padding:"8px 10px",borderRadius:6,border:"1px solid #CBD5E1",fontSize:".88rem"}} />
+                              <input placeholder="Last Name" value={parts[2] || ""} onChange={e => { const np = [...parts]; np[2] = e.target.value; setEditedReg(p => ({ ...p, [f.key]: np.join("|") })); }} style={{padding:"8px 10px",borderRadius:6,border:"1px solid #CBD5E1",fontSize:".88rem"}} />
+                            </div>
+                          </div>
+                        );
+                      }
+
+                      if (f.type === 'dropdown') {
+                        return (
+                          <div key={f.key}>
+                            <label style={{display:"block",fontSize:".76rem",fontWeight:700,color:"#334155",marginBottom:4}}>{f.label}</label>
+                            <select value={editedReg[f.key] || ""} onChange={e => setEditedReg(p => ({ ...p, [f.key]: e.target.value }))} style={{width:"100%",padding:"8px 10px",borderRadius:6,border:"1px solid #CBD5E1",fontSize:".88rem",background:"white"}}>
+                              <option value="">-- Select --</option>
+                              {(f.options || "").split(",").map((opt, oi) => opt.trim() && <option key={oi} value={opt.trim()}>{opt.trim()}</option>)}
+                            </select>
+                          </div>
+                        );
+                      }
+
+                      if (f.type === 'gender') {
+                        return (
+                          <div key={f.key}>
+                            <label style={{display:"block",fontSize:".76rem",fontWeight:700,color:"#334155",marginBottom:4}}>{f.label}</label>
+                            <select value={editedReg[f.key] || ""} onChange={e => setEditedReg(p => ({ ...p, [f.key]: e.target.value }))} style={{width:"100%",padding:"8px 10px",borderRadius:6,border:"1px solid #CBD5E1",fontSize:".88rem",background:"white"}}>
+                              <option value="">-- Select Gender --</option>
+                              <option value="Male">Male</option>
+                              <option value="Female">Female</option>
+                              <option value="Other">Other</option>
+                            </select>
+                          </div>
+                        );
+                      }
+
+                      const isLong = f.type === 'address' || f.key.toLowerCase().includes("address") || f.key.toLowerCase().includes("remark");
+                      return (
+                        <div key={f.key} style={{gridColumn: isLong && !mob ? "1/-1" : "auto"}}>
+                          <label style={{display:"block",fontSize:".76rem",fontWeight:700,color:"#334155",marginBottom:4}}>{f.label}</label>
+                          {isLong ? (
+                            <textarea rows={2} value={editedReg[f.key] || ""} onChange={e => setEditedReg(p => ({ ...p, [f.key]: e.target.value }))} style={{width:"100%",padding:"8px 10px",borderRadius:6,border:"1px solid #CBD5E1",fontSize:".88rem",boxSizing:"border-box"}} />
+                          ) : (
+                            <input type="text" value={editedReg[f.key] || ""} onChange={e => setEditedReg(p => ({ ...p, [f.key]: e.target.value }))} style={{width:"100%",padding:"8px 10px",borderRadius:6,border:"1px solid #CBD5E1",fontSize:".88rem",boxSizing:"border-box"}} />
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* Attached Documents Section */}
+                <div style={{background:"white",padding:"20px",borderRadius:10,border:"1px solid #E2E8F0"}}>
+                  <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16}}>
+                    <h4 style={{margin:0,fontSize:".95rem",color:"#0F172A",fontWeight:800}}>
+                      📄 Uploaded Marksheets & Documents
+                    </h4>
+                    <button
+                      onClick={() => setShowDocUploadModal(true)}
+                      style={{padding:"5px 12px",borderRadius:6,background:"#0D4B5E",color:"white",border:"none",fontSize:".75rem",fontWeight:700,cursor:"pointer"}}
+                    >
+                      ➕ Upload Another Document
+                    </button>
+                  </div>
+
+                  {docItems.length === 0 ? (
+                    <div style={{textAlign:"center",padding:20,color:"#94A3B8",fontSize:".85rem"}}>
+                      No documents currently uploaded. Click "+ Upload Another Document" above to attach a marksheet.
+                    </div>
+                  ) : (
+                    <div style={{display:"grid",gridTemplateColumns:mob?"1fr":"1fr 1fr",gap:12}}>
+                      {docItems.map((d, di) => (
+                        <div key={di} style={{border:"1px solid #CBD5E1",borderRadius:8,padding:12,display:"flex",justifyContent:"space-between",alignItems:"center",background:"#F8FAFC"}}>
+                          <div style={{display:"flex",alignItems:"center",gap:10,minWidth:0}}>
+                            <span style={{fontSize:"1.4rem"}}>📄</span>
+                            <div style={{minWidth:0}}>
+                              <div style={{fontSize:".82rem",fontWeight:700,color:"#0F172A",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{d.label}</div>
+                              <a href={d.url} target="_blank" rel="noopener noreferrer" style={{fontSize:".72rem",color:"#2563EB",textDecoration:"underline"}}>Open in New Tab ↗</a>
+                            </div>
+                          </div>
+                          <button
+                            onClick={() => {
+                              setUploadDocTarget(d.key);
+                              setShowDocUploadModal(true);
+                            }}
+                            style={{padding:"4px 10px",borderRadius:6,border:"1px solid #CBD5E1",background:"white",fontSize:".72rem",fontWeight:700,color:"#334155",cursor:"pointer"}}
+                          >
+                            Replace
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Bottom Footer Action Bar */}
+              <div style={{padding:"12px 20px",background:"white",borderTop:"1px solid #E2E8F0",display:"flex",justifyContent:"space-between",alignItems:"center",flexShrink:0}}>
+                <button
+                  onClick={() => setShowAdminUserPortal(false)}
+                  style={{padding:"8px 16px",borderRadius:6,border:"1px solid #CBD5E1",background:"white",color:"#475569",fontSize:".85rem",fontWeight:600,cursor:"pointer"}}
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={async () => {
+                    setSaving(true);
+                    await saveVerification(editedReg, status, remarks);
+                    setSaving(false);
+                    setShowAdminUserPortal(false);
+                    alert("✅ Application details updated successfully!");
+                  }}
+                  disabled={saving}
+                  style={{
+                    padding:"9px 22px",
+                    borderRadius:6,
+                    border:"none",
+                    background:"#15803D",
+                    color:"white",
+                    fontSize:".88rem",
+                    fontWeight:800,
+                    cursor: saving ? "wait" : "pointer",
+                    boxShadow:"0 2px 6px rgba(21,128,61,0.25)"
+                  }}
+                >
+                  {saving ? "Saving..." : "💾 Save All Changes (As Admin)"}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
     </div>
   );
 }
@@ -19625,6 +20054,7 @@ function AdminRegistrations({ mob, C, setC, auth }) {
   const [selectedIds, setSelectedIds] = useState([]);
   const [statusPillFilter, setStatusPillFilter] = useState(null);
   const [openPillFilter, setOpenPillFilter] = useState(null);
+  const [duplicatePillFilter, setDuplicatePillFilter] = useState(null); // null | 'duplicate' | 'unique'
   const [selectedOnlyFilter, setSelectedOnlyFilter] = useState(false);
 
   const saveToFb = async (newC) => {
@@ -19879,9 +20309,11 @@ function AdminRegistrations({ mob, C, setC, auth }) {
     };
     const newLogs = [...existingLogs, adminLog];
 
-    setRegs(prev => prev.map(x => x.id === r.id ? { ...x, Status: newStatus, status: newStatus, Remarks: newRemarks, "Updated By": updatedBy, logHistory: newLogs } : x));
+    const updatedRecord = { ...r, Status: newStatus, status: newStatus, Remarks: newRemarks, "Updated By": updatedBy, logHistory: newLogs };
+    setRegs(prev => prev.map(x => x.id === r.id ? updatedRecord : x));
+    setViewing(prev => prev && prev.id === r.id ? updatedRecord : prev);
     try {
-      const cleanData = { ...r, Status: newStatus, status: newStatus, Remarks: newRemarks, "Updated By": updatedBy, logHistory: newLogs };
+      const cleanData = { ...updatedRecord };
       delete cleanData.id; delete cleanData._submittedAt;
       await fbUpdateRegistration(r.id, cleanData, auth?.idToken);
       // Removed setViewing(null) here so modal can handle auto-advance
@@ -20005,16 +20437,81 @@ function AdminRegistrations({ mob, C, setC, auth }) {
     }
   };
 
-  const activeRegsList = regs.filter(r => !r.deleted);
-  const deletedRegsList = regs.filter(r => r.deleted === true);
+  const isPublicEventRegistration = (r) => {
+    if (!r) return false;
+    // Exclude all deleted / trash items
+    if (r.deleted === true || r.deleted === "true" || r.isDeleted === true || r.isTrash === true || r.inTrash === true || r.status === "Deleted" || r.Status === "Deleted") return false;
+    // Exclude special guest directory and workspace imports of directory contacts
+    if (r.isGlobalGuest === true || r.isSpecialGuest === true || r.isInternal === true || Boolean(r.globalGuestId) || r.formId === "global_guest_directory" || r.formId === "global_guest_directory_import") return false;
+    
+    // Check if event is internal-only or hidden from public website
+    const ev = C.events?.find(e => e.id === r.eventId || e.title === r.eventTitle || e.title === r.eventName || e.titleGu === r.eventName);
+    if (ev && (ev.isInternalOnly || ev.hideFromPublicWebsite || ev.isInternal || ev.isWorkspaceOnly || ev.section === "Internal Admin" || ev.tag === "Internal Admin")) {
+      return false;
+    }
+    return true;
+  };
+
+  const activeRegsList = regs.filter(isPublicEventRegistration);
+  const deletedRegsList = regs.filter(r => (r.deleted === true || r.deleted === "true" || r.isDeleted === true || r.status === "Deleted" || r.Status === "Deleted") && !r.isGlobalGuest && !r.isSpecialGuest);
+
+  // ── Duplicate Detection Engine (Matches Full Name & Mobile Number) ──
+  const dupMap = {};
+  activeRegsList.forEach(r => {
+    const rawName = String(r['Full Name'] || r['Name'] || r['Student Name'] || r['Participant Name'] || r.name || '').trim();
+    const cleanName = rawName.replace(/\|/g, ' ').replace(/[^a-zA-Z0-9 ]/g, ' ').toLowerCase().replace(/\s+/g, ' ').trim();
+    const m1 = String(r.submitterMob || '').replace(/\D/g, '').slice(-10);
+    const m2 = String(r['Mobile Number'] || '').replace(/\D/g, '').slice(-10);
+    const m3 = String(r['Alternate Mobile Number'] || '').replace(/\D/g, '').slice(-10);
+    const mob = m1 || m2 || m3;
+
+    if (cleanName.length >= 2 && mob.length >= 10) {
+      const key = `${cleanName}___${mob}`;
+      if (!dupMap[key]) dupMap[key] = [];
+      dupMap[key].push(r);
+    }
+  });
+
+  const getDuplicateInfo = (r) => {
+    if (!r) return { isDuplicate: false, count: 1, otherTxnIds: [], tagText: "Unique" };
+    const rawName = String(r['Full Name'] || r['Name'] || r['Student Name'] || r['Participant Name'] || r.name || '').trim();
+    const cleanName = rawName.replace(/\|/g, ' ').replace(/[^a-zA-Z0-9 ]/g, ' ').toLowerCase().replace(/\s+/g, ' ').trim();
+    const m1 = String(r.submitterMob || '').replace(/\D/g, '').slice(-10);
+    const m2 = String(r['Mobile Number'] || '').replace(/\D/g, '').slice(-10);
+    const m3 = String(r['Alternate Mobile Number'] || '').replace(/\D/g, '').slice(-10);
+    const mob = m1 || m2 || m3;
+
+    if (cleanName.length >= 2 && mob.length >= 10) {
+      const key = `${cleanName}___${mob}`;
+      const matches = dupMap[key] || [];
+      if (matches.length > 1) {
+        const otherTxnIds = matches
+          .filter(m => (m.id && m.id !== r.id) || (m['Transaction ID'] && m['Transaction ID'] !== r['Transaction ID']))
+          .map(m => m['Transaction ID'] || m.transactionId || m.id)
+          .filter(Boolean);
+        
+        return {
+          isDuplicate: true,
+          count: matches.length,
+          otherTxnIds,
+          tagText: `Duplicate entry vide number ${otherTxnIds.join(", ")}`
+        };
+      }
+    }
+    return {
+      isDuplicate: false,
+      count: 1,
+      otherTxnIds: [],
+      tagText: "Unique"
+    };
+  };
 
   // 2. Filter registrations based on search query
   const filteredRegs = activeRegsList.filter(r => {
     if(!r) return false;
-    if (r.isGlobalGuest || r.isSpecialGuest || r.globalGuestId || r.formId === "global_guest_directory" || r.formId === "global_guest_directory_import") return false;
     
     // Group section filter
-    const ev = C.events?.find(e => e.title === r.eventTitle || e.title === r.eventName || e.title === r.eventId || e.id === r.eventId);
+    const ev = C.events?.find(e => e.id === r.eventId || e.title === r.eventTitle || e.title === r.eventName || e.titleGu === r.eventName);
     const evSection = ev?.section || "Default";
     if (selectedSection !== "All") {
       if (selectedSection === "Default") {
@@ -20052,11 +20549,26 @@ function AdminRegistrations({ mob, C, setC, auth }) {
       const rowId = r.id || r['Transaction ID'];
       if (!selectedIds.includes(rowId)) return false;
     }
+
+    // 5. Duplicate Entry Pill Filter
+    if (duplicatePillFilter) {
+      const dup = getDuplicateInfo(r);
+      if (duplicatePillFilter === "duplicate" && !dup.isDuplicate) return false;
+      if (duplicatePillFilter === "unique" && dup.isDuplicate) return false;
+    }
     
-    // 5. Column filters
+    // 6. Column filters
     for (const [colKey, filterVal] of Object.entries(columnFilters)) {
       if(!filterVal) continue;
       
+      if (colKey === "Unique") {
+        const dup = getDuplicateInfo(r);
+        if (filterVal === "Duplicate" && !dup.isDuplicate) return false;
+        if (filterVal === "Unique" && dup.isDuplicate) return false;
+        if (filterVal !== "Duplicate" && filterVal !== "Unique" && !dup.tagText.toLowerCase().includes(filterVal.toLowerCase())) return false;
+        continue;
+      }
+
       let rVal = "";
       if(colKey === "Date") { try { if(r._submittedAt) rVal = new Date(r._submittedAt).toLocaleString(); } catch(e){} }
       else if(colKey === "Event") rVal = r.eventName || r.eventTitle || r.eventId || "Unknown Event";
@@ -20099,13 +20611,14 @@ function AdminRegistrations({ mob, C, setC, auth }) {
 
   const getUniqueValues = (colKey) => {
     const vals = new Set();
-    regs.forEach(r => {
+    activeRegsList.forEach(r => {
       if(!r) return;
       let val = "";
       if(colKey === "Date") { try { if(r._submittedAt) val = new Date(r._submittedAt).toLocaleString().split(',')[0].trim(); } catch(e){} }
       else if(colKey === "Event") val = r.eventName || r.eventTitle || r.eventId || "Unknown Event";
-      else if(colKey === "Status") val = r['Status'] || "Pending";
       else if(colKey === "Transaction ID") val = r['Transaction ID'] || "-";
+      else if(colKey === "Unique") val = getDuplicateInfo(r).isDuplicate ? "Duplicate" : "Unique";
+      else if(colKey === "Status") val = r['Status'] || "Pending";
       else if(colKey === "Updated By") val = r['Updated By'] || "-";
       else val = r[colKey] || "-";
       
@@ -20121,16 +20634,18 @@ function AdminRegistrations({ mob, C, setC, auth }) {
 
   const handleExportCSV = () => {
     if(filteredRegs.length === 0) return;
-    const headers = ["Date", "Event", "Transaction ID", "Status", "Remarks", "Updated By", ...allKeys];
+    const headers = ["Date", "Event", "Transaction ID", "Unique", "Status", "Remarks", "Updated By", ...allKeys];
     const rows = filteredRegs.map(r => {
       let date = "-";
       try { if(r._submittedAt) date = new Date(r._submittedAt).toLocaleString(); } catch(e){}
       const evName = r.eventName || r.eventTitle || r.eventId || "Unknown Event";
+      const dupTag = getDuplicateInfo(r).tagText;
       
       const rowData = [
         `"${date}"`,
         `"${evName}"`,
         `"${r['Transaction ID'] || '-'}"`,
+        `"${dupTag}"`,
         `"${r['Status'] || 'Pending'}"`,
         `"${r['Remarks'] || ''}"`,
         `"${r['Updated By'] || '-'}"`,
@@ -20233,8 +20748,10 @@ function AdminRegistrations({ mob, C, setC, auth }) {
               const cNeedsInfo = basePool.filter(r => (r.Status || r.status) === "Needs Info").length;
               const cApproved = basePool.filter(r => (r.Status || r.status) === "Approved").length;
               const cPending = basePool.filter(r => (!r.Status && !r.status) || (r.Status || r.status) === "Pending").length;
+              const cDuplicates = basePool.filter(r => getDuplicateInfo(r).isDuplicate).length;
+              const cUnique = basePool.filter(r => !getDuplicateInfo(r).isDuplicate).length;
 
-              const isAnyFilterActive = statusPillFilter !== null || openPillFilter !== null || selectedOnlyFilter;
+              const isAnyFilterActive = statusPillFilter !== null || openPillFilter !== null || duplicatePillFilter !== null || selectedOnlyFilter;
 
               return (
                 <div style={{display:"flex",alignItems:"center",gap:4,background:"#F8FAFC",padding:"4px 8px",borderRadius:10,border:"1.5px solid #CBD5E1",flexWrap:"wrap"}}>
@@ -20286,6 +20803,31 @@ function AdminRegistrations({ mob, C, setC, auth }) {
                     title={openPillFilter === "unopened" ? "Click to remove filter" : "Filter ONLY applicants who have NOT opened their pass"}
                   >
                     <span>⚪</span> Unopened ({cUnopened}) {openPillFilter === "unopened" && "✓"}
+                  </button>
+
+                  <span style={{color:"#CBD5E1",fontSize:".8rem",margin:"0 2px"}}>|</span>
+
+                  {/* Duplicates Pill */}
+                  <button
+                    type="button"
+                    onClick={() => setDuplicatePillFilter(prev => prev === "duplicate" ? null : "duplicate")}
+                    style={{
+                      padding: "4px 9px",
+                      borderRadius: 6,
+                      border: duplicatePillFilter === "duplicate" ? "2px solid #DC2626" : "1px solid #FECACA",
+                      background: duplicatePillFilter === "duplicate" ? "#DC2626" : "#FEF2F2",
+                      color: duplicatePillFilter === "duplicate" ? "white" : "#DC2626",
+                      fontSize: ".74rem",
+                      fontWeight: 800,
+                      cursor: "pointer",
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 4,
+                      boxShadow: duplicatePillFilter === "duplicate" ? "0 2px 6px rgba(220,38,38,0.35)" : "none"
+                    }}
+                    title={duplicatePillFilter === "duplicate" ? "Click to remove filter" : "Filter ONLY duplicate applicant entries (matching Name & Mobile)"}
+                  >
+                    <span>⚠️</span> Duplicates ({cDuplicates}) {duplicatePillFilter === "duplicate" && "✓"}
                   </button>
 
                   <span style={{color:"#CBD5E1",fontSize:".8rem",margin:"0 2px"}}>|</span>
@@ -20366,6 +20908,7 @@ function AdminRegistrations({ mob, C, setC, auth }) {
                       onClick={() => {
                         setStatusPillFilter(null);
                         setOpenPillFilter(null);
+                        setDuplicatePillFilter(null);
                         setSelectedOnlyFilter(false);
                       }}
                       style={{
@@ -20629,6 +21172,7 @@ function AdminRegistrations({ mob, C, setC, auth }) {
                 <th style={{padding:"14px 12px",textAlign:"left",whiteSpace:"nowrap"}}>Date</th>
                 <th style={{padding:"14px 12px",textAlign:"left",whiteSpace:"nowrap"}}>Event</th>
                 <th style={{padding:"14px 12px",textAlign:"left",whiteSpace:"nowrap"}}>Txn ID</th>
+                <th style={{padding:"14px 12px",textAlign:"left",whiteSpace:"nowrap"}}>Unique</th>
                 <th style={{padding:"14px 12px",textAlign:"left",whiteSpace:"nowrap"}}>Status</th>
                 <th style={{padding:"14px 12px",textAlign:"left",whiteSpace:"nowrap"}}>Remarks</th>
                 <th style={{padding:"14px 12px",textAlign:"left",whiteSpace:"nowrap"}}>Updated By</th>
@@ -20688,7 +21232,7 @@ function AdminRegistrations({ mob, C, setC, auth }) {
                   </select>
                 </th>
                 <th></th>
-                {["Date", "Event", "Transaction ID", "Status", "Remarks", "Updated By", ...allKeys].map(k => {
+                {["Date", "Event", "Transaction ID", "Unique", "Status", "Remarks", "Updated By", ...allKeys].map(k => {
                   const uniqueVals = getUniqueValues(k);
                   return (
                     <th key={`filter-${k}`} style={{padding:"6px 12px", fontWeight:"normal"}}>
@@ -20811,6 +21355,53 @@ function AdminRegistrations({ mob, C, setC, auth }) {
                       </div>
                     </td>
                     <td style={{padding:"12px",whiteSpace:"nowrap"}}>
+                      {(() => {
+                        const dup = getDuplicateInfo(r);
+                        if (dup.isDuplicate) {
+                          return (
+                            <div style={{display:"flex",flexDirection:"column",gap:2}}>
+                              <span style={{
+                                background:"#FEF2F2",
+                                color:"#DC2626",
+                                border:"1.5px solid #FCA5A5",
+                                padding:"3px 8px",
+                                borderRadius:6,
+                                fontSize:".74rem",
+                                fontWeight:800,
+                                display:"inline-flex",
+                                alignItems:"center",
+                                gap:4,
+                                whiteSpace:"nowrap",
+                                boxShadow:"0 1px 4px rgba(220,38,38,0.15)"
+                              }} title={`Duplicate entry matching ${dup.otherTxnIds.length} other submission(s)`}>
+                                <span>⚠️</span> Duplicate entry vide number {dup.otherTxnIds.join(", ")}
+                              </span>
+                              <span style={{fontSize:".68rem",color:"#991B1B",fontWeight:600}}>
+                                ({dup.count} matching submissions with same Name & Mobile)
+                              </span>
+                            </div>
+                          );
+                        }
+                        return (
+                          <span style={{
+                            background:"#F0FDF4",
+                            color:"#166534",
+                            border:"1px solid #BBF7D0",
+                            padding:"3px 8px",
+                            borderRadius:6,
+                            fontSize:".74rem",
+                            fontWeight:700,
+                            display:"inline-flex",
+                            alignItems:"center",
+                            gap:4,
+                            whiteSpace:"nowrap"
+                          }}>
+                            <span>✓</span> Unique
+                          </span>
+                        );
+                      })()}
+                    </td>
+                    <td style={{padding:"12px",whiteSpace:"nowrap"}}>
                       <select 
                         value={r['Status'] || "Pending"} 
                         onChange={(e) => handleStatusChange(r, e.target.value)}
@@ -20894,7 +21485,7 @@ function AdminRegistrations({ mob, C, setC, auth }) {
       ))}
 
       {viewing && (
-        <VerificationModal viewing={viewing} setViewing={setViewing} allRegs={regs} saveVerification={saveVerification} C={C} />
+        <VerificationModal viewing={viewing} setViewing={setViewing} allRegs={regs} saveVerification={saveVerification} C={C} auth={auth} />
       )}
 
       {showBulkWhatsAppModal && (
@@ -23780,10 +24371,36 @@ This cannot be undone.`)) return;
         </div>
         <div style={{display:"flex",flexDirection:mob?"column":"row",justifyContent:"space-between",alignItems:"flex-start",marginBottom:20,gap:16}}>
           <div>
-            <h2 style={{fontFamily:"'Playfair Display',serif",color:"var(--dt)",margin:0}}>Letters & Certificates Console</h2>
+            <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
+              <h2 style={{fontFamily:"'Playfair Display',serif",color:"var(--dt)",margin:0}}>Letters & Certificates Console</h2>
+              <select
+                value={selectedEventId || ""}
+                onChange={(e) => {
+                  if (e.target.value === "__directory__") {
+                    setShowGlobalGuestsModal(true);
+                  } else {
+                    setSelectedEventId(e.target.value || null);
+                    setPreviewCertUrl(null);
+                  }
+                }}
+                style={{padding:"5px 10px",borderRadius:8,border:"1.5px solid #0D4B5E",fontSize:".8rem",fontWeight:700,background:"#F0FDF4",color:"#0D4B5E",cursor:"pointer"}}
+                title="Switch Workspace"
+              >
+                {inviteEvents.map(ev => (
+                  <option key={ev.id} value={ev.id}>📁 {ev.title || "Workspace"}</option>
+                ))}
+              </select>
+            </div>
             <p style={{fontSize:".85rem",color:"var(--mu)",marginTop:4}}>Manage, release, and broadcast official documents for: <strong>{activeEvent.title}</strong></p>
           </div>
-          <div style={{display:"flex",gap:12,width:mob?"100%":"auto",flexWrap:"wrap"}}>
+          <div style={{display:"flex",gap:10,width:mob?"100%":"auto",flexWrap:"wrap",alignItems:"center"}}>
+            <button 
+              onClick={() => setShowGlobalGuestsModal(true)} 
+              style={{padding:"8px 14px",borderRadius:8,fontSize:".85rem",fontWeight:700,display:"flex",alignItems:"center",gap:6,background:"white",border:"1.5px solid var(--dt)",color:"var(--dt)",cursor:"pointer",boxShadow:"0 2px 8px rgba(0,0,0,0.05)",whiteSpace:"nowrap"}}
+              title="Open master contact & guest directory"
+            >
+              <span>👥</span> Directory ({globalGuests.length})
+            </button>
             <button onClick={() => setShowWorkspaceTplModal(true)} style={{padding:"8px 16px",borderRadius:8,fontSize:".85rem",fontWeight:700,display:"flex",alignItems:"center",gap:6,background:"#F0FDF4",border:"1px solid #86EFAC",color:"#15803D",cursor:"pointer",boxShadow:"0 2px 8px rgba(21,128,61,0.15)",whiteSpace:"nowrap"}}>
               📝 Workspace WhatsApp Templates ({((activeEvent?.whatsAppTemplates && activeEvent.whatsAppTemplates.length > 0) ? activeEvent.whatsAppTemplates.length : 3)})
             </button>
