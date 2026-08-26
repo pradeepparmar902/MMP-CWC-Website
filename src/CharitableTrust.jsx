@@ -15573,6 +15573,152 @@ function WhatsAppAdminManager({ C, setC, auth }) {
   );
 }
 
+// ── Multi-Vibhag Selection Dropdown Component ─────────────────────────────────────
+function MultiVibhagDropdown({ selectedVibhags = [], onChange, allVibhags = [], width = 230, label = "Assigned Vibhags" }) {
+  const [isOpen, setIsOpen] = useState(false);
+  const dropdownRef = useRef(null);
+
+  const selectedArr = Array.isArray(selectedVibhags)
+    ? selectedVibhags
+    : (selectedVibhags && selectedVibhags !== "All Vibhags" && selectedVibhags !== "Individual Only")
+      ? String(selectedVibhags).split(",").map(s => s.trim()).filter(Boolean)
+      : ["10 MAHALAXMI"];
+
+  useEffect(() => {
+    const handleClickOutside = (e) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(e.target)) {
+        setIsOpen(false);
+      }
+    };
+    if (isOpen) {
+      document.addEventListener("mousedown", handleClickOutside);
+      document.addEventListener("touchstart", handleClickOutside);
+    }
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+      document.removeEventListener("touchstart", handleClickOutside);
+    };
+  }, [isOpen]);
+
+  const toggleVibhag = (v) => {
+    let next;
+    if (selectedArr.includes(v)) {
+      next = selectedArr.filter(x => x !== v);
+      if (next.length === 0) next = [allVibhags[0] || "10 MAHALAXMI"];
+    } else {
+      next = [...selectedArr, v];
+    }
+    onChange(next);
+  };
+
+  const selectAll = () => {
+    onChange([...allVibhags]);
+  };
+
+  const displayText = selectedArr.length === 0 
+    ? "Select Vibhag(s)..." 
+    : selectedArr.length === 1 
+      ? selectedArr[0] 
+      : selectedArr.length === allVibhags.length
+        ? "All Vibhags (" + allVibhags.length + ")"
+        : selectedArr.length + " Vibhags: " + selectedArr.map(s => s.split(" ")[1] || s).join(", ");
+
+  return (
+    <div ref={dropdownRef} style={{position:"relative", width, display:"inline-block"}}>
+      <button
+        type="button"
+        onClick={(e) => {
+          e.preventDefault();
+          setIsOpen(!isOpen);
+        }}
+        style={{
+          width: "100%",
+          padding: "6px 10px",
+          background: "#FFFBEB",
+          border: "1px solid #FCD34D",
+          borderRadius: 6,
+          fontSize: ".75rem",
+          fontWeight: 700,
+          color: "#92400E",
+          cursor: "pointer",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          gap: 6,
+          boxSizing: "border-box",
+          textAlign: "left"
+        }}
+        title="Click to select multiple Vibhags"
+      >
+        <span style={{overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",flex:1}}>
+          📍 {displayText}
+        </span>
+        <span style={{fontSize:".6rem",color:"#B45309",transform:isOpen?"rotate(180deg)":"none",transition:"transform 0.15s"}}>▼</span>
+      </button>
+
+      {isOpen && (
+        <div style={{
+          position: "absolute",
+          top: "calc(100% + 4px)",
+          left: 0,
+          width: "max(240px, 100%)",
+          background: "white",
+          border: "1px solid #CBD5E1",
+          borderRadius: 8,
+          boxShadow: "0 8px 24px rgba(0,0,0,0.15)",
+          zIndex: 99999,
+          padding: "6px 0",
+          maxHeight: 220,
+          overflowY: "auto"
+        }}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"4px 10px 6px",borderBottom:"1px solid #F1F5F9"}}>
+            <span style={{fontSize:".68rem",fontWeight:800,color:"#64748B",textTransform:"uppercase"}}>Select Assigned Vibhags:</span>
+            <button
+              type="button"
+              onClick={selectAll}
+              style={{background:"none",border:"none",color:"#2563EB",fontSize:".68rem",fontWeight:700,cursor:"pointer",padding:0}}
+            >
+              Select All
+            </button>
+          </div>
+
+          {allVibhags.map(v => {
+            const isChecked = selectedArr.includes(v);
+            return (
+              <div
+                key={v}
+                onClick={() => toggleVibhag(v)}
+                style={{
+                  padding: "6px 12px",
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 8,
+                  cursor: "pointer",
+                  fontSize: ".75rem",
+                  background: isChecked ? "#FEF3C7" : "transparent",
+                  color: isChecked ? "#92400E" : "#1E293B",
+                  fontWeight: isChecked ? 700 : 500,
+                  transition: "background 0.1s"
+                }}
+                onMouseEnter={e => { if (!isChecked) e.currentTarget.style.background = "#F8FAFC"; }}
+                onMouseLeave={e => { if (!isChecked) e.currentTarget.style.background = "transparent"; }}
+              >
+                <input
+                  type="checkbox"
+                  checked={isChecked}
+                  onChange={() => {}} // handled by parent div
+                  style={{cursor:"pointer",margin:0}}
+                />
+                <span>{v}</span>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function ChatbotAccessManager({ C, setC, auth }) {
   const [activeTab, setActiveTab] = useState("users"); // "users" | "kb"
   const [accessScope, setAccessScope] = useState("individual"); // Default to "individual" (Mobile/Txn only)
