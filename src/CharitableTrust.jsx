@@ -18013,7 +18013,8 @@ function BulkWhatsAppBroadcastModal({ event, recipients = [], C, auth, onLogSent
 
   const formatMessageForReg = (r) => {
     if (!r) return "";
-    const rName = String(r['Full Name'] || r['Submitted By'] || r['Participant Name'] || r.name || 'Applicant').replace(/\|/g, ' ').trim();
+    const rParticipantName = String(r['Participant Name'] || r['Full Name'] || r['Student Name'] || r['Candidate Name'] || r['Name'] || r.name || r['Submitted By'] || 'Participant').replace(/\|/g, ' ').replace(/\s+/g, ' ').trim();
+    const rContactName = String(r['Submitted By'] || r['Contact User Name'] || r['Contact Person'] || r['Contact Person Name'] || r['Contact Name'] || r['Contact User'] || r['Submitter Name'] || r.submitterName || r['Full Name'] || r['Participant Name'] || r['Student Name'] || r.name || 'Member').replace(/\|/g, ' ').replace(/\s+/g, ' ').trim();
     const rMobile = String(r['Mobile Number'] || r.submitterMob || r['Alternate Mobile Number'] || r.phone || '').replace(/\D/g, '').slice(-10);
     const rTxn = r['Transaction ID'] || r.transactionId || r.id || 'N/A';
     const rVibhag = r['Vibhag'] || r.vibhag || r['MMP Vibhag'] || 'All Vibhags';
@@ -18036,9 +18037,43 @@ function BulkWhatsAppBroadcastModal({ event, recipients = [], C, auth, onLogSent
     const certUrl = `${baseUrl}/?cert=${encodeURIComponent(rTxn || "")}`;
     const inviteUrl = `${baseUrl}/?invite=${encodeURIComponent(rTxn || "")}`;
     const defaultUrl = (selectedTplId === "tpl_cert_notice" || activeTemplate?.name?.toLowerCase().includes("certificate")) ? certUrl : inviteUrl;
+    const portalName = C.trust?.name || "Mumbai Meghwal Panchayat & Vidya Gohil Trust";
+    const evTitle = event?.title || r.eventName || r.eventTitle || r.eventId || "Event";
+    const evDate = event?.date ? `${event.date} ${event.month || ''}`.trim() : (r.Date || r.eventDate || "2026");
+    const evVenue = event?.location || r.location || r.venue || "Mumbai";
+
+    const rDesignation = String(r['Designation'] || r.designation || r['Designation / Role'] || r['Post'] || r.role || r['Designation (e.g. Trustee / Member)'] || '').trim();
+    const contactNameVal = rContactName || rParticipantName || "Member";
+    const participantNameVal = rParticipantName || "Participant";
 
     let processed = rawTemplateText
-      .replace(/\{STUDENT_NAME\}/g, rName || "Student")
+      .replace(/\{PORTAL_NAME\}/g, portalName)
+      .replace(/\{WEBSITE_NAME\}/g, portalName)
+      .replace(/\{TRUST_NAME\}/g, portalName)
+      .replace(/\{PORTAL_TITLE\}/g, portalName)
+      .replace(/\{EVENT_NAME\}/g, evTitle)
+      .replace(/\{EVENT_TITLE\}/g, evTitle)
+      .replace(/\{EVENT\}/g, evTitle)
+      .replace(/\{DATE\}/g, evDate)
+      .replace(/\{EVENT_DATE\}/g, evDate)
+      .replace(/\{VENUE\}/g, evVenue)
+      .replace(/\{LOCATION\}/g, evVenue)
+      .replace(/\{CONTACT_USER_NAME\}/g, contactNameVal)
+      .replace(/\{CONTACT_NAME\}/g, contactNameVal)
+      .replace(/\{CONTACT_PERSON\}/g, contactNameVal)
+      .replace(/\{SUBMITTER_NAME\}/g, contactNameVal)
+      .replace(/\{PARTICIPANT_NAME\}/g, participantNameVal)
+      .replace(/\{PARTICIPATER_NAME\}/g, participantNameVal)
+      .replace(/\{MEMBER_NAME\}/g, participantNameVal)
+      .replace(/\{STUDENT_NAME\}/g, participantNameVal)
+      .replace(/\{USER_NAME\}/g, contactNameVal)
+      .replace(/\{NAME\}/g, participantNameVal)
+      .replace(/\{DESIGNATION\}/g, rDesignation || "")
+      .replace(/\{ROLE\}/g, rDesignation || "")
+      .replace(/\{POST\}/g, rDesignation || "")
+      .replace(/\{DESIGNATION\}/g, rDesignation || "")
+      .replace(/\{ROLE\}/g, rDesignation || "")
+      .replace(/\{POST\}/g, rDesignation || "")
       .replace(/\{TXN_ID\}/g, rTxn || "N/A")
       .replace(/\{VIBHAG\}/g, rVibhag || "All Vibhags")
       .replace(/\{STREAM\}/g, rStream || "N/A")
@@ -18050,14 +18085,12 @@ function BulkWhatsAppBroadcastModal({ event, recipients = [], C, auth, onLogSent
       .replace(/\{INVITE_PDF_LINK\}/g, inviteUrl)
       .replace(/\{INVITE_LINK\}/g, inviteUrl)
       .replace(/\{PASS_LINK\}/g, inviteUrl)
-      .replace(/\{PORTAL_URL\}/g, defaultUrl)
+      .replace(/\{PORTAL_URL\}/g, baseUrl)
+      .replace(/\{WEBSITE_URL\}/g, baseUrl)
       .replace(/\{WEBSITE_HOME\}/g, baseUrl)
       .replace(/\{HELPLINE_PHONES\}/g, C.whatsAppHelpline || C.trust?.phone || "+91 9820785209 / +91 9967821964")
       .replace(/\{ADMIN_MOBILE\}/g, C.whatsAppHelpline || C.trust?.phone || "+91 9820785209");
 
-    if (rTxn && rTxn !== 'N/A' && processed.includes("https://www.mmp-cwc.com/") && !processed.includes("?invite=") && !processed.includes("?pass=") && !processed.includes("?cert=")) {
-      processed = processed.replace("https://www.mmp-cwc.com/", defaultUrl);
-    }
     return processed;
   };
 
@@ -18886,6 +18919,10 @@ function WorkspaceWhatsAppTemplateModal({ event, C, setC, auth, onClose }) {
                   {[
                     '{EVENT_NAME}',
                     '{PORTAL_NAME}',
+                    '{CONTACT_USER_NAME}',
+                    '{PARTICIPANT_NAME}',
+                    '{DESIGNATION}',
+                    '{ROLE}',
                     '{STUDENT_NAME}',
                     '{TXN_ID}',
                     '{DATE}',
@@ -18904,14 +18941,14 @@ function WorkspaceWhatsAppTemplateModal({ event, C, setC, auth, onClose }) {
                       onClick={() => insertPlaceholder(' ' + ph)}
                       style={{
                         padding:"5px 10px",
-                        background: ph.includes('EVENT') ? "#FEF3C7" : ph.includes('CERTIFICATE') ? "#EFF6FF" : ph.includes('INVITE') ? "#F0FDF4" : "#F1F5F9",
-                        border: ph.includes('EVENT') ? "1.5px solid #F59E0B" : ph.includes('CERTIFICATE') ? "1px solid #93C5FD" : ph.includes('INVITE') ? "1px solid #86EFAC" : "1px solid #CBD5E1",
-                        color: ph.includes('EVENT') ? "#92400E" : ph.includes('CERTIFICATE') ? "#1D4ED8" : ph.includes('INVITE') ? "#15803D" : "#334155",
+                        background: ph.includes('EVENT') ? "#FEF3C7" : (ph.includes('DESIGNATION') || ph.includes('ROLE')) ? "#F5F3FF" : ph.includes('CERTIFICATE') ? "#EFF6FF" : ph.includes('INVITE') ? "#F0FDF4" : "#F1F5F9",
+                        border: ph.includes('EVENT') ? "1.5px solid #F59E0B" : (ph.includes('DESIGNATION') || ph.includes('ROLE')) ? "1.5px solid #C4B5FD" : ph.includes('CERTIFICATE') ? "1px solid #93C5FD" : ph.includes('INVITE') ? "1px solid #86EFAC" : "1px solid #CBD5E1",
+                        color: ph.includes('EVENT') ? "#92400E" : (ph.includes('DESIGNATION') || ph.includes('ROLE')) ? "#6D28D9" : ph.includes('CERTIFICATE') ? "#1D4ED8" : ph.includes('INVITE') ? "#15803D" : "#334155",
                         borderRadius:6,
                         fontSize:".75rem",
                         fontWeight:800,
                         cursor:"pointer",
-                        boxShadow: ph.includes('EVENT') ? "0 1px 4px rgba(245,158,11,0.2)" : "none"
+                        boxShadow: ph.includes('EVENT') ? "0 1px 4px rgba(245,158,11,0.2)" : (ph.includes('DESIGNATION') || ph.includes('ROLE')) ? "0 1px 4px rgba(109,40,217,0.15)" : "none"
                       }}
                     >
                       + {ph}
@@ -19017,7 +19054,9 @@ function WorkspaceWhatsAppTemplateModal({ event, C, setC, auth, onClose }) {
 function WhatsAppApplicantMessengerModal({ reg, onClose, C, auth, onLogSent, allRegs = [], onSelectReg }) {
   if (!reg) return null;
 
-  const rawName = String(reg['Full Name'] || reg['Submitted By'] || reg['Participant Name'] || reg.name || 'Applicant').replace(/\|/g, ' ').trim();
+  const rawParticipantName = String(reg['Participant Name'] || reg['Full Name'] || reg['Student Name'] || reg['Candidate Name'] || reg['Name'] || reg.name || reg['Submitted By'] || 'Participant').replace(/\|/g, ' ').replace(/\s+/g, ' ').trim();
+  const rawContactName = String(reg['Submitted By'] || reg['Contact User Name'] || reg['Contact Person'] || reg['Contact Person Name'] || reg['Contact Name'] || reg['Contact User'] || reg['Submitter Name'] || reg.submitterName || reg['Full Name'] || reg['Participant Name'] || reg['Student Name'] || reg.name || 'Member').replace(/\|/g, ' ').replace(/\s+/g, ' ').trim();
+  const rawName = rawParticipantName;
   const rawMobile = String(reg['Mobile Number'] || reg.submitterMob || reg['Alternate Mobile Number'] || reg.phone || '').replace(/\D/g, '').slice(-10);
   const [recipientMobile, setRecipientMobile] = useState(rawMobile);
   const txnId = reg['Transaction ID'] || reg.transactionId || reg.id || 'N/A';
@@ -19061,7 +19100,7 @@ function WhatsAppApplicantMessengerModal({ reg, onClose, C, auth, onLogSent, all
   const defaultTpl = workspaceTemplates.find(t => t.isDefault) || workspaceTemplates[0];
   const [selectedTplId, setSelectedTplId] = useState(defaultTpl?.id || "tpl_student_pass");
 
-  const formatTemplateString = (tplString, rName, rMobile, rTxn, rVibhag, rStream, rPct, rRemarks) => {
+  const formatTemplateString = (tplString, rName, rMobile, rTxn, rVibhag, rStream, rPct, rRemarks, rContactNameArg) => {
     const baseUrl = `${C.whatsAppPortalUrl || "https://www.mmp-cwc.com/"}`.replace(/\/?$/, '');
     const certUrl = `${baseUrl}/?cert=${encodeURIComponent(rTxn || "")}`;
     const inviteUrl = `${baseUrl}/?invite=${encodeURIComponent(rTxn || "")}`;
@@ -19071,6 +19110,10 @@ function WhatsAppApplicantMessengerModal({ reg, onClose, C, auth, onLogSent, all
     const evTitle = eventObj?.title || reg.eventName || reg.eventTitle || reg.eventId || "Event";
     const evDate = eventObj?.date ? `${eventObj.date} ${eventObj.month || ''}`.trim() : (reg.Date || reg.eventDate || "2026");
     const evVenue = eventObj?.location || reg.location || reg.venue || "Mumbai";
+
+    const rDesignation = String(reg['Designation'] || reg.designation || reg['Designation / Role'] || reg['Post'] || reg.role || reg['Designation (e.g. Trustee / Member)'] || '').trim();
+    const contactNameVal = rContactNameArg || rawContactName || rName || "Member";
+    const participantNameVal = rName || rawParticipantName || "Participant";
 
     let processed = (tplString || "")
       .replace(/\{PORTAL_NAME\}/g, portalName)
@@ -19084,8 +19127,16 @@ function WhatsAppApplicantMessengerModal({ reg, onClose, C, auth, onLogSent, all
       .replace(/\{EVENT_DATE\}/g, evDate)
       .replace(/\{VENUE\}/g, evVenue)
       .replace(/\{LOCATION\}/g, evVenue)
-      .replace(/\{MEMBER_NAME\}/g, rName || "Member")
-      .replace(/\{STUDENT_NAME\}/g, rName || "Student")
+      .replace(/\{CONTACT_USER_NAME\}/g, contactNameVal)
+      .replace(/\{CONTACT_NAME\}/g, contactNameVal)
+      .replace(/\{CONTACT_PERSON\}/g, contactNameVal)
+      .replace(/\{SUBMITTER_NAME\}/g, contactNameVal)
+      .replace(/\{PARTICIPANT_NAME\}/g, participantNameVal)
+      .replace(/\{PARTICIPATER_NAME\}/g, participantNameVal)
+      .replace(/\{MEMBER_NAME\}/g, participantNameVal)
+      .replace(/\{STUDENT_NAME\}/g, participantNameVal)
+      .replace(/\{USER_NAME\}/g, contactNameVal)
+      .replace(/\{NAME\}/g, participantNameVal)
       .replace(/\{TXN_ID\}/g, rTxn || "N/A")
       .replace(/\{VIBHAG\}/g, rVibhag || "All Vibhags")
       .replace(/\{STREAM\}/g, rStream || "N/A")
@@ -19106,10 +19157,10 @@ function WhatsAppApplicantMessengerModal({ reg, onClose, C, auth, onLogSent, all
     return processed;
   };
 
-  const buildTemplateForStatus = (st, rName, rMobile, rTxn, rVibhag, rStream, rPct, rRemarks) => {
+  const buildTemplateForStatus = (st, rName, rMobile, rTxn, rVibhag, rStream, rPct, rRemarks, rContactNameArg) => {
     if (reg.isInviteMode) {
       const activeTpl = workspaceTemplates.find(t => t.id === selectedTplId) || defaultTpl;
-      return formatTemplateString(activeTpl ? activeTpl.text : (C.whatsAppTplInvite || ""), rName, rMobile, rTxn, rVibhag, rStream, rPct, rRemarks);
+      return formatTemplateString(activeTpl ? activeTpl.text : (C.whatsAppTplInvite || ''), rName, rMobile, rTxn, rVibhag, rStream, rPct, rRemarks, rContactNameArg);
     }
 
     let tpl = "";
@@ -19123,7 +19174,7 @@ function WhatsAppApplicantMessengerModal({ reg, onClose, C, auth, onLogSent, all
       tpl = C.whatsAppTplPending || `🏛️ *MUMBAI MEGHWAL PANCHAYAT*\n🏆 *Education Felicitation 2026*\n═══════════════════════\nNamaste *{STUDENT_NAME}*,\n\nThank you for submitting your registration for *Education Felicitation 2026*.\n\n📋 *Application Summary:*\n• *Transaction ID:* {TXN_ID}\n• *Student Name:* {STUDENT_NAME}\n• *Vibhag:* {VIBHAG}\n• *Stream / Class:* {STREAM}\n• *Current Status:* ⏳ *Under Verification / Review*\n\nOur Verification Committee is currently reviewing your submitted details and documents. You will receive an update once the verification is completed.\n\n👉 Track your live application status on your student dashboard:\n{PORTAL_URL}\n\nWarm regards,\n*Mumbai Meghwal Panchayat & Vidya Gohil Trust*\n📞 Committee Helpline: {HELPLINE_PHONES}`;
     }
 
-    return formatTemplateString(tpl, rName, rMobile, rTxn, rVibhag, rStream, rPct, rRemarks);
+    return formatTemplateString(tpl, rName, rMobile, rTxn, rVibhag, rStream, rPct, rRemarks, rContactNameArg);
   };
 
   const [customMessage, setCustomMessage] = useState(() => {
@@ -21854,18 +21905,26 @@ function AdminCertificates({ mob, C, setC, auth }) {
                 </span>
                 
                 {/* Contact Group Filter */}
-                {Array.from(new Set(inviteRegs.map(r => r.Group || r.Category || r.Vibhag).filter(Boolean))).length > 1 && (
-                  <select
-                    value={selectedContactGroup}
-                    onChange={(e) => setSelectedContactGroup(e.target.value)}
-                    style={{padding:"3px 8px",borderRadius:6,border:"1.5px solid #CBD5E1",fontSize:".72rem",fontWeight:800,background:"white",color:"#0F172A",cursor:"pointer"}}
-                  >
-                    <option value="All">👥 All Groups ({inviteRegs.length})</option>
-                    {Array.from(new Set(inviteRegs.map(r => r.Group || r.Category || r.Vibhag).filter(Boolean))).map(grp => (
-                      <option key={grp} value={grp}>{grp} ({inviteRegs.filter(r => (r.Group || r.Category || r.Vibhag) === grp).length})</option>
-                    ))}
-                  </select>
-                )}
+                {(() => {
+                  const availableGroups = Array.from(new Set(inviteRegs.flatMap(r => getContactGroups(r)).filter(Boolean))).sort();
+                  if (availableGroups.length <= 1 && availableGroups[0] === "General Committee") return null;
+                  return (
+                    <select
+                      value={selectedContactGroup}
+                      onChange={(e) => setSelectedContactGroup(e.target.value)}
+                      style={{padding:"3px 8px",borderRadius:6,border:"1.5px solid #CBD5E1",fontSize:".72rem",fontWeight:800,background:"white",color:"#0F172A",cursor:"pointer"}}
+                      title="Filter workspace by Contact Group"
+                    >
+                      <option value="All">👥 All Groups ({inviteRegs.length})</option>
+                      {availableGroups.map(grp => {
+                        const count = inviteRegs.filter(r => getContactGroups(r).includes(grp)).length;
+                        return (
+                          <option key={grp} value={grp}>🏷️ {grp} ({count})</option>
+                        );
+                      })}
+                    </select>
+                  );
+                })()}
                 
                 {/* Opened Pill */}
                 <button
@@ -22335,10 +22394,19 @@ function AdminInviteLetters({ mob, C, setC, auth }) {
 
   // Global guest modals
   const [showGlobalGuestsModal, setShowGlobalGuestsModal] = useState(false);
+  const [showDirectoryModal, setShowDirectoryModal] = useState(false);
   const [showImportGuestModal, setShowImportGuestModal] = useState(false);
-  const [guestForm, setGuestForm] = useState({ fullName: "", mobile: "", email: "", address: "", designation: "", group: "CWC Member" });
+  const [guestForm, setGuestForm] = useState({ fullName: "", mobile: "", email: "", address: "", designation: "", group: "CWC Member", groups: ["CWC Member"] });
+  const [editingGuest, setEditingGuest] = useState(null);
+  const [directoryGroupFilter, setDirectoryGroupFilter] = useState("All");
+  const [directorySearch, setDirectorySearch] = useState("");
+  const [expandedCardGroups, setExpandedCardGroups] = useState({});
   const [showImportContactGroupModal, setShowImportContactGroupModal] = useState(false);
   const [selectedContactGroup, setSelectedContactGroup] = useState("All");
+  const [selectedGroupsToImport, setSelectedGroupsToImport] = useState([]);
+  const [importingContactGroups, setImportingContactGroups] = useState(false);
+  const [deletingBulkContacts, setDeletingBulkContacts] = useState(false);
+  const [importGroupSearch, setImportGroupSearch] = useState("");
   const [addingGuest, setAddingGuest] = useState(false);
 
   // Field mapping
@@ -22459,7 +22527,7 @@ function AdminInviteLetters({ mob, C, setC, auth }) {
 
   const handleAddGlobalGuest = async (e) => {
     e.preventDefault();
-    if (!guestForm.fullName) return alert("Full Name is required.");
+    if (!guestForm.fullName || !guestForm.fullName.trim()) return alert("Full Name is required.");
     
     const assignedGroups = (guestForm.groups && guestForm.groups.length > 0)
       ? guestForm.groups
@@ -22468,20 +22536,20 @@ function AdminInviteLetters({ mob, C, setC, auth }) {
     const groupStr = assignedGroups.join(", ");
 
     setAddingGuest(true);
-    if (editingGuest) {
-      // Update existing contact
-      try {
+    try {
+      if (editingGuest) {
+        // Update existing contact
         const updatedData = {
           ...editingGuest,
-          "Full Name": guestForm.fullName,
-          "Participant Name": guestForm.fullName,
-          "Name": guestForm.fullName,
-          "Mobile": guestForm.mobile,
-          "Mobile Number": guestForm.mobile,
-          "Email": guestForm.email,
-          "Address": guestForm.address,
-          "Designation": guestForm.designation,
-          "Organization": guestForm.designation,
+          "Full Name": guestForm.fullName.trim(),
+          "Participant Name": guestForm.fullName.trim(),
+          "Name": guestForm.fullName.trim(),
+          "Mobile": guestForm.mobile?.trim() || "",
+          "Mobile Number": guestForm.mobile?.trim() || "",
+          "Email": guestForm.email?.trim() || "",
+          "Address": guestForm.address?.trim() || "",
+          "Designation": guestForm.designation?.trim() || "",
+          "Organization": guestForm.designation?.trim() || "",
           "Group": groupStr,
           "Category": groupStr,
           "Vibhag": assignedGroups[0] || "General Committee",
@@ -22492,49 +22560,122 @@ function AdminInviteLetters({ mob, C, setC, auth }) {
         delete cleanCopy.id;
         delete cleanCopy._submittedAt;
         await fbUpdateRegistration(editingGuest.id, cleanCopy, auth?.idToken);
-        alert("Contact details and groups updated successfully!");
+        alert("✅ Contact details and groups updated successfully!");
         setEditingGuest(null);
         setGuestForm({ fullName: "", mobile: "", email: "", address: "", designation: "", group: "CWC Member", groups: ["CWC Member"] });
         fetchRegs();
-      } catch (err) {
-        alert("Error updating contact: " + err.message);
-      }
-    } else {
-      // Create new contact
-      const newGlobalGuest = {
-        "Full Name": guestForm.fullName,
-        "Participant Name": guestForm.fullName,
-        "Name": guestForm.fullName,
-        "Mobile": guestForm.mobile,
-        "Mobile Number": guestForm.mobile,
-        "Email": guestForm.email,
-        "Address": guestForm.address,
-        "Designation": guestForm.designation,
-        "Organization": guestForm.designation,
-        "Group": groupStr,
-        "Category": groupStr,
-        "Vibhag": assignedGroups[0] || "General Committee",
-        groups: assignedGroups,
-        Groups: assignedGroups,
-        isGlobalGuest: true,
-        _submittedAt: Date.now(),
-        formId: "global_guest_directory"
-      };
+      } else {
+        // Create new contact
+        const newGlobalGuest = {
+          "Transaction ID": "GST-" + Date.now().toString().slice(-6),
+          "Full Name": guestForm.fullName.trim(),
+          "Participant Name": guestForm.fullName.trim(),
+          "Name": guestForm.fullName.trim(),
+          "Mobile": guestForm.mobile?.trim() || "",
+          "Mobile Number": guestForm.mobile?.trim() || "",
+          "Email": guestForm.email?.trim() || "",
+          "Address": guestForm.address?.trim() || "",
+          "Designation": guestForm.designation?.trim() || "",
+          "Organization": guestForm.designation?.trim() || "",
+          "Group": groupStr,
+          "Category": groupStr,
+          "Vibhag": assignedGroups[0] || "General Committee",
+          groups: assignedGroups,
+          Groups: assignedGroups,
+          isGlobalGuest: true,
+          _submittedAt: Date.now(),
+          formId: "global_guest_directory"
+        };
 
-      try {
         await fbSubmitRegistration(newGlobalGuest, auth?.idToken);
-        alert("Global guest added to directory with assigned groups!");
+        alert("✅ Global guest added to directory with assigned groups!");
         setGuestForm({ fullName: "", mobile: "", email: "", address: "", designation: "", group: "CWC Member", groups: ["CWC Member"] });
         fetchRegs();
-      } catch (err) {
-        alert("Error adding global guest: " + err.message);
       }
+    } catch (err) {
+      alert("Error saving contact: " + err.message);
+    } finally {
+      setAddingGuest(false);
     }
-    setAddingGuest(false);
   };
 
   const fileInputRef = useRef(null);
   const [uploadingExcel, setUploadingExcel] = useState(false);
+
+
+  const handleDownloadSampleExcel = () => {
+    try {
+      const sampleData = [
+        {
+          "Full Name": "Harish Makwana",
+          "Designation": "Trustee",
+          "Mobile Number": "9819728011",
+          "Group": "Trustee, CWC Member",
+          "Email": "harish@example.com",
+          "Address": "Mahim, Mumbai"
+        },
+        {
+          "Full Name": "Pradeep Parmar",
+          "Designation": "CWC Member & Lead",
+          "Mobile Number": "9819984437",
+          "Group": "CWC Member, Education Committee",
+          "Email": "pradeep@example.com",
+          "Address": "Mahalaxmi, Mumbai"
+        },
+        {
+          "Full Name": "Ramesh Solanki",
+          "Designation": "Education Committee Convener",
+          "Mobile Number": "9820123456",
+          "Group": "Education Committee",
+          "Email": "ramesh@example.com",
+          "Address": "Dadar, Mumbai"
+        },
+        {
+          "Full Name": "Pooja Vaghela",
+          "Designation": "Volunteer Head",
+          "Mobile Number": "9833456789",
+          "Group": "Volunteer, Kalyan Team",
+          "Email": "pooja@example.com",
+          "Address": "Kalyan, Mumbai"
+        }
+      ];
+
+      const ws = XLSX.utils.json_to_sheet(sampleData);
+      ws['!cols'] = [
+        { wch: 22 },
+        { wch: 28 },
+        { wch: 16 },
+        { wch: 34 },
+        { wch: 24 },
+        { wch: 24 }
+      ];
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, "Contacts_Directory_Template");
+      XLSX.writeFile(wb, "Sample_Directory_Contacts_Template.xlsx");
+    } catch(err) {
+      alert("Error downloading template: " + err.message);
+    }
+  };
+
+  const handleDownloadSampleCsv = () => {
+    try {
+      const csvContent = "Full Name,Designation,Mobile Number,Group,Email,Address\n" +
+        '"Harish Makwana","Trustee","9819728011","Trustee, CWC Member","harish@example.com","Mahim, Mumbai"\n' +
+        '"Pradeep Parmar","CWC Member & Lead","9819984437","CWC Member, Education Committee","pradeep@example.com","Mahalaxmi, Mumbai"\n' +
+        '"Ramesh Solanki","Education Committee Convener","9820123456","Education Committee","ramesh@example.com","Dadar, Mumbai"\n' +
+        '"Pooja Vaghela","Volunteer Head","9833456789","Volunteer, Kalyan Team","pooja@example.com","Kalyan, Mumbai"\n';
+
+      const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+      const link = document.createElement("a");
+      link.href = URL.createObjectURL(blob);
+      link.setAttribute("download", "Sample_Directory_Contacts_Template.csv");
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    } catch(err) {
+      alert("Error downloading CSV: " + err.message);
+    }
+  };
 
   const handleExcelUpload = async (e) => {
     const file = e.target.files[0];
@@ -22550,27 +22691,33 @@ function AdminInviteLetters({ mob, C, setC, auth }) {
       let successCount = 0;
       for (const row of rows) {
         const fullName = row["Full Name"] || row["Name"] || row["Participant Name"] || "";
-        if (!fullName) continue;
+        if (!fullName || !String(fullName).trim()) continue;
 
         const mobile = row["Mobile"] || row["Mobile Number"] || row["Phone"] || "";
         const email = row["Email"] || row["Email Address"] || "";
         const designation = row["Designation"] || row["Organization"] || row["Company"] || "";
         const address = row["Address"] || row["Location"] || "";
 
-        const groupName = row.Group || row.group || row.Category || row.category || row.Team || row.team || row.Vibhag || "CWC Member";
+        const rawGroup = row.Group || row.group || row.Groups || row.groups || row["Contact Group"] || row.Category || row.category || row.Team || row.team || row.Vibhag || "General Committee";
+        const assignedGroups = getContactGroups({ group: String(rawGroup) });
+        const groupStr = assignedGroups.join(", ");
+
         const newGlobalGuest = {
-          "Full Name": fullName,
-          "Participant Name": fullName,
-          "Name": fullName,
-          "Mobile": mobile,
-          "Mobile Number": mobile,
-          "Email": email,
-          "Address": address,
-          "Designation": designation,
-          "Organization": designation,
-          "Group": groupName,
-          "Category": groupName,
-          "Vibhag": groupName,
+          "Transaction ID": "GST-" + Date.now().toString().slice(-6) + "-" + (successCount + 1),
+          "Full Name": String(fullName).trim(),
+          "Participant Name": String(fullName).trim(),
+          "Name": String(fullName).trim(),
+          "Mobile": mobile ? String(mobile).trim() : "",
+          "Mobile Number": mobile ? String(mobile).trim() : "",
+          "Email": email ? String(email).trim() : "",
+          "Address": address ? String(address).trim() : "",
+          "Designation": designation ? String(designation).trim() : "",
+          "Organization": designation ? String(designation).trim() : "",
+          "Group": groupStr,
+          "Category": groupStr,
+          "Vibhag": assignedGroups[0] || "General Committee",
+          groups: assignedGroups,
+          Groups: assignedGroups,
           isGlobalGuest: true,
           _submittedAt: Date.now(),
           formId: "global_guest_directory_import"
@@ -22578,32 +22725,47 @@ function AdminInviteLetters({ mob, C, setC, auth }) {
         await fbSubmitRegistration(newGlobalGuest, auth?.idToken);
         successCount++;
       }
-      alert(`Successfully imported ${successCount} global guests from Excel!`);
+      alert(`✅ Successfully imported ${successCount} contacts into directory!`);
       fetchRegs();
     } catch (err) {
-      alert("Error reading Excel file: " + err.message);
+      alert("Error reading file: " + err.message);
     }
     setUploadingExcel(false);
     if (fileInputRef.current) fileInputRef.current.value = "";
   };
 
-  const handleImportContactGroup = async (targetGroup) => {
+  const handleImportMultipleContactGroups = async (targetGroups) => {
     const ev = inviteEvents.find(ev => ev.id === selectedEventId);
     if (!ev) return alert("Please select a valid event workspace.");
 
-    const guestsInGroup = globalGuests.filter(g => {
-      if (targetGroup === "All") return true;
+    const groupsList = Array.isArray(targetGroups) ? targetGroups : [targetGroups];
+    if (groupsList.length === 0) {
+      return alert("Please select at least one contact group to import.");
+    }
+
+    const matchedGuestsMap = new Map();
+    globalGuests.forEach(g => {
       const gGroups = getContactGroups(g);
-      return gGroups.includes(targetGroup);
+      const isMatched = groupsList.some(grp => gGroups.includes(grp));
+      if (isMatched && !matchedGuestsMap.has(g.id)) {
+        matchedGuestsMap.set(g.id, g);
+      }
     });
 
-    if (guestsInGroup.length === 0) return alert("No contacts found in group " + targetGroup);
+    const allMatchedGuests = Array.from(matchedGuestsMap.values());
+    if (allMatchedGuests.length === 0) {
+      return alert("No contacts found in the selected group(s).");
+    }
 
-    const unimported = guestsInGroup.filter(g => !regs.some(r => r.globalGuestId === g.id && r.eventId === ev.id));
-    if (unimported.length === 0) return alert("All " + guestsInGroup.length + " contacts from " + targetGroup + " are already imported into this workspace!");
+    const unimported = allMatchedGuests.filter(g => !regs.some(r => r.globalGuestId === g.id && r.eventId === ev.id));
+    if (unimported.length === 0) {
+      return alert("All " + allMatchedGuests.length + " contacts from the selected group(s) are already imported into this workspace!");
+    }
 
-    if (!window.confirm("Import " + unimported.length + " contacts from " + targetGroup + " into " + ev.title + "?")) return;
+    const groupNamesStr = groupsList.length === 1 ? groupsList[0] : (groupsList.length + " groups (" + groupsList.slice(0, 3).join(", ") + (groupsList.length > 3 ? "..." : "") + ")");
+    if (!window.confirm("Import " + unimported.length + " contact(s) from " + groupNamesStr + " into " + ev.title + "?")) return;
 
+    setImportingContactGroups(true);
     let successCount = 0;
     for (const g of unimported) {
       const newEventGuest = {
@@ -22632,9 +22794,57 @@ function AdminInviteLetters({ mob, C, setC, auth }) {
         console.error("Error importing contact:", e);
       }
     }
-    alert("Successfully imported " + successCount + " contacts from " + targetGroup + "!");
+    setImportingContactGroups(false);
+    alert("✅ Successfully imported " + successCount + " contacts into " + ev.title + "!");
     setShowImportContactGroupModal(false);
+    setSelectedGroupsToImport([]);
     fetchRegs();
+  };
+
+  const handleImportContactGroup = (targetGroup) => {
+    handleImportMultipleContactGroups([targetGroup]);
+  };
+
+  const handleDeleteWorkspaceContact = async (r) => {
+    const pName = String(r['Participant Name'] || r['Full Name'] || r.name || r['Transaction ID'] || 'this contact').replace(/\|/g, ' ').trim();
+    if (!window.confirm(`Are you sure you want to remove "${pName}" (${r['Transaction ID'] || r.id}) from this workspace?`)) return;
+
+    try {
+      if (r.id) {
+        await fbDeleteRegistration(r.id, auth?.idToken);
+      }
+      setRegs(prev => prev.filter(x => x.id !== r.id));
+      setSelectedIds(prev => prev.filter(x => x !== (r.id || r['Transaction ID'])));
+      alert(`Deleted "${pName}" from workspace.`);
+    } catch (err) {
+      alert("Failed to delete: " + err.message);
+    }
+  };
+
+  const handleBulkDeleteWorkspaceContacts = async () => {
+    const targetList = filteredRegs.filter(r => selectedIds.includes(r.id || r['Transaction ID']));
+    if (targetList.length === 0) return;
+
+    if (!window.confirm(`⚠️ Are you sure you want to PERMANENTLY delete ${targetList.length} selected contact(s) from "${activeEvent?.title || 'workspace'}"?
+This cannot be undone.`)) return;
+
+    setDeletingBulkContacts(true);
+    let successCount = 0;
+    try {
+      for (const r of targetList) {
+        if (r.id) {
+          await fbDeleteRegistration(r.id, auth?.idToken);
+          successCount++;
+        }
+      }
+      const deletedIdSet = new Set(targetList.map(r => r.id));
+      setRegs(prev => prev.filter(x => !deletedIdSet.has(x.id)));
+      setSelectedIds([]);
+      alert(`✅ Successfully deleted ${successCount} contact(s) from workspace.`);
+    } catch (err) {
+      alert("Error deleting contacts: " + err.message);
+    }
+    setDeletingBulkContacts(false);
   };
 
   const handleImportGlobalGuest = async (globalGuest) => {
@@ -22679,13 +22889,14 @@ function AdminInviteLetters({ mob, C, setC, auth }) {
   };
 
   const handleDeleteGlobalGuest = async (g) => {
-    if(!window.confirm(`Delete ${g["Full Name"]} from the global directory? This won't remove them from events they were already imported to.`)) return;
+    if (!window.confirm(`Are you sure you want to delete "${g["Full Name"]}" from the Special Guests Directory?`)) return;
+    setRegs(prev => prev.filter(x => x.id !== g.id));
     try {
-       await fbUpdateRegistration(g.id, { isGlobalGuest: false, deletedGuest: true }, auth?.idToken);
-       alert("Guest removed from directory.");
-       fetchRegs();
+      await fbUpdateRegistration(g.id, { isGlobalGuest: false, deletedGuest: true }, auth?.idToken);
+      alert("✅ Contact removed from directory successfully.");
+      fetchRegs();
     } catch(err) {
-       alert("Error removing guest: " + err.message);
+      alert("Notice: Removed locally. " + err.message);
     }
   };
 
@@ -22910,82 +23121,451 @@ function AdminInviteLetters({ mob, C, setC, auth }) {
     setDownloadingBulk(false);
   };
 
-  const renderGlobalGuestsModal = () => (
-    <div style={{position:"fixed",top:0,left:0,right:0,bottom:0,background:"rgba(0,0,0,0.5)",zIndex:9999,display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
-      <div style={{background:"white",borderRadius:12,padding:32,width:"100%",maxWidth:800,maxHeight:"90vh",overflowY:"auto",boxShadow:"0 20px 40px rgba(0,0,0,0.2)"}}>
-        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:24}}>
-           <div>
-             <h2 style={{fontFamily:"'Playfair Display',serif",color:"var(--dt)",marginTop:0,marginBottom:4}}>Global Special Guests</h2>
-             <p style={{fontSize:".85rem",color:"var(--mu)",margin:0}}>Add guests here once, and import them to any event.</p>
-           </div>
-           <button onClick={()=>setShowGlobalGuestsModal(false)} style={{background:"none",border:"none",fontSize:"1.5rem",cursor:"pointer"}}>×</button>
-        </div>
+  const renderGlobalGuestsModal = () => {
+    // Extract unique groups across all global guests for the filter bar
+    const allGroupsSet = new Set();
+    globalGuests.forEach(g => {
+      getContactGroups(g).forEach(grp => allGroupsSet.add(grp));
+    });
+    const uniqueGroups = Array.from(allGroupsSet).sort();
 
-        <div style={{display:"flex",gap:24,flexDirection:mob?"column":"row"}}>
-          <div style={{flex:1}}>
-            <h3 style={{fontSize:"1rem",borderBottom:"1px solid var(--bd)",paddingBottom:8,marginBottom:16}}>Add New Guest</h3>
-            <form onSubmit={handleAddGlobalGuest} style={{display:"flex",flexDirection:"column",gap:16}}>
-              <div>
-                <label style={{display:"block",fontSize:".85rem",fontWeight:600,marginBottom:6}}>Full Name (Required)</label>
-                <input required type="text" value={guestForm.fullName} onChange={e=>setGuestForm({...guestForm, fullName: e.target.value})} style={{width:"100%",padding:"8px 12px",borderRadius:8,border:"1px solid var(--bd)",boxSizing:"border-box",fontFamily:"inherit"}} />
-              </div>
-              <div style={{display:"flex",gap:16}}>
-                <div style={{flex:1}}>
-                  <label style={{display:"block",fontSize:".85rem",fontWeight:600,marginBottom:6}}>Designation / Role</label>
-                  <input type="text" placeholder="e.g. CWC Member, Trustee, Lead" value={guestForm.designation} onChange={e=>setGuestForm({...guestForm, designation: e.target.value})} style={{width:"100%",padding:"8px 12px",borderRadius:8,border:"1px solid var(--bd)",boxSizing:"border-box",fontFamily:"inherit"}} />
-                </div>
-                <div style={{flex:1}}>
-                  <label style={{display:"block",fontSize:".85rem",fontWeight:600,marginBottom:6}}>Contact Group / Team</label>
-                  <input type="text" placeholder="e.g. CWC Members, Trustees, Volunteers" value={guestForm.group} onChange={e=>setGuestForm({...guestForm, group: e.target.value})} style={{width:"100%",padding:"8px 12px",borderRadius:8,border:"1px solid var(--bd)",boxSizing:"border-box",fontFamily:"inherit"}} />
-                </div>
-              </div>
-              <div style={{display:"flex",gap:16}}>
-                <div style={{flex:1}}>
-                  <label style={{display:"block",fontSize:".85rem",fontWeight:600,marginBottom:6}}>Mobile</label>
-                  <input type="text" value={guestForm.mobile} onChange={e=>setGuestForm({...guestForm, mobile: e.target.value})} style={{width:"100%",padding:"8px 12px",borderRadius:8,border:"1px solid var(--bd)",boxSizing:"border-box",fontFamily:"inherit"}} />
-                </div>
-                <div style={{flex:1}}>
-                  <label style={{display:"block",fontSize:".85rem",fontWeight:600,marginBottom:6}}>Email</label>
-                  <input type="email" value={guestForm.email} onChange={e=>setGuestForm({...guestForm, email: e.target.value})} style={{width:"100%",padding:"8px 12px",borderRadius:8,border:"1px solid var(--bd)",boxSizing:"border-box",fontFamily:"inherit"}} />
-                </div>
-              </div>
-              <div>
-                <label style={{display:"block",fontSize:".85rem",fontWeight:600,marginBottom:6}}>Address</label>
-                <textarea rows="2" value={guestForm.address} onChange={e=>setGuestForm({...guestForm, address: e.target.value})} style={{width:"100%",padding:"8px 12px",borderRadius:8,border:"1px solid var(--bd)",boxSizing:"border-box",fontFamily:"inherit"}}></textarea>
-              </div>
-              <button type="submit" disabled={addingGuest} style={{padding:"10px 20px",borderRadius:8,border:"none",background:"var(--dt)",color:"white",cursor:addingGuest?"wait":"pointer",fontWeight:600,marginTop:8}}>
-                {addingGuest ? "Saving..." : "Add to Directory"}
-              </button>
-            </form>
+    // Filter guests based on directoryGroupFilter
+    const filteredDirectoryGuests = directoryGroupFilter === "All"
+      ? globalGuests
+      : globalGuests.filter(g => getContactGroups(g).includes(directoryGroupFilter));
 
-            <div style={{marginTop:24,borderTop:"1px solid var(--bd)",paddingTop:16}}>
-              <label style={{display:"block",fontSize:".85rem",fontWeight:600,marginBottom:8}}>Import from Excel (.xlsx/.xls)</label>
-              <input type="file" ref={fileInputRef} accept=".xlsx,.xls" onChange={handleExcelUpload} style={{display:"none"}} />
-              <button onClick={() => fileInputRef.current?.click()} disabled={uploadingExcel} style={{width:"100%",padding:"10px",borderRadius:8,background:"#F5F5F5",color:"var(--dt)",border:"1px solid var(--bd)",fontWeight:600,cursor:uploadingExcel?"wait":"pointer"}}>
-                {uploadingExcel ? "Uploading..." : "📂 Upload Excel File"}
-              </button>
-            </div>
+    return (
+      <div style={{position:"fixed",top:0,left:0,right:0,bottom:0,background:"rgba(0,0,0,0.6)",zIndex:99999,display:"flex",alignItems:"center",justifyContent:"center",padding:16}}>
+        <div style={{background:"white",borderRadius:16,padding:mob?16:28,width:"100%",maxWidth:950,maxHeight:"90vh",overflowY:"auto",boxShadow:"0 25px 50px rgba(0,0,0,0.3)"}}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:20,borderBottom:"1.5px solid #E2E8F0",paddingBottom:12}}>
+             <div>
+               <h2 style={{fontFamily:"'Playfair Display',serif",color:"var(--dt)",margin:0,fontSize:"1.3rem",display:"flex",alignItems:"center",gap:8}}>
+                 <span>👥</span> Special Guests & Committee Directory
+               </h2>
+               <p style={{fontSize:".82rem",color:"var(--mu)",margin:"4px 0 0 0"}}>
+                 Add contacts once, assign them to multiple groups, and import them seamlessly into any workspace.
+               </p>
+             </div>
+             <button 
+               onClick={()=>{
+                 setShowGlobalGuestsModal(false); 
+                 setShowDirectoryModal(false);
+                 setEditingGuest(null);
+                 setGuestForm({ fullName: "", mobile: "", email: "", address: "", designation: "", group: "CWC Member", groups: ["CWC Member"] });
+               }} 
+               style={{background:"#F1F5F9",border:"none",borderRadius:"50%",width:34,height:34,cursor:"pointer",fontWeight:800,fontSize:"1.1rem",color:"#475569"}}
+             >
+               ✕
+             </button>
           </div>
 
-          <div style={{flex:1.5,borderLeft:mob?"none":"1px solid var(--bd)",paddingLeft:mob?0:24}}>
-            <h3 style={{fontSize:"1rem",borderBottom:"1px solid var(--bd)",paddingBottom:8,marginBottom:16}}>Directory List</h3>
-            <div style={{display:"flex",flexDirection:"column",gap:12,maxHeight:400,overflowY:"auto",paddingRight:8}}>
-              {globalGuests.map(g => (
-                <div key={g.id} style={{padding:12,border:"1px solid #eee",borderRadius:8,background:"#fafafa",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-                   <div>
-                     <div style={{fontWeight:600,color:"#333"}}>{g["Full Name"]}</div>
-                     <div style={{fontSize:".8rem",color:"var(--mu)"}}>{g.Designation || "No Designation"} {g.Mobile ? `• ${g.Mobile}` : ""}</div>
-                   </div>
-                   <button onClick={()=>handleDeleteGlobalGuest(g)} style={{background:"none",border:"none",color:"#991B1B",fontSize:".8rem",cursor:"pointer",textDecoration:"underline"}}>Remove</button>
+          <div style={{display:"flex",gap:24,flexDirection:mob?"column":"row"}}>
+            {/* Left Side Form: Add / Edit Contact */}
+            <div style={{flex:1.1}}>
+              <form onSubmit={handleAddGlobalGuest} style={{display:"flex",flexDirection:"column",gap:12}}>
+                {editingGuest && (
+                  <div style={{background:"#EFF6FF",border:"1.5px solid #93C5FD",borderRadius:8,padding:"8px 12px",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+                    <span style={{fontSize:".82rem",color:"#1E40AF",fontWeight:800}}>✏️ Editing Contact: {editingGuest["Full Name"]}</span>
+                    <button type="button" onClick={() => {
+                      setEditingGuest(null);
+                      setGuestForm({ fullName: "", mobile: "", email: "", address: "", designation: "", group: "CWC Member", groups: ["CWC Member"] });
+                    }} style={{background:"none",border:"none",color:"#EF4444",fontSize:".75rem",fontWeight:700,cursor:"pointer"}}>Cancel Edit</button>
+                  </div>
+                )}
+
+                <div>
+                  <label style={{display:"block",fontSize:".82rem",fontWeight:700,marginBottom:4}}>Full Name (Required) *</label>
+                  <input type="text" required placeholder="e.g. Harish Makwana" value={guestForm.fullName} onChange={e=>setGuestForm({...guestForm, fullName: e.target.value})} style={{width:"100%",padding:"8px 12px",borderRadius:8,border:"1.5px solid #CBD5E1",boxSizing:"border-box",fontFamily:"inherit",fontSize:".88rem"}} />
                 </div>
-              ))}
-              {globalGuests.length === 0 && <div style={{color:"var(--mu)",fontSize:".9rem"}}>Directory is empty.</div>}
+
+                <div style={{display:"flex",gap:12}}>
+                  <div style={{flex:1}}>
+                    <label style={{display:"block",fontSize:".82rem",fontWeight:700,marginBottom:4}}>Designation / Role</label>
+                    <input type="text" placeholder="e.g. Trustee, CWC Member" value={guestForm.designation} onChange={e=>setGuestForm({...guestForm, designation: e.target.value})} style={{width:"100%",padding:"8px 12px",borderRadius:8,border:"1.5px solid #CBD5E1",boxSizing:"border-box",fontFamily:"inherit",fontSize:".85rem"}} />
+                  </div>
+                  <div style={{flex:1}}>
+                    <label style={{display:"block",fontSize:".82rem",fontWeight:700,marginBottom:4}}>Mobile Number</label>
+                    <input type="text" placeholder="e.g. 9819728011" value={guestForm.mobile} onChange={e=>setGuestForm({...guestForm, mobile: e.target.value})} style={{width:"100%",padding:"8px 12px",borderRadius:8,border:"1.5px solid #CBD5E1",boxSizing:"border-box",fontFamily:"inherit",fontSize:".85rem"}} />
+                  </div>
+                </div>
+
+                {/* Multi-Group Selector */}
+                <div style={{background:"#F8FAFC",padding:"12px",borderRadius:10,border:"1.5px solid #CBD5E1"}}>
+                  <label style={{display:"block",fontSize:".82rem",fontWeight:800,color:"#0F172A",marginBottom:4}}>
+                    🏷️ Assign Multiple Contact Groups:
+                  </label>
+                  <div style={{fontSize:".72rem",color:"#64748B",marginBottom:8}}>
+                    Click to add/remove groups. One person can belong to multiple committees.
+                  </div>
+                  
+                  {/* Active Group Badges */}
+                  <div style={{display:"flex",flexWrap:"wrap",gap:6,marginBottom:8}}>
+                    {(guestForm.groups || []).map((grp, gIdx) => (
+                      <span key={gIdx} style={{background:"#DBEAFE",color:"#1E40AF",border:"1px solid #93C5FD",padding:"3px 8px",borderRadius:12,fontSize:".74rem",fontWeight:700,display:"inline-flex",alignItems:"center",gap:5}}>
+                        <span>👥 {grp}</span>
+                        <button 
+                          type="button" 
+                          onClick={() => {
+                            const updated = (guestForm.groups || []).filter((_, k) => k !== gIdx);
+                            setGuestForm({ ...guestForm, groups: updated, group: updated.join(", ") });
+                          }}
+                          style={{background:"none",border:"none",color:"#DC2626",cursor:"pointer",padding:0,fontWeight:800,fontSize:".8rem"}}
+                        >
+                          ✕
+                        </button>
+                      </span>
+                    ))}
+                    {(guestForm.groups || []).length === 0 && (
+                      <span style={{fontSize:".75rem",color:"#94A3B8",fontStyle:"italic"}}>No groups assigned yet. Click a group below.</span>
+                    )}
+                  </div>
+
+                  {/* Quick Add Suggested Groups */}
+                  <div style={{display:"flex",flexWrap:"wrap",gap:5,alignItems:"center",marginBottom:8}}>
+                    <span style={{fontSize:".7rem",color:"#475569",fontWeight:700}}>Quick Add:</span>
+                    {["CWC Member", "Trustee", "Education Committee", "Core Committee", "Volunteer", "Kalyan Team", "Special Guest of Honor"].map(quickG => {
+                      const isSelected = (guestForm.groups || []).includes(quickG);
+                      return (
+                        <button
+                          key={quickG}
+                          type="button"
+                          onClick={() => {
+                            const cur = guestForm.groups || [];
+                            const updated = isSelected ? cur.filter(x => x !== quickG) : [...cur, quickG];
+                            setGuestForm({ ...guestForm, groups: updated, group: updated.join(", ") });
+                          }}
+                          style={{
+                            padding:"3px 7px",
+                            borderRadius:6,
+                            fontSize:".7rem",
+                            fontWeight:700,
+                            cursor:"pointer",
+                            background: isSelected ? "#2563EB" : "white",
+                            color: isSelected ? "white" : "#334155",
+                            border: isSelected ? "1px solid #1D4ED8" : "1px solid #CBD5E1"
+                          }}
+                        >
+                          {isSelected ? ("✓ " + quickG) : ("+ " + quickG)}
+                        </button>
+                      );
+                    })}
+                  </div>
+
+                  {/* Custom Group Name Input */}
+                  <div style={{display:"flex",gap:6}}>
+                    <input 
+                      type="text" 
+                      placeholder="Type custom group (e.g. Audit Team)..." 
+                      id="custom_group_dir_inp"
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          e.preventDefault();
+                          const val = e.target.value?.trim();
+                          if (val) {
+                            const cur = guestForm.groups || [];
+                            if (!cur.includes(val)) {
+                              const updated = [...cur, val];
+                              setGuestForm({ ...guestForm, groups: updated, group: updated.join(", ") });
+                            }
+                            e.target.value = "";
+                          }
+                        }
+                      }}
+                      style={{flex:1,padding:"6px 10px",borderRadius:6,border:"1px solid #CBD5E1",fontSize:".8rem",fontFamily:"inherit"}} 
+                    />
+                    <button 
+                      type="button"
+                      onClick={() => {
+                        const inp = document.getElementById("custom_group_dir_inp");
+                        const val = inp?.value?.trim();
+                        if (val) {
+                          const cur = guestForm.groups || [];
+                          if (!cur.includes(val)) {
+                            const updated = [...cur, val];
+                            setGuestForm({ ...guestForm, groups: updated, group: updated.join(", ") });
+                          }
+                          inp.value = "";
+                        }
+                      }}
+                      style={{padding:"6px 12px",background:"#0D4B5E",color:"white",border:"none",borderRadius:6,fontSize:".75rem",fontWeight:700,cursor:"pointer"}}
+                    >
+                      + Add
+                    </button>
+                  </div>
+                </div>
+
+                <div style={{display:"flex",gap:12}}>
+                  <div style={{flex:1}}>
+                    <label style={{display:"block",fontSize:".82rem",fontWeight:700,marginBottom:4}}>Email</label>
+                    <input type="email" placeholder="Optional" value={guestForm.email} onChange={e=>setGuestForm({...guestForm, email: e.target.value})} style={{width:"100%",padding:"8px 12px",borderRadius:8,border:"1.5px solid #CBD5E1",boxSizing:"border-box",fontFamily:"inherit",fontSize:".85rem"}} />
+                  </div>
+                  <div style={{flex:1}}>
+                    <label style={{display:"block",fontSize:".82rem",fontWeight:700,marginBottom:4}}>Address / Location</label>
+                    <input type="text" placeholder="e.g. Mahim, Mumbai" value={guestForm.address} onChange={e=>setGuestForm({...guestForm, address: e.target.value})} style={{width:"100%",padding:"8px 12px",borderRadius:8,border:"1.5px solid #CBD5E1",boxSizing:"border-box",fontFamily:"inherit",fontSize:".85rem"}} />
+                  </div>
+                </div>
+
+                <button type="submit" disabled={addingGuest} style={{padding:"11px 20px",borderRadius:8,border:"none",background:editingGuest ? "linear-gradient(135deg, #15803D, #166534)" : "var(--dt)",color:"white",cursor:addingGuest?"wait":"pointer",fontWeight:800,fontSize:".9rem",marginTop:6,boxShadow:"0 2px 8px rgba(0,0,0,0.15)"}}>
+                  {addingGuest ? "Saving..." : editingGuest ? "💾 Save Updated Contact" : "➕ Add to Directory"}
+                </button>
+              </form>
+
+              <div style={{marginTop:18,borderTop:"1.5px solid #E2E8F0",paddingTop:14,background:"#F8FAFC",padding:"12px 14px",borderRadius:10,border:"1px solid #E2E8F0"}}>
+                <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
+                  <label style={{fontSize:".82rem",fontWeight:800,color:"#0F172A"}}>📥 Bulk Import via Excel / CSV:</label>
+                </div>
+
+                <div style={{display:"flex",gap:8,marginBottom:10}}>
+                  <button 
+                    type="button" 
+                    onClick={handleDownloadSampleExcel}
+                    style={{flex:1,padding:"7px 10px",borderRadius:6,background:"#EFF6FF",color:"#1D4ED8",border:"1px solid #93C5FD",fontWeight:700,fontSize:".74rem",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",gap:4}}
+                  >
+                    <span>📊</span> Sample Excel (.xlsx)
+                  </button>
+                  <button 
+                    type="button" 
+                    onClick={handleDownloadSampleCsv}
+                    style={{flex:1,padding:"7px 10px",borderRadius:6,background:"#F0FDF4",color:"#15803D",border:"1px solid #86EFAC",fontWeight:700,fontSize:".74rem",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",gap:4}}
+                  >
+                    <span>📄</span> Sample CSV (.csv)
+                  </button>
+                </div>
+
+                <input type="file" ref={fileInputRef} accept=".xlsx,.xls,.csv" onChange={handleExcelUpload} style={{display:"none"}} />
+                <button 
+                  type="button"
+                  onClick={() => fileInputRef.current?.click()} 
+                  disabled={uploadingExcel} 
+                  style={{width:"100%",padding:"10px",borderRadius:8,background:"linear-gradient(135deg, #0D4B5E, #135D74)",color:"white",border:"none",fontWeight:800,cursor:uploadingExcel?"wait":"pointer",fontSize:".84rem",display:"flex",alignItems:"center",justifyContent:"center",gap:6,boxShadow:"0 2px 6px rgba(13,75,94,0.2)"}}
+                >
+                  <span>📂</span> {uploadingExcel ? "Importing Contacts..." : "Upload Completed Excel / CSV File"}
+                </button>
+              </div>
+            </div>
+
+            {/* Right Side: Sleek, Compact Directory List with Space-Efficient Filter Bar */}
+            <div style={{flex:1.4,borderLeft:mob?"none":"1.5px solid #E2E8F0",paddingLeft:mob?0:20}}>
+              {/* Header & Single-Row Search + Compact Filter Pills with +N More (No Scroll Needed) */}
+              <div style={{marginBottom:10}}>
+                <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:6}}>
+                  <span style={{fontSize:".92rem",fontWeight:800,color:"#0F172A"}}>
+                    Contacts Directory ({filteredDirectoryGuests.length} / {globalGuests.length})
+                  </span>
+                  {directoryGroupFilter !== "All" && (
+                    <button 
+                      type="button" 
+                      onClick={() => setDirectoryGroupFilter("All")}
+                      style={{background:"none",border:"none",color:"#2563EB",fontSize:".74rem",fontWeight:700,cursor:"pointer"}}
+                    >
+                      Reset Filter (Show All)
+                    </button>
+                  )}
+                </div>
+
+                {/* Single Compact Row: Reduced Search Box + Quick Filter Pills + More Dropdown */}
+                <div style={{display:"flex",gap:6,alignItems:"center",background:"#F8FAFC",padding:"6px 8px",borderRadius:8,border:"1px solid #CBD5E1",flexWrap:"wrap"}}>
+                  {/* Reduced Search Box */}
+                  <div style={{width: 145, flexShrink: 0}}>
+                    <input 
+                      type="text" 
+                      placeholder="🔍 Search..." 
+                      value={directorySearch}
+                      onChange={e => setDirectorySearch(e.target.value)}
+                      style={{width:"100%",padding:"5px 8px",borderRadius:6,border:"1px solid #CBD5E1",fontSize:".75rem",fontFamily:"inherit",boxSizing:"border-box",background:"white"}}
+                    />
+                  </div>
+
+                  {/* Quick Filter Pills (Top 2-3 + "+N more...") */}
+                  <div style={{display:"flex",gap:4,alignItems:"center",flexWrap:"wrap",flex:1}}>
+                    <button
+                      type="button"
+                      onClick={() => setDirectoryGroupFilter("All")}
+                      style={{
+                        padding:"3px 7px",
+                        borderRadius:6,
+                        fontSize:".69rem",
+                        fontWeight:800,
+                        cursor:"pointer",
+                        border: directoryGroupFilter === "All" ? "1px solid #0D4B5E" : "1px solid #CBD5E1",
+                        background: directoryGroupFilter === "All" ? "#0D4B5E" : "white",
+                        color: directoryGroupFilter === "All" ? "white" : "#475569"
+                      }}
+                    >
+                      All ({globalGuests.length})
+                    </button>
+                    {uniqueGroups.slice(0, 2).map(grp => {
+                      const count = globalGuests.filter(g => getContactGroups(g).includes(grp)).length;
+                      const isActive = directoryGroupFilter === grp;
+                      return (
+                        <button
+                          key={grp}
+                          type="button"
+                          onClick={() => setDirectoryGroupFilter(grp)}
+                          style={{
+                            padding:"3px 7px",
+                            borderRadius:6,
+                            fontSize:".69rem",
+                            fontWeight:700,
+                            cursor:"pointer",
+                            border: isActive ? "1px solid #0D4B5E" : "1px solid #CBD5E1",
+                            background: isActive ? "#0D4B5E" : "#FFFFFF",
+                            color: isActive ? "white" : "#334155"
+                          }}
+                        >
+                          {grp} ({count})
+                        </button>
+                      );
+                    })}
+
+                    {/* Dropdown for All / Remaining Groups */}
+                    <select
+                      value={directoryGroupFilter}
+                      onChange={e => setDirectoryGroupFilter(e.target.value)}
+                      style={{
+                        padding:"3px 6px",
+                        borderRadius:6,
+                        border: uniqueGroups.slice(2).includes(directoryGroupFilter) ? "1px solid #0D4B5E" : "1px solid #CBD5E1",
+                        fontSize:".69rem",
+                        fontWeight:700,
+                        background: uniqueGroups.slice(2).includes(directoryGroupFilter) ? "#0D4B5E" : "white",
+                        color: uniqueGroups.slice(2).includes(directoryGroupFilter) ? "white" : "#0F172A",
+                        cursor:"pointer",
+                        outline:"none",
+                        maxWidth: 150
+                      }}
+                    >
+                      <option value="All">
+                        {uniqueGroups.length > 2 ? `+ ${uniqueGroups.length - 2} more groups...` : "More Groups..."}
+                      </option>
+                      {uniqueGroups.map(grp => {
+                        const count = globalGuests.filter(g => getContactGroups(g).includes(grp)).length;
+                        return (
+                          <option key={grp} value={grp}>
+                            👥 {grp} ({count})
+                          </option>
+                        );
+                      })}
+                    </select>
+                  </div>
+                </div>
+              </div>
+
+              {/* Contact Cards List with Compact Group Badges */}
+              <div style={{display:"flex",flexDirection:"column",gap:8,maxHeight:450,overflowY:"auto",paddingRight:4}}>
+                {(() => {
+                  let list = filteredDirectoryGuests;
+                  if (directorySearch && directorySearch.trim()) {
+                    const q = directorySearch.trim().toLowerCase();
+                    list = list.filter(g => {
+                      const name = String(g["Full Name"] || g.Name || "").toLowerCase();
+                      const mobile = String(g.Mobile || g["Mobile Number"] || "").toLowerCase();
+                      const desig = String(g.Designation || "").toLowerCase();
+                      const grps = getContactGroups(g).join(" ").toLowerCase();
+                      return name.includes(q) || mobile.includes(q) || desig.includes(q) || grps.includes(q);
+                    });
+                  }
+
+                  if (list.length === 0) {
+                    return (
+                      <div style={{color:"var(--mu)",fontSize:".84rem",padding:16,textAlign:"center",background:"#F8FAFC",borderRadius:8,border:"1px dashed #CBD5E1"}}>
+                        No matching contacts found {directorySearch ? `for "${directorySearch}"` : `in "${directoryGroupFilter}"`}.
+                      </div>
+                    );
+                  }
+
+                  return list.map(g => {
+                    const cGroups = getContactGroups(g);
+                    const isExpanded = !!expandedCardGroups[g.id];
+                    const visibleGroups = isExpanded ? cGroups : cGroups.slice(0, 3);
+                    const hiddenCount = cGroups.length - visibleGroups.length;
+
+                    return (
+                      <div key={g.id} style={{padding:"9px 12px",border:"1px solid #E2E8F0",borderRadius:10,background:"#FAFAFA",display:"flex",flexDirection:"column",gap:4,transition:"all .15s"}}>
+                        <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start"}}>
+                          <div>
+                            <div style={{fontWeight:800,color:"#0F172A",fontSize:".88rem",display:"flex",alignItems:"center",gap:6}}>
+                              <span>{g["Full Name"]}</span>
+                              {g.Designation && (
+                                <span style={{fontSize:".72rem",fontWeight:600,color:"#0D4B5E",background:"#E0F2FE",padding:"1px 6px",borderRadius:4}}>
+                                  {g.Designation}
+                                </span>
+                              )}
+                            </div>
+                            <div style={{fontSize:".76rem",color:"#64748B",marginTop:2}}>
+                              {g.Mobile ? ("📱 " + g.Mobile) : "No Mobile"} {g.Address ? (" • 📍 " + g.Address) : ""}
+                            </div>
+                          </div>
+                          <div style={{display:"flex",gap:6,alignItems:"center",flexShrink:0}}>
+                            <button 
+                              type="button"
+                              onClick={() => {
+                                setEditingGuest(g);
+                                setGuestForm({
+                                  fullName: g["Full Name"] || g.Name || "",
+                                  mobile: g.Mobile || g["Mobile Number"] || "",
+                                  email: g.Email || "",
+                                  address: g.Address || "",
+                                  designation: g.Designation || "",
+                                  group: cGroups.join(", "),
+                                  groups: cGroups
+                                });
+                              }} 
+                              style={{background:"#EFF6FF",border:"1px solid #BFDBFE",color:"#1D4ED8",fontSize:".74rem",fontWeight:800,cursor:"pointer",padding:"3px 8px",borderRadius:6}}
+                            >
+                              ✏️ Edit
+                            </button>
+                            <button 
+                              type="button"
+                              onClick={()=>handleDeleteGlobalGuest(g)} 
+                              style={{background:"none",border:"none",color:"#DC2626",fontSize:".74rem",cursor:"pointer",textDecoration:"underline"}}
+                            >
+                              Remove
+                            </button>
+                          </div>
+                        </div>
+
+                        {/* Compact Multi-Group Badges with +N More Pill */}
+                        <div style={{display:"flex",flexWrap:"wrap",gap:4,marginTop:2,alignItems:"center"}}>
+                          {visibleGroups.map((grp, k) => (
+                            <span 
+                              key={k} 
+                              onClick={() => setDirectoryGroupFilter(grp)}
+                              style={{background:"#DCFCE7",color:"#15803D",padding:"2px 6px",borderRadius:6,fontSize:".67rem",fontWeight:700,border:"1px solid #86EFAC",cursor:"pointer"}}
+                              title={"Filter by " + grp}
+                            >
+                              👥 {grp}
+                            </span>
+                          ))}
+                          {hiddenCount > 0 && (
+                            <span 
+                              onClick={() => setExpandedCardGroups(prev => ({ ...prev, [g.id]: true }))}
+                              style={{background:"#FEF3C7",color:"#92400E",border:"1px solid #FDE68A",padding:"2px 6px",borderRadius:6,fontSize:".67rem",fontWeight:800,cursor:"pointer"}}
+                              title="Click to view all groups"
+                            >
+                              +{hiddenCount} more...
+                            </span>
+                          )}
+                          {isExpanded && cGroups.length > 3 && (
+                            <span 
+                              onClick={() => setExpandedCardGroups(prev => ({ ...prev, [g.id]: false }))}
+                              style={{background:"#F1F5F9",color:"#64748B",border:"1px solid #CBD5E1",padding:"2px 6px",borderRadius:6,fontSize:".67rem",fontWeight:700,cursor:"pointer"}}
+                            >
+                              Collapse ▴
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  });
+                })()}
+              </div>
             </div>
           </div>
         </div>
       </div>
-    </div>
-  );
+    );
+  };
 
   let availableFields = [];
   if (selectedEventId) {
@@ -23254,6 +23834,31 @@ function AdminInviteLetters({ mob, C, setC, auth }) {
             }}>
               <span>🚀</span> Send All WhatsApp {selectedIds.length > 0 ? `(${selectedIds.length} Selected)` : `(${filteredRegs.length})`}
             </button>
+            {selectedIds.length > 0 && (
+              <button 
+                type="button"
+                onClick={handleBulkDeleteWorkspaceContacts} 
+                disabled={deletingBulkContacts} 
+                style={{
+                  padding:"8px 16px",
+                  borderRadius:8,
+                  fontSize:".85rem",
+                  fontWeight:800,
+                  display:"flex",
+                  alignItems:"center",
+                  gap:6,
+                  background:"#DC2626",
+                  color:"white",
+                  border:"none",
+                  cursor:deletingBulkContacts ? "wait" : "pointer",
+                  boxShadow:"0 2px 8px rgba(220,38,38,0.3)",
+                  whiteSpace:"nowrap"
+                }}
+                title={`Delete ${selectedIds.length} selected contacts`}
+              >
+                <span>🗑️</span> {deletingBulkContacts ? "Deleting..." : `Delete Selected (${selectedIds.length})`}
+              </button>
+            )}
             <button onClick={handleBulkDownload} disabled={downloadingBulk || releasingAll || refreshing || downloadingEnvelopes} style={{padding:"8px 16px",borderRadius:8,fontSize:".85rem",fontWeight:600,display:"flex",alignItems:"center",gap:6,background:"var(--sf)",color:"white",border:"none",cursor:(downloadingBulk || releasingAll || refreshing || downloadingEnvelopes)?"wait":"pointer",boxShadow:"0 2px 8px rgba(0,0,0,0.1)",whiteSpace:"nowrap"}}>
               {downloadingBulk ? `Generating ZIP (${downloadProgress}/${filteredRegs.length})...` : "📦 Bulk Download ZIP"}
             </button>
@@ -23704,6 +24309,26 @@ function AdminInviteLetters({ mob, C, setC, auth }) {
                                   >
                                     {docIsHeld ? "Unhold" : "Hold"}
                                   </button>
+                                  <button 
+                                    type="button"
+                                    onClick={(e)=>{e.stopPropagation(); handleDeleteWorkspaceContact(r);}} 
+                                    style={{
+                                      padding:"4px 7px",
+                                      borderRadius:6,
+                                      fontSize:".74rem",
+                                      background:"#FEF2F2",
+                                      color:"#DC2626",
+                                      border:"1.5px solid #FECACA",
+                                      cursor:"pointer",
+                                      fontWeight: 800,
+                                      display:"flex",
+                                      alignItems:"center",
+                                      gap:2
+                                    }}
+                                    title="Delete contact from workspace"
+                                  >
+                                    <span>🗑️</span> Delete
+                                  </button>
                                 </>
                               );
                             })()}
@@ -24046,73 +24671,226 @@ function AdminInviteLetters({ mob, C, setC, auth }) {
         </div>
       )}
 
-      {/* Import Contact Group Modal */}
+      {/* Import Contact Group Modal (Supports Multi-Group Selection) */}
       {showImportContactGroupModal && (
-        <div style={{position:"fixed",top:0,left:0,right:0,bottom:0,background:"rgba(0,0,0,0.5)",zIndex:9999,display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
-          <div style={{background:"white",borderRadius:12,padding:32,width:"100%",maxWidth:650,maxHeight:"90vh",overflowY:"auto",boxShadow:"0 20px 40px rgba(0,0,0,0.2)"}}>
-            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:20}}>
+        <div style={{position:"fixed",top:0,left:0,right:0,bottom:0,background:"rgba(0,0,0,0.6)",zIndex:99999,display:"flex",alignItems:"center",justifyContent:"center",padding:16}}>
+          <div style={{background:"white",borderRadius:16,padding:mob?20:30,width:"100%",maxWidth:750,maxHeight:"90vh",overflowY:"auto",boxShadow:"0 25px 50px rgba(0,0,0,0.3)"}}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16,borderBottom:"1.5px solid #E2E8F0",paddingBottom:12}}>
                <div>
-                 <h2 style={{fontFamily:"'Playfair Display',serif",color:"var(--dt)",marginTop:0,marginBottom:4}}>Import Contact Group</h2>
-                 <p style={{fontSize:".85rem",color:"var(--mu)",margin:0}}>Import all members of a contact group at once into: <strong>{activeEvent.title}</strong></p>
+                 <h2 style={{fontFamily:"'Playfair Display',serif",color:"var(--dt)",margin:0,fontSize:"1.3rem",display:"flex",alignItems:"center",gap:8}}>
+                   <span>🏷️</span> Import Contact Groups
+                 </h2>
+                 <p style={{fontSize:".82rem",color:"var(--mu)",margin:"4px 0 0 0"}}>
+                   Select one or multiple contact groups to batch import their members into <strong>{activeEvent.title}</strong>
+                 </p>
                </div>
-               <button onClick={()=>setShowImportContactGroupModal(false)} style={{background:"none",border:"none",fontSize:"1.5rem",cursor:"pointer"}}>×</button>
+               <button 
+                 onClick={()=>{ setShowImportContactGroupModal(false); setSelectedGroupsToImport([]); setImportGroupSearch(""); }} 
+                 style={{background:"#F1F5F9",border:"none",borderRadius:"50%",width:32,height:32,cursor:"pointer",fontWeight:800,fontSize:"1.1rem",color:"#475569"}}
+               >
+                 ✕
+               </button>
             </div>
 
             {(() => {
               const groupsMap = {};
               globalGuests.forEach(g => {
-                const grp = g.Group || g.Category || g.Vibhag || "General Committee";
-                if (!groupsMap[grp]) groupsMap[grp] = [];
-                groupsMap[grp].push(g);
+                const gGroups = getContactGroups(g);
+                gGroups.forEach(grp => {
+                  if (!groupsMap[grp]) groupsMap[grp] = [];
+                  groupsMap[grp].push(g);
+                });
               });
-              const groupNames = Object.keys(groupsMap);
+              
+              let groupNames = Object.keys(groupsMap).sort();
+              if (importGroupSearch.trim()) {
+                const q = importGroupSearch.toLowerCase().trim();
+                groupNames = groupNames.filter(name => name.toLowerCase().includes(q));
+              }
+
+              // Calculate total unimported across currently selected groups
+              const selectedUnimportedGuestsMap = new Map();
+              selectedGroupsToImport.forEach(grpName => {
+                const list = groupsMap[grpName] || [];
+                list.forEach(g => {
+                  const isAlreadyInWorkspace = regs.some(r => r.globalGuestId === g.id && r.eventId === selectedEventId);
+                  if (!isAlreadyInWorkspace && !selectedUnimportedGuestsMap.has(g.id)) {
+                    selectedUnimportedGuestsMap.set(g.id, g);
+                  }
+                });
+              });
+              const totalReadyFromSelected = selectedUnimportedGuestsMap.size;
+
+              const toggleGroupSelection = (grp) => {
+                setSelectedGroupsToImport(prev => 
+                  prev.includes(grp) ? prev.filter(x => x !== grp) : [...prev, grp]
+                );
+              };
+
+              const selectAllGroups = () => {
+                setSelectedGroupsToImport(groupNames);
+              };
+
+              const deselectAllGroups = () => {
+                setSelectedGroupsToImport([]);
+              };
 
               return (
-                <div style={{display:"flex",flexDirection:"column",gap:16}}>
-                  {groupNames.map(grp => {
-                    const list = groupsMap[grp];
-                    const importedCount = list.filter(g => regs.some(r => r.globalGuestId === g.id && r.eventId === selectedEventId)).length;
-                    const unimportedCount = list.length - importedCount;
-
-                    return (
-                      <div key={grp} style={{padding:16,border:"1.5px solid #CBD5E1",borderRadius:10,background:"#F8FAFC",display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:12}}>
-                        <div>
-                          <div style={{fontSize:"1rem",fontWeight:800,color:"#0F172A",display:"flex",alignItems:"center",gap:6}}>
-                            <span>🏷️</span> {grp}
-                          </div>
-                          <div style={{fontSize:".8rem",color:"#475569",marginTop:4}}>
-                            <strong>{list.length}</strong> total contacts • <span style={{color:"#15803D",fontWeight:700}}>{importedCount} already imported</span> {unimportedCount > 0 && <span style={{color:"#D97706",fontWeight:700}}>• {unimportedCount} ready to import</span>}
-                          </div>
-                        </div>
-                        <button
-                          disabled={unimportedCount === 0}
-                          onClick={() => handleImportContactGroup(grp)}
-                          style={{
-                            padding: "8px 18px",
-                            borderRadius: 8,
-                            border: "none",
-                            background: unimportedCount === 0 ? "#CBD5E1" : "#15803D",
-                            color: unimportedCount === 0 ? "#64748B" : "white",
-                            fontSize: ".84rem",
-                            fontWeight: 800,
-                            cursor: unimportedCount === 0 ? "not-allowed" : "pointer",
-                            boxShadow: unimportedCount > 0 ? "0 2px 8px rgba(21,128,61,0.25)" : "none"
-                          }}
-                        >
-                          {unimportedCount === 0 ? "All Imported ✓" : ("Import " + unimportedCount + " Members ➔")}
-                        </button>
-                      </div>
-                    );
-                  })}
-
-                  {groupNames.length === 0 && (
-                    <div style={{padding:32,textAlign:"center",background:"#F8FAFC",borderRadius:8,border:"1px dashed #CBD5E1"}}>
-                      <p style={{color:"var(--mu)"}}>No contacts found in Special Guests Directory.</p>
-                      <button onClick={()=>{setShowImportContactGroupModal(false); setSelectedEventId(null); setTimeout(()=>setShowGlobalGuestsModal(true), 100);}} style={{padding:"8px 16px",background:"var(--dt)",color:"white",border:"none",borderRadius:6,cursor:"pointer",fontWeight:700,marginTop:12}}>
-                         ➕ Add Contacts to Directory
+                <div style={{display:"flex",flexDirection:"column",gap:14}}>
+                  {/* Search and Select/Deselect Bar */}
+                  <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:10,flexWrap:"wrap",background:"#F8FAFC",padding:"10px 14px",borderRadius:10,border:"1px solid #CBD5E1"}}>
+                    <div style={{flex:1,minWidth:200}}>
+                      <input
+                        type="text"
+                        placeholder="🔍 Search contact groups..."
+                        value={importGroupSearch}
+                        onChange={e => setImportGroupSearch(e.target.value)}
+                        style={{width:"100%",padding:"6px 12px",borderRadius:6,border:"1px solid #CBD5E1",fontSize:".82rem",boxSizing:"border-box"}}
+                      />
+                    </div>
+                    <div style={{display:"flex",gap:6,alignItems:"center"}}>
+                      <button
+                        type="button"
+                        onClick={selectAllGroups}
+                        style={{padding:"6px 12px",background:"white",border:"1px solid #93C5FD",borderRadius:6,color:"#1D4ED8",fontSize:".75rem",fontWeight:700,cursor:"pointer"}}
+                      >
+                        ✓ Select All ({groupNames.length})
+                      </button>
+                      <button
+                        type="button"
+                        onClick={deselectAllGroups}
+                        style={{padding:"6px 10px",background:"white",border:"1px solid #CBD5E1",borderRadius:6,color:"#64748B",fontSize:".75rem",fontWeight:700,cursor:"pointer"}}
+                      >
+                        Deselect
                       </button>
                     </div>
-                  )}
+                  </div>
+
+                  {/* Group Cards List with Checkboxes */}
+                  <div style={{display:"flex",flexDirection:"column",gap:10,maxHeight:"42vh",overflowY:"auto",paddingRight:4}}>
+                    {groupNames.map(grp => {
+                      const list = groupsMap[grp] || [];
+                      const importedCount = list.filter(g => regs.some(r => r.globalGuestId === g.id && r.eventId === selectedEventId)).length;
+                      const unimportedCount = list.length - importedCount;
+                      const isSelected = selectedGroupsToImport.includes(grp);
+
+                      return (
+                        <div 
+                          key={grp}
+                          onClick={() => toggleGroupSelection(grp)}
+                          style={{
+                            padding: "12px 16px",
+                            border: isSelected ? "2px solid #2563EB" : "1.5px solid #E2E8F0",
+                            borderRadius: 10,
+                            background: isSelected ? "#EFF6FF" : "#FFFFFF",
+                            display: "flex",
+                            justifyContent: "space-between",
+                            alignItems: "center",
+                            flexWrap: "wrap",
+                            gap: 12,
+                            cursor: "pointer",
+                            transition: "all 0.15s ease",
+                            boxShadow: isSelected ? "0 2px 8px rgba(37,99,235,0.12)" : "none"
+                          }}
+                        >
+                          <div style={{display:"flex",alignItems:"center",gap:12}}>
+                            <input
+                              type="checkbox"
+                              checked={isSelected}
+                              onChange={() => {}} 
+                              style={{width:18,height:18,cursor:"pointer",accentColor:"#2563EB"}}
+                            />
+                            <div>
+                              <div style={{fontSize:".95rem",fontWeight:800,color:isSelected ? "#1E40AF" : "#0F172A",display:"flex",alignItems:"center",gap:6}}>
+                                <span>🏷️</span> {grp}
+                              </div>
+                              <div style={{fontSize:".76rem",color:"#475569",marginTop:2}}>
+                                <strong>{list.length}</strong> total in group • <span style={{color:"#15803D",fontWeight:700}}>{importedCount} in workspace</span> {unimportedCount > 0 ? <span style={{color:"#D97706",fontWeight:700}}>• {unimportedCount} ready to import</span> : <span style={{color:"#64748B",fontWeight:600}}>• (all imported)</span>}
+                              </div>
+                            </div>
+                          </div>
+
+                          <div style={{display:"flex",alignItems:"center",gap:8}} onClick={e => e.stopPropagation()}>
+                            {unimportedCount > 0 ? (
+                              <button
+                                type="button"
+                                disabled={importingContactGroups}
+                                onClick={() => handleImportMultipleContactGroups([grp])}
+                                style={{
+                                  padding: "6px 14px",
+                                  borderRadius: 6,
+                                  border: "none",
+                                  background: "#15803D",
+                                  color: "white",
+                                  fontSize: ".75rem",
+                                  fontWeight: 800,
+                                  cursor: "pointer",
+                                  boxShadow: "0 1px 4px rgba(21,128,61,0.2)"
+                                }}
+                              >
+                                + Import {unimportedCount}
+                              </button>
+                            ) : (
+                              <span style={{padding:"4px 10px",background:"#F1F5F9",color:"#64748B",borderRadius:6,fontSize:".75rem",fontWeight:700}}>
+                                All In Workspace ✓
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+
+                    {groupNames.length === 0 && (
+                      <div style={{padding:28,textAlign:"center",background:"#F8FAFC",borderRadius:8,border:"1px dashed #CBD5E1"}}>
+                        <p style={{color:"var(--mu)",fontSize:".88rem",margin:0}}>No matching contact groups found.</p>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Multi-Group Import Action Footer */}
+                  <div style={{borderTop:"1.5px solid #E2E8F0",paddingTop:14,display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:10}}>
+                    <div style={{fontSize:".82rem",color:"#334155"}}>
+                      {selectedGroupsToImport.length > 0 ? (
+                        <span>
+                          <strong>{selectedGroupsToImport.length}</strong> group(s) selected • <strong style={{color:"#15803D"}}>{totalReadyFromSelected}</strong> new contact(s) will be imported
+                        </span>
+                      ) : (
+                        <span style={{color:"#64748B",fontStyle:"italic"}}>Select one or more groups with checkboxes to import together</span>
+                      )}
+                    </div>
+
+                    <div style={{display:"flex",gap:10}}>
+                      <button 
+                        type="button" 
+                        onClick={()=>{ setShowImportContactGroupModal(false); setSelectedGroupsToImport([]); }}
+                        style={{padding:"8px 16px",background:"white",border:"1px solid #CBD5E1",borderRadius:8,fontSize:".82rem",fontWeight:600,cursor:"pointer"}}
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        type="button"
+                        disabled={selectedGroupsToImport.length === 0 || totalReadyFromSelected === 0 || importingContactGroups}
+                        onClick={() => handleImportMultipleContactGroups(selectedGroupsToImport)}
+                        style={{
+                          padding: "9px 20px",
+                          borderRadius: 8,
+                          border: "none",
+                          background: (selectedGroupsToImport.length === 0 || totalReadyFromSelected === 0) ? "#CBD5E1" : "linear-gradient(135deg, #0D4B5E, #135D74)",
+                          color: (selectedGroupsToImport.length === 0 || totalReadyFromSelected === 0) ? "#64748B" : "white",
+                          fontSize: ".85rem",
+                          fontWeight: 800,
+                          cursor: (selectedGroupsToImport.length === 0 || totalReadyFromSelected === 0 || importingContactGroups) ? "not-allowed" : "pointer",
+                          boxShadow: (selectedGroupsToImport.length > 0 && totalReadyFromSelected > 0) ? "0 2px 8px rgba(13,75,94,0.25)" : "none",
+                          display: "flex",
+                          alignItems: "center",
+                          gap: 6
+                        }}
+                      >
+                        <span>📥</span> {importingContactGroups ? "Importing..." : "Import Selected Groups (" + totalReadyFromSelected + " Contacts)"}
+                      </button>
+                    </div>
+                  </div>
+
                 </div>
               );
             })()}
