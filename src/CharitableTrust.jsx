@@ -25966,7 +25966,7 @@ function VibhagSummaryCard({ summaryData }) {
 }
 
 // ── Community AI & Registration Chatbot Widget ──────────────────────────────────────────
-function CommunityChatbot({ C, auth, onShowLogin }) {
+function CommunityChatbot({ C, auth, regs: propRegs, onShowLogin }) {
   if (C.chatbotEnabled === false) {
     return null;
   }
@@ -26295,27 +26295,54 @@ function CommunityChatbot({ C, auth, onShowLogin }) {
   }, [messages, isOpen]);
 
   const ensureRegistrations = async () => {
-    if (regsLoaded && regs.length > 0) return regs;
-    try {
-      setLoading(true);
-      let token = auth?.idToken || localStorage.getItem("trustPublicAuthToken") || localStorage.getItem("globalAuthToken") || "";
-      if (!token && fbAuth?.currentUser) {
-        try { token = await fbAuth.currentUser.getIdToken(); } catch (e) {}
+    let sourceList = (propRegs && propRegs.length > 0) ? propRegs : regs;
+    if (!sourceList || sourceList.length === 0) {
+      try {
+        setLoading(true);
+        let token = auth?.idToken || localStorage.getItem("trustPublicAuthToken") || localStorage.getItem("globalAuthToken") || "";
+        if (!token && fbAuth?.currentUser) {
+          try { token = await fbAuth.currentUser.getIdToken(); } catch (e) {}
+        }
+        const data = await fbFetchRegistrations(token).catch(err => {
+          console.warn("fbFetchRegistrations fallback:", err);
+          return [];
+        });
+        sourceList = data || [];
+        setRegs(sourceList);
+        setRegsLoaded(true);
+      } catch (e) {
+        console.error("Chatbot regs load error:", e);
+        sourceList = [];
+      } finally {
+        setLoading(false);
       }
-      const data = await fbFetchRegistrations(token).catch(err => {
-        console.warn("fbFetchRegistrations fallback:", err);
-        return [];
-      });
-      const cleanList = (data || []).filter(r => !r.deleted && !r.isGlobalGuest && !r.isSpecialGuest);
-      setRegs(cleanList);
-      setRegsLoaded(true);
-      return cleanList;
-    } catch (e) {
-      console.error("Chatbot regs load error:", e);
-      return [];
-    } finally {
-      setLoading(false);
     }
+
+    // Comprehensive Trash, Directory, and Education 2026 Student Filter
+    const cleanList = (sourceList || []).filter(r => {
+      if (!r) return false;
+      // Exclude all deleted / trash items
+      if (r.deleted === true || r.deleted === "true" || r.isDeleted === true || r.isTrash === true || r.inTrash === true || r.status === "Deleted" || r.Status === "Deleted") {
+        return false;
+      }
+      // Exclude special guest directory and workspace imports of directory contacts
+      if (r.isGlobalGuest === true || r.isSpecialGuest === true || Boolean(r.globalGuestId) || r.formId === "global_guest_directory" || r.formId === "global_guest_directory_import") {
+        return false;
+      }
+      // Ensure we target Education Felicitation 2026 student applications
+      const evName = String(r.eventName || r.eventTitle || r.eventId || "").toLowerCase();
+      const isEduEvent = evName.includes("education") || evName.includes("felicitation") || evName.includes("2026") || evName.includes("vidya") || evName.includes("student") || evName === "" || evName === "unknown event";
+      const isEduTxn = String(r['Transaction ID'] || r.transactionId || "").toUpperCase().startsWith("VG-") || String(r['Transaction ID'] || r.transactionId || "").toUpperCase().startsWith("EDU");
+      const hasStudentFields = Boolean(r['Stream / Class'] || r['Stream'] || r['Course'] || r['% Obtained'] || r.percentage || r['Marks / Percentage'] || r['Standard'] || r.marksheet);
+
+      if (!isEduEvent && !isEduTxn && !hasStudentFields) {
+        return false;
+      }
+
+      return true;
+    });
+
+    return cleanList;
   };
 
   const handleSendMessage = async (userText) => {
@@ -27725,7 +27752,7 @@ export default function App() {
       )}
       {/* Login modal — overlays whatever page is showing */}
       {/* Floating Community AI & Registration Chatbot */}
-      <CommunityChatbot C={C} auth={auth} onShowLogin={()=>setShowLogin(true)} />
+      <CommunityChatbot C={C} auth={auth} regs={regs} onShowLogin={()=>setShowLogin(true)} />
 
       {/* Login modal — overlays whatever page is showing */}
       {showLogin && <LoginScreen C={C} onLogin={handleLogin} onSkip={()=>setShowLogin(false)}/>}
