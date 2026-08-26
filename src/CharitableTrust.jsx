@@ -483,10 +483,33 @@ const fbFetchRegistrations = async (idToken) => {
   }).filter(Boolean).sort((a,b) => new Date(b._submittedAt || 0).getTime() - new Date(a._submittedAt || 0).getTime());
 };
 
+const fbDeleteDonation = async (docId, idToken) => {
+  if (!docId) throw new Error("Missing document ID");
+  const REG_URL = `https://firestore.googleapis.com/v1/projects/${getFB().projectId}/databases/(default)/documents/donations/${docId}`;
+  const headers = {};
+  const token = idToken || (typeof localStorage !== 'undefined' ? (localStorage.getItem("trustPublicAuthToken") || localStorage.getItem("globalAuthToken")) : "");
+  if (token) headers["Authorization"] = `Bearer ${token}`;
+  const res = await fetch(REG_URL, {
+    method: "DELETE",
+    headers
+  });
+  if (!res.ok && res.status !== 404) {
+    const err = await res.text();
+    throw new Error(`Failed to delete donation (${res.status}): ${err}`);
+  }
+  try {
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('donation_updated'));
+    }
+  } catch(e) {}
+  return true;
+};
+
 const fbSubmitDonation = async (donationData, idToken) => {
   const REG_URL = `https://firestore.googleapis.com/v1/projects/${getFB().projectId}/databases/(default)/documents/donations`;
   const headers = { "Content-Type": "application/json" };
-  if (idToken) headers["Authorization"] = `Bearer ${idToken}`;
+  const token = idToken || (typeof localStorage !== 'undefined' ? (localStorage.getItem("trustPublicAuthToken") || localStorage.getItem("globalAuthToken")) : "");
+  if (token) headers["Authorization"] = `Bearer ${token}`;
   const res = await fetch(REG_URL, {
     method: "POST",
     headers: headers,
@@ -497,7 +520,15 @@ const fbSubmitDonation = async (donationData, idToken) => {
       }
     })
   });
-  if (!res.ok) throw new Error("Donation save failed");
+  if (!res.ok) {
+    const errText = await res.text();
+    throw new Error(`Donation save failed (${res.status}): ${errText}`);
+  }
+  try {
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('donation_updated', { detail: donationData }));
+    }
+  } catch(e) {}
   return true;
 };
 
@@ -8694,7 +8725,18 @@ function Overview({ mob, C, setC, auth }) {
                     <tbody>{analyticsData.recentDonations.length > 0 ? analyticsData.recentDonations.map((r,i)=>(
                       <tr key={i} style={{borderBottom:"1px solid var(--bd)"}}>
                         <td style={{padding:"10px 12px",color:"var(--mu)",fontFamily:"monospace",fontSize:".75rem"}}>{r.receiptNo || r.id}</td>
-                        <td style={{padding:"10px 12px",fontWeight:600}}>{r.name}</td>
+                        <td style={{padding:"10px 12px",fontWeight:600}}>
+                <div>{r.name}</div>
+                {r.isOffline || r.paymentMode === "Offline" ? (
+                  <span style={{background:"#FEF3C7",color:"#92400E",fontSize:".65rem",padding:"1px 6px",borderRadius:4,fontWeight:800}}>Offline / Manual</span>
+                ) : (
+                  <span style={{background:"#DCFCE7",color:"#166534",fontSize:".65rem",padding:"1px 6px",borderRadius:4,fontWeight:800}}>Online Razorpay</span>
+                )}
+              </td>
+              <td style={{padding:"10px 12px",fontSize:".75rem",color:"#475569"}}>
+                <strong>{r.vibhag || "-"}</strong>
+                {r.eventCode && <div style={{fontSize:".65rem",color:"#64748B"}}>Event: {r.eventCode}</div>}
+              </td>
                         <td style={{padding:"10px 12px",fontWeight:700,color:"var(--sf)"}}>Rs.{Number(r.amount).toLocaleString()}</td>
                         <td style={{padding:"10px 12px"}}><span style={{fontSize:".72rem",padding:"3px 9px",borderRadius:12,background:"var(--tl)",color:"var(--dt)",fontWeight:600}}>{r.program}</span></td>
                         <td style={{padding:"10px 12px",color:"var(--mu)",fontSize:".78rem"}}>{r.date}</td>
@@ -8810,22 +8852,30 @@ const MultiSelect = ({ options, value, onChange, width = 100 }) => {
 
 function Donations({ mob, auth, C }) {
   const [q,setQ]=useState(""); 
-  const [colF, setColF] = useState({ id: [], donor: [], amountOp: ">=", amountVal: "", program: [], date: [], pan: [], status: [], statusBtns: "All" });
+  const [colF, setColF] = useState({ id: [], donor: [], amountOp: ">=", amountVal: "", program: [], date: [], pan: [], status: [], statusBtns: "All", mode: "All" });
   const [data, setData] = useState([]);
   const [previewUrl, setPreviewUrl] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [showAddOfflineModal, setShowAddOfflineModal] = useState(false);
+
+  const loadDonations = async () => {
+    setLoading(true);
+    try {
+      const token = auth?.idToken || auth?._tokenResponse?.idToken || (typeof localStorage !== 'undefined' ? (localStorage.getItem("trustPublicAuthToken") || localStorage.getItem("globalAuthToken")) : "");
+      const res = await fbFetchDonations(token);
+      setData(res || []);
+    } catch(e) { 
+      console.error("Donations load error:", e); 
+    } finally {
+      setLoading(false);
+    }
+  };
 
   useEffect(() => {
-    const load = async () => {
-      setLoading(true);
-      try {
-        const token = auth?.idToken || auth?._tokenResponse?.idToken;
-        const res = await fbFetchDonations(token);
-        setData(res);
-      } catch(e) { console.error(e); }
-      setLoading(false);
-    };
-    if (auth) load();
+    loadDonations();
+    const handleDonationEvent = () => { loadDonations(); };
+    window.addEventListener('donation_updated', handleDonationEvent);
+    return () => { window.removeEventListener('donation_updated', handleDonationEvent); };
   }, [auth]);
 
   const generateReceipt = async (r, action) => {
@@ -8975,7 +9025,7 @@ function Donations({ mob, auth, C }) {
     setLoading(false);
   };
 
-  const allData = data.length > 0 ? data : DDATA;
+  const allData = Array.isArray(data) ? data : [];
   const uniqueIds = [...new Set(allData.map(d => d.id).filter(Boolean))];
   const uniqueDonors = [...new Set(allData.map(d => d.name).filter(Boolean))];
   const uniquePrograms = [...new Set(allData.map(d => d.program).filter(Boolean))];
@@ -9010,7 +9060,9 @@ function Donations({ mob, auth, C }) {
     const matchStatus = colF.status.length === 0 || colF.status.includes(currentStatus);
     const matchStatusBtn = colF.statusBtns === "All" || currentStatus === colF.statusBtns;
     
-    return matchQ && matchId && matchDonor && matchAmount && matchProgram && matchDate && matchPan && matchStatus && matchStatusBtn;
+    const isOff = d.isOffline || d.paymentMode === "Offline" || String(d.paymentMethod || "").toLowerCase().includes("offline");
+    const matchMode = colF.mode === "All" || (colF.mode === "Offline" && isOff) || (colF.mode === "Online" && !isOff);
+    return matchQ && matchId && matchDonor && matchAmount && matchProgram && matchDate && matchPan && matchStatus && matchStatusBtn && matchMode;
   });
 
   const downloadCSV = () => {
@@ -9040,11 +9092,24 @@ function Donations({ mob, auth, C }) {
 
   return (
     <div>
-      <div style={{display:"flex",gap:10,marginBottom:16,flexWrap:"wrap",alignItems:"center"}}>
-        <input value={q} onChange={e=>setQ(e.target.value)} placeholder="Search ID or Name..." style={{padding:"8px 12px",borderRadius:8,border:"1px solid var(--bd)",fontSize:".85rem",fontFamily:"inherit",flex:1,minWidth:140}}/>
-        <div style={{display:"flex",gap:6}}>{["All","Verified","Pending"].map(v=><button key={v} onClick={()=>setColF({...colF, statusBtns: v})} style={{padding:"8px 14px",borderRadius:8,background:colF.statusBtns===v?"var(--dt)":"white",color:colF.statusBtns===v?"white":"var(--tm2)",border:`1px solid ${colF.statusBtns===v?"var(--dt)":"var(--bd)"}`,cursor:"pointer",fontWeight:600,fontSize:".8rem"}}>{v}</button>)}</div>
-        <button onClick={downloadCSV} className="bs" style={{padding:"8px 14px",borderRadius:8,fontWeight:600,fontSize:".8rem", background:"var(--sf)", color:"white", border:"none", cursor:"pointer"}}>Download CSV</button>
-        <button className="bs" style={{padding:"8px 14px",borderRadius:8,fontWeight:600,fontSize:".8rem"}}>+ Add</button>
+      <div style={{display:"flex",gap:10,marginBottom:16,flexWrap:"wrap",alignItems:"center",justifyContent:"space-between"}}>
+        <div style={{display:"flex",gap:8,flex:1,minWidth:220,alignItems:"center"}}>
+          <input value={q} onChange={e=>setQ(e.target.value)} placeholder="Search ID, Donor, Vibhag, Receipt..." style={{padding:"8px 12px",borderRadius:8,border:"1px solid var(--bd)",fontSize:".85rem",fontFamily:"inherit",flex:1}}/>
+          <button onClick={loadDonations} disabled={loading} style={{padding:"8px 12px",borderRadius:8,background:"#F1F5F9",border:"1px solid #CBD5E1",color:"#334155",fontWeight:700,fontSize:".8rem",cursor:"pointer",display:"flex",alignItems:"center",gap:4}} title="Reload live donations from database">
+            <span>🔄</span> {loading ? "..." : "Refresh"}
+          </button>
+        </div>
+        <div style={{display:"flex",gap:6,alignItems:"center",flexWrap:"wrap"}}>
+          <div style={{display:"flex",gap:4,background:"#F8FAFC",padding:"3px 6px",borderRadius:8,border:"1px solid #CBD5E1"}}>
+            <span style={{fontSize:".72rem",fontWeight:700,color:"#64748B",alignSelf:"center",paddingRight:4}}>Mode:</span>
+            {["All","Online","Offline"].map(m=><button key={m} onClick={()=>setColF(p=>({...p, mode: m}))} style={{padding:"4px 8px",borderRadius:6,background:colF.mode===m?(m==="Offline"?"#EA580C":"#1D4ED8"):"transparent",color:colF.mode===m?"white":"#475569",border:"none",cursor:"pointer",fontWeight:700,fontSize:".74rem"}}>{m}</button>)}
+          </div>
+          <div style={{display:"flex",gap:4}}>{["All","Verified","Pending"].map(v=><button key={v} onClick={()=>setColF(p=>({...p, statusBtns: v}))} style={{padding:"6px 12px",borderRadius:6,background:colF.statusBtns===v?"var(--dt)":"white",color:colF.statusBtns===v?"white":"var(--tm2)",border:`1px solid ${colF.statusBtns===v?"var(--dt)":"var(--bd)"}`,cursor:"pointer",fontWeight:600,fontSize:".76rem"}}>{v}</button>)}</div>
+          <button onClick={downloadCSV} style={{padding:"7px 12px",borderRadius:6,fontWeight:700,fontSize:".78rem", background:"var(--sf)", color:"white", border:"none", cursor:"pointer",boxShadow:"0 2px 4px rgba(0,0,0,0.1)"}}>📥 Export CSV</button>
+          <button onClick={()=>setShowAddOfflineModal(true)} style={{padding:"7px 14px",borderRadius:6,background:"#15803D",color:"white",border:"none",fontWeight:800,fontSize:".78rem",cursor:"pointer",boxShadow:"0 2px 4px rgba(21,128,61,0.2)",display:"flex",alignItems:"center",gap:4}}>
+            <span>➕</span> Add Offline
+          </button>
+        </div>
       </div>
       <div className="ac" style={{padding:16,overflowX:"auto"}}>
         <table className="tt" style={{width:"100%",borderCollapse:"collapse",fontSize:".8rem",minWidth:500}}>
@@ -9057,6 +9122,9 @@ function Donations({ mob, auth, C }) {
               <th style={{padding:"9px 12px",textAlign:"left",fontSize:".72rem",letterSpacing:.5,textTransform:"uppercase"}}>
                 <div style={{marginBottom:4}}>DONOR</div>
                 <MultiSelect options={uniqueDonors} value={colF.donor} onChange={v=>setColF({...colF, donor: v})} width={100} />
+              </th>
+              <th style={{padding:"9px 12px",textAlign:"left",fontSize:".72rem",letterSpacing:.5,textTransform:"uppercase"}}>
+                <div style={{marginBottom:4}}>VIBHAG</div>
               </th>
               <th style={{padding:"9px 12px",textAlign:"left",fontSize:".72rem",letterSpacing:.5,textTransform:"uppercase"}}>
                 <div style={{marginBottom:4}}>AMOUNT</div>
@@ -9122,6 +9190,26 @@ function Donations({ mob, auth, C }) {
                   {r.status === "Verified" && (
                     <button onClick={()=>handleRegenerate(r)} style={{padding:"4px 9px",borderRadius:6,background:"#FEECEC",border:"none",color:"#D93025",cursor:"pointer",fontSize:".72rem",fontWeight:600}}>Regenerate</button>
                   )}
+                  <button
+                    onClick={async () => {
+                      if (!window.confirm(`Are you sure you want to permanently delete donation record "${r.name}" (${r.receiptNo || r.id}) of ₹${r.amount}?`)) return;
+                      try {
+                        setLoading(true);
+                        const targetId = r._docId || r.id;
+                        await fbDeleteDonation(targetId, auth?.idToken);
+                        setData(prev => prev.filter(x => (x._docId ? x._docId !== r._docId : x.id !== r.id)));
+                        alert("✅ Donation record deleted successfully!");
+                      } catch(err) {
+                        alert("Failed to delete donation: " + err.message);
+                      } finally {
+                        setLoading(false);
+                      }
+                    }}
+                    style={{padding:"4px 8px",borderRadius:6,background:"#FEF2F2",border:"1px solid #FECACA",color:"#DC2626",cursor:"pointer",fontSize:".72rem",fontWeight:700}}
+                    title="Delete this donation record"
+                  >
+                    🗑️
+                  </button>
                 </div>
               </td>
             </tr>
@@ -10725,6 +10813,56 @@ function Volunteers({ mob, auth, C }) {
           ))}</tbody>
         </table>
       </div>
+
+      {/* ── Modal: Add Offline Donation Modal in Admin Panel ── */}
+      {showAddOfflineModal && (
+        <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.65)",zIndex:100001,display:"flex",alignItems:"center",justifyContent:"center",padding:16}}>
+          <div style={{background:"white",borderRadius:12,width:"100%",maxWidth:520,boxShadow:"0 24px 48px rgba(0,0,0,0.3)",overflow:"hidden"}}>
+            <div style={{padding:"14px 20px",background:"linear-gradient(135deg, #15803D, #166534)",color:"white",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+              <h3 style={{margin:0,fontSize:"1.05rem",fontWeight:800}}>➕ Record Offline Donation</h3>
+              <button onClick={()=>setShowAddOfflineModal(false)} style={{background:"none",border:"none",color:"white",fontSize:"1.2rem",cursor:"pointer"}}>✕</button>
+            </div>
+            <div style={{padding:20}}>
+              <OfflineDonationEntryCard
+                initialData={{
+                  initialDate: new Date().toISOString().split('T')[0],
+                  defaultPurpose: "Education Felicitation 2026",
+                  defaultVibhag: "10 MAHALAXMI",
+                  defaultEventCode: "EDU26"
+                }}
+                onSubmit={async (formData) => {
+                  try {
+                    const donRecord = {
+                      name: formData.name.trim(),
+                      amount: parseFloat(formData.amount) || 0,
+                      date: formData.date,
+                      program: formData.purpose || "Education Felicitation 2026",
+                      purpose: formData.purpose || "Education Felicitation 2026",
+                      vibhag: formData.vibhag || "General",
+                      eventCode: formData.eventCode || "EDU26",
+                      receiptNo: formData.receiptNo || `RCP-${Math.floor(1000 + Math.random() * 9000)}`,
+                      internalReceiptNo: formData.receiptNo || `RCP-${Math.floor(1000 + Math.random() * 9000)}`,
+                      paymentMode: "Offline",
+                      paymentMethod: "Offline / Cash / Cheque",
+                      status: "Verified",
+                      isOffline: true,
+                      id: `DON-OFF-${Math.floor(100000 + Math.random() * 900000)}`,
+                      recordedBy: auth?.email || "Admin",
+                      recordedAt: new Date().toISOString()
+                    };
+                    await fbSubmitDonation(donRecord, auth?.idToken);
+                    alert("✅ Offline donation recorded successfully!");
+                    setShowAddOfflineModal(false);
+                    loadDonations();
+                  } catch(err) {
+                    alert("Failed to save donation: " + err.message);
+                  }
+                }}
+              />
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -15617,7 +15755,7 @@ function ChatbotAccessManager({ C, setC, auth }) {
     };
 
     fetchAll();
-  }, [C.committeeMobiles, auth?.idToken]);
+  }, [auth?.idToken]);
 
   const saveMobilesToFirebase = async (updatedList) => {
     const newC = { ...C, committeeMobiles: updatedList };
@@ -15640,20 +15778,29 @@ function ChatbotAccessManager({ C, setC, auth }) {
     }
   };
 
-  const updateMemberScope = (targetMobile, newScope, newVibhag) => {
+  const updateMemberScope = (targetMobile, newScope, newVibhag, forceCollector = null) => {
     const cleanTarget = String(targetMobile).replace(/\D/g, "").slice(-10);
     const existingConfig = Array.isArray(C.committeeMobiles) ? [...C.committeeMobiles] : [];
     
     const userObj = allRegisteredUsers.find(u => u.mobile === cleanTarget);
     const foundIdx = existingConfig.findIndex(m => (typeof m === "string" ? m : m.mobile) === cleanTarget);
+    const existingItem = foundIdx !== -1 ? existingConfig[foundIdx] : (userObj || {});
 
-    let assignedVibhag = "Individual Only";
+    let assignedVibhag = existingItem.vibhag || "Individual Only";
+    let autoRole = existingItem.role || "Applicant";
+    let isCollector = forceCollector !== null ? forceCollector : Boolean(existingItem.isDonationCollector);
+
     if (newScope === "vibhag") {
       assignedVibhag = (newVibhag && newVibhag !== "All Vibhags" && newVibhag !== "Individual Only")
-        ? newVibhag
+        ? (Array.isArray(newVibhag) ? newVibhag.join(", ") : newVibhag)
         : (userObj?.vibhag && userObj.vibhag !== "All Vibhags" && userObj.vibhag !== "Individual Only" ? userObj.vibhag : "10 MAHALAXMI");
+      autoRole = `Vibhag Admin (${assignedVibhag})`;
     } else if (newScope === "all") {
       assignedVibhag = "All Vibhags";
+      autoRole = "Super Admin";
+    } else if (newScope === "individual") {
+      assignedVibhag = "Individual Only";
+      autoRole = isCollector ? "Donation Collector" : "Applicant";
     }
 
     const updatedEntry = {
@@ -15662,7 +15809,10 @@ function ChatbotAccessManager({ C, setC, auth }) {
       name: userObj?.name || "Member",
       scope: newScope,
       vibhag: assignedVibhag,
-      role: userObj?.role || (newScope === "all" ? "Super Admin" : newScope === "vibhag" ? "Vibhag Head" : "Applicant"),
+      vibhags: (newScope === "vibhag" && assignedVibhag) ? assignedVibhag.split(",").map(s=>s.trim()).filter(Boolean) : [],
+      role: autoRole,
+      isDonationCollector: isCollector,
+      roleType: newScope,
       addedAt: userObj?.addedAt || new Date().toLocaleDateString("en-IN")
     };
 
@@ -15674,6 +15824,31 @@ function ChatbotAccessManager({ C, setC, auth }) {
 
     setAllRegisteredUsers(prev => prev.map(u => u.mobile === cleanTarget ? updatedEntry : u));
     saveMobilesToFirebase(existingConfig);
+  };
+
+  const toggleMemberVibhag = (targetMobile, vibhagName) => {
+    const cleanTarget = String(targetMobile).replace(/\D/g, "").slice(-10);
+    const userObj = allRegisteredUsers.find(u => u.mobile === cleanTarget);
+    const currentRaw = userObj?.vibhag || "10 MAHALAXMI";
+    let currentVibhags = (currentRaw === "All Vibhags" || currentRaw === "Individual Only") 
+      ? [] 
+      : currentRaw.split(",").map(s => s.trim()).filter(Boolean);
+    
+    if (currentVibhags.includes(vibhagName)) {
+      currentVibhags = currentVibhags.filter(v => v !== vibhagName);
+      if (currentVibhags.length === 0) currentVibhags = ["10 MAHALAXMI"];
+    } else {
+      currentVibhags.push(vibhagName);
+    }
+
+    updateMemberScope(cleanTarget, "vibhag", currentVibhags.join(", "));
+  };
+
+  const toggleMemberCollector = (targetMobile) => {
+    const cleanTarget = String(targetMobile).replace(/\D/g, "").slice(-10);
+    const userObj = allRegisteredUsers.find(u => u.mobile === cleanTarget);
+    const currentCollector = Boolean(userObj?.isDonationCollector);
+    updateMemberScope(cleanTarget, userObj?.scope || "individual", userObj?.vibhag, !currentCollector);
   };
 
   const toggleKbEnabled = (kbId) => {
@@ -16454,6 +16629,7 @@ function ChatbotAccessManager({ C, setC, auth }) {
                 const name = form.cName.value.trim();
                 const mobile = form.cMobile.value.trim().replace(/\D/g, "").slice(-10);
                 const role = form.cRole.value.trim();
+                const isCollectorChecked = form.isCollector?.checked || accessScope === "all";
                 if (!mobile || mobile.length !== 10) return alert("Please enter a valid 10-digit mobile number.");
 
                 const newEntry = { 
@@ -16461,7 +16637,9 @@ function ChatbotAccessManager({ C, setC, auth }) {
                   mobile, 
                   scope: accessScope,
                   vibhag: accessScope === "vibhag" ? selectedVibhag : accessScope === "all" ? "All Vibhags" : "Individual Only",
-                  role: role || (accessScope === "all" ? "Super Admin" : accessScope === "vibhag" ? `${selectedVibhag} Head` : "Applicant"), 
+                  role: role || (accessScope === "all" ? "Super Admin" : accessScope === "vibhag" ? `${selectedVibhag} Head` : isCollectorChecked ? "Donation Collector" : "Applicant"),
+                  isDonationCollector: isCollectorChecked,
+                  roleType: accessScope,
                   addedAt: new Date().toLocaleDateString("en-IN") 
                 };
                 
@@ -16497,25 +16675,32 @@ function ChatbotAccessManager({ C, setC, auth }) {
                   </label>
                   <label style={{flex:1,textAlign:"center",padding:"7px 4px",borderRadius:6,fontSize:".73rem",fontWeight:accessScope==="vibhag"?800:600,background:accessScope==="vibhag"?"#D97706":"transparent",color:accessScope==="vibhag"?"white":"#78350F",cursor:"pointer",userSelect:"none"}}>
                     <input type="radio" name="newScope" value="vibhag" checked={accessScope==="vibhag"} onChange={()=>setAccessScope("vibhag")} style={{display:"none"}}/>
-                    📍 Vibhag
+                    📍 Vibhag Admin
                   </label>
                   <label style={{flex:1,textAlign:"center",padding:"7px 4px",borderRadius:6,fontSize:".73rem",fontWeight:accessScope==="all"?800:600,background:accessScope==="all"?"#2563EB":"transparent",color:accessScope==="all"?"white":"#1E40AF",cursor:"pointer",userSelect:"none"}}>
                     <input type="radio" name="newScope" value="all" checked={accessScope==="all"} onChange={()=>setAccessScope("all")} style={{display:"none"}}/>
-                    🌐 ALL
+                    🌐 Super Admin (ALL)
                   </label>
                 </div>
               </div>
 
+              <div>
+                <label style={{fontSize:".78rem",fontWeight:700,color:"#475569",display:"block",marginBottom:4}}>Additional Permission Role:</label>
+                <label style={{display:"flex",alignItems:"center",gap:6,padding:"8px 12px",borderRadius:6,border:"1px solid #86EFAC",background:"#F0FDF4",cursor:"pointer",fontSize:".8rem",fontWeight:700,color:"#166534"}}>
+                  <input type="checkbox" name="isCollector" defaultChecked={accessScope==="all"} style={{cursor:"pointer",width:16,height:16}} />
+                  <span>💰 Donation Collector Role</span>
+                </label>
+              </div>
+
               {accessScope === "vibhag" && (
                 <div>
-                  <label style={{fontSize:".78rem",fontWeight:700,color:"#475569",display:"block",marginBottom:4}}>Select Assigned Vibhag:</label>
-                  <select 
-                    value={selectedVibhag} 
-                    onChange={e=>setSelectedVibhag(e.target.value)}
-                    style={{width:"100%",padding:"10px 12px",borderRadius:6,border:"1px solid #CBD5E1",fontSize:".85rem",background:"white",boxSizing:"border-box",fontWeight:600}}
-                  >
-                    {VIBHAG_LIST.map(v => <option key={v} value={v}>{v}</option>)}
-                  </select>
+                  <label style={{fontSize:".78rem",fontWeight:700,color:"#475569",display:"block",marginBottom:4}}>Select Assigned Vibhag(s):</label>
+                  <MultiVibhagDropdown
+                    selectedVibhags={selectedVibhag ? selectedVibhag.split(",").map(s=>s.trim()) : ["10 MAHALAXMI"]}
+                    onChange={vArr => setSelectedVibhag(vArr.join(", "))}
+                    allVibhags={VIBHAG_LIST}
+                    width="100%"
+                  />
                 </div>
               )}
 
@@ -16596,101 +16781,119 @@ function ChatbotAccessManager({ C, setC, auth }) {
                           {/* Interactive Radio Scope Selector */}
                           <td style={{padding:"10px 16px"}}>
                             <div style={{display:"flex",flexDirection:"column",gap:6}}>
-                              <div style={{display:"inline-flex",background:"#F1F5F9",padding:3,borderRadius:8,border:"1px solid #CBD5E1",gap:2,width:"fit-content"}}>
-                                <label style={{
-                                  padding: "4px 8px",
-                                  borderRadius: 6,
-                                  fontSize: ".72rem",
-                                  fontWeight: currentScope === "individual" ? 800 : 600,
-                                  background: currentScope === "individual" ? "#475569" : "transparent",
-                                  color: currentScope === "individual" ? "white" : "#475569",
-                                  cursor: "pointer",
-                                  display: "flex",
-                                  alignItems: "center",
-                                  gap: 4,
-                                  userSelect: "none"
-                                }}>
-                                  <input 
-                                    type="radio" 
-                                    name={`scope_row_${idx}`} 
-                                    value="individual" 
-                                    checked={currentScope === "individual"} 
-                                    onChange={() => updateMemberScope(item.mobile, "individual", item.vibhag)}
-                                    style={{display:"none"}}
-                                  />
-                                  📱 Mobile/Txn
-                                </label>
+                              {/* Primary Access Scope Selector */}
+                                <div style={{display:"inline-flex",background:"#F1F5F9",padding:3,borderRadius:8,border:"1px solid #CBD5E1",gap:2,width:"fit-content"}}>
+                                  <label style={{
+                                    padding: "4px 7px",
+                                    borderRadius: 6,
+                                    fontSize: ".72rem",
+                                    fontWeight: currentScope === "individual" ? 800 : 600,
+                                    background: currentScope === "individual" ? "#475569" : "transparent",
+                                    color: currentScope === "individual" ? "white" : "#475569",
+                                    cursor: "pointer",
+                                    display: "flex",
+                                    alignItems: "center",
+                                    gap: 3,
+                                    userSelect: "none"
+                                  }}>
+                                    <input 
+                                      type="radio" 
+                                      name={`scope_row_${idx}`} 
+                                      value="individual" 
+                                      checked={currentScope === "individual"} 
+                                      onChange={() => updateMemberScope(item.mobile, "individual", item.vibhag)}
+                                      style={{display:"none"}}
+                                    />
+                                    📱 User (Txn)
+                                  </label>
 
-                                <label style={{
-                                  padding: "4px 8px",
-                                  borderRadius: 6,
-                                  fontSize: ".72rem",
-                                  fontWeight: currentScope === "vibhag" ? 800 : 600,
-                                  background: currentScope === "vibhag" ? "#D97706" : "transparent",
-                                  color: currentScope === "vibhag" ? "white" : "#78350F",
-                                  cursor: "pointer",
-                                  display: "flex",
-                                  alignItems: "center",
-                                  gap: 4,
-                                  userSelect: "none"
-                                }}>
-                                  <input 
-                                    type="radio" 
-                                    name={`scope_row_${idx}`} 
-                                    value="vibhag" 
-                                    checked={currentScope === "vibhag"} 
-                                    onChange={() => updateMemberScope(item.mobile, "vibhag", item.vibhag && item.vibhag !== "Individual Only" && item.vibhag !== "All Vibhags" ? item.vibhag : "10 MAHALAXMI")}
-                                    style={{display:"none"}}
-                                  />
-                                  📍 Vibhag
-                                </label>
+                                  <label style={{
+                                    padding: "4px 7px",
+                                    borderRadius: 6,
+                                    fontSize: ".72rem",
+                                    fontWeight: currentScope === "vibhag" ? 800 : 600,
+                                    background: currentScope === "vibhag" ? "#D97706" : "transparent",
+                                    color: currentScope === "vibhag" ? "white" : "#78350F",
+                                    cursor: "pointer",
+                                    display: "flex",
+                                    alignItems: "center",
+                                    gap: 3,
+                                    userSelect: "none"
+                                  }}>
+                                    <input 
+                                      type="radio" 
+                                      name={`scope_row_${idx}`} 
+                                      value="vibhag" 
+                                      checked={currentScope === "vibhag"} 
+                                      onChange={() => updateMemberScope(item.mobile, "vibhag", item.vibhag && item.vibhag !== "Individual Only" && item.vibhag !== "All Vibhags" ? item.vibhag : "10 MAHALAXMI")}
+                                      style={{display:"none"}}
+                                    />
+                                    📍 Vibhag Admin
+                                  </label>
 
-                                <label style={{
-                                  padding: "4px 8px",
-                                  borderRadius: 6,
-                                  fontSize: ".72rem",
-                                  fontWeight: currentScope === "all" ? 800 : 600,
-                                  background: currentScope === "all" ? "#2563EB" : "transparent",
-                                  color: currentScope === "all" ? "white" : "#1E40AF",
-                                  cursor: "pointer",
-                                  display: "flex",
-                                  alignItems: "center",
-                                  gap: 4,
-                                  userSelect: "none"
-                                }}>
-                                  <input 
-                                    type="radio" 
-                                    name={`scope_row_${idx}`} 
-                                    value="all" 
-                                    checked={currentScope === "all"} 
-                                    onChange={() => updateMemberScope(item.mobile, "all", "All Vibhags")}
-                                    style={{display:"none"}}
-                                  />
-                                  🌐 ALL
-                                </label>
-                              </div>
+                                  <label style={{
+                                    padding: "4px 7px",
+                                    borderRadius: 6,
+                                    fontSize: ".72rem",
+                                    fontWeight: currentScope === "all" ? 800 : 600,
+                                    background: currentScope === "all" ? "#2563EB" : "transparent",
+                                    color: currentScope === "all" ? "white" : "#1E40AF",
+                                    cursor: "pointer",
+                                    display: "flex",
+                                    alignItems: "center",
+                                    gap: 3,
+                                    userSelect: "none"
+                                  }}>
+                                    <input 
+                                      type="radio" 
+                                      name={`scope_row_${idx}`} 
+                                      value="all" 
+                                      checked={currentScope === "all"} 
+                                      onChange={() => updateMemberScope(item.mobile, "all", "All Vibhags")}
+                                      style={{display:"none"}}
+                                    />
+                                    🌐 Super Admin (ALL)
+                                  </label>
+                                </div>
 
-                              {/* Inline Vibhag Dropdown when Vibhag radio is chosen */}
-                              {currentScope === "vibhag" && (
+                                {/* Independent Multi-Role Toggle: Donation Collector */}
                                 <div style={{display:"flex",alignItems:"center",gap:6}}>
-                                  <span style={{fontSize:".7rem",color:"#B45309",fontWeight:700}}>Assigned:</span>
-                                  <select 
-                                    value={item.vibhag && item.vibhag !== "Individual Only" && item.vibhag !== "All Vibhags" ? item.vibhag : "10 MAHALAXMI"}
-                                    onChange={e => updateMemberScope(item.mobile, "vibhag", e.target.value)}
-                                    style={{
-                                      padding: "4px 8px",
-                                      borderRadius: 6,
-                                      border: "1px solid #FCD34D",
-                                      background: "#FFFBEB",
-                                      fontSize: ".74rem",
-                                      fontWeight: 700,
-                                      color: "#92400E",
-                                      outline: "none",
-                                      cursor: "pointer"
+                                  <button
+                                    type="button"
+                                    onClick={(e) => {
+                                      e.preventDefault();
+                                      toggleMemberCollector(item.mobile);
                                     }}
+                                    style={{
+                                      padding: "3px 9px",
+                                      borderRadius: 6,
+                                      fontSize: ".72rem",
+                                      fontWeight: 800,
+                                      cursor: "pointer",
+                                      border: item.isDonationCollector ? "1px solid #86EFAC" : "1px solid #CBD5E1",
+                                      background: item.isDonationCollector ? "#DCFCE7" : "#F8FAFC",
+                                      color: item.isDonationCollector ? "#15803D" : "#64748B",
+                                      display: "inline-flex",
+                                      alignItems: "center",
+                                      gap: 4,
+                                      transition: "all 0.15s ease"
+                                    }}
+                                    title="Click to toggle Donation Collector role ON or OFF"
                                   >
-                                    {VIBHAG_LIST.map(v => <option key={v} value={v}>{v}</option>)}
-                                  </select>
+                                    <span>{item.isDonationCollector ? "✅" : "⚪"}</span>
+                                    <span>💰 Donation Collector: {item.isDonationCollector ? "Active" : "Off"}</span>
+                                  </button>
+                                </div>
+
+                              {/* Multi-Vibhag Selection Dropdown when Vibhag radio is chosen */}
+                              {currentScope === "vibhag" && (
+                                <div style={{marginTop:3}}>
+                                  <MultiVibhagDropdown
+                                    selectedVibhags={item.vibhag}
+                                    onChange={(vArr) => updateMemberScope(item.mobile, "vibhag", vArr.join(", "))}
+                                    allVibhags={VIBHAG_LIST}
+                                    width={230}
+                                  />
                                 </div>
                               )}
                             </div>
@@ -16700,16 +16903,28 @@ function ChatbotAccessManager({ C, setC, auth }) {
                             {item.role || item.vibhag || "Registered User"}
                           </td>
                           <td style={{padding:"12px 16px",textAlign:"center"}}>
-                            <span style={{
-                              background: currentScope === "all" ? "#DBEAFE" : currentScope === "vibhag" ? "#FEF3C7" : "#F1F5F9",
-                              color: currentScope === "all" ? "#1E40AF" : currentScope === "vibhag" ? "#92400E" : "#475569",
-                              padding:"4px 10px",
-                              borderRadius:12,
-                              fontSize:".75rem",
-                              fontWeight:800
-                            }}>
-                              {currentScope === "all" ? "🌐 Super Admin" : currentScope === "vibhag" ? "📍 Vibhag Admin" : "📱 User (Own Txn)"}
-                            </span>
+                            <div style={{display:"flex",flexDirection:"column",gap:3,alignItems:"center"}}>
+                              {currentScope === "all" && (
+                                <span style={{background:"#DCFCE7",color:"#15803D",padding:"3px 8px",borderRadius:10,fontSize:".72rem",fontWeight:800}}>
+                                  🛡️ Super Admin
+                                </span>
+                              )}
+                              {currentScope === "vibhag" && (
+                                <span style={{background:"#EFF6FF",color:"#1D4ED8",padding:"3px 8px",borderRadius:10,fontSize:".72rem",fontWeight:800}}>
+                                  📍 Vibhag Admin
+                                </span>
+                              )}
+                              {currentScope === "individual" && !item.isDonationCollector && !String(item.role||'').toLowerCase().includes('donation') && !String(item.role||'').toLowerCase().includes('collector') && (
+                                <span style={{background:"#F1F5F9",color:"#64748B",padding:"3px 8px",borderRadius:10,fontSize:".72rem",fontWeight:600}}>
+                                  📱 User (Own Txn)
+                                </span>
+                              )}
+                              {item.isDonationCollector && (
+                                <span style={{background:"#FEF3C7",color:"#92400E",padding:"2px 7px",borderRadius:8,fontSize:".69rem",fontWeight:800,border:"1px solid #FCD34D"}}>
+                                  💰 Donation Collector
+                                </span>
+                              )}
+                            </div>
                           </td>
                           <td style={{padding:"12px 16px",textAlign:"right"}}>
                             {item.mobile === "9820785209" ? (
@@ -16914,7 +17129,7 @@ function ChatbotAccessManager({ C, setC, auth }) {
                       <td style={{padding:"12px 16px",fontWeight:700,color:"#0F172A"}}>
                         {item.title}
                         {item.adminOnly && (
-                          <div style={{fontSize:".68rem",color:"#B45309",fontWeight:800,marginTop:2}}>🔒 Admin Only</div>
+                          <div style={{fontSize:".68rem",color:"#B45309",fontWeight:800,marginTop:2}}>{lockLabel}</div>
                         )}
                       </td>
                       <td style={{padding:"12px 16px",color:"#475569",fontSize:".8rem",lineHeight:1.4,maxWidth:320,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>
@@ -17137,28 +17352,63 @@ function AdminAccess({ C, setC, master, auth }) {
 
         {/* Add Committee Member Box */}
         <div style={{background:"#F8FAFC",border:"1px solid #CBD5E1",borderRadius:12,padding:"16px 20px",marginBottom:20}}>
-          <div style={{fontSize:".85rem",fontWeight:700,color:"#1E293B",marginBottom:10}}>➕ Authorize New Committee Member:</div>
+          <div style={{fontSize:".85rem",fontWeight:700,color:"#1E293B",marginBottom:10}}>➕ Authorize New Member & Assign Role:</div>
           <form 
             onSubmit={e => {
               e.preventDefault();
               const form = e.target;
               const name = form.cName.value.trim();
               const mobile = form.cMobile.value.trim().replace(/\D/g, "").slice(-10);
-              const role = form.cRole.value.trim();
+              const roleType = form.cRoleType.value;
+              const designation = form.cRole.value.trim();
+              const vibhag = form.cVibhag.value;
+
               if (!mobile || mobile.length !== 10) return alert("Please enter a valid 10-digit mobile number.");
               
               const currentList = Array.isArray(C.committeeMobiles) ? C.committeeMobiles : [];
               const exists = currentList.find(m => (typeof m === "string" ? m : m.mobile) === mobile);
               if (exists) return alert("This mobile number is already authorized as a Committee Admin.");
 
-              const newEntry = { name: name || "Committee Member", mobile, role: role || "Committee Admin", addedAt: new Date().toLocaleDateString("en-IN") };
+              let finalRoleLabel = designation;
+              let isCollector = false;
+              let scope = "vibhag";
+
+              if (roleType === "super_admin") {
+                finalRoleLabel = `Super Admin (${designation || 'All Vibhags'})`;
+                scope = "all";
+                isCollector = true;
+              } else if (roleType === "donation_collector") {
+                finalRoleLabel = `Donation Collector (${designation || vibhag})`;
+                scope = "vibhag";
+                isCollector = true;
+              } else if (roleType === "vibhag_admin") {
+                finalRoleLabel = `Vibhag Admin (${vibhag})`;
+                scope = "vibhag";
+                isCollector = false;
+              } else {
+                finalRoleLabel = designation || "Registration Reviewer";
+                scope = "individual";
+                isCollector = false;
+              }
+
+              const newEntry = {
+                name: name || "Committee Member",
+                mobile,
+                role: finalRoleLabel,
+                roleType,
+                isDonationCollector: isCollector,
+                scope,
+                vibhag,
+                addedAt: new Date().toLocaleDateString("en-IN")
+              };
+
               const newC = { ...C, committeeMobiles: [...currentList, newEntry] };
               setC(newC);
               saveToFirebase(newC);
               form.reset();
-              alert(`Mobile number ${mobile} (${newEntry.name}) has been authorized for Chatbot Admin Access!`);
+              alert(`✅ ${name} has been authorized as ${finalRoleLabel}!`);
             }}
-            style={{display:"grid",gridTemplateColumns:"repeat(auto-fit, minmax(180px, 1fr)) 120px",gap:10,alignItems:"end"}}
+            style={{display:"grid",gridTemplateColumns:"repeat(auto-fit, minmax(170px, 1fr))",gap:10,alignItems:"end"}}
           >
             <div>
               <label style={{fontSize:".75rem",fontWeight:700,color:"#475569",display:"block",marginBottom:4}}>Member Name:</label>
@@ -17169,8 +17419,30 @@ function AdminAccess({ C, setC, master, auth }) {
               <input name="cMobile" type="tel" placeholder="e.g. 9967821964" required style={{width:"100%",padding:"8px 12px",borderRadius:6,border:"1px solid #CBD5E1",fontSize:".85rem",background:"white",boxSizing:"border-box"}}/>
             </div>
             <div>
-              <label style={{fontSize:".75rem",fontWeight:700,color:"#475569",display:"block",marginBottom:4}}>Vibhag / Designation:</label>
-              <input name="cRole" type="text" placeholder="e.g. Lower Parel / Trustee" style={{width:"100%",padding:"8px 12px",borderRadius:6,border:"1px solid #CBD5E1",fontSize:".85rem",background:"white",boxSizing:"border-box"}}/>
+              <label style={{fontSize:".75rem",fontWeight:700,color:"#475569",display:"block",marginBottom:4}}>Admin Role:</label>
+              <select name="cRoleType" required style={{width:"100%",padding:"8px 10px",borderRadius:6,border:"1px solid #CBD5E1",fontSize:".82rem",background:"white",boxSizing:"border-box",fontWeight:700,color:"#0F172A"}}>
+                <option value="donation_collector">💰 Donation Collector (Payment Collections)</option>
+                <option value="super_admin">🛡️ Super Admin (All Permissions + Donations)</option>
+                <option value="vibhag_admin">📍 Vibhag Admin (Registrations Only)</option>
+                <option value="registration_admin">👤 Registration Reviewer</option>
+              </select>
+            </div>
+            <div>
+              <label style={{fontSize:".75rem",fontWeight:700,color:"#475569",display:"block",marginBottom:4}}>Vibhag / Location:</label>
+              <select name="cVibhag" style={{width:"100%",padding:"8px 10px",borderRadius:6,border:"1px solid #CBD5E1",fontSize:".82rem",background:"white",boxSizing:"border-box"}}>
+                <option value="All Vibhags">All Vibhags</option>
+                <option value="10 MAHALAXMI">10 MAHALAXMI</option>
+                <option value="15 RAMDEV NAGAR">15 RAMDEV NAGAR</option>
+                <option value="2 WALPAKHADI">2 WALPAKHADI</option>
+                <option value="22 LOWER PAREL">22 LOWER PAREL</option>
+                <option value="30 PRATKISHA NAGAR">30 PRATKISHA NAGAR</option>
+                <option value="55 BHAYANDER">55 BHAYANDER</option>
+                <option value="65 KALWA">65 KALWA</option>
+              </select>
+            </div>
+            <div>
+              <label style={{fontSize:".75rem",fontWeight:700,color:"#475569",display:"block",marginBottom:4}}>Designation (Optional):</label>
+              <input name="cRole" type="text" placeholder="e.g. Cashier / Trustee" style={{width:"100%",padding:"8px 12px",borderRadius:6,border:"1px solid #CBD5E1",fontSize:".85rem",background:"white",boxSizing:"border-box"}}/>
             </div>
             <div>
               <button 
@@ -17178,14 +17450,14 @@ function AdminAccess({ C, setC, master, auth }) {
                 style={{
                   width:"100%",
                   padding:"9px 14px",
-                  background:"linear-gradient(135deg, #2563EB, #1D4ED8)",
+                  background:"linear-gradient(135deg, #15803D, #166534)",
                   color:"white",
                   border:"none",
                   borderRadius:6,
-                  fontWeight:700,
+                  fontWeight:800,
                   fontSize:".82rem",
                   cursor:"pointer",
-                  boxShadow:"0 2px 6px rgba(37,99,235,0.25)"
+                  boxShadow:"0 2px 6px rgba(21,128,61,0.25)"
                 }}
               >
                 + Add Member
@@ -17219,9 +17491,19 @@ function AdminAccess({ C, setC, master, auth }) {
                     <td style={{padding:"10px 14px",fontWeight:600,color:"#2563EB",fontFamily:"monospace"}}>+91 {item.mobile}</td>
                     <td style={{padding:"10px 14px",color:"#475569"}}>{item.role}</td>
                     <td style={{padding:"10px 14px",textAlign:"center"}}>
-                      <span style={{background:"#DCFCE7",color:"#15803D",padding:"3px 8px",borderRadius:10,fontSize:".72rem",fontWeight:800}}>
-                        🛡️ Chatbot Admin
-                      </span>
+                      {item.isDonationCollector || String(item.role || '').toLowerCase().includes('donation') || String(item.role || '').toLowerCase().includes('collector') ? (
+                        <span style={{background:"#FEF3C7",color:"#92400E",padding:"3px 8px",borderRadius:10,fontSize:".72rem",fontWeight:800,border:"1px solid #FCD34D",display:"inline-flex",alignItems:"center",gap:3}}>
+                          💰 Donation Collector
+                        </span>
+                      ) : String(item.role || '').toLowerCase().includes('super') ? (
+                        <span style={{background:"#DCFCE7",color:"#15803D",padding:"3px 8px",borderRadius:10,fontSize:".72rem",fontWeight:800,display:"inline-flex",alignItems:"center",gap:3}}>
+                          🛡️ Super Admin
+                        </span>
+                      ) : (
+                        <span style={{background:"#EFF6FF",color:"#1D4ED8",padding:"3px 8px",borderRadius:10,fontSize:".72rem",fontWeight:800,display:"inline-flex",alignItems:"center",gap:3}}>
+                          📍 Registration Admin
+                        </span>
+                      )}
                     </td>
                     <td style={{padding:"10px 14px",textAlign:"right"}}>
                       <button 
@@ -26582,6 +26864,268 @@ function VibhagSummaryCard({ summaryData }) {
   );
 }
 
+// ── Offline Donation Chatbot UI Components ──────────────────────────────────────
+function OfflineDonationEntryCard({ initialData, onSubmit }) {
+  const [name, setName] = useState("");
+  const [date, setDate] = useState(initialData?.initialDate || new Date().toISOString().split('T')[0]);
+  const [amount, setAmount] = useState("");
+  const [purpose, setPurpose] = useState(initialData?.defaultPurpose || "Education Felicitation 2026");
+  const [vibhag, setVibhag] = useState(initialData?.defaultVibhag || "10 MAHALAXMI");
+  const [eventCode, setEventCode] = useState(initialData?.defaultEventCode || "EDU26");
+  const [receiptNo, setReceiptNo] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+
+  const VIBHAG_OPTIONS_DON = [
+    "10 MAHALAXMI",
+    "15 RAMDEV NAGAR",
+    "2 WALPAKHADI",
+    "22 LOWER PAREL",
+    "30 PRATKISHA NAGAR",
+    "55 BHAYANDER",
+    "65 KALWA",
+    "Outside Mumbai / General"
+  ];
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    if (!name.trim()) return alert("Please enter Donor Name.");
+    if (!amount || parseFloat(amount) <= 0) return alert("Please enter a valid Donation Amount.");
+    if (!date) return alert("Please select Donation Date.");
+
+    setSubmitting(true);
+    await onSubmit({ name, date, amount, purpose, vibhag, eventCode, receiptNo });
+    setSubmitting(false);
+  };
+
+  return (
+    <form onSubmit={handleSubmit} style={{background:"#F0FDF4",border:"1.5px solid #86EFAC",borderRadius:12,padding:14,marginTop:8,display:"flex",flexDirection:"column",gap:10}}>
+      <div style={{fontSize:".82rem",fontWeight:800,color:"#166534",display:"flex",alignItems:"center",gap:6}}>
+        <span>📝</span> Enter Offline Donation Details
+      </div>
+
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
+        <div style={{gridColumn:"1/-1"}}>
+          <label style={{display:"block",fontSize:".7rem",fontWeight:700,color:"#374151",marginBottom:2}}>Name *</label>
+          <input type="text" placeholder="Donor Full Name" value={name} onChange={e=>setName(e.target.value)} required style={{width:"100%",padding:"7px 9px",borderRadius:6,border:"1px solid #CBD5E1",fontSize:".82rem",boxSizing:"border-box",background:"white"}} />
+        </div>
+
+        <div>
+          <label style={{display:"block",fontSize:".7rem",fontWeight:700,color:"#374151",marginBottom:2}}>Date *</label>
+          <input type="date" value={date} onChange={e=>setDate(e.target.value)} required style={{width:"100%",padding:"6px 8px",borderRadius:6,border:"1px solid #CBD5E1",fontSize:".8rem",boxSizing:"border-box",background:"white"}} />
+        </div>
+
+        <div>
+          <label style={{display:"block",fontSize:".7rem",fontWeight:700,color:"#374151",marginBottom:2}}>Amount (₹) *</label>
+          <input type="number" placeholder="e.g. 5000" min="1" value={amount} onChange={e=>setAmount(e.target.value)} required style={{width:"100%",padding:"7px 9px",borderRadius:6,border:"1px solid #CBD5E1",fontSize:".82rem",fontWeight:700,color:"#15803D",boxSizing:"border-box",background:"white"}} />
+        </div>
+
+        <div style={{gridColumn:"1/-1"}}>
+          <label style={{display:"block",fontSize:".7rem",fontWeight:700,color:"#374151",marginBottom:2}}>Purpose</label>
+          <input type="text" placeholder="e.g. Education Felicitation 2026, General Fund" value={purpose} onChange={e=>setPurpose(e.target.value)} style={{width:"100%",padding:"7px 9px",borderRadius:6,border:"1px solid #CBD5E1",fontSize:".82rem",boxSizing:"border-box",background:"white"}} />
+        </div>
+
+        <div>
+          <label style={{display:"block",fontSize:".7rem",fontWeight:700,color:"#374151",marginBottom:2}}>Vibhag Number</label>
+          <select value={vibhag} onChange={e=>setVibhag(e.target.value)} style={{width:"100%",padding:"6px 8px",borderRadius:6,border:"1px solid #CBD5E1",fontSize:".78rem",background:"white",boxSizing:"border-box"}}>
+            {VIBHAG_OPTIONS_DON.map(v => <option key={v} value={v}>{v}</option>)}
+          </select>
+        </div>
+
+        <div>
+          <label style={{display:"block",fontSize:".7rem",fontWeight:700,color:"#374151",marginBottom:2}}>Event Code</label>
+          <input type="text" placeholder="e.g. EDU26, GEN" value={eventCode} onChange={e=>setEventCode(e.target.value)} style={{width:"100%",padding:"6px 8px",borderRadius:6,border:"1px solid #CBD5E1",fontSize:".8rem",boxSizing:"border-box",background:"white"}} />
+        </div>
+
+        <div style={{gridColumn:"1/-1"}}>
+          <label style={{display:"block",fontSize:".7rem",fontWeight:700,color:"#374151",marginBottom:2}}>Internal Receipt Number</label>
+          <input type="text" placeholder="e.g. R-1024 / MMP-05" value={receiptNo} onChange={e=>setReceiptNo(e.target.value)} style={{width:"100%",padding:"7px 9px",borderRadius:6,border:"1px solid #CBD5E1",fontSize:".82rem",boxSizing:"border-box",background:"white"}} />
+        </div>
+      </div>
+
+      <button
+        type="submit"
+        disabled={submitting}
+        style={{
+          marginTop:4,
+          padding:"9px",
+          borderRadius:8,
+          border:"none",
+          background:"linear-gradient(135deg, #15803D, #166534)",
+          color:"white",
+          fontSize:".85rem",
+          fontWeight:800,
+          cursor:submitting?"wait":"pointer",
+          boxShadow:"0 2px 6px rgba(22,101,52,0.25)"
+        }}
+      >
+        {submitting ? "Saving to Database..." : "💾 Submit & Record Offline Donation"}
+      </button>
+    </form>
+  );
+}
+
+function OfflineDonationSuccessCard({ donation }) {
+  return (
+    <div style={{background:"white",border:"1.5px solid #22C55E",borderRadius:10,padding:12,marginTop:6,boxShadow:"0 2px 8px rgba(34,197,94,0.15)"}}>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8,borderBottom:"1px solid #F1F5F9",paddingBottom:6}}>
+        <div style={{fontSize:".85rem",fontWeight:800,color:"#15803D"}}>🎉 Offline Donation Recorded</div>
+        <span style={{background:"#DCFCE7",color:"#166534",fontSize:".68rem",padding:"2px 6px",borderRadius:6,fontWeight:800}}>Offline</span>
+      </div>
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:6,fontSize:".78rem"}}>
+        <div><span style={{color:"#64748B"}}>Donor:</span> <strong>{donation.name}</strong></div>
+        <div><span style={{color:"#64748B"}}>Amount:</span> <strong style={{color:"#15803D"}}>₹{Number(donation.amount).toLocaleString('en-IN')}</strong></div>
+        <div><span style={{color:"#64748B"}}>Date:</span> <strong>{donation.date}</strong></div>
+        <div><span style={{color:"#64748B"}}>Vibhag:</span> <strong>{donation.vibhag}</strong></div>
+        <div><span style={{color:"#64748B"}}>Receipt #:</span> <strong>{donation.receiptNo || donation.internalReceiptNo || donation.id}</strong></div>
+        <div><span style={{color:"#64748B"}}>Event Code:</span> <strong>{donation.eventCode || 'EDU26'}</strong></div>
+      </div>
+      <div style={{marginTop:8,padding:"4px 8px",background:"#F8FAFC",borderRadius:6,fontSize:".72rem",color:"#475569"}}>
+        <strong>Purpose:</strong> {donation.purpose || donation.program}
+      </div>
+    </div>
+  );
+}
+
+function DonationSummaryCard({ summaryData, onAction }) {
+  const { totalAmount, totalCount, onlineAmount, onlineCount, offlineAmount, offlineCount, vibhagBreakdown } = summaryData;
+
+  return (
+    <div style={{background:"white",border:"1.5px solid #CBD5E1",borderRadius:12,padding:14,marginTop:6,boxShadow:"0 4px 12px rgba(0,0,0,0.05)"}}>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12,borderBottom:"1px solid #F1F5F9",paddingBottom:8}}>
+        <div style={{fontSize:".9rem",fontWeight:800,color:"#0F172A"}}>📊 Total Collections: ₹{totalAmount.toLocaleString('en-IN')}</div>
+        <span style={{background:"#EFF6FF",color:"#1D4ED8",fontSize:".7rem",padding:"2px 8px",borderRadius:10,fontWeight:800}}>{totalCount} Donors</span>
+      </div>
+
+      {/* Online vs Offline split */}
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:12}}>
+        <div style={{background:"#F0FDF4",border:"1px solid #BBF7D0",borderRadius:8,padding:"8px 10px"}}>
+          <div style={{fontSize:".68rem",fontWeight:700,color:"#166534",textTransform:"uppercase"}}>🟢 Online Razorpay</div>
+          <div style={{fontSize:".95rem",fontWeight:800,color:"#15803D",marginTop:2}}>₹{onlineAmount.toLocaleString('en-IN')}</div>
+          <div style={{fontSize:".68rem",color:"#166534"}}>{onlineCount} transactions</div>
+        </div>
+        <div style={{background:"#FFF7ED",border:"1px solid #FED7AA",borderRadius:8,padding:"8px 10px"}}>
+          <div style={{fontSize:".68rem",fontWeight:700,color:"#9A3412",textTransform:"uppercase"}}>🟠 Offline / Manual</div>
+          <div style={{fontSize:".95rem",fontWeight:800,color:"#C2410C",marginTop:2}}>₹{offlineAmount.toLocaleString('en-IN')}</div>
+          <div style={{fontSize:".68rem",color:"#9A3412"}}>{offlineCount} entries</div>
+        </div>
+      </div>
+
+      {/* Vibhag Wise Breakdown Table */}
+      <div style={{fontSize:".75rem",fontWeight:800,color:"#334155",marginBottom:6,textTransform:"uppercase",letterSpacing:0.5}}>
+        📍 Vibhag-Wise Breakdown:
+      </div>
+      <div style={{maxHeight:200,overflowY:"auto",border:"1px solid #E2E8F0",borderRadius:8}}>
+        <table style={{width:"100%",borderCollapse:"collapse",fontSize:".76rem"}}>
+          <thead>
+            <tr style={{background:"#F8FAFC",borderBottom:"1px solid #E2E8F0",color:"#475569",textAlign:"left"}}>
+              <th style={{padding:"6px 8px"}}>Vibhag</th>
+              <th style={{padding:"6px 8px",textAlign:"center"}}>Donors</th>
+              <th style={{padding:"6px 8px",textAlign:"right"}}>Amount (₹)</th>
+            </tr>
+          </thead>
+          <tbody>
+            {vibhagBreakdown.map(([vName, vData], vi) => (
+              <tr key={vi} style={{borderBottom:"1px solid #F1F5F9",background:vi%2===0?"white":"#FAFAFA"}}>
+                <td style={{padding:"6px 8px",fontWeight:600,color:"#0F172A"}}>{vName}</td>
+                <td style={{padding:"6px 8px",textAlign:"center",color:"#64748B"}}>{vData.count}</td>
+                <td style={{padding:"6px 8px",textAlign:"right",fontWeight:700,color:"#15803D"}}>₹{vData.total.toLocaleString('en-IN')}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      <div style={{display:"flex",gap:6,marginTop:10}}>
+        <button
+          onClick={() => onAction && onAction("/donerlist")}
+          style={{flex:1,padding:"6px 10px",borderRadius:6,border:"1px solid #CBD5E1",background:"#F8FAFC",color:"#1E293B",fontSize:".74rem",fontWeight:700,cursor:"pointer"}}
+        >
+          📋 View Person-wise Donors
+        </button>
+        <button
+          onClick={() => onAction && onAction("/donation update")}
+          style={{flex:1,padding:"6px 10px",borderRadius:6,border:"none",background:"#15803D",color:"white",fontSize:".74rem",fontWeight:700,cursor:"pointer"}}
+        >
+          ➕ Add Offline
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function DonorListCard({ donorData, auth, onRefresh }) {
+  const [filterText, setFilterText] = useState("");
+  const donors = donorData.donors || [];
+
+  const filtered = donors.filter(d => {
+    if (!filterText) return true;
+    const q = filterText.toLowerCase();
+    return (
+      (d.name || "").toLowerCase().includes(q) ||
+      (d.vibhag || "").toLowerCase().includes(q) ||
+      (d.receiptNo || d.internalReceiptNo || "").toLowerCase().includes(q) ||
+      (d.purpose || d.program || "").toLowerCase().includes(q)
+    );
+  });
+
+  return (
+    <div style={{background:"white",border:"1.5px solid #CBD5E1",borderRadius:12,padding:12,marginTop:6}}>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
+        <div style={{fontSize:".82rem",fontWeight:800,color:"#0F172A"}}>📋 Donor Registry ({filtered.length} of {donors.length})</div>
+        <span style={{fontSize:".78rem",fontWeight:800,color:"#15803D"}}>₹{donorData.totalAmount.toLocaleString('en-IN')} Total</span>
+      </div>
+
+      <input
+        type="text"
+        placeholder="Filter by name, vibhag, receipt #..."
+        value={filterText}
+        onChange={e=>setFilterText(e.target.value)}
+        style={{width:"100%",padding:"6px 10px",borderRadius:6,border:"1px solid #CBD5E1",fontSize:".75rem",boxSizing:"border-box",marginBottom:8}}
+      />
+
+      <div style={{maxHeight:260,overflowY:"auto",display:"flex",flexDirection:"column",gap:6}}>
+        {filtered.map((d, di) => {
+          const isOff = d.isOffline || d.paymentMode === "Offline" || String(d.paymentMethod || "").toLowerCase().includes("offline");
+          return (
+            <div key={di} style={{background:"#F8FAFC",border:"1px solid #E2E8F0",borderRadius:8,padding:"8px 10px",fontSize:".76rem"}}>
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:2}}>
+                <div style={{fontWeight:800,color:"#0F172A"}}>{di + 1}. {d.name}</div>
+                <div style={{display:"flex",alignItems:"center",gap:6}}>
+                  <span style={{fontWeight:800,color:"#15803D",fontSize:".82rem"}}>₹{Number(d.amount).toLocaleString('en-IN')}</span>
+                  <button
+                    onClick={async (e) => {
+                      e.stopPropagation();
+                      if (!window.confirm(`Delete donation entry for "${d.name}" (₹${d.amount})?`)) return;
+                      try {
+                        const targetId = d._docId || d.id;
+                        await fbDeleteDonation(targetId, auth?.idToken);
+                        alert("✅ Donation deleted.");
+                        if (onRefresh) onRefresh();
+                      } catch(err) {
+                        alert("Failed to delete: " + err.message);
+                      }
+                    }}
+                    style={{background:"#FEF2F2",border:"1px solid #FECACA",color:"#DC2626",fontSize:".68rem",padding:"2px 5px",borderRadius:4,cursor:"pointer",fontWeight:700}}
+                    title="Delete donation"
+                  >
+                    🗑️
+                  </button>
+                </div>
+              </div>
+              <div style={{display:"flex",gap:8,color:"#64748B",fontSize:".7rem",flexWrap:"wrap"}}>
+                <span>📅 {d.date}</span>
+                <span>📍 {d.vibhag || d.program || "General"}</span>
+                <span style={{background:isOff?"#FFEDD5":"#DCFCE7",color:isOff?"#C2410C":"#15803D",padding:"0 4px",borderRadius:4,fontWeight:700}}>{isOff ? "Offline" : "Online"}</span>
+                <span>Receipt: <strong>{d.receiptNo || d.internalReceiptNo || d.id}</strong></span>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 // ── Community AI & Registration Chatbot Widget ──────────────────────────────────────────
 function CommunityChatbot({ C, auth, onShowLogin }) {
   if (C.chatbotEnabled === false) {
@@ -26670,6 +27214,16 @@ function CommunityChatbot({ C, auth, onShowLogin }) {
   }
 
   const isAnyAdmin = userSessionScope === "all" || userSessionScope === "vibhag";
+  const isDonationCollector = Boolean(
+    auth?.idToken ||
+    matchedCommitteeMember?.isDonationCollector === true ||
+    matchedCommitteeMember?.roleType === "donation_collector" ||
+    (userSessionScope === "all" && matchedCommitteeMember?.isDonationCollector !== false) ||
+    String(matchedCommitteeMember?.role || '').toLowerCase().includes("donation") ||
+    String(matchedCommitteeMember?.role || '').toLowerCase().includes("collector") ||
+    String(verifiedMember?.role || '').toLowerCase().includes("donation") ||
+    String(verifiedMember?.role || '').toLowerCase().includes("collector")
+  );
 
   const chatbotTitle = C.chatbotTitle || (C.trust?.name ? `${C.trust.name} Assistant` : "Mumbai Meghwal Panchayat Assistant");
   const pillLabel = C.chatbotPillLabel || "Trust Assistant";
@@ -26823,6 +27377,42 @@ function CommunityChatbot({ C, auth, onShowLogin }) {
       desc: "Look up your application status by logged-in mobile or Transaction ID",
       action: "/check",
       adminOnly: false
+    },
+    {
+      cmd: "/donation update",
+      icon: "✍️",
+      label: "Record Offline Donation",
+      desc: "Add offline donation (Restricted to Donation Collectors)",
+      action: "/donation update",
+      adminOnly: true,
+      donationCollectorOnly: true
+    },
+    {
+      cmd: "/donner",
+      icon: "✍️",
+      label: "Record Offline Donation (/donner)",
+      desc: "Offline donation entry form (Donation Collectors only)",
+      action: "/donation update",
+      adminOnly: true,
+      donationCollectorOnly: true
+    },
+    {
+      cmd: "/donation sumary",
+      icon: "💰",
+      label: "Donation Summary (Vibhag-wise)",
+      desc: "Total collections & Vibhag metrics (Donation Collectors only)",
+      action: "/donation sumary",
+      adminOnly: true,
+      donationCollectorOnly: true
+    },
+    {
+      cmd: "/donerlist",
+      icon: "📋",
+      label: "Donor List (Person-wise)",
+      desc: "Complete registry of donors (Donation Collectors only)",
+      action: "/donerlist",
+      adminOnly: true,
+      donationCollectorOnly: true
     },
     {
       cmd: "/all",
@@ -27034,7 +27624,145 @@ function CommunityChatbot({ C, auth, onShowLogin }) {
       return false;
     });
 
-    if (qLower === "/check" || qLower === "check" || qLower === "my status" || qLower === "check status" || qLower === "check my application status" || qLower.includes("application status") || qLower.includes("check application")) {
+    // ── Command 1: /donation update (Offline Donation Entry Flow) ──
+    if (qLower === "/donation update" || qLower === "donation update" || qLower === "/donner" || qLower === "donner" || qLower === "/donor" || qLower === "donor" || qLower === "/offline donation" || qLower === "offline donation" || qLower.startsWith("/donation update") || qLower.startsWith("/donner")) {
+      if (!isDonationCollector) {
+        botReply = `🔒 **Access Restricted: Donation Collector Role Required**\n\nRecording offline donations is strictly restricted to authorized **Donation Collectors** and **Super Admins**.\n\n• ℹ️ **Your Access**: Regular registration/vibhag committee members are not authorized for payment collections.\n• 👉 Please connect with Super Admin (+91 9820785209) to assign you the **Donation Collector** role.`;
+      } else {
+        // Check if user provided parameters inline: e.g. Name: John, Amount: 5000...
+        const parseInline = (text) => {
+          const res = {};
+          const nameM = text.match(/name[:\s=]+([^,\n]+)/i);
+          const amtM = text.match(/amount[:\s=]+([^,\n]+)/i);
+          const dateM = text.match(/date[:\s=]+([^,\n]+)/i);
+          const purpM = text.match(/purpose[:\s=]+([^,\n]+)/i);
+          const vibM = text.match(/vibhag(?:\s*number)?[:\s=]+([^,\n]+)/i);
+          const evM = text.match(/event(?:\s*code)?[:\s=]+([^,\n]+)/i);
+          const rcpM = text.match(/(?:internal\s*)?receipt(?:\s*number)?[:\s=]+([^,\n]+)/i);
+          if (nameM) res.name = nameM[1].trim();
+          if (amtM) res.amount = amtM[1].trim().replace(/[^0-9.]/g, '');
+          if (dateM) res.date = dateM[1].trim();
+          if (purpM) res.purpose = purpM[1].trim();
+          if (vibM) res.vibhag = vibM[1].trim();
+          if (evM) res.eventCode = evM[1].trim();
+          if (rcpM) res.receiptNo = rcpM[1].trim();
+          return res;
+        };
+
+        const inlineData = parseInline(query);
+        if (inlineData.name && inlineData.amount) {
+          // Direct inline submission!
+          try {
+            const donDate = inlineData.date || new Date().toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
+            const donRecord = {
+              name: inlineData.name,
+              amount: parseFloat(inlineData.amount) || 0,
+              date: donDate,
+              program: inlineData.purpose || "Education Felicitation 2026",
+              purpose: inlineData.purpose || "Education Felicitation 2026",
+              vibhag: inlineData.vibhag || (sessionVibhag !== "All Vibhags" ? sessionVibhag : "General"),
+              eventCode: inlineData.eventCode || "EDU26",
+              receiptNo: inlineData.receiptNo || `RCP-${Math.floor(1000 + Math.random() * 9000)}`,
+              internalReceiptNo: inlineData.receiptNo || `RCP-${Math.floor(1000 + Math.random() * 9000)}`,
+              paymentMode: "Offline",
+              paymentMethod: "Offline / Cash / Cheque",
+              status: "Verified",
+              isOffline: true,
+              id: `DON-OFF-${Math.floor(100000 + Math.random() * 900000)}`,
+              recordedBy: activeUser?.email || activeUser?.name || "Admin",
+              recordedAt: new Date().toISOString()
+            };
+
+            await fbSubmitDonation(donRecord, auth?.idToken);
+            botType = "offline_donation_success";
+            botReply = `✅ **Offline Donation Successfully Saved to Database!**`;
+            cardData = { donation: donRecord };
+          } catch (err) {
+            botReply = `❌ **Failed to save offline donation**: ${err.message}`;
+          }
+        } else {
+          // Render interactive form card
+          botType = "offline_donation_form";
+          botReply = `✍️ **Offline Donation Entry Form**\n\nPlease enter the offline donation details below. All fields will be stored directly into the official Donations database:`;
+          cardData = {
+            initialDate: new Date().toISOString().split('T')[0],
+            defaultVibhag: sessionVibhag && sessionVibhag !== "All Vibhags" ? sessionVibhag : "10 MAHALAXMI",
+            defaultPurpose: "Education Felicitation 2026",
+            defaultEventCode: "EDU26"
+          };
+        }
+      }
+    } else if (qLower === "/donation sumary" || qLower === "/donation summary" || qLower === "donation sumary" || qLower === "donation summary" || qLower === "/donationsummary" || qLower === "/donationsumary") {
+      if (!isDonationCollector) {
+        botReply = `🔒 **Access Restricted: Donation Collector Role Required**\n\nDonation summaries and financial metrics are restricted to authorized **Donation Collectors** and **Super Admins**.\n\n• 👉 If you are an assigned Donation Collector, please enter your **10-digit Authorized Mobile Number** to unlock.`;
+      } else {
+        try {
+          let token = auth?.idToken || localStorage.getItem("trustPublicAuthToken") || localStorage.getItem("globalAuthToken") || "";
+          const allDonations = await fbFetchDonations(token).catch(() => []);
+          
+          let totalAmt = 0;
+          let onlineAmt = 0, offlineAmt = 0;
+          let onlineCount = 0, offlineCount = 0;
+          const vibhagMap = {};
+
+          allDonations.forEach(d => {
+            const amt = parseFloat(d.amount) || 0;
+            totalAmt += amt;
+            const isOff = d.isOffline || d.paymentMode === "Offline" || d.razorpay_payment_id === undefined || String(d.paymentMethod || "").toLowerCase().includes("offline");
+            if (isOff) {
+              offlineAmt += amt;
+              offlineCount++;
+            } else {
+              onlineAmt += amt;
+              onlineCount++;
+            }
+
+            let v = String(d.vibhag || d.vibhagNumber || d.program || "General / Main").trim();
+            if (!vibhagMap[v]) vibhagMap[v] = { total: 0, count: 0, offlineAmt: 0, onlineAmt: 0 };
+            vibhagMap[v].total += amt;
+            vibhagMap[v].count += 1;
+            if (isOff) vibhagMap[v].offlineAmt += amt;
+            else vibhagMap[v].onlineAmt += amt;
+          });
+
+          botType = "donation_summary_card";
+          botReply = `💰 **Live Donation Summary (Vibhag-wise & Mode-wise)**:`;
+          cardData = {
+            totalAmount: totalAmt,
+            totalCount: allDonations.length,
+            onlineAmount: onlineAmt,
+            onlineCount: onlineCount,
+            offlineAmount: offlineAmt,
+            offlineCount: offlineCount,
+            vibhagBreakdown: Object.entries(vibhagMap).sort((a, b) => b[1].total - a[1].total)
+          };
+        } catch (err) {
+          botReply = `❌ **Failed to fetch donation summary**: ${err.message}`;
+        }
+      }
+    } else if (qLower === "/donerlist" || qLower === "/donorlist" || qLower === "/donnerlist" || qLower === "donerlist" || qLower === "donorlist" || qLower === "donnerlist" || qLower === "/donor list" || qLower === "donor list" || qLower === "/donner list") {
+      if (!isDonationCollector) {
+        botReply = `🔒 **Access Restricted: Donation Collector Role Required**\n\nDonor registries and person-wise collections are restricted to authorized **Donation Collectors** and **Super Admins**.\n\n• 👉 If you are an assigned Donation Collector, please enter your **10-digit Authorized Mobile Number** to unlock.`;
+      } else {
+        try {
+          let token = auth?.idToken || localStorage.getItem("trustPublicAuthToken") || localStorage.getItem("globalAuthToken") || "";
+          const allDonations = await fbFetchDonations(token).catch(() => []);
+
+          if (allDonations.length === 0) {
+            botReply = `📋 **No donation records found in the database.**`;
+          } else {
+            botType = "donor_list_card";
+            botReply = `📋 **Person-wise Donor Registry (${allDonations.length} Donors Recorded)**:`;
+            cardData = {
+              donors: allDonations,
+              totalAmount: allDonations.reduce((sum, d) => sum + (parseFloat(d.amount) || 0), 0)
+            };
+          }
+        } catch (err) {
+          botReply = `❌ **Failed to fetch donor list**: ${err.message}`;
+        }
+      }
+    } else     if (qLower === "/check" || qLower === "check" || qLower === "my status" || qLower === "check status" || qLower === "check my application status" || qLower.includes("application status") || qLower.includes("check application")) {
       // Look up logged in mobile across all sources
       const currentActiveUser = getActiveUser();
       const userPhone = currentActiveUser.mobile;
@@ -27141,9 +27869,10 @@ function CommunityChatbot({ C, auth, onShowLogin }) {
         });
 
         if (userSessionScope === "vibhag" && sessionVibhag) {
+          const allowedVibs = sessionVibhag.split(",").map(s => s.trim().toLowerCase()).filter(Boolean);
           pendingList = pendingList.filter(r => {
             const v = String(r["Vibhag"] || r["vibhag"] || "").toLowerCase();
-            return v.includes(sessionVibhag.toLowerCase()) || sessionVibhag.toLowerCase().includes(v);
+            return allowedVibs.some(av => v.includes(av) || av.includes(v));
           });
         }
 
@@ -27161,9 +27890,10 @@ function CommunityChatbot({ C, auth, onShowLogin }) {
       } else {
         let approvedList = currentRegs.filter(r => String(r.Status || r.status || "").trim() === "Approved");
         if (userSessionScope === "vibhag" && sessionVibhag) {
+          const allowedVibs = sessionVibhag.split(",").map(s => s.trim().toLowerCase()).filter(Boolean);
           approvedList = approvedList.filter(r => {
             const v = String(r["Vibhag"] || r["vibhag"] || "").toLowerCase();
-            return v.includes(sessionVibhag.toLowerCase()) || sessionVibhag.toLowerCase().includes(v);
+            return allowedVibs.some(av => v.includes(av) || av.includes(v));
           });
         }
 
@@ -27228,41 +27958,62 @@ function CommunityChatbot({ C, auth, onShowLogin }) {
           return qLower.includes(vName) || (vWord && vWord.length >= 4 && qLower.includes(vWord));
         });
 
-        // If user is a Vibhag Admin
+        // If user is a Vibhag Admin (with single or multiple assigned Vibhags)
         if (userSessionScope === "vibhag" && sessionVibhag && sessionVibhag !== "All Vibhags") {
-          const cleanSession = sessionVibhag.toLowerCase().trim();
+          const rawVibhagString = String(sessionVibhag);
+          const allowedVibhags = rawVibhagString.split(",").map(s => s.trim().toLowerCase()).filter(Boolean);
           const cleanExplicit = explicitlyMentionedVibhag ? explicitlyMentionedVibhag.toLowerCase().trim() : null;
 
-          if (cleanExplicit && !cleanExplicit.includes(cleanSession) && !cleanSession.includes(cleanExplicit)) {
+          const isRequestedAllowed = !cleanExplicit || allowedVibhags.some(av => cleanExplicit.includes(av) || av.includes(cleanExplicit));
+
+          if (cleanExplicit && !isRequestedAllowed) {
             botType = "text";
-            const customTpl = C.chatbotRestrictedVibhagMsg || `🔒 **Access Restricted to {ASSIGNED_VIBHAG}**\n\nYou have administrative access assigned specifically for **{ASSIGNED_VIBHAG}**.\n\n• 🚫 You do not have permission to view registrations or analytics for **{REQUESTED_VIBHAG}**.\n• ℹ️ **Check your access level of Vibhag**: Please connect with Admin ({ADMIN_PHONE}) if you require access to this Vibhag.\n• 👉 Type **`/vibhag`** or **`/all`** to view live analytics for **{ASSIGNED_VIBHAG}**.`;
+            const customTpl = C.chatbotRestrictedVibhagMsg || `🔒 **Access Restricted to {ASSIGNED_VIBHAG}**\n\nYou have administrative access assigned for **{ASSIGNED_VIBHAG}**.\n\n• 🚫 You do not have permission to view registrations or analytics for **{REQUESTED_VIBHAG}**.\n• ℹ️ **Check your access level**: Please connect with Admin ({ADMIN_PHONE}) if you require access to this Vibhag.\n• 👉 Type **`/vibhag`** to view live analytics for **{ASSIGNED_VIBHAG}**.`;
             botReply = customTpl
-              .replace(/\{ASSIGNED_VIBHAG\}/g, sessionVibhag || "Your Assigned Vibhag")
+              .replace(/\{ASSIGNED_VIBHAG\}/g, sessionVibhag || "Your Assigned Vibhags")
               .replace(/\{REQUESTED_VIBHAG\}/g, explicitlyMentionedVibhag || "this Vibhag")
               .replace(/\{ADMIN_PHONE\}/g, "+91 9820785209");
           } else {
+            // Target specific mentioned vibhag or all assigned vibhags
+            const targetAllowedList = cleanExplicit 
+              ? allowedVibhags.filter(av => cleanExplicit.includes(av) || av.includes(cleanExplicit))
+              : allowedVibhags;
+
             const vibhagRegs = currentRegs.filter(r => {
               const v = String(r["Vibhag"] || r["vibhag"] || r["MMP Vibhag"] || "").toLowerCase().trim();
-              return v.includes(cleanSession) || cleanSession.includes(v);
+              return targetAllowedList.some(av => v.includes(av) || av.includes(v));
             });
 
             let approved = 0, pending = 0, rejected = 0;
+            const vibhagBreakMap = {};
+
             vibhagRegs.forEach(r => {
               const s = String(r.Status || r.status || "Pending").trim();
               if (s === "Approved") approved++;
               else if (s === "Disapproved" || s === "Rejected") rejected++;
               else pending++;
+
+              const rV = String(r["Vibhag"] || r["vibhag"] || "Assigned").trim();
+              if (!vibhagBreakMap[rV]) vibhagBreakMap[rV] = { total: 0, approved: 0, pending: 0, rejected: 0 };
+              vibhagBreakMap[rV].total++;
+              if (s === "Approved") vibhagBreakMap[rV].approved++;
+              else if (s === "Disapproved" || s === "Rejected") vibhagBreakMap[rV].rejected++;
+              else vibhagBreakMap[rV].pending++;
             });
 
+            const breakList = Object.entries(vibhagBreakMap).sort((a, b) => a[0].localeCompare(b[0]));
+
             botType = "summary_card";
-            botReply = `📍 **Live Analytics for ${sessionVibhag} (Your Assigned Vibhag)**: `;
+            botReply = cleanExplicit
+              ? `📍 **Live Analytics for ${explicitlyMentionedVibhag}**: `
+              : `📍 **Live Analytics for Your Assigned Vibhags (${sessionVibhag})**: `;
             cardData = {
               total: vibhagRegs.length,
               approved,
               pending,
               rejected,
-              scopeTitle: `${sessionVibhag} Summary`,
-              vibhagList: [[`${sessionVibhag}`, { total: vibhagRegs.length, approved, pending, rejected }]],
+              scopeTitle: cleanExplicit ? `${explicitlyMentionedVibhag} Summary` : `Assigned Vibhags Summary (${allowedVibhags.length} Vibhags)`,
+              vibhagList: breakList.length > 0 ? breakList : [[sessionVibhag, { total: 0, approved: 0, pending: 0, rejected: 0 }]],
               apps: vibhagRegs
             };
           }
@@ -27616,6 +28367,67 @@ function CommunityChatbot({ C, auth, onShowLogin }) {
                         {m.type === "summary_card" && m.cardData && (
                           <VibhagSummaryCard summaryData={m.cardData} />
                         )}
+
+                        {/* If Message has Offline Donation Entry Form */}
+                        {m.type === "offline_donation_form" && m.cardData && (
+                          <OfflineDonationEntryCard
+                            initialData={m.cardData}
+                            onSubmit={async (formData) => {
+                              setLoading(true);
+                              try {
+                                const donRecord = {
+                                  name: formData.name.trim(),
+                                  amount: parseFloat(formData.amount) || 0,
+                                  date: formData.date || new Date().toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }),
+                                  program: formData.purpose || "Education Felicitation 2026",
+                                  purpose: formData.purpose || "Education Felicitation 2026",
+                                  vibhag: formData.vibhag || "General",
+                                  eventCode: formData.eventCode || "EDU26",
+                                  receiptNo: formData.receiptNo || `RCP-${Math.floor(1000 + Math.random() * 9000)}`,
+                                  internalReceiptNo: formData.receiptNo || `RCP-${Math.floor(1000 + Math.random() * 9000)}`,
+                                  paymentMode: "Offline",
+                                  paymentMethod: "Offline / Cash / Cheque",
+                                  status: "Verified",
+                                  isOffline: true,
+                                  id: `DON-OFF-${Math.floor(100000 + Math.random() * 900000)}`,
+                                  recordedBy: activeUser?.email || activeUser?.name || "Admin",
+                                  recordedAt: new Date().toISOString()
+                                };
+
+                                await fbSubmitDonation(donRecord, auth?.idToken);
+                                setMessages(prev => [
+                                  ...prev,
+                                  {
+                                    id: "m_don_saved_" + Date.now(),
+                                    sender: "bot",
+                                    type: "offline_donation_success",
+                                    text: "✅ **Offline Donation Successfully Saved to Database!**",
+                                    cardData: { donation: donRecord }
+                                  }
+                                ]);
+                              } catch (err) {
+                                alert("Failed to save offline donation: " + err.message);
+                              } finally {
+                                setLoading(false);
+                              }
+                            }}
+                          />
+                        )}
+
+                        {/* If Message has Offline Donation Success Confirmation */}
+                        {m.type === "offline_donation_success" && m.cardData?.donation && (
+                          <OfflineDonationSuccessCard donation={m.cardData.donation} />
+                        )}
+
+                        {/* If Message has Donation Summary Card */}
+                        {m.type === "donation_summary_card" && m.cardData && (
+                          <DonationSummaryCard summaryData={m.cardData} onAction={handleSendMessage} />
+                        )}
+
+                        {/* If Message has Donor List Card */}
+                        {m.type === "donor_list_card" && m.cardData && (
+                          <DonorListCard donorData={m.cardData} auth={auth} onRefresh={()=>handleSendMessage("/donerlist")} />
+                        )}
                       </div>
                     </div>
                   );
@@ -27698,7 +28510,8 @@ function CommunityChatbot({ C, auth, onShowLogin }) {
                         }
 
                         return displayedCommands.map(sc => {
-                          const isLockedForUser = sc.adminOnly && !isAnyAdmin;
+                          const isLockedForUser = (sc.donationCollectorOnly && !isDonationCollector) || (sc.adminOnly && !isAnyAdmin);
+  const lockLabel = sc.donationCollectorOnly ? "🔒 Donation Collector Only" : "🔒 Admin Only";
 
                           return (
                             <div
