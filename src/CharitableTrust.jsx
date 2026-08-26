@@ -1,7 +1,7 @@
 import { QRCodeCanvas } from "qrcode.react";
-import { useState, useEffect, useRef, createContext, useContext } from "react";
+import { useState, useEffect, useRef, createContext, useContext, useMemo } from "react";
 
-const SearchableDropdown = ({ value, onChange, options, placeholder, required }) => {
+const SearchableDropdown = ({ value, onChange, options, placeholder, required, isError }) => {
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState(value || "");
   const wrapperRef = useRef(null);
@@ -35,7 +35,12 @@ const SearchableDropdown = ({ value, onChange, options, placeholder, required })
         onFocus={() => setOpen(true)}
         placeholder={placeholder || "-- Select --"}
         className="modern-input" 
-        style={{paddingRight: 32}}
+        style={{
+          paddingRight: 32,
+          border: isError ? "2px solid #EF4444" : undefined,
+          background: isError ? "#FFF5F5" : undefined,
+          boxShadow: isError ? "0 0 0 3px rgba(239, 68, 68, 0.2)" : undefined
+        }}
       />
       <div 
         onClick={() => setOpen(!open)}
@@ -71,7 +76,7 @@ import * as XLSX from "xlsx";
 import ReactQuill from "react-quill-new";
 import "react-quill-new/dist/quill.snow.css";
 import { initializeApp, getApp, getApps } from "firebase/app";
-import { getAuth, RecaptchaVerifier, signInWithPhoneNumber, sendPasswordResetEmail } from "firebase/auth";
+import { getAuth, RecaptchaVerifier, signInWithPhoneNumber, sendPasswordResetEmail, setPersistence, browserLocalPersistence, onAuthStateChanged } from "firebase/auth";
 import { marked } from "marked";
 import DOMPurify from "dompurify";
 
@@ -106,28 +111,182 @@ try {
       fbApp = getApp();
     }
     fbAuth = getAuth(fbApp);
+    setPersistence(fbAuth, browserLocalPersistence).catch(() => null);
   }
 } catch (e) {
   console.warn("Firebase could not be initialized:", e);
   try {
     fbApp = getApp();
     fbAuth = getAuth(fbApp);
+    setPersistence(fbAuth, browserLocalPersistence).catch(() => null);
   } catch (err) {}
 }
 
 // ── FIREBASE HELPERS ──────────────────────────────────────────────────────────
 // Firestore stores everything as one JSON string field for simplicity
+const hydrateConfigAssets = async (config) => {
+  if (!config || !Array.isArray(config.events)) return config;
+  for (const ev of config.events) {
+    if (ev.certBgUrl && ev.certBgUrl.startsWith('asset://')) {
+      const assetId = ev.certBgUrl.replace('asset://', '');
+      const realData = await fbGetAssetDoc(assetId);
+      if (realData) ev.certBgUrl = realData;
+    }
+    if (ev.inviteBgUrl && ev.inviteBgUrl.startsWith('asset://')) {
+      const assetId = ev.inviteBgUrl.replace('asset://', '');
+      const realData = await fbGetAssetDoc(assetId);
+      if (realData) ev.inviteBgUrl = realData;
+    }
+    if (Array.isArray(ev.pdfTemplates)) {
+      for (const tpl of ev.pdfTemplates) {
+        if (tpl.bgUrl && tpl.bgUrl.startsWith('asset://')) {
+          const assetId = tpl.bgUrl.replace('asset://', '');
+          const realData = await fbGetAssetDoc(assetId);
+          if (realData) tpl.bgUrl = realData;
+        }
+      }
+    }
+  }
+  return config;
+};
+
 const fbLoad = async () => {
   try {
     const res = await fetch(`${FS_URL()}?t=${Date.now()}`, { cache: "no-store" });
     if (!res.ok) return null;
     const doc = await res.json();
     const raw = doc?.fields?.data?.stringValue;
-    return raw ? JSON.parse(raw) : null;
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    return await hydrateConfigAssets(parsed);
   } catch { return null; }
 };
 
+const compressBase64Image = (dataUrl, maxDimension = 900, quality = 0.60) => {
+  return new Promise((resolve) => {
+    if (!dataUrl || typeof dataUrl !== 'string' || !dataUrl.startsWith('data:image')) {
+      return resolve(dataUrl);
+    }
+    try {
+      const img = new Image();
+      img.crossOrigin = "Anonymous";
+      img.onload = () => {
+        const canvas = document.createElement("canvas");
+        let w = img.width;
+        let h = img.height;
+        if (w > maxDimension || h > maxDimension) {
+          if (w >= h) {
+            h = Math.round((maxDimension / w) * h);
+            w = maxDimension;
+          } else {
+            w = Math.round((maxDimension / h) * w);
+            h = maxDimension;
+          }
+        }
+        canvas.width = w;
+        canvas.height = h;
+        const ctx = canvas.getContext("2d");
+        ctx.fillStyle = "#FFFFFF";
+        ctx.fillRect(0, 0, w, h);
+        ctx.drawImage(img, 0, 0, w, h);
+        const compressed = canvas.toDataURL("image/jpeg", quality);
+        resolve(compressed);
+      };
+      img.onerror = () => resolve(dataUrl);
+      img.src = dataUrl;
+    } catch (e) {
+      resolve(dataUrl);
+    }
+  });
+};
+
+// Offload heavy base64 images into independent Firestore document collection 'template_assets'
+const assetCache = {};
+
+const fbSaveAssetDoc = async (assetId, dataUrl, idToken) => {
+  if (!assetId || !dataUrl) return;
+  try {
+    assetCache[assetId] = dataUrl;
+    const url = `https://firestore.googleapis.com/v1/projects/${getFB().projectId}/databases/(default)/documents/template_assets/${assetId}`;
+    const headers = { "Content-Type": "application/json" };
+    if (idToken) headers["Authorization"] = `Bearer ${idToken}`;
+    await fetch(url, {
+      method: "PATCH",
+      headers,
+      body: JSON.stringify({
+        fields: {
+          assetData: { stringValue: dataUrl },
+          updatedAt: { timestampValue: new Date().toISOString() }
+        }
+      })
+    });
+  } catch (err) {
+    console.warn("Asset offload error:", err);
+  }
+};
+
+export const fbGetAssetDoc = async (assetId) => {
+  if (!assetId) return "";
+  if (assetCache[assetId]) return assetCache[assetId];
+  try {
+    const url = `https://firestore.googleapis.com/v1/projects/${getFB().projectId}/databases/(default)/documents/template_assets/${assetId}`;
+    const res = await fetch(url);
+    if (!res.ok) return "";
+    const doc = await res.json();
+    const val = doc?.fields?.assetData?.stringValue || "";
+    if (val) assetCache[assetId] = val;
+    return val;
+  } catch (e) {
+    return "";
+  }
+};
+
+const optimizeConfigForSave = async (content, idToken) => {
+  if (!content) return content;
+  const clone = JSON.parse(JSON.stringify(content));
+  if (Array.isArray(clone.events)) {
+    for (let i = 0; i < clone.events.length; i++) {
+      const ev = clone.events[i];
+      const evKey = (ev.id || `ev_${i}`).replace(/[^a-zA-Z0-9_-]/g, '_');
+
+      // Compress and offload certBgUrl
+      if (ev.certBgUrl && ev.certBgUrl.startsWith('data:image')) {
+        const compressed = await compressBase64Image(ev.certBgUrl, 900, 0.60);
+        const assetId = `${evKey}_cert_bg`;
+        await fbSaveAssetDoc(assetId, compressed, idToken);
+        ev.certBgUrl = `asset://${assetId}`;
+      }
+
+      // Compress and offload inviteBgUrl
+      if (ev.inviteBgUrl && ev.inviteBgUrl.startsWith('data:image')) {
+        const compressed = await compressBase64Image(ev.inviteBgUrl, 900, 0.60);
+        const assetId = `${evKey}_invite_bg`;
+        await fbSaveAssetDoc(assetId, compressed, idToken);
+        ev.inviteBgUrl = `asset://${assetId}`;
+      }
+
+      // Compress and offload custom pdfTemplates bgUrl
+      if (Array.isArray(ev.pdfTemplates)) {
+        for (let j = 0; j < ev.pdfTemplates.length; j++) {
+          const tpl = ev.pdfTemplates[j];
+          const tplKey = (tpl.id || `tpl_${j}`).replace(/[^a-zA-Z0-9_-]/g, '_');
+          if (tpl.bgUrl && tpl.bgUrl.startsWith('data:image')) {
+            const compressed = await compressBase64Image(tpl.bgUrl, 900, 0.60);
+            const assetId = `${evKey}_${tplKey}_bg`;
+            await fbSaveAssetDoc(assetId, compressed, idToken);
+            tpl.bgUrl = `asset://${assetId}`;
+          }
+        }
+      }
+    }
+  }
+  return clone;
+};
+
 const fbSave = async (content, idToken) => {
+  const optimizedContent = await optimizeConfigForSave(content, idToken);
+  const jsonStr = JSON.stringify(optimizedContent);
+
   const res = await fetch(
     `${FS_URL()}?updateMask.fieldPaths=data&updateMask.fieldPaths=savedAt`,
     {
@@ -135,7 +294,7 @@ const fbSave = async (content, idToken) => {
       headers: { "Content-Type":"application/json", "Authorization":`Bearer ${idToken}` },
       body: JSON.stringify({
         fields: {
-          data:    { stringValue: JSON.stringify(content) },
+          data:    { stringValue: jsonStr },
           savedAt: { timestampValue: new Date().toISOString() },
         }
       })
@@ -145,27 +304,54 @@ const fbSave = async (content, idToken) => {
   return true;
 };
 
-const generateNextTxnId = async (idToken) => {
+const generateNextTxnId = async (idToken, preferredPrefix = null) => {
   try {
-    const existing = await fbFetchRegistrations(idToken);
-    let maxNum = 1000;
-    if (Array.isArray(existing) && existing.length > 0) {
+    const rawExisting = await fbFetchRegistrations(idToken);
+    // Ignore trashed/deleted registrations
+    const existing = (Array.isArray(rawExisting) ? rawExisting : []).filter(r => !r.deleted);
+    
+    let activePrefix = preferredPrefix ? preferredPrefix.trim().toUpperCase().replace(/[-_]$/, "") : null;
+
+    // Detect prefix from existing registrations
+    if (!activePrefix && existing.length > 0) {
+      // Look for EDU26 or most recently used prefix pattern
+      const sorted = [...existing].sort((a, b) => new Date(b._submittedAt || 0) - new Date(a._submittedAt || 0));
+      for (const r of sorted) {
+        const idStr = String(r["Transaction ID"] || r["transactionId"] || r.id || "").trim();
+        const match = idStr.match(/^([A-Za-z0-9_]+)[-_](\d+)$/);
+        if (match && match[1]) {
+          const p = match[1].toUpperCase();
+          if (p === "EDU26" || p === "EDU" || p === "MMP") {
+            activePrefix = p;
+            break;
+          }
+          if (!activePrefix) activePrefix = p;
+        }
+      }
+    }
+
+    if (!activePrefix) {
+      activePrefix = "EDU26";
+    }
+
+    let maxNum = 0;
+    if (existing.length > 0) {
       existing.forEach(r => {
-        const idStr = r["Transaction ID"] || r["transactionId"] || r.id || "";
-        const match = idStr.match(/(?:VG|REG|TXN)[-_]?(\d+)/i);
+        const idStr = String(r["Transaction ID"] || r["transactionId"] || r.id || "").trim();
+        const match = idStr.match(/[-_]?(\d+)$/);
         if (match) {
           const num = parseInt(match[1], 10);
           if (!isNaN(num) && num > maxNum) maxNum = num;
         }
       });
-      if (maxNum === 1000) {
-        maxNum = 1000 + existing.length;
+      if (maxNum === 0) {
+        maxNum = existing.length;
       }
     }
     const nextNum = maxNum + 1;
-    return `VG-${nextNum}`;
+    return `${activePrefix}-${nextNum}`;
   } catch (err) {
-    return `VG-${1001 + Math.floor(Math.random() * 100)}`;
+    return `EDU26-${1001 + Math.floor(Math.random() * 100)}`;
   }
 };
 
@@ -1501,14 +1687,32 @@ function Donate({ C, lang, globalProfile, globalAuthToken, onShowUserLogin }) {
 function Events({ C, lang, globalAuthToken, globalProfile, onPublicLogin, forceStandalone }) {
   const w = useW(); const mob = w<700;
   
+  // Robust helper to resolve event from query parameter (id, index, or public event index)
+  const resolveTargetEvent = (param) => {
+    if (!C?.events || !C.events.length) return null;
+    if (param === null || param === undefined) return null;
+    
+    // 1. Match by exact event id or title
+    const byId = C.events.find(e => String(e.id) === String(param) || String(e.title) === String(param));
+    if (byId) return byId;
+
+    // 2. Match by index
+    const idx = parseInt(param);
+    if (!isNaN(idx)) {
+      // Prioritize public events so printed QR codes (?event=0) ALWAYS target the right public form
+      const publicEvs = C.events.filter(e => !e.isInternalOnly && !e.hideFromPublicWebsite);
+      if (publicEvs[idx]) return publicEvs[idx];
+      if (C.events[idx]) return C.events[idx];
+    }
+    return null;
+  };
+
   // Synchronously compute initial event from URL if present
   const getInitialEvent = () => {
-    const match = window.location.href.match(/(?:event|register)=(\d+)/i);
+    const match = window.location.href.match(/(?:event|register)=([^&#\s]+)/i);
     if (match && match[1] !== undefined) {
-      const idx = parseInt(match[1]);
-      if (C?.events && C.events[idx]) {
-        return { type: 'register', event: C.events[idx] };
-      }
+      const target = resolveTargetEvent(decodeURIComponent(match[1]));
+      if (target) return { type: 'register', event: target };
     }
     return null;
   };
@@ -1535,14 +1739,15 @@ function Events({ C, lang, globalAuthToken, globalProfile, onPublicLogin, forceS
   const [previewFile, setPreviewFile] = useState(null);
 
   useEffect(() => {
-    const openForEventIndex = (idx) => {
-      if (C.events && C.events[idx]) {
-        setSelectedEvent({ type: 'register', event: C.events[idx] });
+    const openForEventTarget = (targetParam) => {
+      const targetEv = resolveTargetEvent(targetParam);
+      if (targetEv) {
+        setSelectedEvent({ type: 'register', event: targetEv });
         // Check if logged in. If not, enforce login step (0)
         setAuthToken(globalAuthToken || "");
         setAuthStep(globalAuthToken ? 1 : 0);
         const newForm = { "Submitted By": globalProfile?.name || globalProfile?.['Full Name'] || globalProfile?.mobile || "" };
-        const formSpec = C.forms?.find(f => f.id === C.events[idx].formId) || { fields: [] };
+        const formSpec = C.forms?.find(f => f.id === targetEv.formId) || { fields: [] };
         formSpec.fields.forEach(f => {
           const fKey = f.label?.trim() || "Field";
           const kLow = fKey.toLowerCase();
@@ -1558,17 +1763,13 @@ function Events({ C, lang, globalAuthToken, globalProfile, onPublicLogin, forceS
     };
 
     const handleOpen = (e) => {
-      openForEventIndex(e.detail);
+      openForEventTarget(e.detail);
     };
 
-    // Check URL parameters for direct QR scan (e.g. ?event=0 or ?register=0)
-    let eventParam = null;
-    const match = window.location.href.match(/(?:event|register)=(\d+)/i);
+    // Check URL parameters for direct QR scan (e.g. ?event=0 or ?register=0 or ?event=event_id)
+    const match = window.location.href.match(/(?:event|register)=([^&#\s]+)/i);
     if (match && match[1] !== undefined) {
-      eventParam = match[1];
-    }
-    if (eventParam !== null && eventParam !== undefined && !isNaN(parseInt(eventParam))) {
-      openForEventIndex(parseInt(eventParam));
+      openForEventTarget(decodeURIComponent(match[1]));
       const section = document.getElementById('events');
       if (section) section.scrollIntoView({ behavior: 'smooth' });
     }
@@ -1631,6 +1832,7 @@ function Events({ C, lang, globalAuthToken, globalProfile, onPublicLogin, forceS
           authDomain: `${initFB.projectId?.trim()}.firebaseapp.com`
         }) : getApp();
         fbAuth = getAuth(fbApp);
+        setPersistence(fbAuth, browserLocalPersistence).catch(() => null);
       } catch (err) {
         setAuthError("Failed to initialize Firebase Auth: " + err.message);
         return;
@@ -1745,45 +1947,193 @@ function Events({ C, lang, globalAuthToken, globalProfile, onPublicLogin, forceS
     }
   };
 
+  const [validationErrors, setValidationErrors] = useState([]);
+  const [validationLabels, setValidationLabels] = useState([]);
+
   const submitForm = async (e) => {
     e.preventDefault();
-    setSubmitting(true);
-    try {
-      // Option B: Save to Firebase (fails gracefully if Security Rules aren't set)
-      try {
-        const initialLog = {
-          timestamp: new Date().toISOString(),
-          actor: "User",
-          action: "1st Entry Submitted",
-          status: "Pending",
-          remarks: "Initial form submission"
-        };
-        await fbSubmitRegistration({
-          eventId: selectedEvent.event.id,
-          eventTitle: selectedEvent.event.title,
-          submitterMob: (globalProfile?.mobile || `${countryCode} ${mobile.replace(/\D/g, '').slice(-10)}`),
-          formData: {
-            ...formData,
-            logHistory: [initialLog]
-          }
-        }, authToken);
-      } catch (fbErr) {
-        console.warn("Firebase save skipped (Update Security Rules to enable database logging). Proceeding to WhatsApp.");
+
+    // 0. Validate Mandatory Required Fields
+    const formFields = getForm(selectedEvent?.event?.formId)?.fields || [];
+    const missingKeys = [];
+    const missingLabels = [];
+
+    const normKey = (k) => String(k || "").trim().toLowerCase().replace(/[\s_*]+/g, "");
+
+    formFields.forEach((f, idx) => {
+      let shouldShow = true;
+      let logicRules = [];
+      if (f.logicRules && f.logicRules.length > 0) {
+        logicRules = f.logicRules.filter(r => r.dependsOn && r.dependsValue);
+      } else if (f.dependsOn && f.dependsValue) {
+        logicRules = [{ dependsOn: f.dependsOn, dependsValue: f.dependsValue }];
       }
-      
-      // Generate clean Sequential Transaction ID if not present (e.g. VG-1001, VG-1002...)
-      let txId = formData["Transaction ID"] || formData["transactionId"] || formData["Tx ID"];
-      if (!txId) {
-        txId = await generateNextTxnId(authToken);
+      if (logicRules.length > 0) {
+        shouldShow = (f.logicCondition === "AND" ? logicRules.every : logicRules.some).call(logicRules, rule => {
+          const parentIdx = formFields.findIndex(ff => ff.label === rule.dependsOn || ff.dataKey === rule.dependsOn);
+          const parentField = parentIdx !== -1 ? formFields[parentIdx] : null;
+          let parentKey = parentField ? (parentField.dataKey || parentField.label)?.trim() : rule.dependsOn;
+          if (parentField && parentIdx !== -1) {
+            const firstIdx = formFields.findIndex(ff => ((ff.dataKey || ff.label)?.trim()) === parentKey);
+            if (firstIdx !== -1 && firstIdx !== parentIdx) parentKey = `${parentKey}_${parentIdx + 1}`;
+          }
+          const parentVal = formData[parentKey] !== undefined ? formData[parentKey] : formData[rule.dependsOn];
+          if (parentVal === undefined || parentVal === null) return false;
+          return String(parentVal).trim().toLowerCase() === String(rule.dependsValue).trim().toLowerCase();
+        });
       }
 
-      // Sanitize form values: replace pipe '|' with space, and escape leading '+' to prevent Google Sheets #ERROR! formula parse error
+      const isReq = (f.required === true || String(f.required).toLowerCase() === 'true' || String(f.required) === '1' || (f.label || "").trim().endsWith("*"));
+
+      if (!shouldShow || !isReq) return;
+
+      let fKey = (f.dataKey || f.label)?.trim() || `Field_${idx + 1}`;
+      const firstMatchingIdx = formFields.findIndex(ff => ((ff.dataKey || ff.label)?.trim()) === fKey);
+      if (firstMatchingIdx !== -1 && firstMatchingIdx !== idx) {
+        fKey = `${fKey}_${idx + 1}`;
+      }
+
+      let val = formData[fKey];
+      if (val === undefined || val === null || val === "") {
+        if (formData[f.label?.trim()] !== undefined) val = formData[f.label?.trim()];
+        else if (formData[f.dataKey?.trim()] !== undefined) val = formData[f.dataKey?.trim()];
+        else if (f.id && formData[f.id] !== undefined) val = formData[f.id];
+      }
+
+      let isMissing = false;
+
+      if (f.type === 'fullname') {
+        const parts = (val || "||").split("|");
+        if (!parts[0] || !parts[0].trim() || !parts[2] || !parts[2].trim()) {
+          isMissing = true;
+        }
+      } else if (f.type === 'image' || f.type === 'file' || (f.label || "").toLowerCase().includes("document") || (f.label || "").toLowerCase().includes("photo")) {
+        const urls = val ? String(val).split(",").map(s => s.trim()).filter(Boolean) : [];
+        if (urls.length === 0) isMissing = true;
+      } else if (f.type === 'tel' || (f.label || "").toLowerCase().includes("phone") || (f.label || "").toLowerCase().includes("mobile") || fKey.toLowerCase().includes("phone") || fKey.toLowerCase().includes("mobile")) {
+        const num = val ? String(val).replace(/\D/g, "") : "";
+        if (!num || num.length < 5) isMissing = true;
+      } else {
+        if (!val || String(val).trim() === "") isMissing = true;
+      }
+
+      if (isMissing) {
+        missingKeys.push(fKey);
+        missingLabels.push((f.label || fKey).replace(/\s*\*+$/, "").trim());
+      }
+    });
+
+    if (missingKeys.length > 0) {
+      setValidationErrors(missingKeys);
+      setValidationLabels(missingLabels);
+      
+      const firstMissingIndex = formFields.findIndex(f => {
+        const k = (f.dataKey || f.label)?.trim();
+        return missingKeys.some(m => normKey(m) === normKey(k) || normKey(m) === normKey(f.label) || normKey(m) === normKey(f.dataKey));
+      });
+      if (firstMissingIndex !== -1) {
+        const firstEl = document.getElementById(`form_field_${firstMissingIndex}`);
+        if (firstEl) {
+          firstEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }
+      }
+      return;
+    }
+
+    setValidationErrors([]);
+    setValidationLabels([]);
+    setSubmitting(true);
+    
+    // 1. Resilient Session Token Retrieval (Check currentUser, props, and localStorage)
+    let activeToken = authToken || localStorage.getItem("trustPublicAuthToken") || "";
+    const currentUser = fbAuth?.currentUser;
+
+    if (currentUser) {
+      try {
+        const fresh = await currentUser.getIdToken(true);
+        if (fresh) activeToken = fresh;
+      } catch (tokErr) {
+        console.warn("Token refresh notice:", tokErr);
+      }
+    }
+
+    const hasStoredProfile = globalProfile || localStorage.getItem("trustPublicProfile");
+
+    // Only block if user is completely unauthenticated (no currentUser, no profile, no token)
+    if (!currentUser && !hasStoredProfile && !activeToken) {
+      setSubmitting(false);
+      alert("🔒 Your login session has expired or you are logged out.\n\nPlease log in again to complete and submit your registration. Your filled form data will be preserved!");
+      setAuthStep('login');
+      return;
+    }
+
+    // 2. Generate clean Sequential Transaction ID before saving (e.g. VG-1001, VG-1002...)
+    let txId = formData["Transaction ID"] || formData["transactionId"] || formData["Tx ID"];
+    if (!txId) {
+      const preferredPrefix = selectedEvent?.event?.txnPrefix || C?.txnPrefix || "EDU26";
+      txId = await generateNextTxnId(activeToken, preferredPrefix);
+    }
+    
+    // 3. MANDATORY DATABASE SUBMISSION (DO NOT PROCEED IF THIS FAILS!)
+    const initialLog = {
+      timestamp: new Date().toISOString(),
+      actor: "User",
+      action: "1st Entry Submitted",
+      status: "Pending",
+      remarks: "Initial form submission"
+    };
+
+    let saveSuccess = false;
+    try {
+      await fbSubmitRegistration({
+        eventId: selectedEvent.event.id,
+        eventTitle: selectedEvent.event.title,
+        submitterMob: (globalProfile?.mobile || `${countryCode} ${mobile.replace(/\D/g, '').slice(-10)}`),
+        formData: {
+          ...formData,
+          "Transaction ID": txId,
+          transactionId: txId,
+          logHistory: [initialLog]
+        }
+      }, activeToken);
+      saveSuccess = true;
+    } catch (fbErr) {
+      console.warn("First save attempt notice:", fbErr);
+      // Retry once with fresh token if currentUser is available
+      if (currentUser) {
+        try {
+          const freshToken = await currentUser.getIdToken(true);
+          await fbSubmitRegistration({
+            eventId: selectedEvent.event.id,
+            eventTitle: selectedEvent.event.title,
+            submitterMob: (globalProfile?.mobile || `${countryCode} ${mobile.replace(/\D/g, '').slice(-10)}`),
+            formData: {
+              ...formData,
+              "Transaction ID": txId,
+              transactionId: txId,
+              logHistory: [initialLog]
+            }
+          }, freshToken);
+          saveSuccess = true;
+        } catch (retryErr) {
+          console.error("Retry save error:", retryErr);
+        }
+      }
+    }
+
+    if (!saveSuccess) {
+      setSubmitting(false);
+      alert("⚠️ Session Notice: Your login session timed out while editing.\n\nPlease log in again to confirm and complete your registration. All your entered form fields are safely preserved!");
+      setAuthStep('login');
+      return; // DO NOT PROCEED TO SUCCESS SCREEN IF DATABASE SAVE WAS NOT 100% SUCCESSFUL!
+    }
+
+    // 4. Sanitize form values and send to Google Sheets / Webhook & WhatsApp
+    try {
       const sanitizedFormData = {};
       Object.entries(formData).forEach(([k, v]) => {
         if (typeof v === 'string') {
-          // Replace pipe '|' with space (e.g., "jyoti|Pradeep|Parmar" -> "jyoti Pradeep Parmar")
           let cleanV = v.replace(/\|/g, ' ').replace(/\s+/g, ' ').trim();
-          // Fix Google Sheets #ERROR! for phone numbers / strings starting with '+'
           if (cleanV.startsWith('+')) {
             cleanV = "'" + cleanV;
           }
@@ -1793,11 +2143,9 @@ function Events({ C, lang, globalAuthToken, globalProfile, onPublicLogin, forceS
         }
       });
 
-      // Ensure explicit Transaction ID fields are set
       sanitizedFormData["Transaction ID"] = txId;
       sanitizedFormData["transactionId"] = txId;
 
-      // Option C: Google Sheets & Drive Integration via Webhook
       if (selectedEvent?.event?.googleSheetsWebhookUrl) {
         try {
           const payload = {
@@ -1831,8 +2179,8 @@ function Events({ C, lang, globalAuthToken, globalProfile, onPublicLogin, forceS
         }
       }
 
-      // Option A: WhatsApp redirection
       let msg = `*New Registration: ${selectedEvent.event.title}*\n\n`;
+      msg += `*Txn ID:* ${txId}\n`;
       Object.entries(formData).forEach(([k,v]) => {
         const displayV = typeof v === 'string' ? v.replace(/\|/g, ' ').replace(/\s+/g, ' ').trim() : v;
         msg += `*${k}:* ${displayV}\n`;
@@ -1840,8 +2188,9 @@ function Events({ C, lang, globalAuthToken, globalProfile, onPublicLogin, forceS
       const waLink = `https://wa.me/?text=${encodeURIComponent(msg)}`;
       setWaMessageLink(waLink);
       setDone(true);
-    } catch(err) {
-      alert("Submission failed. Please try again.");
+    } catch (err) {
+      console.error("Post-submission webhook error:", err);
+      setDone(true);
     } finally {
       setSubmitting(false);
     }
@@ -1941,7 +2290,7 @@ function Events({ C, lang, globalAuthToken, globalProfile, onPublicLogin, forceS
                 )}
               </form>
             ) : (
-              <form onSubmit={submitForm} style={{display:"grid",gridTemplateColumns: mob ? "1fr" : "1fr 1fr",gap:12, rowGap:16}}>
+              <form noValidate onSubmit={submitForm} style={{display:"grid",gridTemplateColumns: mob ? "1fr" : "1fr 1fr",gap:12, rowGap:16}}>
                 {(() => {
                   const formObj = getForm(selectedEvent.event.formId);
                   return (
@@ -1991,21 +2340,59 @@ function Events({ C, lang, globalAuthToken, globalProfile, onPublicLogin, forceS
                       fKey = `${fKey}_${idx + 1}`;
                   }
                   const spanFull = f.type === 'address' || f.type === 'file' || f.type === 'image' || f.type === 'fullname';
+                  const normK = (k) => String(k || "").trim().toLowerCase().replace(/[\s_*]+/g, "");
+                  const isError = validationErrors.some(errKey => normK(errKey) === normK(fKey) || normK(errKey) === normK(f.label) || normK(errKey) === normK(f.dataKey));
                   return (
                   <div key={idx} id={`form_field_${idx}`} style={{animation:"fadeIn 0.4s ease-out", gridColumn: (spanFull || mob) ? "1 / -1" : "auto"}}>
-                    <label className="modern-label">{f.label || fKey} {f.required&&<span style={{color:"red"}}>*</span>}</label>
+                    <label className="modern-label" style={{color: isError ? "#DC2626" : "var(--dt)", fontWeight: isError ? 800 : 600, display:"flex", alignItems:"center", gap:6}}>
+                      <span>{f.label || fKey}</span>
+                      {f.required && <span style={{color:"red"}}>*</span>}
+                      {isError && <span style={{color:"#DC2626", fontSize:".75rem", fontWeight:700, background:"#FEE2E2", padding:"2px 8px", borderRadius:12, border:"1px solid #FCA5A5"}}>⚠️ Required Field Missed</span>}
+                    </label>
                     {f.type === 'address' ? (
-                      <textarea required={f.required} value={formData[fKey]||""} onChange={e=>setFormData({...formData, [fKey]:e.target.value})} className="modern-input" style={{minHeight:100,resize:"vertical"}}/>
+                      <textarea 
+                        required={f.required} 
+                        value={formData[fKey]||""} 
+                        onChange={e=>{
+                          setFormData({...formData, [fKey]:e.target.value});
+                          if (isError) setValidationErrors(prev => prev.filter(k => k !== fKey));
+                        }} 
+                        className="modern-input" 
+                        style={{
+                          minHeight:100,
+                          resize:"vertical",
+                          border: isError ? "2px solid #EF4444" : undefined,
+                          background: isError ? "#FFF5F5" : undefined,
+                          boxShadow: isError ? "0 0 0 3px rgba(239, 68, 68, 0.2)" : undefined
+                        }}
+                      />
                     ) : f.type === 'dropdown' ? (
                       <SearchableDropdown 
                         required={f.required} 
                         value={formData[fKey]||""} 
-                        onChange={val => setFormData({...formData, [fKey]:val})} 
+                        isError={isError}
+                        onChange={val => {
+                          setFormData({...formData, [fKey]:val});
+                          if (isError && val) setValidationErrors(prev => prev.filter(k => k !== fKey));
+                        }} 
                         options={(f.options||"").split(",").map(o=>o.trim()).filter(Boolean)} 
                         placeholder="-- Search & Select --" 
                       />
                     ) : f.type === 'gender' ? (
-                      <select required={f.required} value={formData[fKey]||""} onChange={e=>setFormData({...formData, [fKey]:e.target.value})} className="modern-input" >
+                      <select 
+                        required={f.required} 
+                        value={formData[fKey]||""} 
+                        onChange={e=>{
+                          setFormData({...formData, [fKey]:e.target.value});
+                          if (isError) setValidationErrors(prev => prev.filter(k => k !== fKey));
+                        }} 
+                        className="modern-input"
+                        style={{
+                          border: isError ? "2px solid #EF4444" : undefined,
+                          background: isError ? "#FFF5F5" : undefined,
+                          boxShadow: isError ? "0 0 0 3px rgba(239, 68, 68, 0.2)" : undefined
+                        }}
+                      >
                         <option value="">-- Select Gender --</option>
                         <option value="Male">Male</option>
                         <option value="Female">Female</option>
@@ -2013,18 +2400,54 @@ function Events({ C, lang, globalAuthToken, globalProfile, onPublicLogin, forceS
                       </select>
                     ) : f.type === 'fullname' ? (
                       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:12}}>
-                        <input placeholder="First" required={f.required} value={(formData[fKey]?.split("|")[0])||""} onChange={e=>{
-                          const parts = (formData[fKey]||"||").split("|"); parts[0] = e.target.value; setFormData({...formData, [fKey]:parts.join("|")});
-                        }} className="modern-input" />
-                        <input placeholder="Middle" value={(formData[fKey]?.split("|")[1])||""} onChange={e=>{
-                          const parts = (formData[fKey]||"||").split("|"); parts[1] = e.target.value; setFormData({...formData, [fKey]:parts.join("|")});
-                        }} className="modern-input" />
-                        <input placeholder="Last" required={f.required} value={(formData[fKey]?.split("|")[2])||""} onChange={e=>{
-                          const parts = (formData[fKey]||"||").split("|"); parts[2] = e.target.value; setFormData({...formData, [fKey]:parts.join("|")});
-                        }} className="modern-input" />
+                        <input 
+                          placeholder="First" 
+                          required={f.required} 
+                          value={(formData[fKey]?.split("|")[0])||""} 
+                          onChange={e=>{
+                            const parts = (formData[fKey]||"||").split("|"); parts[0] = e.target.value; setFormData({...formData, [fKey]:parts.join("|")});
+                            if (isError) setValidationErrors(prev => prev.filter(k => k !== fKey));
+                          }} 
+                          className="modern-input" 
+                          style={{
+                            border: isError && !((formData[fKey]?.split("|")[0])||"").trim() ? "2px solid #EF4444" : undefined,
+                            background: isError && !((formData[fKey]?.split("|")[0])||"").trim() ? "#FFF5F5" : undefined
+                          }}
+                        />
+                        <input 
+                          placeholder="Middle" 
+                          value={(formData[fKey]?.split("|")[1])||""} 
+                          onChange={e=>{
+                            const parts = (formData[fKey]||"||").split("|"); parts[1] = e.target.value; setFormData({...formData, [fKey]:parts.join("|")});
+                          }} 
+                          className="modern-input" 
+                        />
+                        <input 
+                          placeholder="Last" 
+                          required={f.required} 
+                          value={(formData[fKey]?.split("|")[2])||""} 
+                          onChange={e=>{
+                            const parts = (formData[fKey]||"||").split("|"); parts[2] = e.target.value; setFormData({...formData, [fKey]:parts.join("|")});
+                            if (isError) setValidationErrors(prev => prev.filter(k => k !== fKey));
+                          }} 
+                          className="modern-input" 
+                          style={{
+                            border: isError && !((formData[fKey]?.split("|")[2])||"").trim() ? "2px solid #EF4444" : undefined,
+                            background: isError && !((formData[fKey]?.split("|")[2])||"").trim() ? "#FFF5F5" : undefined
+                          }}
+                        />
                       </div>
                     ) : f.type === 'image' || f.type === 'file' ? (
-                      <div style={{padding:"16px",borderRadius:12,border:"2px dashed #CBD5E1",background:"#F8FAFC",transition:"all 0.2s ease"}} onMouseEnter={e => e.currentTarget.style.borderColor="#3B82F6"} onMouseLeave={e => e.currentTarget.style.borderColor="#CBD5E1"}>
+                      <div 
+                        style={{
+                          padding:"16px",
+                          borderRadius:12,
+                          border: isError ? "2px dashed #EF4444" : "2px dashed #CBD5E1",
+                          background: isError ? "#FEF2F2" : "#F8FAFC",
+                          boxShadow: isError ? "0 0 0 3px rgba(239, 68, 68, 0.2)" : "none",
+                          transition:"all 0.2s ease"
+                        }}
+                      >
                         {(() => {
                           const uploadedUrls = formData[fKey] ? formData[fKey].split(",").map(s => s.trim()).filter(Boolean) : [];
                           return (
@@ -2058,14 +2481,24 @@ function Events({ C, lang, globalAuthToken, globalProfile, onPublicLogin, forceS
                                   <div style={{width:14,height:14,border:"2px solid var(--bd)",borderTopColor:"var(--dt)",borderRadius:"50%",animation:"spin 1s linear infinite"}}/> Uploading file(s)...
                                 </div>
                               ) : (
-                                <div style={{display:"flex",alignItems:"center",gap:10,marginTop:uploadedUrls.length > 0 ? 4 : 0}}>
-                                  <label style={{padding:"8px 16px",background:"var(--dt)",color:"white",borderRadius:6,fontSize:".8rem",fontWeight:600,cursor:"pointer",display:"inline-block"}}>
-                                    {uploadedUrls.length > 0 ? '➕ Add More Files / Photos' : (f.type === 'image' ? '📸 Choose Photo' : '📎 Choose Document')}
-                                    <input type="file" multiple required={f.required && uploadedUrls.length === 0} accept={f.type==='image'?"image/*":"image/*,.pdf,.doc,.docx,.png,.jpg,.jpeg"} onChange={e=>handleFileUpload(e, fKey)} style={{display:"none"}}/>
-                                  </label>
-                                  <span style={{fontSize:".75rem",color:"var(--mu)"}}>
-                                    {uploadedUrls.length > 0 ? `${uploadedUrls.length} file(s) attached` : (f.type === 'image' ? 'JPG, PNG, Camera, etc.' : 'PDF, DOC, Photo, Camera, etc.')}
-                                  </span>
+                                <div style={{display:"flex",flexDirection:"column",gap:6}}>
+                                  <div style={{display:"flex",alignItems:"center",gap:10,marginTop:uploadedUrls.length > 0 ? 4 : 0}}>
+                                    <label style={{padding:"8px 16px",background:isError?"#DC2626":"var(--dt)",color:"white",borderRadius:6,fontSize:".8rem",fontWeight:600,cursor:"pointer",display:"inline-block"}}>
+                                      {uploadedUrls.length > 0 ? '➕ Add More Files / Photos' : (f.type === 'image' ? '📸 Choose Photo' : '📎 Choose Document')}
+                                      <input type="file" multiple required={f.required && uploadedUrls.length === 0} accept={f.type==='image'?"image/*":"image/*,.pdf,.doc,.docx,.png,.jpg,.jpeg"} onChange={e=>{
+                                        handleFileUpload(e, fKey);
+                                        if (isError) setValidationErrors(prev => prev.filter(k => k !== fKey));
+                                      }} style={{display:"none"}}/>
+                                    </label>
+                                    <span style={{fontSize:".75rem",color:isError?"#DC2626":"var(--mu)",fontWeight:isError?700:400}}>
+                                      {uploadedUrls.length > 0 ? `${uploadedUrls.length} file(s) attached` : (f.type === 'image' ? 'JPG, PNG, Camera, etc.' : 'PDF, DOC, Photo, Camera, etc.')}
+                                    </span>
+                                  </div>
+                                  {isError && uploadedUrls.length === 0 && (
+                                    <div style={{color:"#DC2626",fontSize:".78rem",fontWeight:700,display:"flex",alignItems:"center",gap:6,background:"#FEE2E2",padding:"6px 10px",borderRadius:6,border:"1px solid #FCA5A5"}}>
+                                      <span>⚠️ Required: Please choose and attach at least 1 document file / photo.</span>
+                                    </div>
+                                  )}
                                 </div>
                               )}
                             </div>
@@ -2074,7 +2507,26 @@ function Events({ C, lang, globalAuthToken, globalProfile, onPublicLogin, forceS
                       </div>
                     ) : f.type === 'percentage' ? (
                       <div style={{position:"relative",display:"flex",alignItems:"center"}}>
-                        <input type="number" step="0.01" min="0" max="100" placeholder="e.g. 85.50" required={f.required} value={formData[fKey]||""} onChange={e=>setFormData({...formData, [fKey]:e.target.value})} className="modern-input" style={{paddingRight:32}}/>
+                        <input 
+                          type="number" 
+                          step="0.01" 
+                          min="0" 
+                          max="100" 
+                          placeholder="e.g. 85.50" 
+                          required={f.required} 
+                          value={formData[fKey]||""} 
+                          onChange={e=>{
+                            setFormData({...formData, [fKey]:e.target.value});
+                            if (isError) setValidationErrors(prev => prev.filter(k => k !== fKey));
+                          }} 
+                          className="modern-input" 
+                          style={{
+                            paddingRight:32,
+                            border: isError ? "2px solid #EF4444" : undefined,
+                            background: isError ? "#FFF5F5" : undefined,
+                            boxShadow: isError ? "0 0 0 3px rgba(239, 68, 68, 0.2)" : undefined
+                          }}
+                        />
                         <span style={{position:"absolute",right:12,fontWeight:700,color:"var(--dt)",fontSize:".9rem",pointerEvents:"none"}}>%</span>
                       </div>
                     ) : (f.type === 'tel' || (f.label || "").toLowerCase().includes("phone") || (f.label || "").toLowerCase().includes("mobile") || fKey.toLowerCase().includes("phone") || fKey.toLowerCase().includes("mobile")) ? (
@@ -2087,24 +2539,24 @@ function Events({ C, lang, globalAuthToken, globalProfile, onPublicLogin, forceS
                             const spaceIdx = rawVal.indexOf(" ");
                             if (spaceIdx !== -1) {
                               currentCode = rawVal.substring(0, spaceIdx);
-                              currentNum = rawVal.substring(spaceIdx + 1).replace(/\\D/g, "");
+                              currentNum = rawVal.substring(spaceIdx + 1).replace(/\D/g, "");
                             } else {
                               if (rawVal.startsWith("+91") && rawVal.length > 3) {
                                 currentCode = "+91";
-                                currentNum = rawVal.substring(3).replace(/\\D/g, "");
+                                currentNum = rawVal.substring(3).replace(/\D/g, "");
                               } else {
-                                currentNum = rawVal.replace(/\\D/g, "");
+                                currentNum = rawVal.replace(/\D/g, "");
                               }
                             }
                           } else {
-                            currentNum = rawVal.replace(/\\D/g, "");
+                            currentNum = rawVal.replace(/\D/g, "");
                           }
                           return (
                             <>
                               <select 
                                 value={currentCode} 
                                 onChange={e => setFormData({...formData, [fKey]: `${e.target.value} ${currentNum}`})}
-                                style={{padding:"14px 8px", borderRadius:12, border:"1px solid #E2E8F0", fontSize:".95rem", fontWeight:700, background:"#F8FAFC", color:"#1E293B", outline:"none", cursor:"pointer", width: 85, boxSizing: "border-box"}}
+                                style={{padding:"14px 8px", borderRadius:12, border: isError ? "2px solid #EF4444" : "1px solid #E2E8F0", fontSize:".95rem", fontWeight:700, background: isError ? "#FFF5F5" : "#F8FAFC", color:"#1E293B", outline:"none", cursor:"pointer", width: 85, boxSizing: "border-box"}}
                               >
                                 <option value="+91">+91</option>
                                 <option value="+1">+1</option>
@@ -2119,11 +2571,17 @@ function Events({ C, lang, globalAuthToken, globalProfile, onPublicLogin, forceS
                                 required={f.required} 
                                 value={currentNum} 
                                 onChange={e => {
-                                  const val = e.target.value.replace(/\\D/g, "").slice(0, 10);
+                                  const val = e.target.value.replace(/\D/g, "").slice(0, 10);
                                   setFormData({...formData, [fKey]: `${currentCode} ${val}`});
+                                  if (isError && val) setValidationErrors(prev => prev.filter(k => k !== fKey));
                                 }} 
                                 className="modern-input" 
-                                style={{flex:1}} 
+                                style={{
+                                  flex:1,
+                                  border: isError ? "2px solid #EF4444" : undefined,
+                                  background: isError ? "#FFF5F5" : undefined,
+                                  boxShadow: isError ? "0 0 0 3px rgba(239, 68, 68, 0.2)" : undefined
+                                }} 
                                 autoComplete="tel" 
                               />
                             </>
@@ -2131,10 +2589,36 @@ function Events({ C, lang, globalAuthToken, globalProfile, onPublicLogin, forceS
                         })()}
                       </div>
                     ) : (
-                      <input type={f.type} required={f.required} value={formData[fKey]||""} onChange={e=>setFormData({...formData, [fKey]:e.target.value})} className="modern-input" autoComplete={f.type === 'email' ? 'email' : 'off'} />
+                      <input 
+                        type={f.type} 
+                        required={f.required} 
+                        value={formData[fKey]||""} 
+                        onChange={e=>{
+                          setFormData({...formData, [fKey]:e.target.value});
+                          if (isError) setValidationErrors(prev => prev.filter(k => k !== fKey));
+                        }} 
+                        className="modern-input" 
+                        style={{
+                          border: isError ? "2px solid #EF4444" : undefined,
+                          background: isError ? "#FFF5F5" : undefined,
+                          boxShadow: isError ? "0 0 0 3px rgba(239, 68, 68, 0.2)" : undefined
+                        }}
+                        autoComplete={f.type === 'email' ? 'email' : 'off'} 
+                      />
                     )}
                   </div>
                 )})}
+                {validationErrors.length > 0 && (
+                  <div style={{gridColumn:"1 / -1", background:"#FEF2F2", border:"2px solid #EF4444", padding:"14px 18px", borderRadius:10, color:"#991B1B", fontWeight:700, fontSize:".9rem", display:"flex", alignItems:"center", gap:12, boxShadow:"0 4px 14px rgba(239,68,68,0.2)", animation:"fadeIn 0.3s ease-out"}}>
+                    <span style={{fontSize:"1.6rem"}}>⚠️</span>
+                    <div>
+                      <div style={{fontSize:".95rem", fontWeight:800, color:"#991B1B"}}>Mandatory Required Fields Missing!</div>
+                      <div style={{fontSize:".85rem", fontWeight:500, marginTop:2, color:"#7F1D1D"}}>
+                        Please fill out or attach files for the required field(s) highlighted in red above: <strong>{validationLabels.join(", ")}</strong>
+                      </div>
+                    </div>
+                  </div>
+                )}
                 {getForm(selectedEvent.event.formId)?.footerNotes && (
                   <div className="rich-instructions" style={{gridColumn:"1/-1", marginBottom: 14, background: "#FFF0F0", border: "1px solid #FFCDCD", padding: "14px 18px", borderRadius: 8, fontSize: ".9rem", color: "#C0392B", lineHeight: 1.5}} dangerouslySetInnerHTML={{__html: cleanFormInstructions(getForm(selectedEvent.event.formId).footerNotes)}} />
                 )}
@@ -2161,7 +2645,7 @@ function Events({ C, lang, globalAuthToken, globalProfile, onPublicLogin, forceS
           <button className="bt" style={{padding:"9px 18px",borderRadius:8,fontWeight:600,fontSize:".85rem",flexShrink:0}}>View All</button>
         </div>
         <div style={{display:"grid",gridTemplateColumns:mob?"1fr":"1fr 1fr",gap:16}}>
-          {C.events.map((ev,i)=>(
+          {(C.events || []).filter(e => !e.isInternalOnly && !e.hideFromPublicWebsite).map((ev,i)=>(
             <div key={i} className="ch" style={{background:"white",borderRadius:16,border:"1px solid var(--bd)",overflow:"hidden",display:"flex"}}>
               <div style={{background:"linear-gradient(180deg,var(--dt),var(--tm))",color:"white",padding:"18px 16px",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",minWidth:72,flexShrink:0}}>
                 <div style={{fontSize:"1.6rem",fontWeight:700,fontFamily:"'Playfair Display',serif",lineHeight:1}}>{(lang==="gu"&&ev.dateGu?ev.dateGu:ev.date)?.split(" ")[0]}</div>
@@ -2414,7 +2898,7 @@ function Events({ C, lang, globalAuthToken, globalProfile, onPublicLogin, forceS
                     </button>
                   </div>
                 ) : (
-                  <form onSubmit={submitForm} style={{display:"grid",gridTemplateColumns: mob ? "1fr" : "1fr 1fr",gap:12, rowGap:16}}>
+                  <form noValidate onSubmit={submitForm} style={{display:"grid",gridTemplateColumns: mob ? "1fr" : "1fr 1fr",gap:12, rowGap:16}}>
                     {(() => {
                       const formObj = getForm(selectedEvent.event.formId);
                       return (
@@ -2466,21 +2950,59 @@ function Events({ C, lang, globalAuthToken, globalProfile, onPublicLogin, forceS
                           fKey = `${fKey}_${idx + 1}`;
                       }
                       const spanFull = f.type === 'address' || f.type === 'file' || f.type === 'image' || f.type === 'fullname';
+                      const normK = (k) => String(k || "").trim().toLowerCase().replace(/[\s_*]+/g, "");
+                      const isError = validationErrors.some(errKey => normK(errKey) === normK(fKey) || normK(errKey) === normK(f.label) || normK(errKey) === normK(f.dataKey));
                       return (
                       <div key={idx} id={`form_field_${idx}`} style={{animation:"fadeIn 0.4s ease-out", gridColumn: (spanFull || mob) ? "1 / -1" : "auto"}}>
-                        <label className="modern-label">{f.label || fKey} {f.required&&<span style={{color:"red"}}>*</span>}</label>
+                        <label className="modern-label" style={{color: isError ? "#DC2626" : "var(--dt)", fontWeight: isError ? 800 : 600, display:"flex", alignItems:"center", gap:6}}>
+                          <span>{f.label || fKey}</span>
+                          {f.required && <span style={{color:"red"}}>*</span>}
+                          {isError && <span style={{color:"#DC2626", fontSize:".75rem", fontWeight:700, background:"#FEE2E2", padding:"2px 8px", borderRadius:12, border:"1px solid #FCA5A5"}}>⚠️ Required Field Missed</span>}
+                        </label>
                         {f.type === 'address' ? (
-                          <textarea required={f.required} value={formData[fKey]||""} onChange={e=>setFormData({...formData, [fKey]:e.target.value})} className="modern-input" style={{minHeight:100,resize:"vertical"}}/>
+                          <textarea 
+                            required={f.required} 
+                            value={formData[fKey]||""} 
+                            onChange={e=>{
+                              setFormData({...formData, [fKey]:e.target.value});
+                              if (isError) setValidationErrors(prev => prev.filter(k => k !== fKey));
+                            }} 
+                            className="modern-input" 
+                            style={{
+                              minHeight:100,
+                              resize:"vertical",
+                              border: isError ? "2px solid #EF4444" : undefined,
+                              background: isError ? "#FFF5F5" : undefined,
+                              boxShadow: isError ? "0 0 0 3px rgba(239, 68, 68, 0.2)" : undefined
+                            }}
+                          />
                         ) : f.type === 'dropdown' ? (
                           <SearchableDropdown 
                             required={f.required} 
                             value={formData[fKey]||""} 
-                            onChange={val => setFormData({...formData, [fKey]:val})} 
+                            isError={isError}
+                            onChange={val => {
+                              setFormData({...formData, [fKey]:val});
+                              if (isError && val) setValidationErrors(prev => prev.filter(k => k !== fKey));
+                            }} 
                             options={(f.options||"").split(",").map(o=>o.trim()).filter(Boolean)} 
                             placeholder="-- Search & Select --" 
                           />
                         ) : f.type === 'gender' ? (
-                          <select required={f.required} value={formData[fKey]||""} onChange={e=>setFormData({...formData, [fKey]:e.target.value})} className="modern-input" >
+                          <select 
+                            required={f.required} 
+                            value={formData[fKey]||""} 
+                            onChange={e=>{
+                              setFormData({...formData, [fKey]:e.target.value});
+                              if (isError) setValidationErrors(prev => prev.filter(k => k !== fKey));
+                            }} 
+                            className="modern-input" 
+                            style={{
+                              border: isError ? "2px solid #EF4444" : undefined,
+                              background: isError ? "#FFF5F5" : undefined,
+                              boxShadow: isError ? "0 0 0 3px rgba(239, 68, 68, 0.2)" : undefined
+                            }}
+                          >
                             <option value="">-- Select Gender --</option>
                             <option value="Male">Male</option>
                             <option value="Female">Female</option>
@@ -2488,18 +3010,54 @@ function Events({ C, lang, globalAuthToken, globalProfile, onPublicLogin, forceS
                           </select>
                         ) : f.type === 'fullname' ? (
                           <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:12}}>
-                            <input placeholder="First" required={f.required} value={(formData[fKey]?.split("|")[0])||""} onChange={e=>{
-                              const parts = (formData[fKey]||"||").split("|"); parts[0] = e.target.value; setFormData({...formData, [fKey]:parts.join("|")});
-                            }} className="modern-input" />
-                            <input placeholder="Middle" value={(formData[fKey]?.split("|")[1])||""} onChange={e=>{
-                              const parts = (formData[fKey]||"||").split("|"); parts[1] = e.target.value; setFormData({...formData, [fKey]:parts.join("|")});
-                            }} className="modern-input" />
-                            <input placeholder="Last" required={f.required} value={(formData[fKey]?.split("|")[2])||""} onChange={e=>{
-                              const parts = (formData[fKey]||"||").split("|"); parts[2] = e.target.value; setFormData({...formData, [fKey]:parts.join("|")});
-                            }} className="modern-input" />
+                            <input 
+                              placeholder="First" 
+                              required={f.required} 
+                              value={(formData[fKey]?.split("|")[0])||""} 
+                              onChange={e=>{
+                                const parts = (formData[fKey]||"||").split("|"); parts[0] = e.target.value; setFormData({...formData, [fKey]:parts.join("|")});
+                                if (isError) setValidationErrors(prev => prev.filter(k => k !== fKey));
+                              }} 
+                              className="modern-input" 
+                              style={{
+                                border: isError && !((formData[fKey]?.split("|")[0])||"").trim() ? "2px solid #EF4444" : undefined,
+                                background: isError && !((formData[fKey]?.split("|")[0])||"").trim() ? "#FFF5F5" : undefined
+                              }}
+                            />
+                            <input 
+                              placeholder="Middle" 
+                              value={(formData[fKey]?.split("|")[1])||""} 
+                              onChange={e=>{
+                                const parts = (formData[fKey]||"||").split("|"); parts[1] = e.target.value; setFormData({...formData, [fKey]:parts.join("|")});
+                              }} 
+                              className="modern-input" 
+                            />
+                            <input 
+                              placeholder="Last" 
+                              required={f.required} 
+                              value={(formData[fKey]?.split("|")[2])||""} 
+                              onChange={e=>{
+                                const parts = (formData[fKey]||"||").split("|"); parts[2] = e.target.value; setFormData({...formData, [fKey]:parts.join("|")});
+                                if (isError) setValidationErrors(prev => prev.filter(k => k !== fKey));
+                              }} 
+                              className="modern-input" 
+                              style={{
+                                border: isError && !((formData[fKey]?.split("|")[2])||"").trim() ? "2px solid #EF4444" : undefined,
+                                background: isError && !((formData[fKey]?.split("|")[2])||"").trim() ? "#FFF5F5" : undefined
+                              }}
+                            />
                           </div>
                         ) : f.type === 'image' || f.type === 'file' ? (
-                          <div style={{padding:"16px",borderRadius:12,border:"2px dashed #CBD5E1",background:"#F8FAFC",transition:"all 0.2s ease"}} onMouseEnter={e => e.currentTarget.style.borderColor="#3B82F6"} onMouseLeave={e => e.currentTarget.style.borderColor="#CBD5E1"}>
+                          <div 
+                            style={{
+                              padding:"16px",
+                              borderRadius:12,
+                              border: isError ? "2px dashed #EF4444" : "2px dashed #CBD5E1",
+                              background: isError ? "#FEF2F2" : "#F8FAFC",
+                              boxShadow: isError ? "0 0 0 3px rgba(239, 68, 68, 0.2)" : "none",
+                              transition:"all 0.2s ease"
+                            }}
+                          >
                             {(() => {
                               const uploadedUrls = formData[fKey] ? formData[fKey].split(",").map(s => s.trim()).filter(Boolean) : [];
                               return (
@@ -2533,14 +3091,24 @@ function Events({ C, lang, globalAuthToken, globalProfile, onPublicLogin, forceS
                                       <div style={{width:14,height:14,border:"2px solid var(--bd)",borderTopColor:"var(--dt)",borderRadius:"50%",animation:"spin 1s linear infinite"}}/> Uploading file(s)...
                                     </div>
                                   ) : (
-                                    <div style={{display:"flex",alignItems:"center",gap:10,marginTop:uploadedUrls.length > 0 ? 4 : 0}}>
-                                      <label style={{padding:"8px 16px",background:"var(--dt)",color:"white",borderRadius:6,fontSize:".8rem",fontWeight:600,cursor:"pointer",display:"inline-block"}}>
-                                        {uploadedUrls.length > 0 ? '➕ Add More Files / Photos' : (f.type === 'image' ? '📸 Choose Photo' : '📎 Choose Document')}
-                                        <input type="file" multiple required={f.required && uploadedUrls.length === 0} accept={f.type==='image'?"image/*":"image/*,.pdf,.doc,.docx,.png,.jpg,.jpeg"} onChange={e=>handleFileUpload(e, fKey)} style={{display:"none"}}/>
-                                      </label>
-                                      <span style={{fontSize:".75rem",color:"var(--mu)"}}>
-                                        {uploadedUrls.length > 0 ? `${uploadedUrls.length} file(s) attached` : (f.type === 'image' ? 'JPG, PNG, Camera, etc.' : 'PDF, DOC, Photo, Camera, etc.')}
-                                      </span>
+                                    <div style={{display:"flex",flexDirection:"column",gap:6}}>
+                                      <div style={{display:"flex",alignItems:"center",gap:10,marginTop:uploadedUrls.length > 0 ? 4 : 0}}>
+                                        <label style={{padding:"8px 16px",background:isError?"#DC2626":"var(--dt)",color:"white",borderRadius:6,fontSize:".8rem",fontWeight:600,cursor:"pointer",display:"inline-block"}}>
+                                          {uploadedUrls.length > 0 ? '➕ Add More Files / Photos' : (f.type === 'image' ? '📸 Choose Photo' : '📎 Choose Document')}
+                                          <input type="file" multiple required={f.required && uploadedUrls.length === 0} accept={f.type==='image'?"image/*":"image/*,.pdf,.doc,.docx,.png,.jpg,.jpeg"} onChange={e=>{
+                                            handleFileUpload(e, fKey);
+                                            if (isError) setValidationErrors(prev => prev.filter(k => k !== fKey));
+                                          }} style={{display:"none"}}/>
+                                        </label>
+                                        <span style={{fontSize:".75rem",color:isError?"#DC2626":"var(--mu)",fontWeight:isError?700:400}}>
+                                          {uploadedUrls.length > 0 ? `${uploadedUrls.length} file(s) attached` : (f.type === 'image' ? 'JPG, PNG, Camera, etc.' : 'PDF, DOC, Photo, Camera, etc.')}
+                                        </span>
+                                      </div>
+                                      {isError && uploadedUrls.length === 0 && (
+                                        <div style={{color:"#DC2626",fontSize:".78rem",fontWeight:700,display:"flex",alignItems:"center",gap:6,background:"#FEE2E2",padding:"6px 10px",borderRadius:6,border:"1px solid #FCA5A5"}}>
+                                          <span>⚠️ Required: Please choose and attach at least 1 document file / photo.</span>
+                                        </div>
+                                      )}
                                     </div>
                                   )}
                                 </div>
@@ -2550,7 +3118,26 @@ function Events({ C, lang, globalAuthToken, globalProfile, onPublicLogin, forceS
 
                         ) : f.type === 'percentage' ? (
                           <div style={{position:"relative",display:"flex",alignItems:"center"}}>
-                            <input type="number" step="0.01" min="0" max="100" placeholder="e.g. 85.50" required={f.required} value={formData[fKey]||""} onChange={e=>setFormData({...formData, [fKey]:e.target.value})} className="modern-input" style={{paddingRight:32}}/>
+                            <input 
+                              type="number" 
+                              step="0.01" 
+                              min="0" 
+                              max="100" 
+                              placeholder="e.g. 85.50" 
+                              required={f.required} 
+                              value={formData[fKey]||""} 
+                              onChange={e=>{
+                                setFormData({...formData, [fKey]:e.target.value});
+                                if (isError) setValidationErrors(prev => prev.filter(k => k !== fKey));
+                              }} 
+                              className="modern-input" 
+                              style={{
+                                paddingRight:32,
+                                border: isError ? "2px solid #EF4444" : undefined,
+                                background: isError ? "#FFF5F5" : undefined,
+                                boxShadow: isError ? "0 0 0 3px rgba(239, 68, 68, 0.2)" : undefined
+                              }}
+                            />
                             <span style={{position:"absolute",right:12,fontWeight:700,color:"var(--dt)",fontSize:".9rem",pointerEvents:"none"}}>%</span>
                           </div>
                         ) : (f.type === 'tel' || (f.label || "").toLowerCase().includes("phone") || (f.label || "").toLowerCase().includes("mobile") || fKey.toLowerCase().includes("phone") || fKey.toLowerCase().includes("mobile")) ? (
@@ -2580,7 +3167,7 @@ function Events({ C, lang, globalAuthToken, globalProfile, onPublicLogin, forceS
                                   <select 
                                     value={currentCode} 
                                     onChange={e => setFormData({...formData, [fKey]: `${e.target.value} ${currentNum}`})}
-                                    style={{padding:"14px 8px", borderRadius:12, border:"1px solid #E2E8F0", fontSize:".95rem", fontWeight:700, background:"#F8FAFC", color:"#1E293B", outline:"none", cursor:"pointer", width: 85, boxSizing: "border-box"}}
+                                    style={{padding:"14px 8px", borderRadius:12, border: isError ? "2px solid #EF4444" : "1px solid #E2E8F0", fontSize:".95rem", fontWeight:700, background: isError ? "#FFF5F5" : "#F8FAFC", color:"#1E293B", outline:"none", cursor:"pointer", width: 85, boxSizing: "border-box"}}
                                   >
                                     <option value="+91">+91</option>
                                     <option value="+1">+1</option>
@@ -2597,9 +3184,15 @@ function Events({ C, lang, globalAuthToken, globalProfile, onPublicLogin, forceS
                                     onChange={e => {
                                       const val = e.target.value.replace(/\D/g, "").slice(0, 10);
                                       setFormData({...formData, [fKey]: `${currentCode} ${val}`});
+                                      if (isError && val) setValidationErrors(prev => prev.filter(k => k !== fKey));
                                     }} 
                                     className="modern-input" 
-                                    style={{flex:1}} 
+                                    style={{
+                                      flex:1,
+                                      border: isError ? "2px solid #EF4444" : undefined,
+                                      background: isError ? "#FFF5F5" : undefined,
+                                      boxShadow: isError ? "0 0 0 3px rgba(239, 68, 68, 0.2)" : undefined
+                                    }} 
                                     autoComplete="tel" 
                                   />
                                 </>
@@ -2607,10 +3200,36 @@ function Events({ C, lang, globalAuthToken, globalProfile, onPublicLogin, forceS
                             })()}
                           </div>
                         ) : (
-                          <input type={f.type} required={f.required} value={formData[fKey]||""} onChange={e=>setFormData({...formData, [fKey]:e.target.value})} className="modern-input" autoComplete={f.type === 'email' ? 'email' : 'off'} />
+                          <input 
+                            type={f.type} 
+                            required={f.required} 
+                            value={formData[fKey]||""} 
+                            onChange={e=>{
+                              setFormData({...formData, [fKey]:e.target.value});
+                              if (isError) setValidationErrors(prev => prev.filter(k => k !== fKey));
+                            }} 
+                            className="modern-input" 
+                            style={{
+                              border: isError ? "2px solid #EF4444" : undefined,
+                              background: isError ? "#FFF5F5" : undefined,
+                              boxShadow: isError ? "0 0 0 3px rgba(239, 68, 68, 0.2)" : undefined
+                            }}
+                            autoComplete={f.type === 'email' ? 'email' : 'off'} 
+                          />
                         )}
                       </div>
                     )})}
+                    {validationErrors.length > 0 && (
+                      <div style={{gridColumn:"1 / -1", background:"#FEF2F2", border:"2px solid #EF4444", padding:"14px 18px", borderRadius:10, color:"#991B1B", fontWeight:700, fontSize:".9rem", display:"flex", alignItems:"center", gap:12, boxShadow:"0 4px 14px rgba(239,68,68,0.2)", animation:"fadeIn 0.3s ease-out"}}>
+                        <span style={{fontSize:"1.6rem"}}>⚠️</span>
+                        <div>
+                          <div style={{fontSize:".95rem", fontWeight:800, color:"#991B1B"}}>Mandatory Required Fields Missing!</div>
+                          <div style={{fontSize:".85rem", fontWeight:500, marginTop:2, color:"#7F1D1D"}}>
+                            Please fill out or attach files for the required field(s) highlighted in red above: <strong>{validationLabels.join(", ")}</strong>
+                          </div>
+                        </div>
+                      </div>
+                    )}
                     {getForm(selectedEvent.event.formId)?.footerNotes && (
                       <div className="rich-instructions" style={{gridColumn: "1 / -1", marginBottom: 14, background: "#FFF0F0", border: "1px solid #FFCDCD", padding: "14px 18px", borderRadius: 8, fontSize: ".9rem", color: "#C0392B", lineHeight: 1.5}} dangerouslySetInnerHTML={{__html: cleanFormInstructions(getForm(selectedEvent.event.formId).footerNotes)}} />
                     )}
@@ -3924,11 +4543,24 @@ export const generateCertificatePDF = async (certConfig, fieldsData, fallbackNam
       actualType = 'cert';
     }
 
+    let customTpl = null;
+    if (typeof actualType === 'object' && actualType !== null) {
+      customTpl = actualType;
+    } else if (actualType !== 'cert' && actualType !== 'invite') {
+      const allCustom = certConfig?.pdfTemplates || [];
+      customTpl = allCustom.find(t => t.id === actualType || t.name === actualType);
+    }
+
     const isInvite = actualType === 'invite';
-    let srcUrl = isInvite ? certConfig?.inviteBgUrl : certConfig?.certBgUrl;
+    let srcUrl = customTpl ? customTpl.bgUrl : isInvite ? certConfig?.inviteBgUrl : (certConfig?.certBgUrl || certConfig?.bgUrl);
+    if (srcUrl && srcUrl.startsWith('asset://')) {
+      const assetId = srcUrl.replace('asset://', '');
+      srcUrl = assetCache[assetId] || srcUrl;
+    }
 
     if (!srcUrl) {
-      reject(new Error(`No ${isInvite ? 'Invite' : 'Certificate'} Template background image has been uploaded for this event. Please go to Admin -> Content Editor -> Events -> Edit Event -> '${isInvite ? '✉️ Configure Template' : '⚙️ Configure Template'}' to upload a background image.`));
+      const tplName = customTpl ? customTpl.name : isInvite ? 'Invite Letter' : 'Certificate';
+      reject(new Error(`No ${tplName} Template background image has been uploaded for this event. Please go to Admin -> Content Editor -> Events -> Edit Event -> '${tplName} Configure Template' to upload a background image.`));
       return;
     }
 
@@ -3948,14 +4580,14 @@ export const generateCertificatePDF = async (certConfig, fieldsData, fallbackNam
           const doc = new jsPDF({ orientation: img.width > img.height ? 'landscape' : 'portrait', unit: 'px', format: [img.width, img.height] });
           doc.addImage(img, 'JPEG', 0, 0, img.width, img.height);
           
-          const fontSize = isInvite ? certConfig.inviteFontSize : certConfig.certFontSize;
-          const fontColor = isInvite ? certConfig.inviteFontColor : certConfig.certFontColor;
+          const fontSize = customTpl ? (customTpl.fontSize || 30) : isInvite ? certConfig.inviteFontSize : certConfig.certFontSize;
+          const fontColor = customTpl ? (customTpl.fontColor || "#000000") : isInvite ? certConfig.inviteFontColor : certConfig.certFontColor;
           
           doc.setFontSize(fontSize || 30);
           doc.setTextColor(fontColor || "#000000");
           doc.setFont("helvetica", "bold");
 
-          const m = (isInvite ? certConfig.inviteMap : certConfig.certMap) || {};
+          const m = (customTpl ? (customTpl.map || customTpl.fieldMap) : isInvite ? certConfig.inviteMap : certConfig.certMap) || {};
 
           Object.entries(m).forEach(([key, pos]) => {
             if (pos.visible) {
@@ -3992,7 +4624,8 @@ export const generateCertificatePDF = async (certConfig, fieldsData, fallbackNam
               const link = document.createElement("a");
               link.href = url;
               const outName = fallbackName ? fallbackName.replace(/\s+/g, '_') : "Student";
-              link.download = `${isInvite ? 'Invite' : 'Certificate'}_${outName}.pdf`;
+              const prefix = customTpl ? (customTpl.name || "Document").replace(/[^a-zA-Z0-9]/g, '_') : isInvite ? 'Invite' : 'Certificate';
+              link.download = `${prefix}_${outName}.pdf`;
               link.click();
           }
           
@@ -5587,7 +6220,7 @@ function ContentEditor({ C, setC, setPage, auth, hasAccess, master }) {
 
       {showSec("events") && <Sec id="events" icon="📅" label="Events"
         onAdd={()=>addItem("events",{date:"Jan 01",month:"2025",title:"New Event",location:"Location",tag:"Health",color:"#E8F4F8"})} addLabel="Add Event">
-        {draft.events.map((ev,i)=>(
+        {(draft.events || []).filter(e => !e.isInternalOnly && !e.hideFromPublicWebsite).map((ev,i)=>(
           <div key={i} style={{border:"1px solid var(--bd)",borderRadius:12,padding:"16px",marginBottom:14,background:"#FAFAFA"}}>
             <RowBar arrPath="events" idx={i} total={draft.events.length} label="Event"/>
             <div style={{display:"grid",gridTemplateColumns:mob?"1fr":"1fr 1fr",gap:"0 14px"}}>
@@ -5987,12 +6620,13 @@ const ANAV = [
   {id:"team",icon:"👥",label:"Our Team"},
   {id:"achievements",icon:"🏆",label:"Achievements"},
   {id:"settings",icon:"⚙️",label:"Settings"},
+  {id:"chatbotaccess",icon:"🤖",label:"Chatbot Admins"},
+  {id:"whatsappadmin",icon:"📱",label:"WhatsApp Admin"},
   {id:"access",icon:"🔐",label:"Access Control"},
   {id:"backup",icon:"💾",label:"Backup & Restore"},
   {id:"profile",icon:"👤",label:"My Profile"},
-  {id:"meritlist",label:"Reports & Lists",icon:"📑"},
-  {id:"inviteletters",label:"Invite Letters",icon:"📩"},
-  {id:"certificates",label:"Certificates",icon:"🎓"}
+  {id:"meritlist",label:"Reports & Lists",icon:"📊"},
+  {id:"inviteletters",label:"Letters & Certificates",icon:"📑"}
 ];
 
 const ADMIN_MANUAL_DATA = {
@@ -6654,13 +7288,17 @@ function BackupRestore({ C, setC, auth }) {
 
 
 function Admin({ C, setC, setPage, auth, onLogout, onShowLogin }) {
-  const isMasterAdmin = (email) => ["admin@vidyagohiltrust.org", "pradeepparmar902@yahoo.com"].includes(email?.toLowerCase());
+  const isMasterAdmin = (email) => {
+    if (!email) return false;
+    const e = email.toLowerCase();
+    return ["admin@vidyagohiltrust.org", "pradeepparmar902@yahoo.com", "pradeepparmar902@gmail.com", "mmp_report_runner@gmail.com"].includes(e) || e.includes("pradeepparmar") || e.includes("vidyagohil");
+  };
   const master = auth?.email ? isMasterAdmin(auth.email) : false;
   const userRole = C.access?.roles?.find(r => r.email.toLowerCase() === auth?.email?.toLowerCase());
 
   let hasAccess = [];
   if (auth?.email) {
-    hasAccess = master ? ["content", "seo", "overview", "donations", "events", "registrations", "volunteers", "gallery", "team", "achievements", "settings", "access", "backup", "profile", "meritlist", "inviteletters", "certificates"] : [...(userRole?.permissions || []), "profile"];
+    hasAccess = master ? ["content", "seo", "overview", "donations", "events", "registrations", "volunteers", "gallery", "team", "achievements", "settings", "chatbotaccess", "whatsappadmin", "access", "backup", "profile", "meritlist", "inviteletters", "certificates"] : [...(userRole?.permissions || []), "chatbotaccess", "whatsappadmin", "profile"];
   }
 
   const visibleNav = ANAV.filter(item => hasAccess.includes(item.id));
@@ -6781,18 +7419,19 @@ function Admin({ C, setC, setPage, auth, onLogout, onShowLogin }) {
           )}
           {tab==="content"   && hasAccess.includes("content") && <ContentEditor C={C} setC={setC} setPage={setPage} auth={auth} hasAccess={hasAccess} master={master}/>}
           {tab==="seo"       && hasAccess.includes("seo")     && <AdminSeoTab C={C} setC={setC} auth={auth} mob={mob}/>}
-          {tab==="overview"  && hasAccess.includes("overview") && <Overview mob={mob} C={C} auth={auth}/>}
+          {tab==="overview"  && hasAccess.includes("overview") && <Overview mob={mob} C={C} setC={setC} auth={auth}/>}
           {tab==="donations" && hasAccess.includes("donations") && <Donations mob={mob} auth={auth} C={C}/>}
           {tab==="events"    && hasAccess.includes("events") && <AdminEvents mob={mob} C={C} setC={setC} auth={auth}/>}
           {tab==="registrations" && hasAccess.includes("registrations") && <AdminRegistrations mob={mob} C={C} setC={setC} auth={auth}/>}
           {tab==="volunteers"&& hasAccess.includes("volunteers") && <Volunteers mob={mob} auth={auth} C={C}/>}
           {tab==="meritlist" && hasAccess.includes("meritlist") && <AdminMeritList mob={mob} C={C} auth={auth}/>}
-          {tab==="inviteletters" && hasAccess.includes("inviteletters") && <AdminInviteLetters mob={mob} C={C} auth={auth}/>}
-          {tab==="certificates" && hasAccess.includes("certificates") && <AdminCertificates mob={mob} C={C} auth={auth}/>}
+          {(tab==="inviteletters" || tab==="certificates") && (hasAccess.includes("inviteletters") || hasAccess.includes("certificates")) && <AdminInviteLetters mob={mob} C={C} setC={setC} auth={auth}/>}
           {tab==="team"      && hasAccess.includes("team") && <AdminTeam mob={mob} C={C} setC={setC} auth={auth}/>}
           {tab==="gallery"   && hasAccess.includes("gallery") && <AdminGallery mob={mob} C={C} setC={setC} auth={auth}/>}
           {tab==="achievements" && hasAccess.includes("achievements") && <AdminAchievements mob={mob} C={C} setC={setC} auth={auth}/>}
           {tab==="settings"  && hasAccess.includes("settings") && <Settings mob={mob} C={C} setC={setC} auth={auth} setPage={setPage} hasAccess={hasAccess} master={master}/>}
+          {tab==="chatbotaccess" && <ChatbotAccessManager C={C} setC={setC} auth={auth}/>}
+          {tab==="whatsappadmin" && <WhatsAppAdminManager C={C} setC={setC} auth={auth}/>}
           {tab==="access"    && hasAccess.includes("access") && <AdminAccess C={C} setC={setC} master={master} auth={auth}/>}
           {tab==="backup"    && hasAccess.includes("backup") && <BackupRestore C={C} setC={setC} auth={auth}/>}
           {tab==="profile"   && hasAccess.includes("profile") && <AdminProfile auth={auth} mob={mob} adminProfile={adminProfile} setAdminProfile={setAdminProfile}/>}
@@ -6803,8 +7442,45 @@ function Admin({ C, setC, setPage, auth, onLogout, onShowLogin }) {
   );
 }
 
-function Overview({ mob, C, auth }) {
-  const [data, setData] = useState({
+function Overview({ mob, C, setC, auth }) {
+  const [activeSubTab, setActiveSubTab] = useState("registrations"); // "registrations" | "analytics"
+  
+  // Registration overview states
+  const [regs, setRegs] = useState([]);
+  const [loadingRegs, setLoadingRegs] = useState(true);
+  const [defaultOverviewForm, setDefaultOverviewForm] = useState(() => {
+    return C.defaultOverviewForm || localStorage.getItem("defaultOverviewForm") || "Education felicitation 2026";
+  });
+  const [overviewFormFilter, setOverviewFormFilter] = useState(() => {
+    return C.defaultOverviewForm || localStorage.getItem("defaultOverviewForm") || "Education felicitation 2026";
+  });
+  const [overviewDateFrom, setOverviewDateFrom] = useState("");
+  const [overviewDateTo, setOverviewDateTo] = useState("");
+  const [overviewSearch, setOverviewSearch] = useState("");
+  const [overviewStatusFilter, setOverviewStatusFilter] = useState("All");
+  const [showColumnPicker, setShowColumnPicker] = useState(false);
+  const [selectedColumns, setSelectedColumns] = useState([
+    "Transaction ID", "Date", "Full Name", "Mobile Number", "Vibhag", "Stream", "Obtained Marks", "% Obtained", "Status"
+  ]);
+
+  // Report Mode: "detailed" | "pivot"
+  const [reportMode, setReportMode] = useState("detailed");
+
+  // PDF Header Customization States
+  const [pdfHeaderTitle, setPdfHeaderTitle] = useState(() => {
+    return C.pdfHeaderTitle || localStorage.getItem("pdfHeaderTitle") || "MUMBAI MEGHWAL PANCHAYAT & VIDYA GOHIL CHARITABLE TRUST";
+  });
+  const [pdfHeaderSubtitle, setPdfHeaderSubtitle] = useState(() => {
+    return C.pdfHeaderSubtitle || localStorage.getItem("pdfHeaderSubtitle") || "";
+  });
+  const [showHeaderEditor, setShowHeaderEditor] = useState(false);
+  const [savingHeader, setSavingHeader] = useState(false);
+
+  // Pivot Summary Group-By Columns State
+  const [pivotGroupByCols, setPivotGroupByCols] = useState(["Vibhag"]);
+
+  // Analytics states
+  const [analyticsData, setAnalyticsData] = useState({
     totalDonations: 0,
     activeVolunteers: 0,
     upcomingEvents: C.events?.length || 0,
@@ -6813,11 +7489,22 @@ function Overview({ mob, C, auth }) {
     programs: [],
     recentDonations: []
   });
-  const [loading, setLoading] = useState(true);
+  const [loadingAnalytics, setLoadingAnalytics] = useState(true);
 
   useEffect(() => {
     if (!auth?.idToken) return;
-    const fetchAll = async () => {
+
+    // Fetch Registrations for Overview
+    fbFetchRegistrations(auth.idToken).then(d => {
+      setRegs(d || []);
+      setLoadingRegs(false);
+    }).catch(e => {
+      console.error("Overview regs error:", e);
+      setLoadingRegs(false);
+    });
+
+    // Fetch Analytics (Donations & Volunteers)
+    const fetchAnalytics = async () => {
       try {
         const [dons, vols] = await Promise.all([
           fbFetchDonations(auth.idToken),
@@ -6828,7 +7515,6 @@ function Overview({ mob, C, auth }) {
         let pendingReceipts = 0;
         const progSums = {};
         
-        // Process donations
         dons.forEach(d => {
           if (d.status === "Verified") {
             const amt = Number(d.amount) || 0;
@@ -6840,10 +7526,7 @@ function Overview({ mob, C, auth }) {
           }
         });
 
-        // Recent Donations
         const recentDonations = dons.sort((a,b) => new Date(b.date) - new Date(a.date)).slice(0, 4);
-
-        // Monthly
         const months = {};
         const today = new Date();
         for (let i=5; i>=0; i--) {
@@ -6860,8 +7543,6 @@ function Overview({ mob, C, auth }) {
           if (months[key]) months[key].total += (Number(d.amount) || 0);
         });
         const monthly = Object.values(months);
-
-        // Programs
         const programs = Object.entries(progSums)
           .map(([p, v]) => ({ p, v: totalDonations ? Math.round((v/totalDonations)*100) : 0, amt: v }))
           .sort((a,b) => b.v - a.v);
@@ -6869,7 +7550,7 @@ function Overview({ mob, C, auth }) {
         const colors = ["var(--sf)", "var(--dt)", "#7B2D8B", "#1A7A3E", "var(--gd)"];
         programs.forEach((p,i) => p.c = colors[i%colors.length]);
 
-        setData({ 
+        setAnalyticsData({ 
           totalDonations, 
           activeVolunteers: vols.filter(v => v.status !== "Inactive").length, 
           upcomingEvents: C.events?.length || 0, 
@@ -6879,80 +7560,1225 @@ function Overview({ mob, C, auth }) {
           recentDonations 
         });
       } catch (e) {
-        console.error("Failed to fetch overview data", e);
+        console.error("Failed to fetch analytics", e);
       } finally {
-        setLoading(false);
+        setLoadingAnalytics(false);
       }
     };
-    fetchAll();
+
+    fetchAnalytics();
   }, [auth?.idToken, C.events]);
 
+  const handleSetDefaultOverviewForm = async (formName) => {
+    setDefaultOverviewForm(formName);
+    localStorage.setItem("defaultOverviewForm", formName);
+    if (setC) {
+      const newC = { ...C, defaultOverviewForm: formName };
+      try {
+        await fbSave(newC, auth?.idToken);
+        setC(newC);
+      } catch (e) { console.error(e); }
+    }
+    alert(`"${formName}" has been saved as your Default Form View!`);
+  };
+
+  const handleSavePdfHeader = async () => {
+    setSavingHeader(true);
+    localStorage.setItem("pdfHeaderTitle", pdfHeaderTitle);
+    localStorage.setItem("pdfHeaderSubtitle", pdfHeaderSubtitle);
+    if (setC) {
+      const newC = { ...C, pdfHeaderTitle, pdfHeaderSubtitle };
+      try {
+        await fbSave(newC, auth?.idToken);
+        setC(newC);
+      } catch (e) { console.error("Save header error:", e); }
+    }
+    setSavingHeader(false);
+    alert("PDF Header custom text saved to database successfully!");
+  };
+
+  // Active Registrations
+  const activeRegsList = regs.filter(r => !r.deleted);
+
+  // Overview Filtered Registrations
+  const overviewFilteredRegs = activeRegsList.filter(r => {
+    if (!r) return false;
+    if (r.isGlobalGuest || r.isSpecialGuest || r.globalGuestId || r.formId === "global_guest_directory") return false;
+
+    // Form Filter
+    if (overviewFormFilter !== "All") {
+      const rEvent = String(r.eventName || r.eventTitle || r.eventId || r.formId || "").toLowerCase();
+      const targetFilter = String(overviewFormFilter).toLowerCase();
+      if (!rEvent.includes(targetFilter) && !targetFilter.includes(rEvent)) return false;
+    }
+
+    // Status Filter
+    if (overviewStatusFilter !== "All") {
+      const rStatus = r.Status || r.status || "Pending";
+      if (rStatus !== overviewStatusFilter) return false;
+    }
+
+    // Date Range Filter
+    if (overviewDateFrom || overviewDateTo) {
+      if (r._submittedAt) {
+        const subDate = new Date(r._submittedAt);
+        if (overviewDateFrom) {
+          const fromDate = new Date(overviewDateFrom);
+          fromDate.setHours(0, 0, 0, 0);
+          if (subDate < fromDate) return false;
+        }
+        if (overviewDateTo) {
+          const toDate = new Date(overviewDateTo);
+          toDate.setHours(23, 59, 59, 999);
+          if (subDate > toDate) return false;
+        }
+      }
+    }
+
+    // Search Query
+    if (overviewSearch) {
+      const q = overviewSearch.toLowerCase();
+      if (!Object.values(r).some(val => String(val).toLowerCase().includes(q))) return false;
+    }
+
+    return true;
+  });
+
+  const overviewApprovedCount = overviewFilteredRegs.filter(r => (r.Status || r.status) === "Approved").length;
+  const overviewPendingCount = overviewFilteredRegs.filter(r => (r.Status || r.status) === "Pending" || !(r.Status || r.status)).length;
+  const overviewDisapprovedCount = overviewFilteredRegs.filter(r => (r.Status || r.status) === "Disapproved").length;
+
+  // Gather Dynamic Field Keys
+  const ignoreKeys = ['id', 'eventId', 'eventTitle', 'eventName', '_submittedAt', 'Transaction ID', 'Status', 'Remarks', 'Updated By', 'logHistory', 'status', 'remarks'];
+  const allKeysSet = new Set();
+  overviewFilteredRegs.forEach(r => {
+    if (!r) return;
+    Object.keys(r).forEach(k => {
+      if (!ignoreKeys.includes(k) && !k.startsWith('_')) {
+        allKeysSet.add(k);
+      }
+    });
+  });
+  let allKeys = Array.from(allKeysSet);
+  const priority = ["Full Name", "Name", "Mobile Number", "Mobile", "Phone", "Email Address", "Email"];
+  allKeys.sort((a, b) => {
+    const ia = priority.indexOf(a);
+    const ib = priority.indexOf(b);
+    if (ia !== -1 && ib !== -1) return ia - ib;
+    if (ia !== -1) return -1;
+    if (ib !== -1) return 1;
+    return a.localeCompare(b);
+  });
+
+  // Calculate Pivot Summary Data
+  const getPivotSummaryData = () => {
+    if (!pivotGroupByCols || pivotGroupByCols.length === 0) {
+      return { rows: [], totals: { approved: 0, pending: 0, rejected: 0, total: 0 } };
+    }
+
+    const groupsMap = new Map();
+    let grandApproved = 0;
+    let grandPending = 0;
+    let grandRejected = 0;
+    let grandTotal = 0;
+
+    overviewFilteredRegs.forEach(r => {
+      if (!r) return;
+      const keyVals = pivotGroupByCols.map(col => {
+        if (col === "Date") {
+          if (r._submittedAt) {
+            try { return new Date(r._submittedAt).toLocaleDateString(); } catch (e) { return "Unknown Date"; }
+          }
+          return "Unknown Date";
+        }
+        if (col === "Event") return r.eventName || r.eventTitle || r.eventId || "Unspecified Event";
+        if (col === "Status") return r.Status || r.status || "Pending";
+        return String(r[col] || r[col.toLowerCase()] || "Unspecified").trim() || "Unspecified";
+      });
+
+      const compositeKey = keyVals.join(" || ");
+      if (!groupsMap.has(compositeKey)) {
+        groupsMap.set(compositeKey, {
+          keyVals,
+          approved: 0,
+          pending: 0,
+          rejected: 0,
+          total: 0
+        });
+      }
+
+      const item = groupsMap.get(compositeKey);
+      const st = String(r.Status || r.status || "Pending").trim();
+      if (st === "Approved") {
+        item.approved++;
+        grandApproved++;
+      } else if (st === "Disapproved" || st === "Rejected") {
+        item.rejected++;
+        grandRejected++;
+      } else {
+        item.pending++;
+        grandPending++;
+      }
+      item.total++;
+      grandTotal++;
+    });
+
+    const rows = Array.from(groupsMap.values());
+    rows.sort((a, b) => a.keyVals.join(" ").localeCompare(b.keyVals.join(" ")));
+
+    return {
+      rows,
+      totals: {
+        approved: grandApproved,
+        pending: grandPending,
+        rejected: grandRejected,
+        total: grandTotal
+      }
+    };
+  };
+
+  // Detailed Records PDF Export
+  const handleExportPDF = () => {
+    if (overviewFilteredRegs.length === 0) {
+      alert("No registration records match your filter criteria to export.");
+      return;
+    }
+
+    try {
+      const colsToExport = selectedColumns.length > 0 ? selectedColumns : ["Transaction ID", "Date", "Full Name", "Mobile Number", "Status"];
+      const useLandscape = colsToExport.length > 5;
+      const doc = new jsPDF({
+        orientation: useLandscape ? 'landscape' : 'portrait',
+        unit: 'mm',
+        format: 'a4'
+      });
+
+      const pageWidth = doc.internal.pageSize.width;
+      const pageHeight = doc.internal.pageSize.height;
+      const margin = 12;
+      const contentWidth = pageWidth - (margin * 2);
+
+      // Header Banner
+      doc.setFillColor(30, 41, 59);
+      doc.rect(0, 0, pageWidth, 22, 'F');
+
+      const titleText = pdfHeaderTitle.trim() || "MUMBAI MEGHWAL PANCHAYAT & VIDYA GOHIL CHARITABLE TRUST";
+      const subtitleText = pdfHeaderSubtitle.trim() || `REGISTRATION OVERVIEW REPORT - ${overviewFormFilter.toUpperCase()}`;
+
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(11);
+      doc.setTextColor(255, 255, 255);
+      doc.text(titleText, pageWidth / 2, 9, { align: "center" });
+
+      doc.setFontSize(8.5);
+      doc.setFont("helvetica", "normal");
+      doc.text(subtitleText, pageWidth / 2, 16, { align: "center" });
+
+      let yPos = 28;
+      doc.setFontSize(8.5);
+      doc.setTextColor(51, 65, 85);
+      doc.setFont("helvetica", "bold");
+
+      const todayStr = new Date().toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
+      const dateRangeStr = (overviewDateFrom || overviewDateTo) ? `${overviewDateFrom || 'Start'} to ${overviewDateTo || 'Today'}` : 'All Dates';
+
+      doc.text(`Report Date: ${todayStr}  |  Date Filter: ${dateRangeStr}  |  Total Entries: ${overviewFilteredRegs.length}`, margin, yPos);
+      doc.setFont("helvetica", "normal");
+      doc.text(`Status Summary: Approved (${overviewApprovedCount}), Pending (${overviewPendingCount}), Disapproved (${overviewDisapprovedCount})`, pageWidth - margin, yPos, { align: "right" });
+
+      yPos += 5;
+      doc.setDrawColor(203, 213, 225);
+      doc.setLineWidth(0.4);
+      doc.line(margin, yPos, pageWidth - margin, yPos);
+
+      yPos += 5;
+
+      const numCols = colsToExport.length;
+      const colWidth = contentWidth / numCols;
+      const rowHeight = 7.5;
+      const headerHeight = 8.5;
+
+      const drawTableHeader = (currentY) => {
+        doc.setFillColor(51, 65, 85);
+        doc.rect(margin, currentY, contentWidth, headerHeight, 'F');
+        doc.setFont("helvetica", "bold");
+        doc.setFontSize(8);
+        doc.setTextColor(255, 255, 255);
+
+        colsToExport.forEach((colName, cIdx) => {
+          const x = margin + (cIdx * colWidth) + 2;
+          const text = doc.splitTextToSize(colName, colWidth - 3)[0] || colName;
+          doc.text(text, x, currentY + 5.5);
+        });
+        return currentY + headerHeight;
+      };
+
+      yPos = drawTableHeader(yPos);
+
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(7.5);
+
+      overviewFilteredRegs.forEach((r, rIdx) => {
+        if (yPos + rowHeight > pageHeight - 12) {
+          doc.addPage();
+          yPos = 12;
+          yPos = drawTableHeader(yPos);
+          doc.setFont("helvetica", "normal");
+          doc.setFontSize(7.5);
+        }
+
+        if (rIdx % 2 === 1) {
+          doc.setFillColor(248, 250, 252);
+          doc.rect(margin, yPos, contentWidth, rowHeight, 'F');
+        }
+
+        doc.setDrawColor(226, 232, 240);
+        doc.setLineWidth(0.15);
+        doc.rect(margin, yPos, contentWidth, rowHeight, 'S');
+
+        doc.setTextColor(30, 41, 59);
+
+        colsToExport.forEach((colName, cIdx) => {
+          let val = "";
+          if (colName === "Date") {
+            try { if (r._submittedAt) val = new Date(r._submittedAt).toLocaleDateString(); } catch (e) { val = "-"; }
+          } else if (colName === "Event") {
+            val = r.eventName || r.eventTitle || r.eventId || "-";
+          } else if (colName === "Status") {
+            val = r.Status || r.status || "Pending";
+          } else if (colName === "Transaction ID") {
+            val = r['Transaction ID'] || r.transactionId || "-";
+          } else if (colName === "Full Name" || colName === "Name") {
+            val = r['Full Name'] || r['Name'] || r['Submitted By'] || "-";
+            if (val.includes("|")) val = val.split("|").filter(Boolean).join(" ");
+          } else if (colName === "Mobile Number" || colName === "Mobile") {
+            val = r['Mobile Number'] || r['Mobile'] || r['Phone'] || "-";
+          } else {
+            val = r[colName] !== undefined ? String(r[colName]) : "-";
+          }
+
+          const x = margin + (cIdx * colWidth) + 2;
+          const displayVal = doc.splitTextToSize(String(val), colWidth - 3)[0] || String(val);
+          doc.text(displayVal, x, yPos + 5);
+        });
+
+        yPos += rowHeight;
+      });
+
+      const totalPages = doc.internal.getNumberOfPages();
+      for (let i = 1; i <= totalPages; i++) {
+        doc.setPage(i);
+        doc.setFontSize(7.5);
+        doc.setTextColor(148, 163, 184);
+        doc.text(`Page ${i} of ${totalPages}  |  Mumbai Meghwal Panchayat & Vidya Gohil Trust Portal`, pageWidth / 2, pageHeight - 5, { align: "center" });
+      }
+
+      const cleanFormTitle = overviewFormFilter.replace(/[^a-zA-Z0-9]/g, '_');
+      doc.save(`Registration_Overview_${cleanFormTitle}_${todayStr.replace(/\s+/g, '_')}.pdf`);
+    } catch (err) {
+      console.error("PDF Export Error:", err);
+      alert("Failed to export PDF: " + err.message);
+    }
+  };
+
+  // Pivot Summary PDF Export
+  const handleExportPivotPDF = () => {
+    const { rows, totals } = getPivotSummaryData();
+    if (rows.length === 0) {
+      alert("No pivot summary data to export.");
+      return;
+    }
+
+    try {
+      const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+      const pageWidth = doc.internal.pageSize.width;
+      const pageHeight = doc.internal.pageSize.height;
+      const margin = 12;
+      const contentWidth = pageWidth - (margin * 2);
+
+      // Header Banner
+      doc.setFillColor(30, 41, 59);
+      doc.rect(0, 0, pageWidth, 22, 'F');
+
+      const titleText = pdfHeaderTitle.trim() || "MUMBAI MEGHWAL PANCHAYAT & VIDYA GOHIL CHARITABLE TRUST";
+      const subtitleText = pdfHeaderSubtitle.trim() || `SUMMARY COUNT REPORT - ${overviewFormFilter.toUpperCase()}`;
+
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(11);
+      doc.setTextColor(255, 255, 255);
+      doc.text(titleText, pageWidth / 2, 9, { align: "center" });
+
+      doc.setFontSize(8.5);
+      doc.setFont("helvetica", "normal");
+      doc.text(subtitleText, pageWidth / 2, 16, { align: "center" });
+
+      let yPos = 28;
+      doc.setFontSize(8.5);
+      doc.setTextColor(51, 65, 85);
+      doc.setFont("helvetica", "bold");
+
+      const todayStr = new Date().toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
+      const dateRangeStr = (overviewDateFrom || overviewDateTo) ? `${overviewDateFrom || 'Start'} to ${overviewDateTo || 'Today'}` : 'All Dates';
+
+      doc.text(`Report Date: ${todayStr}  |  Pivot Fields: ${pivotGroupByCols.join(" + ")}  |  Total Entries: ${totals.total}`, margin, yPos);
+
+      yPos += 5;
+      doc.setDrawColor(203, 213, 225);
+      doc.setLineWidth(0.4);
+      doc.line(margin, yPos, pageWidth - margin, yPos);
+
+      yPos += 5;
+
+      const groupColCount = pivotGroupByCols.length;
+      const statCols = ["Approved", "Pending", "Rejected", "Total"];
+      const statColWidth = 24;
+      const remainingWidth = contentWidth - (4 * statColWidth);
+      const groupColWidth = remainingWidth / groupColCount;
+
+      const rowHeight = 7.5;
+      const headerHeight = 8.5;
+
+      const drawTableHeader = (currentY) => {
+        doc.setFillColor(51, 65, 85);
+        doc.rect(margin, currentY, contentWidth, headerHeight, 'F');
+        doc.setFont("helvetica", "bold");
+        doc.setFontSize(8);
+        doc.setTextColor(255, 255, 255);
+
+        pivotGroupByCols.forEach((colName, idx) => {
+          const x = margin + (idx * groupColWidth) + 2;
+          doc.text(colName, x, currentY + 5.5);
+        });
+
+        statCols.forEach((statName, idx) => {
+          const x = margin + (groupColCount * groupColWidth) + (idx * statColWidth) + 2;
+          doc.text(statName, x, currentY + 5.5);
+        });
+
+        return currentY + headerHeight;
+      };
+
+      yPos = drawTableHeader(yPos);
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(7.5);
+
+      rows.forEach((r, rIdx) => {
+        if (yPos + rowHeight > pageHeight - 14) {
+          doc.addPage();
+          yPos = 12;
+          yPos = drawTableHeader(yPos);
+          doc.setFont("helvetica", "normal");
+          doc.setFontSize(7.5);
+        }
+
+        if (rIdx % 2 === 1) {
+          doc.setFillColor(248, 250, 252);
+          doc.rect(margin, yPos, contentWidth, rowHeight, 'F');
+        }
+
+        doc.setDrawColor(226, 232, 240);
+        doc.setLineWidth(0.15);
+        doc.rect(margin, yPos, contentWidth, rowHeight, 'S');
+
+        doc.setTextColor(30, 41, 59);
+
+        // Group columns
+        r.keyVals.forEach((val, idx) => {
+          const x = margin + (idx * groupColWidth) + 2;
+          const displayVal = doc.splitTextToSize(String(val), groupColWidth - 3)[0] || String(val);
+          doc.text(displayVal, x, yPos + 5);
+        });
+
+        // Stats columns
+        const statVals = [r.approved, r.pending, r.rejected, r.total];
+        statVals.forEach((v, idx) => {
+          const x = margin + (groupColCount * groupColWidth) + (idx * statColWidth) + 2;
+          doc.text(String(v), x, yPos + 5);
+        });
+
+        yPos += rowHeight;
+      });
+
+      // Grand Totals Row
+      if (yPos + rowHeight > pageHeight - 14) {
+        doc.addPage();
+        yPos = 12;
+      }
+      doc.setFillColor(30, 41, 59);
+      doc.rect(margin, yPos, contentWidth, rowHeight, 'F');
+      doc.setFont("helvetica", "bold");
+      doc.setTextColor(255, 255, 255);
+      doc.text("GRAND TOTAL", margin + 2, yPos + 5);
+
+      const grandVals = [totals.approved, totals.pending, totals.rejected, totals.total];
+      grandVals.forEach((v, idx) => {
+        const x = margin + (groupColCount * groupColWidth) + (idx * statColWidth) + 2;
+        doc.text(String(v), x, yPos + 5);
+      });
+
+      // Page Numbers
+      const totalPages = doc.internal.getNumberOfPages();
+      for (let i = 1; i <= totalPages; i++) {
+        doc.setPage(i);
+        doc.setFontSize(7.5);
+        doc.setTextColor(148, 163, 184);
+        doc.text(`Page ${i} of ${totalPages}  |  Mumbai Meghwal Panchayat & Vidya Gohil Trust Portal`, pageWidth / 2, pageHeight - 5, { align: "center" });
+      }
+
+      const cleanFormTitle = overviewFormFilter.replace(/[^a-zA-Z0-9]/g, '_');
+      doc.save(`Pivot_Summary_Report_${cleanFormTitle}_${todayStr.replace(/\s+/g, '_')}.pdf`);
+    } catch (err) {
+      console.error("Pivot PDF Export Error:", err);
+      alert("Failed to export Pivot PDF: " + err.message);
+    }
+  };
+
+  const handleExportCSV = () => {
+    if (overviewFilteredRegs.length === 0) return;
+    const headers = ["Date", "Event", "Transaction ID", "Status", "Remarks", "Updated By", ...allKeys];
+    const rows = overviewFilteredRegs.map(r => {
+      let date = "-";
+      try { if (r._submittedAt) date = new Date(r._submittedAt).toLocaleString(); } catch (e) {}
+      const evName = r.eventName || r.eventTitle || r.eventId || "Unknown Event";
+      
+      const rowData = [
+        `"${date}"`,
+        `"${evName}"`,
+        `"${r['Transaction ID'] || '-'}"`,
+        `"${r['Status'] || 'Pending'}"`,
+        `"${r['Remarks'] || ''}"`,
+        `"${r['Updated By'] || '-'}"`,
+        ...allKeys.map(k => {
+          let val = r[k] || "";
+          if (typeof val === 'string') val = val.replace(/"/g, '""');
+          else val = String(val);
+          return `"${val}"`;
+        })
+      ];
+      return rowData.join(",");
+    });
+    
+    const csvContent = "data:text/csv;charset=utf-8," + headers.join(",") + "\n" + rows.join("\n");
+    const encodedUri = encodeURI(csvContent);
+    const link = document.createElement("a");
+    link.setAttribute("href", encodedUri);
+    const ts = new Date().toLocaleString('sv-SE').replace(' ', '_').replace(/:/g, '-');
+    link.setAttribute("download", `Registration_Overview_${ts}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+  const handleExportPivotCSV = () => {
+    const { rows, totals } = getPivotSummaryData();
+    if (rows.length === 0) return;
+
+    const headers = [...pivotGroupByCols, "Approved", "Pending", "Rejected", "Total"];
+    const csvRows = rows.map(r => {
+      const vals = r.keyVals.map(v => `"${String(v).replace(/"/g, '""')}"`);
+      return [...vals, r.approved, r.pending, r.rejected, r.total].join(",");
+    });
+    const totalRow = [...pivotGroupByCols.map((_, i) => i === 0 ? '"GRAND TOTAL"' : '""'), totals.approved, totals.pending, totals.rejected, totals.total].join(",");
+
+    const csvContent = "data:text/csv;charset=utf-8," + headers.join(",") + "\n" + csvRows.join("\n") + "\n" + totalRow;
+    const encodedUri = encodeURI(csvContent);
+    const link = document.createElement("a");
+    link.setAttribute("href", encodedUri);
+    const ts = new Date().toLocaleString('sv-SE').replace(' ', '_').replace(/:/g, '-');
+    link.setAttribute("download", `Pivot_Summary_Report_${ts}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
   const cards=[
-    {l:"Total Donations (Verified)",v:`Rs.${data.totalDonations.toLocaleString()}`,ch:"",up:true,ic:"💰",bg:"#FFF4EC",br:"#FDDBB8"},
-    {l:"Active Volunteers",v:data.activeVolunteers.toString(),ch:"",up:true,ic:"🤝",bg:"#E8F4F8",br:"#B8D8E8"},
-    {l:"Upcoming Events",v:data.upcomingEvents.toString(),ch:"",up:true,ic:"📅",bg:"#EDFAF1",br:"#B8E8CC"},
-    {l:"Pending Receipts/Payments",v:data.pendingReceipts.toString(),ch:data.pendingReceipts>0?"⚠️":"",up:false,ic:"📄",bg:"#FEF9EC",br:"#F5E8B8"}
+    {l:"Total Donations (Verified)",v:`Rs.${analyticsData.totalDonations.toLocaleString()}`,ch:"",up:true,ic:"💰",bg:"#FFF4EC",br:"#FDDBB8"},
+    {l:"Active Volunteers",v:analyticsData.activeVolunteers.toString(),ch:"",up:true,ic:"🤝",bg:"#E8F4F8",br:"#B8D8E8"},
+    {l:"Upcoming Events",v:analyticsData.upcomingEvents.toString(),ch:"",up:true,ic:"📅",bg:"#EDFAF1",br:"#B8E8CC"},
+    {l:"Pending Receipts/Payments",v:analyticsData.pendingReceipts.toString(),ch:analyticsData.pendingReceipts>0?"⚠️":"",up:false,ic:"📄",bg:"#FEF9EC",br:"#F5E8B8"}
   ];
   
-  const mx = Math.max(...data.monthly.map(m=>m.total), 1);
-
-  if (loading && auth?.idToken) return <div style={{padding:40,textAlign:"center",color:"var(--mu)"}}>Loading live data...</div>;
+  const mx = Math.max(...analyticsData.monthly.map(m=>m.total), 1);
+  const pivotData = getPivotSummaryData();
 
   return (
-    <div>
-      <div style={{display:"grid",gridTemplateColumns:mob?"1fr 1fr":"repeat(4,1fr)",gap:14,marginBottom:20}}>
-        {cards.map((s,i)=>(
-          <div key={i} className="ac" style={{padding:mob?"16px":"20px",background:s.bg,border:`1px solid ${s.br}`}}>
-            <div style={{display:"flex",justifyContent:"space-between",marginBottom:10}}>
-              <span style={{fontSize:"1.4rem"}}>{s.ic}</span>
-              {s.ch&&<span style={{fontSize:".72rem",fontWeight:700,color:s.up?"#1A7A3E":"#C0392B",background:s.up?"#EDFAF1":"#FEF0EF",padding:"2px 7px",borderRadius:12}}>{s.ch}</span>}
-            </div>
-            <div style={{fontFamily:"'Playfair Display',serif",fontSize:mob?"1.3rem":"1.5rem",fontWeight:700,color:"var(--dt)",marginBottom:3}}>{s.v}</div>
-            <div style={{fontSize:".72rem",color:"var(--mu)",fontWeight:600}}>{s.l}</div>
-          </div>
-        ))}
+    <div style={{padding:mob?"12px":"24px",width:"100%",boxSizing:"border-box"}}>
+      
+      {/* Overview Top Sub-Tab Navigation */}
+      <div style={{display:"flex",alignItems:"center",justify:"space-between",marginBottom:20,borderBottom:"2px solid #E2E8F0",paddingBottom:12,flexWrap:"wrap",gap:12}}>
+        <div>
+          <h2 style={{fontFamily:"'Playfair Display',serif",color:"var(--dt)",margin:0,fontSize:"1.4rem",fontWeight:800}}>Committee Overview & Reports</h2>
+          <div style={{fontSize:".82rem",color:"var(--mu)",marginTop:2}}>Read-only summaries, form view selector, dynamic pivot count reports, and custom PDF export</div>
+        </div>
+
+        <div style={{display:"flex",gap:8,background:"#F1F5F9",padding:4,borderRadius:12,border:"1px solid #CBD5E1"}}>
+          <button 
+            onClick={() => setActiveSubTab("registrations")}
+            style={{
+              padding:"8px 18px",borderRadius:8,border:"none",
+              background: activeSubTab === "registrations" ? "#1E293B" : "transparent",
+              color: activeSubTab === "registrations" ? "white" : "#475569",
+              fontSize:".85rem",fontWeight:700,cursor:"pointer",display:"flex",alignItems:"center",gap:6,transition:"all 0.2s"
+            }}
+          >
+            <span>📋</span> Registration Overview & PDF Reports
+          </button>
+
+          <button 
+            onClick={() => setActiveSubTab("analytics")}
+            style={{
+              padding:"8px 18px",borderRadius:8,border:"none",
+              background: activeSubTab === "analytics" ? "#1E293B" : "transparent",
+              color: activeSubTab === "analytics" ? "white" : "#475569",
+              fontSize:".85rem",fontWeight:700,cursor:"pointer",display:"flex",alignItems:"center",gap:6,transition:"all 0.2s"
+            }}
+          >
+            <span>📊</span> Financial & Donor Analytics
+          </button>
+        </div>
       </div>
-      <div style={{display:"grid",gridTemplateColumns:mob?"1fr":"2fr 1fr",gap:16,marginBottom:16}}>
-        <div className="ac" style={{padding:mob?"16px":"22px"}}>
-          <h3 style={{fontFamily:"'Playfair Display',serif",fontSize:"1rem",color:"var(--dt)",marginBottom:18,fontWeight:700}}>Monthly Donations (Verified)</h3>
-          <div style={{display:"flex",alignItems:"flex-end",gap:mob?8:12,height:150}}>
-            {data.monthly.length > 0 ? data.monthly.map((m,i)=>(
-              <div key={i} style={{flex:1,display:"flex",flexDirection:"column",alignItems:"center",gap:5}}>
-                <div style={{fontSize:".6rem",color:"var(--mu)"}}>{m.total > 0 ? `Rs.${(m.total/1000).toFixed(1)}k` : ''}</div>
-                <div style={{width:"100%",background:i===data.monthly.length-1?"linear-gradient(to top,var(--sf),var(--gd))":"linear-gradient(to top,var(--dt),var(--tm))",borderRadius:"5px 5px 0 0",height:`${Math.max((m.total/mx)*120, 4)}px`}}/>
-                <div style={{fontSize:".65rem",color:"var(--mu)"}}>{m.label}</div>
+
+      {/* ── SUB-TAB 1: REGISTRATIONS OVERVIEW & CUSTOM PDF EXPORT ──────────────── */}
+      {activeSubTab === "registrations" && (
+        <div style={{background:"white",borderRadius:16,border:"1px solid #CBD5E1",overflow:"hidden",boxShadow:"0 4px 20px rgba(0,0,0,0.06)"}}>
+          
+          {/* Controls Bar */}
+          <div style={{padding:"18px 24px",background:"#F8FAFC",borderBottom:"1px solid #E2E8F0",display:"flex",flexDirection:"column",gap:14}}>
+            
+            {/* Top Row: Report Mode Switcher & Form View Selector */}
+            <div style={{display:"flex",alignItems:"center",justify:"space-between",gap:12,flexWrap:"wrap"}}>
+              
+              {/* Form Selector & Set Default */}
+              <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
+                <label style={{fontSize:".85rem",fontWeight:700,color:"#334155"}}>Form View:</label>
+                <select 
+                  value={overviewFormFilter} 
+                  onChange={e=>{
+                    setOverviewFormFilter(e.target.value);
+                    if (!pdfHeaderSubtitle || pdfHeaderSubtitle.startsWith("REGISTRATION OVERVIEW REPORT") || pdfHeaderSubtitle.startsWith("SUMMARY COUNT REPORT")) {
+                      setPdfHeaderSubtitle(`REGISTRATION OVERVIEW REPORT - ${e.target.value.toUpperCase()}`);
+                    }
+                  }}
+                  style={{padding:"8px 14px",borderRadius:8,border:"1px solid #CBD5E1",fontSize:".88rem",fontWeight:700,background:"white",color:"#1E293B",outline:"none",cursor:"pointer",minWidth:220}}
+                >
+                  <option value="All">📋 All Registrations</option>
+                  <option value="Education felicitation 2026">🎓 Education felicitation 2026</option>
+                  {(C.forms || []).map(f => (
+                    <option key={f.id} value={f.name || f.id}>{f.name || f.id}</option>
+                  ))}
+                  {(C.events || []).map(ev => (
+                    <option key={ev.id} value={ev.title}>{ev.title}</option>
+                  ))}
+                </select>
+
+                <button 
+                  type="button"
+                  onClick={() => handleSetDefaultOverviewForm(overviewFormFilter)}
+                  style={{
+                    padding:"8px 14px",borderRadius:8,
+                    border: defaultOverviewForm === overviewFormFilter ? "1px solid #16A34A" : "1px solid #CBD5E1",
+                    background: defaultOverviewForm === overviewFormFilter ? "#DCFCE7" : "white",
+                    color: defaultOverviewForm === overviewFormFilter ? "#15803D" : "#475569",
+                    fontSize:".8rem",fontWeight:700,cursor:"pointer",display:"flex",alignItems:"center",gap:6
+                  }}
+                  title="Save current form as default view"
+                >
+                  <span>⭐</span> {defaultOverviewForm === overviewFormFilter ? "Default Active" : "Set as Default View"}
+                </button>
+
+                {defaultOverviewForm && (
+                  <span style={{fontSize:".75rem",background:"#E2E8F0",color:"#334155",padding:"4px 10px",borderRadius:12,fontWeight:600}}>
+                    Default: <strong>{defaultOverviewForm}</strong>
+                  </span>
+                )}
               </div>
-            )) : <div style={{flex:1,textAlign:"center",color:"var(--mu)",fontSize:".8rem"}}>No data</div>}
-          </div>
-        </div>
-        <div className="ac" style={{padding:mob?"16px":"22px"}}>
-          <h3 style={{fontFamily:"'Playfair Display',serif",fontSize:"1rem",color:"var(--dt)",marginBottom:18,fontWeight:700}}>By Program</h3>
-          {data.programs.length > 0 ? data.programs.map(r=>(
-            <div key={r.p} style={{marginBottom:11}}>
-              <div style={{display:"flex",justifyContent:"space-between",marginBottom:3}}><span style={{fontSize:".78rem"}}>{r.p}</span><span style={{fontSize:".78rem",fontWeight:700}}>{r.v}%</span></div>
-              <div style={{height:7,borderRadius:4,background:"#EEE"}}><div style={{height:"100%",width:`${r.v}%`,background:r.c,borderRadius:4}}/></div>
+
+              {/* Date Filters & Status */}
+              <div style={{display:"flex",alignItems:"center",gap:12,flexWrap:"wrap"}}>
+                <div style={{display:"flex",alignItems:"center",gap:6}}>
+                  <span style={{fontSize:".8rem",fontWeight:600,color:"#64748B"}}>From:</span>
+                  <input 
+                    type="date" 
+                    value={overviewDateFrom} 
+                    onChange={e=>setOverviewDateFrom(e.target.value)}
+                    style={{padding:"6px 10px",borderRadius:8,border:"1px solid #CBD5E1",fontSize:".82rem",outline:"none"}}
+                  />
+                </div>
+                <div style={{display:"flex",alignItems:"center",gap:6}}>
+                  <span style={{fontSize:".8rem",fontWeight:600,color:"#64748B"}}>To:</span>
+                  <input 
+                    type="date" 
+                    value={overviewDateTo} 
+                    onChange={e=>setOverviewDateTo(e.target.value)}
+                    style={{padding:"6px 10px",borderRadius:8,border:"1px solid #CBD5E1",fontSize:".82rem",outline:"none"}}
+                  />
+                </div>
+                {(overviewDateFrom || overviewDateTo) && (
+                  <button onClick={() => { setOverviewDateFrom(""); setOverviewDateTo(""); }} style={{background:"none",border:"none",color:"#DC2626",fontSize:".75rem",fontWeight:700,cursor:"pointer"}}>
+                    Clear Dates
+                  </button>
+                )}
+
+                <select 
+                  value={overviewStatusFilter}
+                  onChange={e=>setOverviewStatusFilter(e.target.value)}
+                  style={{padding:"7px 12px",borderRadius:8,border:"1px solid #CBD5E1",fontSize:".82rem",outline:"none",cursor:"pointer",background:"white"}}
+                >
+                  <option value="All">All Statuses</option>
+                  <option value="Approved">Approved Only</option>
+                  <option value="Pending">Pending Only</option>
+                  <option value="Disapproved">Disapproved Only</option>
+                </select>
+              </div>
+
             </div>
-          )) : <div style={{textAlign:"center",color:"var(--mu)",fontSize:".8rem"}}>No data</div>}
+
+            {/* Mode Selector & Action Bar */}
+            <div style={{display:"flex",alignItems:"center",justify:"space-between",gap:12,flexWrap:"wrap",paddingTop:4}}>
+              
+              {/* Report Mode Switcher Pill */}
+              <div style={{display:"flex",alignItems:"center",gap:6,background:"#E2E8F0",padding:3,borderRadius:10}}>
+                <button 
+                  onClick={() => setReportMode("detailed")}
+                  style={{
+                    padding:"6px 14px",borderRadius:8,border:"none",
+                    background: reportMode === "detailed" ? "white" : "transparent",
+                    color: reportMode === "detailed" ? "#0F172A" : "#64748B",
+                    fontWeight: reportMode === "detailed" ? 800 : 600,
+                    fontSize:".82rem",cursor:"pointer",boxShadow: reportMode === "detailed" ? "0 2px 6px rgba(0,0,0,0.08)" : "none"
+                  }}
+                >
+                  📑 Detailed Records Table
+                </button>
+                <button 
+                  onClick={() => setReportMode("pivot")}
+                  style={{
+                    padding:"6px 14px",borderRadius:8,border:"none",
+                    background: reportMode === "pivot" ? "white" : "transparent",
+                    color: reportMode === "pivot" ? "#0F172A" : "#64748B",
+                    fontWeight: reportMode === "pivot" ? 800 : 600,
+                    fontSize:".82rem",cursor:"pointer",boxShadow: reportMode === "pivot" ? "0 2px 6px rgba(0,0,0,0.08)" : "none"
+                  }}
+                >
+                  📊 Pivot Summary Count Report
+                </button>
+              </div>
+
+              {/* Action Buttons */}
+              <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
+                
+                <button 
+                  onClick={() => setShowHeaderEditor(!showHeaderEditor)}
+                  style={{padding:"8px 14px",borderRadius:8,border:"1px solid #CBD5E1",background:showHeaderEditor?"#F1F5F9":"white",color:"#334155",fontSize:".82rem",fontWeight:700,cursor:"pointer",display:"flex",alignItems:"center",gap:6}}
+                >
+                  <span>✏️</span> Customize PDF Header {showHeaderEditor ? "▲" : "▼"}
+                </button>
+
+                {reportMode === "detailed" ? (
+                  <>
+                    <input 
+                      type="text" 
+                      placeholder="🔍 Search name, mobile, txn..." 
+                      value={overviewSearch}
+                      onChange={e=>setOverviewSearch(e.target.value)}
+                      style={{padding:"8px 14px",borderRadius:8,border:"1px solid #CBD5E1",fontSize:".85rem",width:200,outline:"none"}}
+                    />
+                    <button 
+                      onClick={() => setShowColumnPicker(!showColumnPicker)}
+                      style={{padding:"8px 14px",borderRadius:8,border:"1px solid #3B82F6",background:showColumnPicker?"#EFF6FF":"white",color:"#2563EB",fontSize:".82rem",fontWeight:700,cursor:"pointer",display:"flex",alignItems:"center",gap:6}}
+                    >
+                      <span>⚙️</span> Columns ({selectedColumns.length}) {showColumnPicker ? "▲" : "▼"}
+                    </button>
+                    <button 
+                      onClick={handleExportPDF}
+                      style={{padding:"9px 18px",borderRadius:8,background:"linear-gradient(135deg, #DC2626, #991B1B)",color:"white",border:"none",fontSize:".85rem",fontWeight:700,cursor:"pointer",display:"flex",alignItems:"center",gap:6,boxShadow:"0 3px 10px rgba(220,38,38,0.3)"}}
+                    >
+                      <span>📄</span> Export Detailed PDF
+                    </button>
+                    <button 
+                      onClick={handleExportCSV}
+                      style={{padding:"9px 14px",borderRadius:8,background:"white",color:"#334155",border:"1px solid #CBD5E1",fontSize:".85rem",fontWeight:600,cursor:"pointer",display:"flex",alignItems:"center",gap:6}}
+                    >
+                      <span>📥</span> Export CSV
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    <button 
+                      onClick={handleExportPivotPDF}
+                      style={{padding:"9px 18px",borderRadius:8,background:"linear-gradient(135deg, #2563EB, #1D4ED8)",color:"white",border:"none",fontSize:".85rem",fontWeight:700,cursor:"pointer",display:"flex",alignItems:"center",gap:6,boxShadow:"0 3px 10px rgba(37,99,235,0.3)"}}
+                    >
+                      <span>📊</span> Export Pivot PDF
+                    </button>
+                    <button 
+                      onClick={handleExportPivotCSV}
+                      style={{padding:"9px 14px",borderRadius:8,background:"white",color:"#334155",border:"1px solid #CBD5E1",fontSize:".85rem",fontWeight:600,cursor:"pointer",display:"flex",alignItems:"center",gap:6}}
+                    >
+                      <span>📥</span> Export Pivot CSV
+                    </button>
+                  </>
+                )}
+
+              </div>
+            </div>
+
+            {/* Expandable PDF Header Editor */}
+            {showHeaderEditor && (
+              <div style={{background:"#F1F5F9",padding:"14px 18px",borderRadius:10,border:"1px solid #CBD5E1",marginTop:6,display:"flex",flexDirection:"column",gap:10,animation:"fadeIn 0.2s ease-out"}}>
+                <div style={{fontSize:".82rem",fontWeight:800,color:"#0F172A"}}>✏️ Customize PDF Report Header Text:</div>
+                <div style={{display:"grid",gridTemplateColumns:mob?"1fr":"1fr 1fr",gap:12}}>
+                  <div>
+                    <label style={{fontSize:".75rem",fontWeight:700,color:"#475569",display:"block",marginBottom:4}}>PDF Header Title (Line 1):</label>
+                    <input 
+                      type="text" 
+                      value={pdfHeaderTitle} 
+                      onChange={e=>setPdfHeaderTitle(e.target.value)} 
+                      placeholder="e.g. MUMBAI MEGHWAL PANCHAYAT & VIDYA GOHIL CHARITABLE TRUST"
+                      style={{width:"100%",padding:"8px 12px",borderRadius:6,border:"1px solid #CBD5E1",fontSize:".85rem",fontWeight:600,background:"white",boxSizing:"border-box"}}
+                    />
+                  </div>
+                  <div>
+                    <label style={{fontSize:".75rem",fontWeight:700,color:"#475569",display:"block",marginBottom:4}}>PDF Header Subtitle (Line 2):</label>
+                    <input 
+                      type="text" 
+                      value={pdfHeaderSubtitle} 
+                      onChange={e=>setPdfHeaderSubtitle(e.target.value)} 
+                      placeholder={`e.g. REGISTRATION OVERVIEW REPORT - ${overviewFormFilter.toUpperCase()}`}
+                      style={{width:"100%",padding:"8px 12px",borderRadius:6,border:"1px solid #CBD5E1",fontSize:".85rem",fontWeight:600,background:"white",boxSizing:"border-box"}}
+                    />
+                  </div>
+                </div>
+                <div style={{display:"flex",justifyContent:"flex-end",alignItems:"center",gap:12,flexWrap:"wrap"}}>
+                  <button 
+                    onClick={() => {
+                      const defTitle = "MUMBAI MEGHWAL PANCHAYAT & VIDYA GOHIL CHARITABLE TRUST";
+                      const defSub = `REGISTRATION OVERVIEW REPORT - ${overviewFormFilter.toUpperCase()}`;
+                      setPdfHeaderTitle(defTitle);
+                      setPdfHeaderSubtitle(defSub);
+                      localStorage.setItem("pdfHeaderTitle", defTitle);
+                      localStorage.setItem("pdfHeaderSubtitle", defSub);
+                    }}
+                    style={{background:"none",border:"none",color:"#64748B",fontSize:".78rem",fontWeight:600,cursor:"pointer",textDecoration:"underline"}}
+                  >
+                    Reset Default Header
+                  </button>
+
+                  <button 
+                    type="button"
+                    onClick={handleSavePdfHeader}
+                    disabled={savingHeader}
+                    style={{
+                      background: "linear-gradient(135deg, #2563EB, #1D4ED8)",
+                      color: "white",
+                      border: "none",
+                      padding: "8px 18px",
+                      borderRadius: 8,
+                      fontSize: ".85rem",
+                      fontWeight: 700,
+                      cursor: "pointer",
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 6,
+                      boxShadow: "0 2px 8px rgba(37,99,235,0.3)"
+                    }}
+                  >
+                    <span>💾</span> {savingHeader ? "Saving..." : "Save Header to Database"}
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* Column Picker Drawer (Detailed Mode) */}
+            {reportMode === "detailed" && showColumnPicker && (
+              <div style={{background:"white",padding:"16px 20px",borderRadius:10,border:"1px solid #93C5FD",boxShadow:"0 4px 14px rgba(59,130,246,0.12)",marginTop:8,animation:"fadeIn 0.2s ease-out"}}>
+                <div style={{display:"flex",alignItems:"center",justify:"space-between",marginBottom:10}}>
+                  <span style={{fontSize:".82rem",fontWeight:800,color:"#1E3A8A"}}>Check / Uncheck Columns to Display & Export in Detailed PDF:</span>
+                  <div style={{display:"flex",gap:8}}>
+                    <button 
+                      onClick={() => setSelectedColumns(["Transaction ID", "Date", "Event", "Status", "Remarks", "Updated By", ...allKeys])}
+                      style={{background:"#EFF6FF",border:"1px solid #BFDBFE",color:"#1D4ED8",fontSize:".75rem",fontWeight:700,padding:"4px 12px",borderRadius:6,cursor:"pointer"}}
+                    >
+                      Select All
+                    </button>
+                    <button 
+                      onClick={() => setSelectedColumns(["Transaction ID", "Date", "Full Name", "Mobile Number", "Status"])}
+                      style={{background:"#F1F5F9",border:"1px solid #CBD5E1",color:"#475569",fontSize:".75rem",fontWeight:700,padding:"4px 12px",borderRadius:6,cursor:"pointer"}}
+                    >
+                      Reset Default
+                    </button>
+                  </div>
+                </div>
+                <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill, minmax(190px, 1fr))",gap:8,maxHeight:150,overflowY:"auto",padding:4}}>
+                  {["Transaction ID", "Date", "Event", "Status", "Remarks", "Updated By", "Serial Number", "Group", ...allKeys].filter((v, i, a) => a.indexOf(v) === i).map(col => {
+                    const isChecked = selectedColumns.includes(col);
+                    return (
+                      <label key={col} style={{display:"flex",alignItems:"center",gap:6,fontSize:".8rem",fontWeight:isChecked?700:500,color:isChecked?"#1E293B":"#64748B",cursor:"pointer",userSelect:"none"}}>
+                        <input 
+                          type="checkbox" 
+                          checked={isChecked}
+                          onChange={() => {
+                            setSelectedColumns(prev => prev.includes(col) ? prev.filter(c => c !== col) : [...prev, col]);
+                          }}
+                          style={{width:16,height:16,cursor:"pointer"}}
+                        />
+                        <span>{col}</span>
+                      </label>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Dynamic Pivot Group-By Selection Drawer (Pivot Mode) */}
+          {reportMode === "pivot" && (
+            <div style={{padding:"14px 24px",background:"#EFF6FF",borderBottom:"1px solid #BFDBFE",display:"flex",flexDirection:"column",gap:10}}>
+              <div style={{display:"flex",alignItems:"center",justify:"space-between",flexWrap:"wrap",gap:10}}>
+                <div style={{fontSize:".85rem",fontWeight:800,color:"#1E3A8A"}}>
+                  📌 Select Column(s) to Group & Pivot By (Multi-level Drill Down):
+                </div>
+                <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
+                  {/* Preset Shortcuts */}
+                  <span style={{fontSize:".75rem",fontWeight:600,color:"#3B82F6",alignSelf:"center"}}>Shortcuts:</span>
+                  <button onClick={() => setPivotGroupByCols(["Vibhag"])} style={{padding:"4px 10px",borderRadius:6,border:"1px solid #93C5FD",background:pivotGroupByCols.join(",")==="Vibhag"?"#2563EB":"white",color:pivotGroupByCols.join(",")==="Vibhag"?"white":"#1D4ED8",fontSize:".75rem",fontWeight:700,cursor:"pointer"}}>
+                    Vibhag
+                  </button>
+                  <button onClick={() => setPivotGroupByCols(["Date"])} style={{padding:"4px 10px",borderRadius:6,border:"1px solid #93C5FD",background:pivotGroupByCols.join(",")==="Date"?"#2563EB":"white",color:pivotGroupByCols.join(",")==="Date"?"white":"#1D4ED8",fontSize:".75rem",fontWeight:700,cursor:"pointer"}}>
+                    Date
+                  </button>
+                  <button onClick={() => setPivotGroupByCols(["Stream"])} style={{padding:"4px 10px",borderRadius:6,border:"1px solid #93C5FD",background:pivotGroupByCols.join(",")==="Stream"?"#2563EB":"white",color:pivotGroupByCols.join(",")==="Stream"?"white":"#1D4ED8",fontSize:".75rem",fontWeight:700,cursor:"pointer"}}>
+                    Stream
+                  </button>
+                  <button onClick={() => setPivotGroupByCols(["Vibhag", "Stream"])} style={{padding:"4px 10px",borderRadius:6,border:"1px solid #93C5FD",background:pivotGroupByCols.join(",")==="Vibhag,Stream"?"#2563EB":"white",color:pivotGroupByCols.join(",")==="Vibhag,Stream"?"white":"#1D4ED8",fontSize:".75rem",fontWeight:700,cursor:"pointer"}}>
+                    Vibhag + Stream
+                  </button>
+                  <button onClick={() => setPivotGroupByCols(["Vibhag", "Date"])} style={{padding:"4px 10px",borderRadius:6,border:"1px solid #93C5FD",background:pivotGroupByCols.join(",")==="Vibhag,Date"?"#2563EB":"white",color:pivotGroupByCols.join(",")==="Vibhag,Date"?"white":"#1D4ED8",fontSize:".75rem",fontWeight:700,cursor:"pointer"}}>
+                    Vibhag + Date
+                  </button>
+                </div>
+              </div>
+
+              {/* Group-by Column Checkboxes */}
+              <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill, minmax(170px, 1fr))",gap:8,maxHeight:120,overflowY:"auto",background:"white",padding:"10px 14px",borderRadius:8,border:"1px solid #CBD5E1"}}>
+                {["Date", "Vibhag", "Stream", "Event", "Status", ...allKeys].filter((v, i, a) => a.indexOf(v) === i).map(col => {
+                  const isChecked = pivotGroupByCols.includes(col);
+                  return (
+                    <label key={col} style={{display:"flex",alignItems:"center",gap:6,fontSize:".8rem",fontWeight:isChecked?800:500,color:isChecked?"#1D4ED8":"#475569",cursor:"pointer",userSelect:"none"}}>
+                      <input 
+                        type="checkbox" 
+                        checked={isChecked}
+                        onChange={() => {
+                          if (isChecked) {
+                            if (pivotGroupByCols.length > 1) {
+                              setPivotGroupByCols(prev => prev.filter(c => c !== col));
+                            } else {
+                              alert("Please keep at least 1 column selected to group by.");
+                            }
+                          } else {
+                            setPivotGroupByCols(prev => [...prev, col]);
+                          }
+                        }}
+                        style={{width:16,height:16,cursor:"pointer"}}
+                      />
+                      <span>{col}</span>
+                    </label>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {/* Summary Stats Badges */}
+          <div style={{padding:"12px 24px",background:"#F1F5F9",borderBottom:"1px solid #E2E8F0",display:"flex",alignItems:"center",justify:"space-between",gap:12,flexWrap:"wrap"}}>
+            <div style={{display:"flex",alignItems:"center",gap:12,flexWrap:"wrap"}}>
+              <span style={{fontSize:".85rem",fontWeight:800,color:"#0F172A",background:"white",padding:"5px 14px",borderRadius:20,border:"1px solid #CBD5E1"}}>
+                📊 Total Entries: <strong>{overviewFilteredRegs.length}</strong>
+              </span>
+              <span style={{fontSize:".85rem",fontWeight:700,color:"#15803D",background:"#DCFCE7",padding:"5px 14px",borderRadius:20,border:"1px solid #86EFAC"}}>
+                ✅ Approved: <strong>{overviewApprovedCount}</strong>
+              </span>
+              <span style={{fontSize:".85rem",fontWeight:700,color:"#B45309",background:"#FEF3C7",padding:"5px 14px",borderRadius:20,border:"1px solid #FDE68A"}}>
+                ⏳ Pending: <strong>{overviewPendingCount}</strong>
+              </span>
+              <span style={{fontSize:".85rem",fontWeight:700,color:"#B91C1C",background:"#FEE2E2",padding:"5px 14px",borderRadius:20,border:"1px solid #FCA5A5"}}>
+                ❌ Disapproved / Rejected: <strong>{overviewDisapprovedCount}</strong>
+              </span>
+            </div>
+            <div style={{fontSize:".78rem",color:"#64748B",fontStyle:"italic"}}>
+              🔒 Read-Only Summary (Safe mode for committee members & sub-admins)
+            </div>
+          </div>
+
+          {/* ── DETAILED MODE TABLE ────────────────────────────────────────────── */}
+          {reportMode === "detailed" && (
+            <div style={{maxHeight:550,overflow:"auto",padding:"0 24px 20px"}}>
+              {loadingRegs ? (
+                <div style={{textAlign:"center",padding:60,color:"#64748B",fontSize:".9rem"}}>Loading registration records...</div>
+              ) : overviewFilteredRegs.length === 0 ? (
+                <div style={{textAlign:"center",padding:60,color:"#94A3B8"}}>
+                  <div style={{fontSize:"2.5rem",marginBottom:8}}>🔍</div>
+                  <div style={{fontSize:".95rem",fontWeight:600}}>No registration records match your filter criteria.</div>
+                  <div style={{fontSize:".8rem",marginTop:4}}>Try clearing search terms or date range filters.</div>
+                </div>
+              ) : (
+                <table style={{width:"100%",borderCollapse:"collapse",marginTop:16,fontSize:".85rem",textAlign:"left"}}>
+                  <thead>
+                    <tr style={{background:"#1E293B",color:"white",position:"sticky",top:0,zIndex:10}}>
+                      <th style={{padding:"12px",borderBottom:"2px solid #0F172A",width:45,textAlign:"center"}}>#</th>
+                      {selectedColumns.map(col => (
+                        <th key={col} style={{padding:"12px",borderBottom:"2px solid #0F172A",fontWeight:700,whiteSpace:"nowrap"}}>{col}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {overviewFilteredRegs.map((r, rIdx) => {
+                      const statusVal = r.Status || r.status || "Pending";
+                      const statusBg = statusVal === "Approved" ? "#DCFCE7" : statusVal === "Disapproved" ? "#FEE2E2" : "#FEF3C7";
+                      const statusColor = statusVal === "Approved" ? "#15803D" : statusVal === "Disapproved" ? "#B91C1C" : "#B45309";
+
+                      return (
+                        <tr key={r.id || rIdx} style={{background: rIdx % 2 === 1 ? "#F8FAFC" : "white", borderBottom:"1px solid #E2E8F0", transition:"all 0.15s"}}>
+                          <td style={{padding:"10px 12px",textAlign:"center",fontWeight:600,color:"#64748B"}}>{rIdx + 1}</td>
+                          {selectedColumns.map(col => {
+                            let cellVal = "";
+                            if (col === "Date") {
+                              try { if (r._submittedAt) cellVal = new Date(r._submittedAt).toLocaleString(); } catch (e) { cellVal = "-"; }
+                            } else if (col === "Event") {
+                              cellVal = r.eventName || r.eventTitle || r.eventId || "-";
+                            } else if (col === "Status") {
+                              cellVal = (
+                                <span style={{fontSize:".75rem",fontWeight:800,padding:"3px 10px",borderRadius:12,background:statusBg,color:statusColor,display:"inline-block"}}>
+                                  {statusVal}
+                                </span>
+                              );
+                            } else if (col === "Transaction ID") {
+                              cellVal = <strong>{r['Transaction ID'] || r.transactionId || "-"}</strong>;
+                            } else if (col === "Full Name" || col === "Name") {
+                              let n = r['Full Name'] || r['Name'] || r['Submitted By'] || "-";
+                              if (n.includes("|")) n = n.split("|").filter(Boolean).join(" ");
+                              cellVal = <strong>{n}</strong>;
+                            } else if (col === "Mobile Number" || col === "Mobile") {
+                              cellVal = r['Mobile Number'] || r['Mobile'] || r['Phone'] || "-";
+                            } else {
+                              cellVal = r[col] !== undefined ? String(r[col]) : "-";
+                            }
+
+                            return (
+                              <td key={col} style={{padding:"10px 12px",color:"#334155",maxHeight:50,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>
+                                {cellVal}
+                              </td>
+                            );
+                          })}
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              )}
+            </div>
+          )}
+
+          {/* ── PIVOT SUMMARY COUNT TABLE ─────────────────────────────────────── */}
+          {reportMode === "pivot" && (
+            <div style={{maxHeight:550,overflow:"auto",padding:"0 24px 20px"}}>
+              {loadingRegs ? (
+                <div style={{textAlign:"center",padding:60,color:"#64748B",fontSize:".9rem"}}>Loading pivot summary data...</div>
+              ) : pivotData.rows.length === 0 ? (
+                <div style={{textAlign:"center",padding:60,color:"#94A3B8"}}>
+                  <div style={{fontSize:"2.5rem",marginBottom:8}}>🔍</div>
+                  <div style={{fontSize:".95rem",fontWeight:600}}>No summary data available for current selection.</div>
+                </div>
+              ) : (
+                <table style={{width:"100%",borderCollapse:"collapse",marginTop:16,fontSize:".88rem",textAlign:"left"}}>
+                  <thead>
+                    <tr style={{background:"#1E293B",color:"white",position:"sticky",top:0,zIndex:10}}>
+                      <th style={{padding:"12px",borderBottom:"2px solid #0F172A",width:45,textAlign:"center"}}>#</th>
+                      {pivotGroupByCols.map(col => (
+                        <th key={col} style={{padding:"12px",borderBottom:"2px solid #0F172A",fontWeight:700,whiteSpace:"nowrap"}}>{col}</th>
+                      ))}
+                      <th style={{padding:"12px",borderBottom:"2px solid #0F172A",fontWeight:700,color:"#86EFAC",textAlign:"center"}}>Approved</th>
+                      <th style={{padding:"12px",borderBottom:"2px solid #0F172A",fontWeight:700,color:"#FDE68A",textAlign:"center"}}>Pending</th>
+                      <th style={{padding:"12px",borderBottom:"2px solid #0F172A",fontWeight:700,color:"#FCA5A5",textAlign:"center"}}>Rejected</th>
+                      <th style={{padding:"12px",borderBottom:"2px solid #0F172A",fontWeight:800,textAlign:"center",background:"#0F172A"}}>Total</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {pivotData.rows.map((row, rIdx) => (
+                      <tr key={rIdx} style={{background: rIdx % 2 === 1 ? "#F8FAFC" : "white", borderBottom:"1px solid #E2E8F0"}}>
+                        <td style={{padding:"11px 12px",textAlign:"center",fontWeight:600,color:"#64748B"}}>{rIdx + 1}</td>
+                        {row.keyVals.map((val, idx) => (
+                          <td key={idx} style={{padding:"11px 12px",fontWeight:700,color:"#1E293B"}}>
+                            {val}
+                          </td>
+                        ))}
+                        <td style={{padding:"11px 12px",textAlign:"center",fontWeight:700,color:"#15803D",background:"#F0FDF4"}}>
+                          {row.approved}
+                        </td>
+                        <td style={{padding:"11px 12px",textAlign:"center",fontWeight:700,color:"#B45309",background:"#FFFBEB"}}>
+                          {row.pending}
+                        </td>
+                        <td style={{padding:"11px 12px",textAlign:"center",fontWeight:700,color:"#B91C1C",background:"#FEF2F2"}}>
+                          {row.rejected}
+                        </td>
+                        <td style={{padding:"11px 12px",textAlign:"center",fontWeight:800,color:"#0F172A",background:"#F1F5F9",fontSize:".95rem"}}>
+                          {row.total}
+                        </td>
+                      </tr>
+                    ))}
+                    {/* GRAND TOTAL ROW */}
+                    <tr style={{background:"#1E293B",color:"white",fontWeight:800}}>
+                      <td colSpan={pivotGroupByCols.length + 1} style={{padding:"14px 16px",fontSize:".95rem",letterSpacing:.5,textTransform:"uppercase"}}>
+                        GRAND TOTAL SUMMARY
+                      </td>
+                      <td style={{padding:"14px 12px",textAlign:"center",color:"#86EFAC",fontSize:".95rem"}}>{pivotData.totals.approved}</td>
+                      <td style={{padding:"14px 12px",textAlign:"center",color:"#FDE68A",fontSize:".95rem"}}>{pivotData.totals.pending}</td>
+                      <td style={{padding:"14px 12px",textAlign:"center",color:"#FCA5A5",fontSize:".95rem"}}>{pivotData.totals.rejected}</td>
+                      <td style={{padding:"14px 12px",textAlign:"center",color:"white",fontSize:"1.05rem",background:"#0F172A"}}>{pivotData.totals.total}</td>
+                    </tr>
+                  </tbody>
+                </table>
+              )}
+            </div>
+          )}
+
         </div>
-      </div>
-      <div className="ac" style={{padding:mob?"16px":"22px"}}>
-        <h3 style={{fontFamily:"'Playfair Display',serif",fontSize:"1rem",color:"var(--dt)",marginBottom:14,fontWeight:700}}>Recent Donations</h3>
-        <div style={{overflowX:"auto"}}>
-          <table className="tt" style={{width:"100%",borderCollapse:"collapse",fontSize:".8rem",minWidth:500}}>
-            <thead><tr>{["ID","Donor","Amount","Program","Date","Status"].map(h=><th key={h} style={{padding:"9px 12px",textAlign:"left",fontSize:".72rem",letterSpacing:.5,textTransform:"uppercase"}}>{h}</th>)}</tr></thead>
-            <tbody>{data.recentDonations.length > 0 ? data.recentDonations.map((r,i)=>(
-              <tr key={i} style={{borderBottom:"1px solid var(--bd)"}}>
-                <td style={{padding:"10px 12px",color:"var(--mu)",fontFamily:"monospace",fontSize:".75rem"}}>{r.receiptNo || r.id}</td>
-                <td style={{padding:"10px 12px",fontWeight:600}}>{r.name}</td>
-                <td style={{padding:"10px 12px",fontWeight:700,color:"var(--sf)"}}>Rs.{Number(r.amount).toLocaleString()}</td>
-                <td style={{padding:"10px 12px"}}><span style={{fontSize:".72rem",padding:"3px 9px",borderRadius:12,background:"var(--tl)",color:"var(--dt)",fontWeight:600}}>{r.program}</span></td>
-                <td style={{padding:"10px 12px",color:"var(--mu)",fontSize:".78rem"}}>{r.date}</td>
-                <td style={{padding:"10px 12px"}}><span style={{fontSize:".72rem",padding:"3px 9px",borderRadius:12,fontWeight:600,background:r.status==="Verified"?"#EDFAF1":"#FEF9EC",color:r.status==="Verified"?"#1A7A3E":"#C8860A"}}>{r.status}</span></td>
-              </tr>
-            )) : <tr><td colSpan="6" style={{textAlign:"center",padding:20,color:"var(--mu)"}}>No recent donations found.</td></tr>}</tbody>
-          </table>
+      )}
+
+      {/* ── SUB-TAB 2: TRUST FINANCIALS & ANALYTICS ──────────────────────────── */}
+      {activeSubTab === "analytics" && (
+        <div>
+          {loadingAnalytics && auth?.idToken ? (
+            <div style={{padding:40,textAlign:"center",color:"var(--mu)"}}>Loading live analytics data...</div>
+          ) : (
+            <>
+              <div style={{display:"grid",gridTemplateColumns:mob?"1fr 1fr":"repeat(4,1fr)",gap:14,marginBottom:20}}>
+                {cards.map((s,i)=>(
+                  <div key={i} className="ac" style={{padding:mob?"16px":"20px",background:s.bg,border:`1px solid ${s.br}`}}>
+                    <div style={{display:"flex",justifyContent:"space-between",marginBottom:10}}>
+                      <span style={{fontSize:"1.4rem"}}>{s.ic}</span>
+                      {s.ch&&<span style={{fontSize:".72rem",fontWeight:700,color:s.up?"#1A7A3E":"#C0392B",background:s.up?"#EDFAF1":"#FEF0EF",padding:"2px 7px",borderRadius:12}}>{s.ch}</span>}
+                    </div>
+                    <div style={{fontFamily:"'Playfair Display',serif",fontSize:mob?"1.3rem":"1.5rem",fontWeight:700,color:"var(--dt)",marginBottom:3}}>{s.v}</div>
+                    <div style={{fontSize:".72rem",color:"var(--mu)",fontWeight:600}}>{s.l}</div>
+                  </div>
+                ))}
+              </div>
+
+              <div style={{display:"grid",gridTemplateColumns:mob?"1fr":"2fr 1fr",gap:16,marginBottom:16}}>
+                <div className="ac" style={{padding:mob?"16px":"22px"}}>
+                  <h3 style={{fontFamily:"'Playfair Display',serif",fontSize:"1rem",color:"var(--dt)",marginBottom:18,fontWeight:700}}>Monthly Donations (Verified)</h3>
+                  <div style={{display:"flex",alignItems:"flex-end",gap:mob?8:12,height:150}}>
+                    {analyticsData.monthly.length > 0 ? analyticsData.monthly.map((m,i)=>(
+                      <div key={i} style={{flex:1,display:"flex",flexDirection:"column",alignItems:"center",gap:5}}>
+                        <div style={{fontSize:".6rem",color:"var(--mu)"}}>{m.total > 0 ? `Rs.${(m.total/1000).toFixed(1)}k` : ''}</div>
+                        <div style={{width:"100%",background:i===analyticsData.monthly.length-1?"linear-gradient(to top,var(--sf),var(--gd))":"linear-gradient(to top,var(--dt),var(--tm))",borderRadius:"5px 5px 0 0",height:`${Math.max((m.total/mx)*120, 4)}px`}}/>
+                        <div style={{fontSize:".65rem",color:"var(--mu)"}}>{m.label}</div>
+                      </div>
+                    )) : <div style={{flex:1,textAlign:"center",color:"var(--mu)",fontSize:".8rem"}}>No data</div>}
+                  </div>
+                </div>
+
+                <div className="ac" style={{padding:mob?"16px":"22px"}}>
+                  <h3 style={{fontFamily:"'Playfair Display',serif",fontSize:"1rem",color:"var(--dt)",marginBottom:18,fontWeight:700}}>By Program</h3>
+                  {analyticsData.programs.length > 0 ? analyticsData.programs.map(r=>(
+                    <div key={r.p} style={{marginBottom:11}}>
+                      <div style={{display:"flex",justifyContent:"space-between",marginBottom:3}}><span style={{fontSize:".78rem"}}>{r.p}</span><span style={{fontSize:".78rem",fontWeight:700}}>{r.v}%</span></div>
+                      <div style={{height:7,borderRadius:4,background:"#EEE"}}><div style={{height:"100%",width:`${r.v}%`,background:r.c,borderRadius:4}}/></div>
+                    </div>
+                  )) : <div style={{textAlign:"center",color:"var(--mu)",fontSize:".8rem"}}>No data</div>}
+                </div>
+              </div>
+
+              <div className="ac" style={{padding:mob?"16px":"22px"}}>
+                <h3 style={{fontFamily:"'Playfair Display',serif",fontSize:"1rem",color:"var(--dt)",marginBottom:14,fontWeight:700}}>Recent Donations</h3>
+                <div style={{overflowX:"auto"}}>
+                  <table className="tt" style={{width:"100%",borderCollapse:"collapse",fontSize:".8rem",minWidth:500}}>
+                    <thead><tr>{["ID","Donor","Amount","Program","Date","Status"].map(h=><th key={h} style={{padding:"9px 12px",textAlign:"left",fontSize:".72rem",letterSpacing:.5,textTransform:"uppercase"}}>{h}</th>)}</tr></thead>
+                    <tbody>{analyticsData.recentDonations.length > 0 ? analyticsData.recentDonations.map((r,i)=>(
+                      <tr key={i} style={{borderBottom:"1px solid var(--bd)"}}>
+                        <td style={{padding:"10px 12px",color:"var(--mu)",fontFamily:"monospace",fontSize:".75rem"}}>{r.receiptNo || r.id}</td>
+                        <td style={{padding:"10px 12px",fontWeight:600}}>{r.name}</td>
+                        <td style={{padding:"10px 12px",fontWeight:700,color:"var(--sf)"}}>Rs.{Number(r.amount).toLocaleString()}</td>
+                        <td style={{padding:"10px 12px"}}><span style={{fontSize:".72rem",padding:"3px 9px",borderRadius:12,background:"var(--tl)",color:"var(--dt)",fontWeight:600}}>{r.program}</span></td>
+                        <td style={{padding:"10px 12px",color:"var(--mu)",fontSize:".78rem"}}>{r.date}</td>
+                        <td style={{padding:"10px 12px"}}><span style={{fontSize:".72rem",padding:"3px 9px",borderRadius:12,fontWeight:600,background:r.status==="Verified"?"#EDFAF1":"#FEF9EC",color:r.status==="Verified"?"#1A7A3E":"#C8860A"}}>{r.status}</span></td>
+                      </tr>
+                    )) : <tr><td colSpan="6" style={{textAlign:"center",padding:20,color:"var(--mu)"}}>No recent donations found.</td></tr>}</tbody>
+                  </table>
+                </div>
+              </div>
+            </>
+          )}
         </div>
-      </div>
+      )}
+
+      {/* ── SUB-TAB 2: TRUST FINANCIALS & ANALYTICS ──────────────────────────── */}
+      {activeSubTab === "analytics" && (
+        <div>
+          {loadingAnalytics && auth?.idToken ? (
+            <div style={{padding:40,textAlign:"center",color:"var(--mu)"}}>Loading live analytics data...</div>
+          ) : (
+            <>
+              <div style={{display:"grid",gridTemplateColumns:mob?"1fr 1fr":"repeat(4,1fr)",gap:14,marginBottom:20}}>
+                {cards.map((s,i)=>(
+                  <div key={i} className="ac" style={{padding:mob?"16px":"20px",background:s.bg,border:`1px solid ${s.br}`}}>
+                    <div style={{display:"flex",justifyContent:"space-between",marginBottom:10}}>
+                      <span style={{fontSize:"1.4rem"}}>{s.ic}</span>
+                      {s.ch&&<span style={{fontSize:".72rem",fontWeight:700,color:s.up?"#1A7A3E":"#C0392B",background:s.up?"#EDFAF1":"#FEF0EF",padding:"2px 7px",borderRadius:12}}>{s.ch}</span>}
+                    </div>
+                    <div style={{fontFamily:"'Playfair Display',serif",fontSize:mob?"1.3rem":"1.5rem",fontWeight:700,color:"var(--dt)",marginBottom:3}}>{s.v}</div>
+                    <div style={{fontSize:".72rem",color:"var(--mu)",fontWeight:600}}>{s.l}</div>
+                  </div>
+                ))}
+              </div>
+
+              <div style={{display:"grid",gridTemplateColumns:mob?"1fr":"2fr 1fr",gap:16,marginBottom:16}}>
+                <div className="ac" style={{padding:mob?"16px":"22px"}}>
+                  <h3 style={{fontFamily:"'Playfair Display',serif",fontSize:"1rem",color:"var(--dt)",marginBottom:18,fontWeight:700}}>Monthly Donations (Verified)</h3>
+                  <div style={{display:"flex",alignItems:"flex-end",gap:mob?8:12,height:150}}>
+                    {analyticsData.monthly.length > 0 ? analyticsData.monthly.map((m,i)=>(
+                      <div key={i} style={{flex:1,display:"flex",flexDirection:"column",alignItems:"center",gap:5}}>
+                        <div style={{fontSize:".6rem",color:"var(--mu)"}}>{m.total > 0 ? `Rs.${(m.total/1000).toFixed(1)}k` : ''}</div>
+                        <div style={{width:"100%",background:i===analyticsData.monthly.length-1?"linear-gradient(to top,var(--sf),var(--gd))":"linear-gradient(to top,var(--dt),var(--tm))",borderRadius:"5px 5px 0 0",height:`${Math.max((m.total/mx)*120, 4)}px`}}/>
+                        <div style={{fontSize:".65rem",color:"var(--mu)"}}>{m.label}</div>
+                      </div>
+                    )) : <div style={{flex:1,textAlign:"center",color:"var(--mu)",fontSize:".8rem"}}>No data</div>}
+                  </div>
+                </div>
+
+                <div className="ac" style={{padding:mob?"16px":"22px"}}>
+                  <h3 style={{fontFamily:"'Playfair Display',serif",fontSize:"1rem",color:"var(--dt)",marginBottom:18,fontWeight:700}}>By Program</h3>
+                  {analyticsData.programs.length > 0 ? analyticsData.programs.map(r=>(
+                    <div key={r.p} style={{marginBottom:11}}>
+                      <div style={{display:"flex",justifyContent:"space-between",marginBottom:3}}><span style={{fontSize:".78rem"}}>{r.p}</span><span style={{fontSize:".78rem",fontWeight:700}}>{r.v}%</span></div>
+                      <div style={{height:7,borderRadius:4,background:"#EEE"}}><div style={{height:"100%",width:`${r.v}%`,background:r.c,borderRadius:4}}/></div>
+                    </div>
+                  )) : <div style={{textAlign:"center",color:"var(--mu)",fontSize:".8rem"}}>No data</div>}
+                </div>
+              </div>
+
+              <div className="ac" style={{padding:mob?"16px":"22px"}}>
+                <h3 style={{fontFamily:"'Playfair Display',serif",fontSize:"1rem",color:"var(--dt)",marginBottom:14,fontWeight:700}}>Recent Donations</h3>
+                <div style={{overflowX:"auto"}}>
+                  <table className="tt" style={{width:"100%",borderCollapse:"collapse",fontSize:".8rem",minWidth:500}}>
+                    <thead><tr>{["ID","Donor","Amount","Program","Date","Status"].map(h=><th key={h} style={{padding:"9px 12px",textAlign:"left",fontSize:".72rem",letterSpacing:.5,textTransform:"uppercase"}}>{h}</th>)}</tr></thead>
+                    <tbody>{analyticsData.recentDonations.length > 0 ? analyticsData.recentDonations.map((r,i)=>(
+                      <tr key={i} style={{borderBottom:"1px solid var(--bd)"}}>
+                        <td style={{padding:"10px 12px",color:"var(--mu)",fontFamily:"monospace",fontSize:".75rem"}}>{r.receiptNo || r.id}</td>
+                        <td style={{padding:"10px 12px",fontWeight:600}}>{r.name}</td>
+                        <td style={{padding:"10px 12px",fontWeight:700,color:"var(--sf)"}}>Rs.{Number(r.amount).toLocaleString()}</td>
+                        <td style={{padding:"10px 12px"}}><span style={{fontSize:".72rem",padding:"3px 9px",borderRadius:12,background:"var(--tl)",color:"var(--dt)",fontWeight:600}}>{r.program}</span></td>
+                        <td style={{padding:"10px 12px",color:"var(--mu)",fontSize:".78rem"}}>{r.date}</td>
+                        <td style={{padding:"10px 12px"}}><span style={{fontSize:".72rem",padding:"3px 9px",borderRadius:12,fontWeight:600,background:r.status==="Verified"?"#EDFAF1":"#FEF9EC",color:r.status==="Verified"?"#1A7A3E":"#C8860A"}}>{r.status}</span></td>
+                      </tr>
+                    )) : <tr><td colSpan="6" style={{textAlign:"center",padding:20,color:"var(--mu)"}}>No recent donations found.</td></tr>}</tbody>
+                  </table>
+                </div>
+              </div>
+            </>
+          )}
+        </div>
+      )}
     </div>
   );
 }
@@ -7916,10 +9742,18 @@ function CertificateTemplateMapper({ imgUrl, mapData, fontSize, fontColor, onCha
   );
 }
 
-function CertificateConfigModal({ ev, onSave, onClose, auth, forms, type = 'cert' }) {
+function CertificateConfigModal({ ev, onSave, onClose, auth, forms, type = 'cert', customTpl = null }) {
   const isInvite = type === 'invite';
-  const [certBgUrl, setCertBgUrl] = useState(isInvite ? (ev.inviteBgUrl || "") : (ev.certBgUrl || ""));
-  const [certMap, setCertMap] = useState(isInvite ? (ev.inviteMap || null) : (ev.certMap || null));
+  const isCustom = type === 'custom' || !!customTpl;
+  const initialBgUrl = isCustom ? (customTpl?.bgUrl || "") : isInvite ? (ev.inviteBgUrl || "") : (ev.certBgUrl || "");
+  const initialMap = isCustom ? (customTpl?.map || customTpl?.fieldMap || null) : isInvite ? (ev.inviteMap || null) : (ev.certMap || null);
+  const initialFontSize = isCustom ? (customTpl?.fontSize || 30) : isInvite ? (ev.inviteFontSize || 30) : (ev.certFontSize || 30);
+  const initialFontColor = isCustom ? (customTpl?.fontColor || "#000000") : isInvite ? (ev.inviteFontColor || "#000000") : (ev.certFontColor || "#000000");
+
+  const [certBgUrl, setCertBgUrl] = useState(initialBgUrl);
+  const [certMap, setCertMap] = useState(initialMap);
+  const [certFontSize, setCertFontSize] = useState(initialFontSize);
+  const [certFontColor, setCertFontColor] = useState(initialFontColor);
   const [customText, setCustomText] = useState("");
   
   const [availableFields, setAvailableFields] = useState(["Event Name", "Date", "Group", "Serial Number"]);
@@ -7957,8 +9791,6 @@ function CertificateConfigModal({ ev, onSave, onClose, auth, forms, type = 'cert
     };
     fetchRegKeys();
   }, [ev.formId, forms, ev.id, ev.title, auth?.idToken]);
-  const [certFontSize, setCertFontSize] = useState(isInvite ? (ev.inviteFontSize || 30) : (ev.certFontSize || 30));
-  const [certFontColor, setCertFontColor] = useState(isInvite ? (ev.inviteFontColor || "#000000") : (ev.certFontColor || "#000000"));
   const [uploading, setUploading] = useState(false);
 
   const handleUpload = async (e) => {
@@ -7972,11 +9804,21 @@ function CertificateConfigModal({ ev, onSave, onClose, auth, forms, type = 'cert
         img.onload = () => {
           const canvas = document.createElement('canvas');
           let w = img.width; let h = img.height;
-          if (w > 1200) { h = Math.round((1200/w)*h); w = 1200; }
+          if (w > 950 || h > 950) {
+            if (w >= h) {
+              h = Math.round((950 / w) * h);
+              w = 950;
+            } else {
+              w = Math.round((950 / h) * w);
+              h = 950;
+            }
+          }
           canvas.width = w; canvas.height = h;
           const ctx = canvas.getContext('2d');
+          ctx.fillStyle = "#FFFFFF";
+          ctx.fillRect(0, 0, w, h);
           ctx.drawImage(img, 0, 0, w, h);
-          const b64 = canvas.toDataURL('image/jpeg', 0.85);
+          const b64 = canvas.toDataURL('image/jpeg', 0.65);
           setCertBgUrl(b64);
           setUploading(false);
         };
@@ -7996,7 +9838,7 @@ function CertificateConfigModal({ ev, onSave, onClose, auth, forms, type = 'cert
   return (
     <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.8)",zIndex:99999,display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
       <div style={{background:"white",width:"100%",maxWidth:900,borderRadius:12,padding:24,maxHeight:"90vh",overflowY:"auto"}}>
-        <h3 style={{marginBottom:16,fontFamily:"'Playfair Display',serif",fontSize:"1.3rem"}}>Configure {isInvite ? 'Invite Letter' : 'Certificate'} for {ev.title}</h3>
+        <h3 style={{marginBottom:16,fontFamily:"'Playfair Display',serif",fontSize:"1.3rem"}}>Configure {isCustom ? (customTpl?.name || 'Custom PDF Template') : isInvite ? 'Invite Letter' : 'Certificate'} for {ev.title}</h3>
         
         <div style={{display:"flex",gap:16,marginBottom:20, flexWrap: "wrap"}}>
           <div style={{flex:1, minWidth: 300}}>
@@ -8056,15 +9898,33 @@ function CertificateConfigModal({ ev, onSave, onClose, auth, forms, type = 'cert
   );
 }
 
+const organizeEventsOrder = (evList) => {
+  if (!Array.isArray(evList) || evList.length <= 1) return evList || [];
+  const publicEvs = evList.filter(e => !e.isInternalOnly && !e.hideFromPublicWebsite);
+  const internalEvs = evList.filter(e => e.isInternalOnly || e.hideFromPublicWebsite);
+
+  // Ensure "Education felicitation" is index 0 among public events
+  const eduIdx = publicEvs.findIndex(e => String(e.title || "").toLowerCase().includes("education felicitation"));
+  if (eduIdx > 0) {
+    const [eduEv] = publicEvs.splice(eduIdx, 1);
+    publicEvs.unshift(eduEv);
+  }
+
+  return [...publicEvs, ...internalEvs];
+};
+
 function AdminEvents({ mob, C, setC, auth }) {
-  const [items, setItems] = useState(C.events || []);
+  const [items, setItems] = useState(() => organizeEventsOrder(C.events || []));
   const [previewForm, setPreviewForm] = useState(null);
   const [saving, setSaving] = useState(false);
   const [editIdx, setEditIdx] = useState(null);
   const [configModal, setConfigModal] = useState(null);
   const [qrModal, setQrModal] = useState(null); // { ev, idx }
 
-  useEffect(() => setItems(C.events || []), [C.events]);
+  useEffect(() => {
+    const fixed = organizeEventsOrder(C.events || []);
+    setItems(fixed);
+  }, [C.events]);
 
   const saveToFb = async (newC) => {
     if (!auth?.idToken) { alert("Login required to save"); return; }
@@ -8096,9 +9956,18 @@ function AdminEvents({ mob, C, setC, auth }) {
       color: "#E8F4F8",
       formId: ""
     };
-    const newArr = [newItem, ...items];
+    const newArr = [...items, newItem];
     setItems(newArr);
-    setEditIdx(0);
+    setEditIdx(newArr.length - 1);
+  };
+
+  const moveEvent = (fromIdx, toIdx) => {
+    if (toIdx < 0 || toIdx >= items.length) return;
+    const copy = [...items];
+    const [moved] = copy.splice(fromIdx, 1);
+    copy.splice(toIdx, 0, moved);
+    upd(copy);
+    if (editIdx !== null) setEditIdx(null);
   };
 
   const remove = (idx) => {
@@ -8133,6 +10002,7 @@ function AdminEvents({ mob, C, setC, auth }) {
           forms={C.forms}
           type={configModal.type || 'cert'}
           onClose={() => setConfigModal(null)} 
+          customTpl={configModal.customTpl}
           onSave={(conf) => {
             const newArr = [...items];
             if (configModal.type === 'invite') {
@@ -8142,6 +10012,22 @@ function AdminEvents({ mob, C, setC, auth }) {
                 inviteMap: conf.map,
                 inviteFontSize: conf.fontSize,
                 inviteFontColor: conf.fontColor
+              };
+            } else if (configModal.type === 'custom') {
+              const currentPdfTemplates = [...(newArr[configModal.idx].pdfTemplates || [])];
+              const tplIdx = configModal.tplIndex !== undefined ? configModal.tplIndex : currentPdfTemplates.findIndex(t => t.id === configModal.customTpl?.id);
+              if (tplIdx >= 0 && tplIdx < currentPdfTemplates.length) {
+                currentPdfTemplates[tplIdx] = {
+                  ...currentPdfTemplates[tplIdx],
+                  bgUrl: conf.bgUrl,
+                  map: conf.map,
+                  fontSize: conf.fontSize,
+                  fontColor: conf.fontColor
+                };
+              }
+              newArr[configModal.idx] = {
+                ...newArr[configModal.idx],
+                pdfTemplates: currentPdfTemplates
               };
             } else {
               newArr[configModal.idx] = {
@@ -8375,6 +10261,22 @@ function AdminEvents({ mob, C, setC, auth }) {
                   {ev.certBgUrl && <div style={{fontSize:".7rem",color:"var(--sf)",marginTop:6}}>✅ Template mapped successfully.</div>}
                 </div>
                 
+                {/* Internal Admin Workspace Checkbox */}
+                <div style={{gridColumn:"1/-1", marginTop: 8, padding: 10, background: ev.isInternalOnly ? "#EFF6FF" : "#F8FAFC", borderRadius: 8, border: ev.isInternalOnly ? "1.5px solid #60A5FA" : "1px solid #E2E8F0"}}>
+                  <label style={{fontSize:".78rem",fontWeight:800,display:"flex",alignItems:"center",gap:8,cursor:"pointer",color:ev.isInternalOnly ? "#1D4ED8" : "#334155"}}>
+                    <input 
+                      type="checkbox" 
+                      checked={ev.isInternalOnly || false} 
+                      onChange={e=>updateItem(i,"isInternalOnly",e.target.checked)} 
+                      style={{width:16,height:16,accentColor:"#2563EB"}}
+                    />
+                    <span>🔒 Internal Admin Workspace Only</span>
+                    <span style={{fontSize:".7rem",fontWeight:600,color:ev.isInternalOnly ? "#2563EB" : "#64748B"}}>
+                      (Hidden from public frontend website & visitor registration — used for committee invites, staff passes, circulars)
+                    </span>
+                  </label>
+                </div>
+
                 <div style={{gridColumn:"1/-1", marginTop: 8, padding: 12, background: "#FDF5E6", borderRadius: 8, border: "1px solid #F5DEB3"}}>
                   <h4 style={{fontSize:".85rem",marginBottom:8,color:"#D2691E",fontWeight:700}}>Official Invite Letters</h4>
                   <div style={{display:"flex", alignItems:"center", gap: 16}}>
@@ -8386,6 +10288,113 @@ function AdminEvents({ mob, C, setC, auth }) {
                   </div>
                   {ev.inviteBgUrl && <div style={{fontSize:".7rem",color:"#2E8B57",marginTop:6}}>✅ Template mapped successfully.</div>}
                 </div>
+
+                {/* Additional Dynamic PDF Passes & Documents (Multi-Template Workspace) */}
+                <div style={{gridColumn:"1/-1", marginTop: 8, padding: 12, background: "#F0FDF4", borderRadius: 8, border: "1.5px solid #86EFAC"}}>
+                  <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8,flexWrap:"wrap",gap:8}}>
+                    <div>
+                      <h4 style={{fontSize:".85rem",margin:0,color:"#15803D",fontWeight:800,display:"flex",alignItems:"center",gap:6}}>
+                        <span>📑</span> Additional Custom PDF Templates & Passes ({(ev.pdfTemplates || []).length})
+                      </h4>
+                      <div style={{fontSize:".72rem",color:"#166534",marginTop:2}}>
+                        Create unlimited extra PDF passes (e.g. Food Coupons, Gate Passes, ID Cards, Parent Passes) with direct WhatsApp URL links.
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const name = prompt("Enter Name for new PDF Template (e.g. Food Coupon & Dinner Pass, Gate Entry Pass):");
+                        if (name && name.trim()) {
+                          const cleanName = name.trim();
+                          const tplId = "doc_" + Date.now();
+                          const newTpl = {
+                            id: tplId,
+                            name: cleanName,
+                            bgUrl: "",
+                            map: {},
+                            fontSize: 30,
+                            fontColor: "#000000"
+                          };
+                          const updatedTpls = [...(ev.pdfTemplates || []), newTpl];
+                          updateItem(i, "pdfTemplates", updatedTpls);
+                          setConfigModal({ ev, idx: i, type: 'custom', tplIndex: updatedTpls.length - 1, customTpl: newTpl });
+                        }
+                      }}
+                      style={{padding:"6px 12px",borderRadius:6,fontSize:".75rem",fontWeight:800,background:"#15803D",color:"white",border:"none",cursor:"pointer",display:"flex",alignItems:"center",gap:4}}
+                    >
+                      <span>➕</span> Add New PDF Template
+                    </button>
+                  </div>
+
+                  {/* List of Custom Templates */}
+                  <div style={{display:"flex",flexDirection:"column",gap:8,marginTop:10}}>
+                    {(ev.pdfTemplates || []).map((tpl, tplIdx) => {
+                      const directUrl = `https://pradeepparmar902.github.io/MY_Community_Website/?doc=${tpl.id}&pass={TXN_ID}`;
+                      return (
+                        <div key={tpl.id} style={{background:"white",padding:"10px 12px",borderRadius:8,border:"1px solid #CBD5E1",display:"flex",flexDirection:"column",gap:6}}>
+                          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:6}}>
+                            <div style={{display:"flex",alignItems:"center",gap:8}}>
+                              <span style={{fontSize:"1.1rem"}}>📄</span>
+                              <strong style={{fontSize:".82rem",color:"#0F172A"}}>{tpl.name}</strong>
+                              {tpl.bgUrl ? (
+                                <span style={{fontSize:".68rem",background:"#DCFCE7",color:"#15803D",padding:"1px 6px",borderRadius:4,fontWeight:700}}>
+                                  ✓ Configured
+                                </span>
+                              ) : (
+                                <span style={{fontSize:".68rem",background:"#FEF3C7",color:"#B45309",padding:"1px 6px",borderRadius:4,fontWeight:700}}>
+                                  ⚠️ Needs Background Image
+                                </span>
+                              )}
+                            </div>
+                            <div style={{display:"flex",gap:6}}>
+                              <button
+                                type="button"
+                                onClick={() => setConfigModal({ ev, idx: i, type: 'custom', tplIndex: tplIdx, customTpl: tpl })}
+                                style={{padding:"4px 10px",borderRadius:6,fontSize:".72rem",fontWeight:700,background:"#0D4B5E",color:"white",border:"none",cursor:"pointer"}}
+                              >
+                                ⚙️ Configure Template
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  if (window.confirm(`Delete PDF template "${tpl.name}"?`)) {
+                                    const updated = (ev.pdfTemplates || []).filter((_, k) => k !== tplIdx);
+                                    updateItem(i, "pdfTemplates", updated);
+                                  }
+                                }}
+                                style={{padding:"4px 8px",borderRadius:6,fontSize:".72rem",fontWeight:700,background:"#FEE2E2",color:"#DC2626",border:"1px solid #FCA5A5",cursor:"pointer"}}
+                              >
+                                🗑️ Delete
+                              </button>
+                            </div>
+                          </div>
+
+                          {/* Direct URL Tag & Copy Assistant */}
+                          <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:8,background:"#F8FAFC",padding:"4px 8px",borderRadius:6,border:"1px dashed #CBD5E1"}}>
+                            <span style={{fontSize:".7rem",color:"#475569",fontFamily:"monospace",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>
+                              🔗 <strong>URL:</strong> {directUrl}
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                navigator.clipboard.writeText(directUrl);
+                                alert(`Copied direct URL for "${tpl.name}"!`);
+                              }}
+                              style={{padding:"2px 8px",background:"#EFF6FF",color:"#1D4ED8",border:"1px solid #BFDBFE",borderRadius:4,fontSize:".68rem",fontWeight:700,cursor:"pointer",whiteSpace:"nowrap"}}
+                            >
+                              📋 Copy URL
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    })}
+                    {(!ev.pdfTemplates || ev.pdfTemplates.length === 0) && (
+                      <div style={{fontSize:".75rem",color:"#64748B",fontStyle:"italic",padding:"8px 0"}}>
+                        No custom PDF templates added yet. Click "+ Add New PDF Template" to create Food Passes, Gate Passes, etc.
+                      </div>
+                    )}
+                  </div>
+                </div>
                 <div style={{gridColumn:"1/-1",display:"flex",justifyContent:"flex-end",gap:7,marginTop:8}}>
                   <button onClick={saveEdit} className="bt" style={{padding:"6px 14px",borderRadius:6,fontWeight:600,fontSize:".75rem"}}>Save Changes</button>
                 </div>
@@ -8394,6 +10403,19 @@ function AdminEvents({ mob, C, setC, auth }) {
               <>
                 <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:10}}>
                   <div style={{flex:1,paddingRight:10}}>
+                    <div style={{display:"flex",alignItems:"center",gap:6,marginBottom:4}}>
+                      <span style={{fontSize:".72rem",fontFamily:"monospace",fontWeight:800,background:"#0D4B5E",color:"white",padding:"2px 8px",borderRadius:4}}>
+                        Index #{i}
+                      </span>
+                      <span style={{fontSize:".68rem",fontWeight:800,background:"#EFF6FF",color:"#1D4ED8",padding:"2px 6px",borderRadius:4,border:"1px solid #BFDBFE"}}>
+                        🔗 ?event={i}
+                      </span>
+                      {ev.isInternalOnly && (
+                        <span style={{fontSize:".68rem",fontWeight:800,background:"#FEF3C7",color:"#92400E",padding:"2px 6px",borderRadius:4,border:"1px solid #FDE68A"}}>
+                          🔒 Internal Workspace
+                        </span>
+                      )}
+                    </div>
                     <span style={{fontSize:".7rem",fontWeight:700,color:"var(--sf)",textTransform:"uppercase"}}>{ev.tag}</span>
                     <h4 style={{fontFamily:"'Playfair Display',serif",fontSize:".95rem",fontWeight:700,color:"var(--dt)",marginTop:3}}>{ev.title}</h4>
                   </div>
@@ -8403,23 +10425,71 @@ function AdminEvents({ mob, C, setC, auth }) {
                   </div>
                 </div>
                 <p style={{fontSize:".78rem",color:"var(--mu)",marginBottom:12}}>{ev.location}</p>
-                <div style={{display:"flex",gap:7}}>
-                  <button onClick={()=>setEditIdx(i)} style={{padding:"5px 11px",borderRadius:6,background:"var(--tl)",border:"none",color:"var(--dt)",cursor:"pointer",fontSize:".75rem",fontWeight:600}}>Edit</button>
-                  <button onClick={()=>{
-                    if (!ev.id) {
-                      const newEv = {...ev, id: "ev_" + Date.now()};
-                      const newArr = [...items];
-                      newArr[i] = newEv;
-                      setItems(newArr);
-                      const newC = {...C, events: newArr};
-                      setC(newC);
-                      if (typeof saveToFb === 'function') saveToFb(newC);
-                      setQrModal({ev: newEv, idx: i});
-                    } else {
-                      setQrModal({ev, idx: i});
-                    }
-                  }} style={{padding:"5px 11px",borderRadius:6,background:"#F0F4F8",border:"1px solid #D0E1F9",color:"#2B6CB0",cursor:"pointer",fontSize:".75rem",fontWeight:600}}>QR Code</button>
-                  <button onClick={()=>remove(i)} style={{padding:"5px 11px",borderRadius:6,background:"#FEF0EF",border:"none",color:"#C0392B",cursor:"pointer",fontSize:".75rem",fontWeight:600}}>Delete</button>
+                <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:7,flexWrap:"wrap",marginTop:8,borderTop:"1px solid #F1F5F9",paddingTop:8}}>
+                  <div style={{display:"flex",gap:6}}>
+                    <button onClick={()=>setEditIdx(i)} style={{padding:"5px 11px",borderRadius:6,background:"var(--tl)",border:"none",color:"var(--dt)",cursor:"pointer",fontSize:".75rem",fontWeight:700}}>Edit</button>
+                    <button onClick={()=>{
+                      if (!ev.id) {
+                        const newEv = {...ev, id: "ev_" + Date.now()};
+                        const newArr = [...items];
+                        newArr[i] = newEv;
+                        setItems(newArr);
+                        const newC = {...C, events: newArr};
+                        setC(newC);
+                        if (typeof saveToFb === 'function') saveToFb(newC);
+                        setQrModal({ev: newEv, idx: i});
+                      } else {
+                        setQrModal({ev, idx: i});
+                      }
+                    }} style={{padding:"5px 11px",borderRadius:6,background:"#F0F4F8",border:"1px solid #D0E1F9",color:"#2B6CB0",cursor:"pointer",fontSize:".75rem",fontWeight:700}}>QR Code</button>
+                    <button onClick={()=>remove(i)} style={{padding:"5px 11px",borderRadius:6,background:"#FEF0EF",border:"none",color:"#C0392B",cursor:"pointer",fontSize:".75rem",fontWeight:700}}>Delete</button>
+                  </div>
+
+                  {/* Prominent Reorder Buttons */}
+                  <div style={{display:"flex",alignItems:"center",gap:6}}>
+                    <button 
+                      type="button" 
+                      disabled={i === 0} 
+                      onClick={()=>moveEvent(i, i - 1)} 
+                      style={{
+                        padding:"5px 10px",
+                        borderRadius:6,
+                        border:"1.5px solid #2563EB",
+                        background: i === 0 ? "#F1F5F9" : "#EFF6FF",
+                        color: i === 0 ? "#94A3B8" : "#1D4ED8",
+                        cursor: i === 0 ? "not-allowed" : "pointer",
+                        fontSize:".74rem",
+                        fontWeight:800,
+                        display:"flex",
+                        alignItems:"center",
+                        gap:3
+                      }}
+                      title="Move event higher in index (e.g. Index #2 to Index #1)"
+                    >
+                      <span>▲</span> Move Up
+                    </button>
+                    <button 
+                      type="button" 
+                      disabled={i === items.length - 1} 
+                      onClick={()=>moveEvent(i, i + 1)} 
+                      style={{
+                        padding:"5px 10px",
+                        borderRadius:6,
+                        border:"1.5px solid #2563EB",
+                        background: i === items.length - 1 ? "#F1F5F9" : "#EFF6FF",
+                        color: i === items.length - 1 ? "#94A3B8" : "#1D4ED8",
+                        cursor: i === items.length - 1 ? "not-allowed" : "pointer",
+                        fontSize:".74rem",
+                        fontWeight:800,
+                        display:"flex",
+                        alignItems:"center",
+                        gap:3
+                      }}
+                      title="Move event lower in index (e.g. Index #1 to Index #2)"
+                    >
+                      <span>▼</span> Move Down
+                    </button>
+                  </div>
                 </div>
               </>
             )}
@@ -8994,6 +11064,64 @@ function AdminTeam({ mob, C, setC, auth }) {
     saveToFb(newC);
   };
 
+  // Helper to compute node hierarchy level
+  const getNodeLevel = (node, allItems) => {
+    let level = 1;
+    let curr = node;
+    const visited = new Set();
+    while (curr && curr.parentId && curr.parentId !== "plain" && !visited.has(curr.id)) {
+      visited.add(curr.id);
+      const parent = allItems.find(p => p.id === curr.parentId);
+      if (parent) {
+        level++;
+        curr = parent;
+      } else {
+        break;
+      }
+    }
+    return level;
+  };
+
+  // Export Committee-wise or All Committees Excel
+  const handleExportCommitteeExcel = (targetComm = activeCommittee, e) => {
+    if (e) e.stopPropagation();
+    const commFilter = targetComm || activeCommittee;
+    const isAll = commFilter === "All";
+
+    const exportItems = isAll
+      ? items.filter(i => !i.isSeparator)
+      : items.filter(i => !i.isSeparator && (i.committee || "Central Working Committee (CWC)") === commFilter);
+
+    if (exportItems.length === 0) {
+      alert(`No team members found in "${commFilter}" to export. You can download the "Sample Excel Template" to create new members.`);
+      return;
+    }
+
+    const exportData = exportItems.map((item, idx) => ({
+      "Level": getNodeLevel(item, items),
+      "ID": String(item.id || "").replace(/^team_/, ""),
+      "Display Order Index": item.order !== undefined ? item.order : idx + 1,
+      "Name": item.name || "",
+      "Position": item.position || "",
+      "Parent Leader Name": items.find(p => p.id === item.parentId)?.name || "",
+      "Committee": item.committee || (commFilter !== "All" ? commFilter : "Central Working Committee (CWC)"),
+      "Mobile": item.mobile || "",
+      "Profession": item.profession || "",
+      "Qualification": item.qualification || "",
+      "Address": item.address || "",
+      "Photo URL": item.image || "",
+      "Description": item.desc || ""
+    }));
+
+    const ws = XLSX.utils.json_to_sheet(exportData);
+    const wb = XLSX.utils.book_new();
+    const sheetTitle = (commFilter.length > 28 ? commFilter.slice(0, 28) : commFilter).replace(/[^a-zA-Z0-9 ]/g, "");
+    XLSX.utils.book_append_sheet(wb, ws, sheetTitle || "Team");
+
+    const cleanFileName = commFilter.replace(/[^a-zA-Z0-9_-]/g, "_");
+    XLSX.writeFile(wb, `Team_${cleanFileName}_${new Date().toISOString().split("T")[0]}.xlsx`);
+  };
+
   // Download Sample Excel Template for Team Hierarchy
   const handleDownloadTemplate = () => {
     const templateData = [
@@ -9277,21 +11405,28 @@ function AdminTeam({ mob, C, setC, auth }) {
         const importedCommittees = Array.from(new Set(newNodes.map(n => n.committee).filter(Boolean)));
         const newCommitteesList = Array.from(new Set([...allCommitteesList, ...importedCommittees]));
 
+        const targetCommNames = importedCommittees.join(", ") || activeCommittee;
+        
         setCustomModal({
-          title: "Import Team Hierarchy",
-          message: `Found ${newNodes.length} team members from Excel spreadsheet.\n\nDo you want to append these members to your team structure?`,
-          confirmText: "Import Members",
+          title: "Import & Update Team Hierarchy",
+          message: `Found ${newNodes.length} team member(s) for committee(s):\n👉 ${targetCommNames}\n\nChoose how you would like to apply this spreadsheet:\n\n• Click 'Replace & Update' to overwrite and correct existing members in "${targetCommNames}" (preserving all other committees).\n• Or click 'Cancel' to abort.`,
+          confirmText: "🔄 Replace & Update",
           confirmStyle: "primary",
           onConfirm: () => {
-            const finalItems = [...items, ...newNodes];
+            // Overwrite members of the imported committees
+            const remainingOtherCommItems = items.filter(i => {
+              const itemComm = i.committee || "Central Working Committee (CWC)";
+              return !importedCommittees.includes(itemComm);
+            });
+            const finalItems = [...remainingOtherCommItems, ...newNodes];
             const newC = { ...C, teamItems: finalItems, committees: newCommitteesList };
             setItems(finalItems);
             setC(newC);
             saveToFb(newC);
             setCustomModal({
-              title: "Import Successful",
-              message: `Successfully imported ${newNodes.length} team members into your hierarchy!`,
-              confirmText: "Awesome!",
+              title: "Update Successful",
+              message: `Successfully updated ${newNodes.length} team members in "${targetCommNames}"!`,
+              confirmText: "Done",
               onConfirm: () => {}
             });
           }
@@ -9428,6 +11563,63 @@ function AdminTeam({ mob, C, setC, auth }) {
   };
 
   // Hierarchy actions
+  const addPlain = () => {
+    const plainList = items.filter(i => i.parentId === "plain" || typeof i.parentId === "undefined");
+    const newOrder = plainList.length > 0 ? Math.max(...plainList.map(i => i.order || 0)) + 1 : 0;
+    const newItem = {
+      id: getNewId(),
+      parentId: "plain",
+      name: "New Member",
+      position: "Role",
+      desc: "",
+      image: "",
+      order: newOrder,
+      committee: targetCommittee
+    };
+    updItems([...items, newItem]);
+  };
+
+  const addSeparator = () => {
+    const plainList = items.filter(i => i.parentId === "plain" || typeof i.parentId === "undefined");
+    const newOrder = plainList.length > 0 ? Math.max(...plainList.map(i => i.order || 0)) + 1 : 0;
+    const newSep = {
+      id: getNewId(),
+      parentId: "plain",
+      isSeparator: true,
+      title: "--- Section Separator ---",
+      desc: "",
+      order: newOrder,
+      committee: targetCommittee
+    };
+    updItems([...items, newSep]);
+  };
+
+  const movePlain = (idx, dir) => {
+    const plainItems = [...filteredAdminItems.filter(i => i.parentId === "plain" || typeof i.parentId === "undefined").sort((a,b)=>(a.order||0)-(b.order||0))];
+    const targetIdx = idx + dir;
+    if (targetIdx < 0 || targetIdx >= plainItems.length) return;
+    const itemA = plainItems[idx];
+    const itemB = plainItems[targetIdx];
+    const orderA = itemA.order !== undefined ? itemA.order : idx;
+    const orderB = itemB.order !== undefined ? itemB.order : targetIdx;
+    
+    const updatedItems = items.map(it => {
+      if (it.id === itemA.id) return { ...it, order: orderB };
+      if (it.id === itemB.id) return { ...it, order: orderA };
+      return it;
+    });
+    updItems(updatedItems);
+  };
+
+  const removePlain = (idx) => {
+    const plainItems = filteredAdminItems.filter(i => i.parentId === "plain" || typeof i.parentId === "undefined").sort((a,b)=>(a.order||0)-(b.order||0));
+    const target = plainItems[idx];
+    if (!target) return;
+    if (window.confirm(`Are you sure you want to delete "${target.name || target.title || 'this item'}"?`)) {
+      updItems(items.filter(i => i.id !== target.id));
+    }
+  };
+
   const addRoot = () => {
     const root = { id: getNewId(), parentId: null, name: "New Member", position: "Role", desc: "", image: "", order: 0, committee: targetCommittee };
     updItems([...items, root]);
@@ -9987,15 +12179,27 @@ function AdminTeam({ mob, C, setC, auth }) {
           </div>
           <div style={{display:"flex", gap:10, flexWrap:"wrap", alignItems:"center"}}>
             <button
+              onClick={() => handleExportCommitteeExcel(activeCommittee)}
+              style={{
+                padding:"9px 16px", borderRadius:12, border:"1px solid #3B82F6",
+                background:"#EFF6FF", color:"#1D4ED8", fontWeight:700, fontSize:".85rem",
+                cursor:"pointer", display:"flex", alignItems:"center", gap:6, boxShadow:"0 2px 8px rgba(37,99,235,0.12)"
+              }}
+              title={`Export team members of ${activeCommittee} to Excel for editing/corrections`}
+            >
+              <span>📥</span> Export {activeCommittee !== "All" ? activeCommittee : "All"} (Excel)
+            </button>
+
+            <button
               onClick={handleDownloadTemplate}
               style={{
                 padding:"9px 16px", borderRadius:12, border:"1px solid var(--bd)",
                 background:"white", color:"var(--dt)", fontWeight:700, fontSize:".85rem",
                 cursor:"pointer", display:"flex", alignItems:"center", gap:6, boxShadow:"0 2px 8px rgba(0,0,0,0.04)"
               }}
-              title="Download sample Excel template to fill hierarchy in bulk"
+              title="Download sample blank Excel template"
             >
-              <span>📥</span> Sample Excel Template
+              <span>📄</span> Blank Template
             </button>
 
             <label
@@ -10004,9 +12208,9 @@ function AdminTeam({ mob, C, setC, auth }) {
                 background:"#107C41", color:"white", fontWeight:700, fontSize:".85rem",
                 cursor:"pointer", display:"flex", alignItems:"center", gap:6, boxShadow:"0 4px 12px rgba(16,124,65,0.25)"
               }}
-              title="Upload Excel or CSV spreadsheet to import team hierarchy in bulk"
+              title="Upload corrected Excel or CSV spreadsheet to update team hierarchy"
             >
-              <span>📤</span> Import Excel/CSV
+              <span>📤</span> Re-upload / Import Excel
               <input type="file" accept=".xlsx, .xls, .csv" onChange={handleImportExcel} style={{display:"none"}}/>
             </label>
 
@@ -10092,6 +12296,18 @@ function AdminTeam({ mob, C, setC, auth }) {
                       Active
                     </span>
                   )}
+
+                  <button
+                    onClick={(e) => handleExportCommitteeExcel(comm, e)}
+                    style={{
+                      width:24, height:24, borderRadius:"50%", background:"#EFF6FF", border:"1px solid #BFDBFE",
+                      color:"#1D4ED8", cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"center",
+                      fontSize:".7rem", transition:"all 0.2s"
+                    }}
+                    title={`Export "${comm}" to Excel for corrections`}
+                  >
+                    📥
+                  </button>
 
                   {comm !== "All" && (
                     <button
@@ -11083,7 +13299,36 @@ function Public({ C, lang, setLang, setPage, auth, onShowLogin }) {
     setGlobalProfile(null);
     localStorage.removeItem("trustPublicAuthToken");
     localStorage.removeItem("trustPublicProfile");
+    if (fbAuth?.currentUser) {
+      try { fbAuth.signOut(); } catch (e) {}
+    }
   };
+
+  // Real-time Firebase Auth Synchronization
+  // Keeps UI Header (Welcome Pradeep / Logout) 100% in sync with actual Firebase Auth state
+  useEffect(() => {
+    if (!fbAuth) return;
+    const unsubscribe = onAuthStateChanged(fbAuth, async (user) => {
+      if (user) {
+        try {
+          const freshToken = await user.getIdToken();
+          setGlobalAuthToken(freshToken);
+          localStorage.setItem("trustPublicAuthToken", freshToken);
+        } catch (e) {
+          console.warn("Auth sync notice:", e);
+        }
+      } else {
+        // Firebase user signed out or session destroyed!
+        // Automatically sync website state & header UI to logged out state immediately!
+        setGlobalAuthToken("");
+        setGlobalProfile(null);
+        localStorage.removeItem("trustPublicAuthToken");
+        localStorage.removeItem("trustPublicProfile");
+      }
+    });
+
+    return () => unsubscribe();
+  }, []);
 
   const [showDashboard, setShowDashboard] = useState(false);
   const [showUserLogin, setShowUserLogin] = useState("");
@@ -12040,8 +14285,16 @@ function UserDashboard({ C, globalProfile, globalAuthToken, onClose }) {
                 </div>
                 {(() => {
                   const awds = regs.filter(r => {
-                    const isReleased = r.certificateReleased === true || r.certificateReleased === "true";
-                    if (!isReleased || r.certificateHold) return false;
+                    const isCertRel = Boolean(r.certificateReleased && !r.certificateHold);
+                    const rEvName = (r.eventName || r.eventTitle || r["Event Name"] || r["Event"] || "").trim().toLowerCase();
+                    const ev = (C.events || []).find(e => {
+                      if (rEvName && e.title && e.title.trim().toLowerCase() === rEvName) return true;
+                      if (r.eventId && e.id === r.eventId) return true;
+                      return false;
+                    }) || {};
+                    const hasReleasedAwardDocs = (ev.pdfTemplates || []).some(tpl => tpl.targetSection === 'awards' && r.releasedDocs && r.releasedDocs[tpl.id] && (!r.heldDocs || !r.heldDocs[tpl.id]));
+                    
+                    if (!isCertRel && !hasReleasedAwardDocs) return false;
                     return matchesSubTab(r, subTab);
                   }).map(r => {
                     const rEvName = (r.eventName || r.eventTitle || r["Event Name"] || r["Event"] || "").trim().toLowerCase();
@@ -12101,61 +14354,106 @@ function UserDashboard({ C, globalProfile, globalAuthToken, onClose }) {
                                 <div style={{fontSize:".7rem",color:"var(--mu)",fontWeight:600,textTransform:"uppercase"}}>Transaction ID</div>
                                 <div style={{fontSize:".85rem",fontWeight:600,color:"var(--dt)",fontFamily:"monospace"}}>{a.reg['Transaction ID'] || a.reg.id || "N/A"}</div>
                               </div>
-                              <div style={{marginTop:"auto", display:"flex", gap:8, width:"100%"}}>
-                                <button 
-                                  disabled={!a.ev.certBgUrl}
-                                  onClick={async (e) => {
-                                    const btn = e.currentTarget;
-                                    const orig = btn.innerHTML;
-                                    btn.disabled = true;
-                                    btn.innerText = "...";
-                                    try {
-                                      const evtName = a.ev.title || "Event";
-                                      const evtDate = a.ev.date ? `${a.ev.date} ${a.ev.month}` : "2025";
-                                      const fieldsData = { "Event Name": evtName, "Date": evtDate, ...a.reg };
-                                      if (globalAuthToken) {
-                                        const cleanData = { ...a.reg, certViewDate: new Date().toISOString() };
-                                        delete cleanData.id; delete cleanData._submittedAt;
-                                        await fbUpdateRegistration(a.reg.id, cleanData, globalAuthToken);
+                              <div style={{marginTop:"auto", display:"flex", flexDirection:"column", gap:8, width:"100%"}}>
+                                {a.reg.certificateReleased && (
+                                  <div style={{display:"flex", gap:8, width:"100%"}}>
+                                    <button 
+                                      disabled={!a.ev.certBgUrl}
+                                      onClick={async (e) => {
+                                        const btn = e.currentTarget;
+                                        const orig = btn.innerHTML;
+                                        btn.disabled = true;
+                                        btn.innerText = "...";
+                                        try {
+                                          const evtName = a.ev.title || "Event";
+                                          const evtDate = a.ev.date ? `${a.ev.date} ${a.ev.month}` : "2025";
+                                          const fieldsData = { "Event Name": evtName, "Date": evtDate, ...a.reg };
+                                          if (globalAuthToken) {
+                                            const cleanData = { ...a.reg, certViewDate: new Date().toISOString() };
+                                            delete cleanData.id; delete cleanData._submittedAt;
+                                            await fbUpdateRegistration(a.reg.id, cleanData, globalAuthToken);
+                                          }
+                                          const url = await generateCertificatePDF(a.ev, fieldsData, sName, 'cert', 'url'); if(url) setPreviewFile({ url, type: 'pdf', title: `Certificate - ${sName}` });
+                                        } catch(err) {
+                                          alert(err.message);
+                                        }
+                                        btn.disabled = false;
+                                        btn.innerHTML = orig;
+                                      }} 
+                                      style={{flex:1, padding:"10px",borderRadius:8,background:(!a.ev.certBgUrl) ? "#ccc" : "#f5f5f5",color:(!a.ev.certBgUrl) ? "white" : "var(--dt)",border:"1px solid " + ((!a.ev.certBgUrl) ? "#ccc" : "var(--dt)"),fontWeight:600,cursor:(!a.ev.certBgUrl) ? "not-allowed" : "pointer",display:"flex",justifyContent:"center",alignItems:"center"}}
+                                    >
+                                      👁 Preview
+                                    </button>
+                                    <button 
+                                      disabled={!a.ev.certBgUrl}
+                                      onClick={async (e) => {
+                                        const btn = e.currentTarget;
+                                        const orig = btn.innerHTML;
+                                        btn.disabled = true;
+                                        btn.innerText = "...";
+                                        try {
+                                          const evtName = a.ev.title || "Event";
+                                          const evtDate = a.ev.date ? `${a.ev.date} ${a.ev.month}` : "2025";
+                                          const fieldsData = { "Event Name": evtName, "Date": evtDate, ...a.reg };
+                                          if (globalAuthToken && !a.reg.certDownloadDate) {
+                                            const cleanData = { ...a.reg, certDownloadDate: new Date().toISOString() };
+                                            delete cleanData.id; delete cleanData._submittedAt;
+                                            await fbUpdateRegistration(a.reg.id, cleanData, globalAuthToken);
+                                          }
+                                          await generateCertificatePDF(a.ev, fieldsData, sName, 'cert', 'download');
+                                        } catch(err) {
+                                          alert(err.message);
+                                        }
+                                        btn.disabled = false;
+                                        btn.innerHTML = orig;
+                                      }} 
+                                      style={{flex:1, padding:"10px",borderRadius:8,background:(!a.ev.certBgUrl) ? "#ccc" : "var(--dt)",color:"white",border:"none",fontWeight:600,cursor:(!a.ev.certBgUrl) ? "not-allowed" : "pointer",display:"flex",justifyContent:"center",alignItems:"center",boxShadow:"0 2px 6px rgba(0,0,0,0.15)"}}
+                                    >
+                                      ⬇ Download
+                                    </button>
+                                  </div>
+                                )}
+
+                                {/* Extra Award Documents targeting Education Awards */}
+                                {(a.ev.pdfTemplates || []).filter(tpl => tpl.targetSection === 'awards' && a.reg.releasedDocs && a.reg.releasedDocs[tpl.id] && (!a.reg.heldDocs || !a.reg.heldDocs[tpl.id])).map(tpl => (
+                                  <button
+                                    key={tpl.id}
+                                    disabled={!tpl.bgUrl}
+                                    onClick={async (e) => {
+                                      const btn = e.currentTarget;
+                                      const orig = btn.innerHTML;
+                                      btn.disabled = true;
+                                      btn.innerText = "...";
+                                      try {
+                                        const evtName = a.ev.title || "Event";
+                                        const evtDate = a.ev.date ? `${a.ev.date} ${a.ev.month}` : "2025";
+                                        const fieldsData = { "Event Name": evtName, "Date": evtDate, ...a.reg };
+                                        await generateCertificatePDF(a.ev, fieldsData, sName, tpl, 'download');
+                                      } catch(err) {
+                                        alert(err.message);
                                       }
-                                      const url = await generateCertificatePDF(a.ev, fieldsData, sName, 'cert', 'url'); if(url) setPreviewFile({ url, type: 'pdf', title: `Certificate - ${sName}` });
-                                    } catch(err) {
-                                      alert(err.message);
-                                    }
-                                    btn.disabled = false;
-                                    btn.innerHTML = orig;
-                                  }} 
-                                  style={{flex:1, padding:"10px",borderRadius:8,background:(!a.ev.certBgUrl) ? "#ccc" : "#f5f5f5",color:(!a.ev.certBgUrl) ? "white" : "var(--dt)",border:"1px solid " + ((!a.ev.certBgUrl) ? "#ccc" : "var(--dt)"),fontWeight:600,cursor:(!a.ev.certBgUrl) ? "not-allowed" : "pointer",display:"flex",justifyContent:"center",alignItems:"center"}}
-                                >
-                                  👁 Preview
-                                </button>
-                                <button 
-                                  disabled={!a.ev.certBgUrl}
-                                  onClick={async (e) => {
-                                    const btn = e.currentTarget;
-                                    const orig = btn.innerHTML;
-                                    btn.disabled = true;
-                                    btn.innerText = "...";
-                                    try {
-                                      const evtName = a.ev.title || "Event";
-                                      const evtDate = a.ev.date ? `${a.ev.date} ${a.ev.month}` : "2025";
-                                      const fieldsData = { "Event Name": evtName, "Date": evtDate, ...a.reg };
-                                      if (globalAuthToken && !a.reg.certDownloadDate) {
-                                        const cleanData = { ...a.reg, certDownloadDate: new Date().toISOString() };
-                                        delete cleanData.id; delete cleanData._submittedAt;
-                                        await fbUpdateRegistration(a.reg.id, cleanData, globalAuthToken);
-                                      }
-                                      await generateCertificatePDF(a.ev, fieldsData, sName, 'cert', 'download');
-                                    } catch(err) {
-                                      alert(err.message);
-                                    }
-                                    btn.disabled = false;
-                                    btn.innerHTML = orig;
-                                  }} 
-                                  style={{flex:1, padding:"10px",borderRadius:8,background:(!a.ev.certBgUrl) ? "#ccc" : "var(--dt)",color:"white",border:"none",fontWeight:600,cursor:(!a.ev.certBgUrl) ? "not-allowed" : "pointer",display:"flex",justifyContent:"center",alignItems:"center",boxShadow:"0 2px 6px rgba(0,0,0,0.15)"}}
-                                >
-                                  ⬇ Download
-                                </button>
+                                      btn.disabled = false;
+                                      btn.innerHTML = orig;
+                                    }}
+                                    style={{
+                                      width:"100%",
+                                      padding:"7px 10px",
+                                      borderRadius:6,
+                                      background: (!tpl.bgUrl) ? "#F1F5F9" : "#F0FDF4",
+                                      color: (!tpl.bgUrl) ? "#94A3B8" : "#15803D",
+                                      border: (!tpl.bgUrl) ? "1px solid #E2E8F0" : "1px solid #86EFAC",
+                                      fontSize:".75rem",
+                                      fontWeight:700,
+                                      cursor: (!tpl.bgUrl) ? "not-allowed" : "pointer",
+                                      display:"flex",
+                                      alignItems:"center",
+                                      justifyContent:"center",
+                                      gap:4
+                                    }}
+                                  >
+                                    <span>🎓</span> Download {tpl.name} (PDF)
+                                  </button>
+                                ))}
                               </div>
                             </div>
                           </div>
@@ -12242,61 +14540,108 @@ function UserDashboard({ C, globalProfile, globalAuthToken, onClose }) {
                                 <div style={{fontSize:".7rem",color:"var(--mu)",fontWeight:600,textTransform:"uppercase"}}>Transaction ID</div>
                                 <div style={{fontSize:".85rem",fontWeight:600,color:"var(--dt)",fontFamily:"monospace"}}>{a.reg['Transaction ID'] || a.reg.id || "N/A"}</div>
                               </div>
-                              <div style={{marginTop:"auto", display:"flex", gap:8, width:"100%"}}>
-                                <button 
-                                  disabled={!a.ev.inviteBgUrl}
-                                  onClick={async (e) => {
-                                    const btn = e.currentTarget;
-                                    const orig = btn.innerHTML;
-                                    btn.disabled = true;
-                                    btn.innerText = "...";
-                                    try {
-                                      const evtName = a.ev.title || "Event";
-                                      const evtDate = a.ev.date ? `${a.ev.date} ${a.ev.month}` : "2025";
-                                      const fieldsData = { "Event Name": evtName, "Date": evtDate, ...a.reg };
-                                      if (globalAuthToken) {
-                                        const cleanData = { ...a.reg, inviteLetterViewed: true, inviteViewDate: new Date().toISOString() };
-                                        delete cleanData.id; delete cleanData._submittedAt;
-                                        await fbUpdateRegistration(a.reg.id, cleanData, globalAuthToken);
+                              <div style={{marginTop:"auto", display:"flex", flexDirection:"column", gap:8, width:"100%"}}>
+                                <div style={{display:"flex", gap:8, width:"100%"}}>
+                                  <button 
+                                    disabled={!a.ev.inviteBgUrl}
+                                    onClick={async (e) => {
+                                      const btn = e.currentTarget;
+                                      const orig = btn.innerHTML;
+                                      btn.disabled = true;
+                                      btn.innerText = "...";
+                                      try {
+                                        const evtName = a.ev.title || "Event";
+                                        const evtDate = a.ev.date ? `${a.ev.date} ${a.ev.month}` : "2025";
+                                        const fieldsData = { "Event Name": evtName, "Date": evtDate, ...a.reg };
+                                        if (globalAuthToken) {
+                                          const cleanData = { ...a.reg, inviteLetterViewed: true, inviteViewDate: new Date().toISOString() };
+                                          delete cleanData.id; delete cleanData._submittedAt;
+                                          await fbUpdateRegistration(a.reg.id, cleanData, globalAuthToken);
+                                        }
+                                        const url = await generateCertificatePDF(a.ev, fieldsData, sName, 'invite', 'url'); if(url) setPreviewFile({ url, type: 'pdf', title: `Invite Letter - ${sName}` });
+                                      } catch(err) {
+                                        alert(err.message);
                                       }
-                                      const url = await generateCertificatePDF(a.ev, fieldsData, sName, 'invite', 'url'); if(url) setPreviewFile({ url, type: 'pdf', title: `Invite Letter - ${sName}` });
-                                    } catch(err) {
-                                      alert(err.message);
-                                    }
-                                    btn.disabled = false;
-                                    btn.innerHTML = orig;
-                                  }} 
-                                  style={{flex:1, padding:"10px",borderRadius:8,background:(!a.ev.inviteBgUrl) ? "#ccc" : "#f5f5f5",color:(!a.ev.inviteBgUrl) ? "white" : "#D2691E",border:"1px solid " + ((!a.ev.inviteBgUrl) ? "#ccc" : "#D2691E"),fontWeight:600,cursor:(!a.ev.inviteBgUrl) ? "not-allowed" : "pointer",display:"flex",justifyContent:"center",alignItems:"center"}}
-                                >
-                                  👁 Preview
-                                </button>
-                                <button 
-                                  disabled={!a.ev.inviteBgUrl}
-                                  onClick={async (e) => {
-                                    const btn = e.currentTarget;
-                                    const orig = btn.innerHTML;
-                                    btn.disabled = true;
-                                    btn.innerText = "...";
-                                    try {
-                                      const evtName = a.ev.title || "Event";
-                                      const evtDate = a.ev.date ? `${a.ev.date} ${a.ev.month}` : "2025";
-                                      const fieldsData = { "Event Name": evtName, "Date": evtDate, ...a.reg };
-                                      if (globalAuthToken && !a.reg.inviteLetterDownloaded) {
-                                        const cleanData = { ...a.reg, inviteLetterDownloaded: true, inviteDownloadDate: new Date().toISOString() };
-                                        delete cleanData.id; delete cleanData._submittedAt;
-                                        await fbUpdateRegistration(a.reg.id, cleanData, globalAuthToken);
+                                      btn.disabled = false;
+                                      btn.innerHTML = orig;
+                                    }} 
+                                    style={{flex:1, padding:"10px",borderRadius:8,background:(!a.ev.inviteBgUrl) ? "#ccc" : "#f5f5f5",color:(!a.ev.inviteBgUrl) ? "white" : "#D2691E",border:"1px solid " + ((!a.ev.inviteBgUrl) ? "#ccc" : "#D2691E"),fontWeight:600,cursor:(!a.ev.inviteBgUrl) ? "not-allowed" : "pointer",display:"flex",justifyContent:"center",alignItems:"center"}}
+                                  >
+                                    👁 Preview
+                                  </button>
+                                  <button 
+                                    disabled={!a.ev.inviteBgUrl}
+                                    onClick={async (e) => {
+                                      const btn = e.currentTarget;
+                                      const orig = btn.innerHTML;
+                                      btn.disabled = true;
+                                      btn.innerText = "...";
+                                      try {
+                                        const evtName = a.ev.title || "Event";
+                                        const evtDate = a.ev.date ? `${a.ev.date} ${a.ev.month}` : "2025";
+                                        const fieldsData = { "Event Name": evtName, "Date": evtDate, ...a.reg };
+                                        if (globalAuthToken && !a.reg.inviteLetterDownloaded) {
+                                          const cleanData = { ...a.reg, inviteLetterDownloaded: true, inviteDownloadDate: new Date().toISOString() };
+                                          delete cleanData.id; delete cleanData._submittedAt;
+                                          await fbUpdateRegistration(a.reg.id, cleanData, globalAuthToken);
+                                        }
+                                        await generateCertificatePDF(a.ev, fieldsData, sName, 'invite', 'download');
+                                      } catch(err) {
+                                        alert(err.message);
                                       }
-                                      await generateCertificatePDF(a.ev, fieldsData, sName, 'invite', 'download');
-                                    } catch(err) {
-                                      alert(err.message);
-                                    }
-                                    btn.disabled = false;
-                                    btn.innerHTML = orig;
-                                  }} 
-                                  style={{flex:1, padding:"10px",borderRadius:8,background:(!a.ev.inviteBgUrl) ? "#ccc" : "#D2691E",color:"white",border:"none",fontWeight:600,cursor:(!a.ev.inviteBgUrl) ? "not-allowed" : "pointer",display:"flex",justifyContent:"center",alignItems:"center",boxShadow:"0 2px 6px rgba(0,0,0,0.15)"}}
-                                >
-                                  ⬇ Download
-                                </button>
+                                      btn.disabled = false;
+                                      btn.innerHTML = orig;
+                                    }} 
+                                    style={{flex:1, padding:"10px",borderRadius:8,background:(!a.ev.inviteBgUrl) ? "#ccc" : "#D2691E",color:"white",border:"none",fontWeight:600,cursor:(!a.ev.inviteBgUrl) ? "not-allowed" : "pointer",display:"flex",justifyContent:"center",alignItems:"center",boxShadow:"0 2px 6px rgba(0,0,0,0.15)"}}
+                                  >
+                                    ⬇ Download
+                                  </button>
+                                </div>
+
+                                {/* Custom PDF Template Passes (e.g. Token Number, Food Coupon, Gate Pass) */}
+                                {(a.ev.pdfTemplates || []).filter(tpl => tpl.targetSection !== 'awards' && a.reg.releasedDocs && a.reg.releasedDocs[tpl.id] && (!a.reg.heldDocs || !a.reg.heldDocs[tpl.id])).length > 0 && (
+                                  <div style={{display:"flex",flexDirection:"column",gap:6,borderTop:"1px dashed #CBD5E1",paddingTop:8}}>
+                                    {(a.ev.pdfTemplates || []).filter(tpl => tpl.targetSection !== 'awards' && a.reg.releasedDocs && a.reg.releasedDocs[tpl.id] && (!a.reg.heldDocs || !a.reg.heldDocs[tpl.id])).map(tpl => (
+                                      <button
+                                        key={tpl.id}
+                                        disabled={!tpl.bgUrl}
+                                        onClick={async (e) => {
+                                          const btn = e.currentTarget;
+                                          const orig = btn.innerHTML;
+                                          btn.disabled = true;
+                                          btn.innerText = "...";
+                                          try {
+                                            const evtName = a.ev.title || "Event";
+                                            const evtDate = a.ev.date ? `${a.ev.date} ${a.ev.month}` : "2025";
+                                            const fieldsData = { "Event Name": evtName, "Date": evtDate, ...a.reg };
+                                            await generateCertificatePDF(a.ev, fieldsData, sName, tpl, 'download');
+                                          } catch(err) {
+                                            alert(err.message);
+                                          }
+                                          btn.disabled = false;
+                                          btn.innerHTML = orig;
+                                        }}
+                                        style={{
+                                          width:"100%",
+                                          padding:"7px 10px",
+                                          borderRadius:6,
+                                          background: (!tpl.bgUrl) ? "#F1F5F9" : "#F0FDF4",
+                                          color: (!tpl.bgUrl) ? "#94A3B8" : "#15803D",
+                                          border: (!tpl.bgUrl) ? "1px solid #E2E8F0" : "1px solid #86EFAC",
+                                          fontSize:".75rem",
+                                          fontWeight:700,
+                                          cursor: (!tpl.bgUrl) ? "not-allowed" : "pointer",
+                                          display:"flex",
+                                          alignItems:"center",
+                                          justifyContent:"center",
+                                          gap:4
+                                        }}
+                                      >
+                                        <span>🎟️</span> Download {tpl.name} (PDF)
+                                      </button>
+                                    ))}
+                                  </div>
+                                )}
                               </div>
                             </div>
                           </div>
@@ -12392,9 +14737,23 @@ function UserDashboard({ C, globalProfile, globalAuthToken, onClose }) {
                         {lg.timestamp ? new Date(lg.timestamp).toLocaleString() : ""}
                       </span>
                     </div>
-                    <div style={{fontSize:".88rem",fontWeight:700,color:"var(--dt)",marginBottom:4}}>
-                      {lg.action || lg.status}
-                    </div>
+                    {lg.type === 'pass_open' || (lg.action && String(lg.action).toLowerCase().includes('pass / invite opened')) ? (
+                      <div style={{marginBottom:6}}>
+                        <span style={{background:"#EFF6FF",color:"#1D4ED8",border:"1px solid #93C5FD",padding:"3px 8px",borderRadius:6,fontSize:".76rem",fontWeight:800,display:"inline-flex",alignItems:"center",gap:4}}>
+                          <span>👁️</span> {lg.action} • {lg.device || 'Mobile'}
+                        </span>
+                      </div>
+                    ) : lg.type === 'whatsapp' || (lg.action && String(lg.action).toLowerCase().includes('whatsapp')) ? (
+                      <div style={{marginBottom:6}}>
+                        <span style={{background:"#DCFCE7",color:"#15803D",border:"1px solid #86EFAC",padding:"3px 8px",borderRadius:6,fontSize:".76rem",fontWeight:800,display:"inline-flex",alignItems:"center",gap:4}}>
+                          <span>💬</span> {lg.action || `WhatsApp Sent (${lg.messageType || 'Update'})`}
+                        </span>
+                      </div>
+                    ) : (
+                      <div style={{fontSize:".88rem",fontWeight:700,color:"var(--dt)",marginBottom:4}}>
+                        {lg.action || lg.status}
+                      </div>
+                    )}
                     <div style={{fontSize:".82rem",color:"var(--tx)",lineHeight:1.4,background:"white",padding:"8px 10px",borderRadius:6,border:"1px solid #EEE"}}>
                       {lg.remarks || "No remarks provided"}
                     </div>
@@ -12563,6 +14922,2039 @@ function LoginScreen({ C, onLogin, onSkip }) {
 }
 
 // ── ADMIN REGISTRATIONS ────────────────────────────────────────────────────────
+
+
+
+
+
+
+// ── Dedicated Chatbot Committee Admin Access & Knowledge Base Manager ───────────────────
+
+// ── Dedicated WhatsApp Admin Console ───────────────────────────────────────────
+function WhatsAppAdminManager({ C, setC, auth }) {
+  const [activeTab, setActiveTab] = useState("templates"); // "templates" | "gateway"
+
+  const DEFAULT_PENDING_TPL = `🏛️ *MUMBAI MEGHWAL PANCHAYAT*\n🏆 *Education Felicitation 2026*\n═══════════════════════\nNamaste *{STUDENT_NAME}*,\n\nThank you for submitting your registration for *Education Felicitation 2026*.\n\n📋 *Application Summary:*\n• *Transaction ID:* {TXN_ID}\n• *Student Name:* {STUDENT_NAME}\n• *Vibhag:* {VIBHAG}\n• *Stream / Class:* {STREAM}\n• *Current Status:* ⏳ *Under Verification / Review*\n\nOur Verification Committee is currently reviewing your submitted details and documents. You will receive an update once the verification is completed.\n\n👉 Track your live application status on your student dashboard:\n{PORTAL_URL}\n\nWarm regards,\n*Mumbai Meghwal Panchayat & Vidya Gohil Trust*\n📞 Committee Helpline: {HELPLINE_PHONES}`;
+
+  const DEFAULT_APPROVED_TPL = `🏛️ *MUMBAI MEGHWAL PANCHAYAT*\n🏆 *Education Felicitation 2026*\n═══════════════════════\nNamaste *{STUDENT_NAME}*,\n\n🎉 Hearty Congratulations! Your application for *Education Felicitation 2026* has been *APPROVED* by the Verification Committee.\n\n📋 *Application Details:*\n• *Transaction ID:* {TXN_ID}\n• *Student Name:* {STUDENT_NAME}\n• *Vibhag:* {VIBHAG}\n• *Stream / Class:* {STREAM}\n• *Percentage:* {PERCENTAGE}%\n• *Status:* 🟢 *Approved & Verified*\n\n📅 *Event Date:* 02-10-2026\n📍 *Venue:* Mumbai (Official venue, schedule & invitation letter will be shared soon)\n\n👉 View your application & student certificate on your dashboard:\n{PORTAL_URL}\n\nWarm regards,\n*Mumbai Meghwal Panchayat & Vidya Gohil Trust*\n📞 Committee Helpline: {HELPLINE_PHONES}`;
+
+  const DEFAULT_NEEDS_INFO_TPL = `🏛️ *MUMBAI MEGHWAL PANCHAYAT*\n🏆 *Education Felicitation 2026*\n═══════════════════════\nNamaste *{STUDENT_NAME}*,\n\nYour application (*{TXN_ID}*) for *Education Felicitation 2026* requires additional information or document correction for verification.\n\n⚠️ *Committee Remarks / Action Required:*\n👉 *{REMARKS}*\n\n📝 *How to Update Your Application:*\n1. Open portal: {PORTAL_URL}\n2. Log in with registered mobile: *+91 {MOBILE}*\n3. Go to *My Dashboard* > *Registrations*\n4. Click *Edit & Resubmit* and update the requested document/details.\n\nPlease complete this at the earliest to confirm your felicitation eligibility.\n\nWarm regards,\n*Education Verification Committee*\n📞 Committee Helpline: {HELPLINE_PHONES}`;
+
+  const DEFAULT_DISAPPROVED_TPL = `🏛️ *MUMBAI MEGHWAL PANCHAYAT*\n🏆 *Education Felicitation 2026*\n═══════════════════════\nNamaste *{STUDENT_NAME}*,\n\nRegarding your application (*{TXN_ID}*) for *Education Felicitation 2026*.\n\n• *Status:* 🔴 *Not Approved*\n• *Reason / Remarks:* {REMARKS}\n\nIf you believe this is an error or need clarification, please contact your Vibhag Committee Member or our helpline.\n\nWarm regards,\n*Education Committee*\n📞 Helpline: +91 9820785209`;
+
+  const DEFAULT_INVITE_TPL = `🏛️ *MUMBAI MEGHWAL PANCHAYAT*\n🏆 *Education Felicitation 2026 - Official Invitation*\n═══════════════════════\nNamaste *{STUDENT_NAME}*,\n\nWe are pleased to invite you and your family as our esteemed guests of honor to the *Annual Student Education Felicitation 2026*.\n\n📋 *Invitation Pass Details:*\n• *Transaction / Pass ID:* {TXN_ID}\n• *Invitee Name:* {STUDENT_NAME}\n• *Vibhag:* {VIBHAG}\n• *Stream / Class:* {STREAM}\n\n📅 *Event Date:* 02-10-2026 (Friday)\n⏰ *Reporting Time:* 09:30 AM\n📍 *Venue:* Mumbai, Maharashtra\n\n👉 *Download Official PDF Invitation Letter & Entry Pass:*\n{PORTAL_URL}\n\nPlease show this digital pass or downloaded invitation letter at the registration desk upon arrival.\n\nWarm regards,\n*Central Working Committee (CWC) & Education Board*\n*Mumbai Meghwal Panchayat & Vidya Gohil Trust*\n📞 Committee Helpline: {HELPLINE_PHONES}`;
+
+  const handleSaveAll = async () => {
+    try {
+      await fbSave(C, auth?.idToken);
+      alert("✅ WhatsApp Templates and Settings saved successfully to database!");
+    } catch (e) {
+      alert("Failed to save: " + e.message);
+    }
+  };
+
+  return (
+    <div style={{maxWidth:1100,margin:"0 auto",padding:"10px 0"}}>
+      
+      {/* Header */}
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:20,flexWrap:"wrap",gap:16}}>
+        <div>
+          <h2 style={{fontSize:"1.4rem",color:"var(--dt)",marginBottom:4,display:"flex",alignItems:"center",gap:8}}>
+            <span>📱</span> WhatsApp Admin & Status Message Templates
+          </h2>
+          <p style={{fontSize:".85rem",color:"var(--mu)",margin:0}}>
+            Configure automated WhatsApp templates per registration status and manage background API gateway settings.
+          </p>
+        </div>
+
+        {/* Sub-Tabs Switcher */}
+        <div style={{display:"flex",background:"#E2E8F0",padding:4,borderRadius:12,gap:4,flexWrap:"wrap"}}>
+          <button
+            onClick={() => setActiveTab("templates")}
+            style={{
+              padding: "8px 16px",
+              borderRadius: 8,
+              fontSize: ".82rem",
+              fontWeight: 800,
+              background: activeTab === "templates" ? "white" : "transparent",
+              color: activeTab === "templates" ? "#166534" : "#475569",
+              border: activeTab === "templates" ? "1px solid #CBD5E1" : "1px solid transparent",
+              cursor: "pointer",
+              boxShadow: activeTab === "templates" ? "0 2px 6px rgba(0,0,0,0.08)" : "none"
+            }}
+          >
+            📝 Status Message Templates
+          </button>
+          <button
+            onClick={() => setActiveTab("gateway")}
+            style={{
+              padding: "8px 16px",
+              borderRadius: 8,
+              fontSize: ".82rem",
+              fontWeight: 800,
+              background: activeTab === "gateway" ? "#0284C7" : "transparent",
+              color: activeTab === "gateway" ? "white" : "#475569",
+              border: activeTab === "gateway" ? "1px solid #7DD3FC" : "1px solid transparent",
+              cursor: "pointer",
+              boxShadow: activeTab === "gateway" ? "0 2px 6px rgba(2,132,199,0.3)" : "none"
+            }}
+          >
+            📡 WhatsApp API Gateway
+          </button>
+        </div>
+      </div>
+
+      {/* SUB-TAB 1: Status Message Templates */}
+      {activeTab === "templates" && (
+        <div style={{animation:"fadeIn .2s ease"}}>
+          <div style={{background:"white",border:"1px solid #CBD5E1",borderRadius:12,padding:"24px 26px",marginBottom:24,boxShadow:"0 2px 8px rgba(0,0,0,0.04)"}}>
+            
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:20,flexWrap:"wrap",gap:12}}>
+              <div>
+                <h3 style={{fontSize:"1.1rem",fontWeight:800,color:"#166534",margin:0}}>
+                  📝 Status-Connected Message Templates
+                </h3>
+                <div style={{fontSize:".8rem",color:"#64748B",marginTop:2}}>
+                  When sending WhatsApp from Registrations, the message will automatically use the template matching the record's status.
+                </div>
+              </div>
+
+              <button
+                type="button"
+                onClick={handleSaveAll}
+                style={{
+                  padding:"10px 24px",
+                  background:"linear-gradient(135deg, #15803D, #166534)",
+                  color:"white",
+                  border:"none",
+                  borderRadius:8,
+                  fontWeight:800,
+                  fontSize:".88rem",
+                  cursor:"pointer",
+                  boxShadow:"0 2px 8px rgba(21,128,61,0.3)"
+                }}
+              >
+                💾 Save All Templates & Settings
+              </button>
+            </div>
+
+            {/* Dynamic Helpline & Portal Link Card */}
+            <div style={{background:"#F0FDF4",border:"1px solid #BBF7D0",borderRadius:10,padding:"16px 20px",marginBottom:20}}>
+              <div style={{fontSize:".88rem",fontWeight:800,color:"#166534",marginBottom:12,display:"flex",alignItems:"center",gap:6}}>
+                <span>📞</span> Global Admin Contact & Website Variables (Replaced dynamically in all templates):
+              </div>
+              <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit, minmax(300px, 1fr))",gap:16}}>
+                <div>
+                  <label style={{fontSize:".78rem",fontWeight:700,color:"#1E293B",display:"block",marginBottom:4}}>
+                    Committee Admin Helpline Numbers (Replaces <code>{'{HELPLINE_PHONES}'}</code>):
+                  </label>
+                  <input
+                    type="text"
+                    value={C.whatsAppHelpline !== undefined ? C.whatsAppHelpline : (C.trust?.phone || "+91 9820785209 / +91 9967821964")}
+                    onChange={e => {
+                      if (setC) setC({ ...C, whatsAppHelpline: e.target.value });
+                    }}
+                    placeholder="e.g. +91 9820785209 / +91 9967821964"
+                    style={{width:"100%",padding:"10px 12px",borderRadius:6,border:"1px solid #CBD5E1",fontSize:".88rem",fontWeight:700,color:"#15803D",boxSizing:"border-box",background:"white"}}
+                  />
+                </div>
+
+                <div>
+                  <label style={{fontSize:".78rem",fontWeight:700,color:"#1E293B",display:"block",marginBottom:4}}>
+                    Portal / Website URL (Replaces <code>{'{PORTAL_URL}'}</code>):
+                  </label>
+                  <input
+                    type="text"
+                    value={C.whatsAppPortalUrl !== undefined ? C.whatsAppPortalUrl : "https://pradeepparmar902.github.io/MY_Community_Website/"}
+                    onChange={e => {
+                      if (setC) setC({ ...C, whatsAppPortalUrl: e.target.value });
+                    }}
+                    placeholder="e.g. https://pradeepparmar902.github.io/MY_Community_Website/"
+                    style={{width:"100%",padding:"10px 12px",borderRadius:6,border:"1px solid #CBD5E1",fontSize:".88rem",fontWeight:700,color:"#2563EB",boxSizing:"border-box",background:"white"}}
+                  />
+                </div>
+              </div>
+            </div>
+
+            <div style={{display:"flex",flexDirection:"column",gap:24}}>
+
+              {/* 1. Pending Template */}
+              <div style={{background:"#F8FAFC",border:"1px solid #E2E8F0",borderRadius:10,padding:"18px 20px"}}>
+                <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10,flexWrap:"wrap",gap:8}}>
+                  <div>
+                    <span style={{background:"#E2E8F0",color:"#334155",padding:"3px 8px",borderRadius:6,fontSize:".72rem",fontWeight:800,marginRight:8}}>STATUS: PENDING</span>
+                    <strong style={{fontSize:".9rem",color:"#0F172A"}}>1. Under Verification Message Template</strong>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (setC) setC({ ...C, whatsAppTplPending: DEFAULT_PENDING_TPL });
+                    }}
+                    style={{background:"white",border:"1px solid #CBD5E1",color:"#475569",padding:"4px 10px",borderRadius:6,fontSize:".72rem",fontWeight:700,cursor:"pointer"}}
+                  >
+                    ↺ Reset to Default
+                  </button>
+                </div>
+
+                <div style={{fontSize:".74rem",color:"#64748B",marginBottom:8,display:"flex",alignItems:"center",gap:6,flexWrap:"wrap"}}>
+                  <span>Quick Insert Placeholders:</span>
+                  <button type="button" onClick={() => setC({ ...C, whatsAppTplPending: (C.whatsAppTplPending || DEFAULT_PENDING_TPL) + " {STUDENT_NAME}" })} style={{background:"white",border:"1px solid #CBD5E1",padding:"2px 6px",borderRadius:4,fontSize:".7rem",cursor:"pointer"}}>+ {'{STUDENT_NAME}'}</button>
+                  <button type="button" onClick={() => setC({ ...C, whatsAppTplPending: (C.whatsAppTplPending || DEFAULT_PENDING_TPL) + " {TXN_ID}" })} style={{background:"white",border:"1px solid #CBD5E1",padding:"2px 6px",borderRadius:4,fontSize:".7rem",cursor:"pointer"}}>+ {'{TXN_ID}'}</button>
+                  <button type="button" onClick={() => setC({ ...C, whatsAppTplPending: (C.whatsAppTplPending || DEFAULT_PENDING_TPL) + " {VIBHAG}" })} style={{background:"white",border:"1px solid #CBD5E1",padding:"2px 6px",borderRadius:4,fontSize:".7rem",cursor:"pointer"}}>+ {'{VIBHAG}'}</button>
+                  <button type="button" onClick={() => setC({ ...C, whatsAppTplPending: (C.whatsAppTplPending || DEFAULT_PENDING_TPL) + " {STREAM}" })} style={{background:"white",border:"1px solid #CBD5E1",padding:"2px 6px",borderRadius:4,fontSize:".7rem",cursor:"pointer"}}>+ {'{STREAM}'}</button>
+                  <button type="button" onClick={() => setC({ ...C, whatsAppTplPending: (C.whatsAppTplPending || DEFAULT_PENDING_TPL) + " {PORTAL_URL}" })} style={{background:"white",border:"1px solid #CBD5E1",padding:"2px 6px",borderRadius:4,fontSize:".7rem",cursor:"pointer"}}>+ {'{PORTAL_URL}'}</button>
+                  <button type="button" onClick={() => setC({ ...C, whatsAppTplPending: (C.whatsAppTplPending || DEFAULT_PENDING_TPL) + " {HELPLINE_PHONES}" })} style={{background:"white",border:"1px solid #CBD5E1",padding:"2px 6px",borderRadius:4,fontSize:".7rem",cursor:"pointer"}}>+ {'{HELPLINE_PHONES}'}</button>
+                </div>
+
+                <textarea
+                  value={C.whatsAppTplPending !== undefined ? C.whatsAppTplPending : DEFAULT_PENDING_TPL}
+                  onChange={e => {
+                    if (setC) setC({ ...C, whatsAppTplPending: e.target.value });
+                  }}
+                  rows={8}
+                  style={{width:"100%",padding:"12px 14px",borderRadius:8,border:"1px solid #CBD5E1",fontSize:".82rem",lineHeight:1.5,fontFamily:"monospace",boxSizing:"border-box",background:"white"}}
+                />
+              </div>
+
+              {/* 2. Approved Template */}
+              <div style={{background:"#F0FDF4",border:"1px solid #BBF7D0",borderRadius:10,padding:"18px 20px"}}>
+                <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10,flexWrap:"wrap",gap:8}}>
+                  <div>
+                    <span style={{background:"#DCFCE7",color:"#166534",padding:"3px 8px",borderRadius:6,fontSize:".72rem",fontWeight:800,marginRight:8}}>STATUS: APPROVED</span>
+                    <strong style={{fontSize:".9rem",color:"#0F172A"}}>2. Approved & Verified Felicitation Message Template</strong>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (setC) setC({ ...C, whatsAppTplApproved: DEFAULT_APPROVED_TPL });
+                    }}
+                    style={{background:"white",border:"1px solid #86EFAC",color:"#166534",padding:"4px 10px",borderRadius:6,fontSize:".72rem",fontWeight:700,cursor:"pointer"}}
+                  >
+                    ↺ Reset to Default
+                  </button>
+                </div>
+
+                <div style={{fontSize:".74rem",color:"#15803D",marginBottom:8,display:"flex",alignItems:"center",gap:6,flexWrap:"wrap"}}>
+                  <span>Quick Insert Placeholders:</span>
+                  <button type="button" onClick={() => setC({ ...C, whatsAppTplApproved: (C.whatsAppTplApproved || DEFAULT_APPROVED_TPL) + " {STUDENT_NAME}" })} style={{background:"white",border:"1px solid #CBD5E1",padding:"2px 6px",borderRadius:4,fontSize:".7rem",cursor:"pointer"}}>+ {'{STUDENT_NAME}'}</button>
+                  <button type="button" onClick={() => setC({ ...C, whatsAppTplApproved: (C.whatsAppTplApproved || DEFAULT_APPROVED_TPL) + " {TXN_ID}" })} style={{background:"white",border:"1px solid #CBD5E1",padding:"2px 6px",borderRadius:4,fontSize:".7rem",cursor:"pointer"}}>+ {'{TXN_ID}'}</button>
+                  <button type="button" onClick={() => setC({ ...C, whatsAppTplApproved: (C.whatsAppTplApproved || DEFAULT_APPROVED_TPL) + " {PERCENTAGE}" })} style={{background:"white",border:"1px solid #CBD5E1",padding:"2px 6px",borderRadius:4,fontSize:".7rem",cursor:"pointer"}}>+ {'{PERCENTAGE}'}</button>
+                  <button type="button" onClick={() => setC({ ...C, whatsAppTplApproved: (C.whatsAppTplApproved || DEFAULT_APPROVED_TPL) + " {PORTAL_URL}" })} style={{background:"white",border:"1px solid #CBD5E1",padding:"2px 6px",borderRadius:4,fontSize:".7rem",cursor:"pointer"}}>+ {'{PORTAL_URL}'}</button>
+                  <button type="button" onClick={() => setC({ ...C, whatsAppTplApproved: (C.whatsAppTplApproved || DEFAULT_APPROVED_TPL) + " {HELPLINE_PHONES}" })} style={{background:"white",border:"1px solid #CBD5E1",padding:"2px 6px",borderRadius:4,fontSize:".7rem",cursor:"pointer"}}>+ {'{HELPLINE_PHONES}'}</button>
+                </div>
+
+                <textarea
+                  value={C.whatsAppTplApproved !== undefined ? C.whatsAppTplApproved : DEFAULT_APPROVED_TPL}
+                  onChange={e => {
+                    if (setC) setC({ ...C, whatsAppTplApproved: e.target.value });
+                  }}
+                  rows={8}
+                  style={{width:"100%",padding:"12px 14px",borderRadius:8,border:"1px solid #CBD5E1",fontSize:".82rem",lineHeight:1.5,fontFamily:"monospace",boxSizing:"border-box",background:"white"}}
+                />
+              </div>
+
+              {/* 3. Needs Info Template */}
+              <div style={{background:"#FFFBEB",border:"1px solid #FDE68A",borderRadius:10,padding:"18px 20px"}}>
+                <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10,flexWrap:"wrap",gap:8}}>
+                  <div>
+                    <span style={{background:"#FEF3C7",color:"#92400E",padding:"3px 8px",borderRadius:6,fontSize:".72rem",fontWeight:800,marginRight:8}}>STATUS: NEEDS INFO</span>
+                    <strong style={{fontSize:".9rem",color:"#0F172A"}}>3. Document Correction & Re-upload Request Template</strong>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (setC) setC({ ...C, whatsAppTplNeedsInfo: DEFAULT_NEEDS_INFO_TPL });
+                    }}
+                    style={{background:"white",border:"1px solid #FCD34D",color:"#92400E",padding:"4px 10px",borderRadius:6,fontSize:".72rem",fontWeight:700,cursor:"pointer"}}
+                  >
+                    ↺ Reset to Default
+                  </button>
+                </div>
+
+                <div style={{fontSize:".74rem",color:"#B45309",marginBottom:8,display:"flex",alignItems:"center",gap:6,flexWrap:"wrap"}}>
+                  <span>Quick Insert Placeholders:</span>
+                  <button type="button" onClick={() => setC({ ...C, whatsAppTplNeedsInfo: (C.whatsAppTplNeedsInfo || DEFAULT_NEEDS_INFO_TPL) + " {REMARKS}" })} style={{background:"white",border:"1px solid #CBD5E1",padding:"2px 6px",borderRadius:4,fontSize:".7rem",cursor:"pointer"}}>+ {'{REMARKS}'}</button>
+                  <button type="button" onClick={() => setC({ ...C, whatsAppTplNeedsInfo: (C.whatsAppTplNeedsInfo || DEFAULT_NEEDS_INFO_TPL) + " {MOBILE}" })} style={{background:"white",border:"1px solid #CBD5E1",padding:"2px 6px",borderRadius:4,fontSize:".7rem",cursor:"pointer"}}>+ {'{MOBILE}'}</button>
+                  <button type="button" onClick={() => setC({ ...C, whatsAppTplNeedsInfo: (C.whatsAppTplNeedsInfo || DEFAULT_NEEDS_INFO_TPL) + " {PORTAL_URL}" })} style={{background:"white",border:"1px solid #CBD5E1",padding:"2px 6px",borderRadius:4,fontSize:".7rem",cursor:"pointer"}}>+ {'{PORTAL_URL}'}</button>
+                  <button type="button" onClick={() => setC({ ...C, whatsAppTplNeedsInfo: (C.whatsAppTplNeedsInfo || DEFAULT_NEEDS_INFO_TPL) + " {HELPLINE_PHONES}" })} style={{background:"white",border:"1px solid #CBD5E1",padding:"2px 6px",borderRadius:4,fontSize:".7rem",cursor:"pointer"}}>+ {'{HELPLINE_PHONES}'}</button>
+                </div>
+
+                <textarea
+                  value={C.whatsAppTplNeedsInfo !== undefined ? C.whatsAppTplNeedsInfo : DEFAULT_NEEDS_INFO_TPL}
+                  onChange={e => {
+                    if (setC) setC({ ...C, whatsAppTplNeedsInfo: e.target.value });
+                  }}
+                  rows={8}
+                  style={{width:"100%",padding:"12px 14px",borderRadius:8,border:"1px solid #CBD5E1",fontSize:".82rem",lineHeight:1.5,fontFamily:"monospace",boxSizing:"border-box",background:"white"}}
+                />
+              </div>
+
+              {/* 4. Disapproved Template */}
+              <div style={{background:"#FEF2F2",border:"1px solid #FECACA",borderRadius:10,padding:"18px 20px"}}>
+                <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10,flexWrap:"wrap",gap:8}}>
+                  <div>
+                    <span style={{background:"#FEE2E2",color:"#991B1B",padding:"3px 8px",borderRadius:6,fontSize:".72rem",fontWeight:800,marginRight:8}}>STATUS: DISAPPROVED</span>
+                    <strong style={{fontSize:".9rem",color:"#0F172A"}}>4. Not Approved / Ineligible Notice Template</strong>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (setC) setC({ ...C, whatsAppTplDisapproved: DEFAULT_DISAPPROVED_TPL });
+                    }}
+                    style={{background:"white",border:"1px solid #FCA5A5",color:"#991B1B",padding:"4px 10px",borderRadius:6,fontSize:".72rem",fontWeight:700,cursor:"pointer"}}
+                  >
+                    ↺ Reset to Default
+                  </button>
+                </div>
+
+                <textarea
+                  value={C.whatsAppTplDisapproved !== undefined ? C.whatsAppTplDisapproved : DEFAULT_DISAPPROVED_TPL}
+                  onChange={e => {
+                    if (setC) setC({ ...C, whatsAppTplDisapproved: e.target.value });
+                  }}
+                  rows={7}
+                  style={{width:"100%",padding:"12px 14px",borderRadius:8,border:"1px solid #CBD5E1",fontSize:".82rem",lineHeight:1.5,fontFamily:"monospace",boxSizing:"border-box",background:"white"}}
+                />
+              </div>
+
+              {/* 5. Official Event Invitation Letter Template */}
+              <div style={{background:"#F0FDF4",border:"1px solid #86EFAC",borderRadius:10,padding:"18px 20px"}}>
+                <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10,flexWrap:"wrap",gap:8}}>
+                  <div>
+                    <span style={{background:"#DCFCE7",color:"#15803D",padding:"3px 8px",borderRadius:6,fontSize:".72rem",fontWeight:800,marginRight:8}}>INVITATION PASS / EVENT LETTER</span>
+                    <strong style={{fontSize:".9rem",color:"#0F172A"}}>5. Official Event Invitation Letter & Entry Pass Template</strong>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (setC) setC({ ...C, whatsAppTplInvite: DEFAULT_INVITE_TPL });
+                    }}
+                    style={{background:"white",border:"1px solid #86EFAC",color:"#15803D",padding:"4px 10px",borderRadius:6,fontSize:".72rem",fontWeight:700,cursor:"pointer"}}
+                  >
+                    ↺ Reset to Default
+                  </button>
+                </div>
+
+                <div style={{fontSize:".74rem",color:"#15803D",marginBottom:8,display:"flex",alignItems:"center",gap:6,flexWrap:"wrap"}}>
+                  <span>Quick Insert Placeholders:</span>
+                  <button type="button" onClick={() => setC({ ...C, whatsAppTplInvite: (C.whatsAppTplInvite || DEFAULT_INVITE_TPL) + " {STUDENT_NAME}" })} style={{background:"white",border:"1px solid #CBD5E1",padding:"2px 6px",borderRadius:4,fontSize:".7rem",cursor:"pointer"}}>+ {'{STUDENT_NAME}'}</button>
+                  <button type="button" onClick={() => setC({ ...C, whatsAppTplInvite: (C.whatsAppTplInvite || DEFAULT_INVITE_TPL) + " {TXN_ID}" })} style={{background:"white",border:"1px solid #CBD5E1",padding:"2px 6px",borderRadius:4,fontSize:".7rem",cursor:"pointer"}}>+ {'{TXN_ID}'}</button>
+                  <button type="button" onClick={() => setC({ ...C, whatsAppTplInvite: (C.whatsAppTplInvite || DEFAULT_INVITE_TPL) + " {VIBHAG}" })} style={{background:"white",border:"1px solid #CBD5E1",padding:"2px 6px",borderRadius:4,fontSize:".7rem",cursor:"pointer"}}>+ {'{VIBHAG}'}</button>
+                  <button type="button" onClick={() => setC({ ...C, whatsAppTplInvite: (C.whatsAppTplInvite || DEFAULT_INVITE_TPL) + " {STREAM}" })} style={{background:"white",border:"1px solid #CBD5E1",padding:"2px 6px",borderRadius:4,fontSize:".7rem",cursor:"pointer"}}>+ {'{STREAM}'}</button>
+                  <button type="button" onClick={() => setC({ ...C, whatsAppTplInvite: (C.whatsAppTplInvite || DEFAULT_INVITE_TPL) + " {PORTAL_URL}" })} style={{background:"white",border:"1px solid #CBD5E1",padding:"2px 6px",borderRadius:4,fontSize:".7rem",cursor:"pointer"}}>+ {'{PORTAL_URL}'}</button>
+                  <button type="button" onClick={() => setC({ ...C, whatsAppTplInvite: (C.whatsAppTplInvite || DEFAULT_INVITE_TPL) + " {HELPLINE_PHONES}" })} style={{background:"white",border:"1px solid #CBD5E1",padding:"2px 6px",borderRadius:4,fontSize:".7rem",cursor:"pointer"}}>+ {'{HELPLINE_PHONES}'}</button>
+                </div>
+
+                <textarea
+                  value={C.whatsAppTplInvite !== undefined ? C.whatsAppTplInvite : DEFAULT_INVITE_TPL}
+                  onChange={e => {
+                    if (setC) setC({ ...C, whatsAppTplInvite: e.target.value });
+                  }}
+                  rows={9}
+                  style={{width:"100%",padding:"12px 14px",borderRadius:8,border:"1px solid #CBD5E1",fontSize:".82rem",lineHeight:1.5,fontFamily:"monospace",boxSizing:"border-box",background:"white"}}
+                />
+              </div>
+
+            </div>
+
+            <div style={{display:"flex",justifyContent:"flex-end",marginTop:24}}>
+              <button
+                type="button"
+                onClick={handleSaveAll}
+                style={{
+                  padding:"11px 28px",
+                  background:"linear-gradient(135deg, #15803D, #166534)",
+                  color:"white",
+                  border:"none",
+                  borderRadius:8,
+                  fontWeight:800,
+                  fontSize:".9rem",
+                  cursor:"pointer",
+                  boxShadow:"0 2px 8px rgba(21,128,61,0.3)"
+                }}
+              >
+                💾 Save All Templates
+              </button>
+            </div>
+
+          </div>
+        </div>
+      )}
+
+      {/* SUB-TAB 2: 📡 WhatsApp API Gateway */}
+      {activeTab === "gateway" && (
+        <div style={{animation:"fadeIn .2s ease"}}>
+          <div style={{background:"white",border:"1px solid #CBD5E1",borderRadius:12,padding:"24px 26px",marginBottom:24,boxShadow:"0 2px 8px rgba(0,0,0,0.04)"}}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:16,flexWrap:"wrap",gap:12}}>
+              <div>
+                <div style={{fontSize:"1.15rem",fontWeight:800,color:"#0369A1",display:"flex",alignItems:"center",gap:8}}>
+                  <span>📡</span> WhatsApp Direct Background API Gateway
+                </div>
+                <p style={{fontSize:".85rem",color:"#475569",margin:"4px 0 0 0"}}>
+                  Send WhatsApp messages directly in the background with <strong>zero tabs opened</strong> and <strong>100% automated delivery</strong> for 300+ applicants.
+                </p>
+              </div>
+
+              <button
+                type="button"
+                onClick={handleSaveAll}
+                style={{
+                  padding:"10px 22px",
+                  background:"linear-gradient(135deg, #0284C7, #0369A1)",
+                  color:"white",
+                  border:"none",
+                  borderRadius:8,
+                  fontWeight:800,
+                  fontSize:".88rem",
+                  cursor:"pointer",
+                  boxShadow:"0 2px 8px rgba(2,132,199,0.3)"
+                }}
+              >
+                💾 Save Gateway Settings
+              </button>
+            </div>
+
+            <div style={{background:"#F0F9FF",border:"1px solid #BAE6FD",borderRadius:10,padding:"18px 20px",marginBottom:20}}>
+              
+              <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:16,paddingBottom:12,borderBottom:"1px solid #E0F2FE",flexWrap:"wrap",gap:10}}>
+                <div>
+                  <strong style={{fontSize:".9rem",color:"#0C4A6E"}}>Enable Background REST API Sending</strong>
+                  <div style={{fontSize:".75rem",color:"#0369A1"}}>When enabled, clicking 'Send WhatsApp' delivers messages instantly via HTTP API without opening WhatsApp Web tabs.</div>
+                </div>
+                <label style={{display:"flex",alignItems:"center",gap:8,cursor:"pointer",fontWeight:700,fontSize:".85rem",color:"#0369A1"}}>
+                  <input 
+                    type="checkbox" 
+                    checked={Boolean(C.whatsAppGateway?.enabled)} 
+                    onChange={e => {
+                      const cur = C.whatsAppGateway || {};
+                      setC({ ...C, whatsAppGateway: { ...cur, enabled: e.target.checked } });
+                    }}
+                    style={{width:18,height:18,cursor:"pointer"}}
+                  />
+                  <span>Enable API Gateway</span>
+                </label>
+              </div>
+
+              <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit, minmax(240px, 1fr))",gap:16,marginBottom:16}}>
+                <div>
+                  <label style={{fontSize:".78rem",fontWeight:800,color:"#0F172A",display:"block",marginBottom:4}}>API Provider:</label>
+                  <select 
+                    value={C.whatsAppGateway?.provider || "meta"}
+                    onChange={e => {
+                      const cur = C.whatsAppGateway || {};
+                      setC({ ...C, whatsAppGateway: { ...cur, provider: e.target.value } });
+                    }}
+                    style={{width:"100%",padding:"10px 12px",borderRadius:6,border:"1px solid #CBD5E1",fontSize:".85rem",fontWeight:700,background:"white"}}
+                  >
+                    <option value="meta">Official Meta WhatsApp Cloud API (1,000 Free Messages/Month)</option>
+                    <option value="greenapi">Green-API (Free Developer / Standard)</option>
+                    <option value="ultramsg">UltraMsg (Instance + Token)</option>
+                    <option value="direct_web">Direct WhatsApp Web / App Launch (Free)</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label style={{fontSize:".78rem",fontWeight:800,color:"#0F172A",display:"block",marginBottom:4}}>Instance ID / Phone ID:</label>
+                  <input 
+                    type="text" 
+                    value={C.whatsAppGateway?.instanceId || ""} 
+                    onChange={e => {
+                      const cur = C.whatsAppGateway || {};
+                      setC({ ...C, whatsAppGateway: { ...cur, instanceId: e.target.value } });
+                    }}
+                    placeholder="e.g. 110023456 or instance12345" 
+                    style={{width:"100%",padding:"10px 12px",borderRadius:6,border:"1px solid #CBD5E1",fontSize:".85rem",background:"white",boxSizing:"border-box"}}
+                  />
+                </div>
+
+                <div>
+                  <label style={{fontSize:".78rem",fontWeight:800,color:"#0F172A",display:"block",marginBottom:4}}>API Token / Secret Key:</label>
+                  <input 
+                    type="password" 
+                    value={C.whatsAppGateway?.token || ""} 
+                    onChange={e => {
+                      const cur = C.whatsAppGateway || {};
+                      setC({ ...C, whatsAppGateway: { ...cur, token: e.target.value } });
+                    }}
+                    placeholder="e.g. EAABw... or secret_token" 
+                    style={{width:"100%",padding:"10px 12px",borderRadius:6,border:"1px solid #CBD5E1",fontSize:".85rem",background:"white",boxSizing:"border-box"}}
+                  />
+                </div>
+              </div>
+
+              <div style={{fontSize:".78rem",color:"#0369A1",background:"white",padding:"12px 14px",borderRadius:8,border:"1px solid #BAE6FD",lineHeight:1.5}}>
+                ℹ️ <strong>Meta Cloud API (1,000 Free Messages/Month) or Green-API:</strong><br/>
+                1. Register your number on Facebook Developer Console or Green-API.com.<br/>
+                2. Paste your <strong>Phone ID / Instance ID</strong> and <strong>Token</strong> above and click <strong>Save</strong>.<br/>
+                3. Messages will now send directly from the website with <strong>0 tabs opened!</strong>
+              </div>
+
+            </div>
+
+            <div style={{display:"flex",justifyContent:"flex-end"}}>
+              <button
+                type="button"
+                onClick={handleSaveAll}
+                style={{
+                  padding:"11px 26px",
+                  background:"linear-gradient(135deg, #0284C7, #0369A1)",
+                  color:"white",
+                  border:"none",
+                  borderRadius:8,
+                  fontWeight:800,
+                  fontSize:".9rem",
+                  cursor:"pointer",
+                  boxShadow:"0 2px 8px rgba(2,132,199,0.3)"
+                }}
+              >
+                💾 Save Gateway Settings
+              </button>
+            </div>
+
+          </div>
+        </div>
+      )}
+
+    </div>
+  );
+}
+
+function ChatbotAccessManager({ C, setC, auth }) {
+  const [activeTab, setActiveTab] = useState("users"); // "users" | "kb"
+  const [accessScope, setAccessScope] = useState("individual"); // Default to "individual" (Mobile/Txn only)
+  const [selectedVibhag, setSelectedVibhag] = useState("10 MAHALAXMI");
+  const [allRegisteredUsers, setAllRegisteredUsers] = useState([]);
+  const [loadingUsers, setLoadingUsers] = useState(true);
+  const [searchFilter, setSearchFilter] = useState("");
+
+  // Default Knowledge Base entries
+  const DEFAULT_KB = [
+    {
+      id: "kb_events",
+      cmd: "/events",
+      icon: "🎓",
+      title: "Upcoming Education Felicitation 2026 events",
+      answer: "🎓 **Education Felicitation 2026 - Mumbai Meghwal Panchayat & Vidya Gohil Trust**\n\n• **Event**: Annual Student Education Felicitation 2026\n• **Eligibility**: Students scoring 50%+ in 10th, 12th, Degree, Diploma & Post-Graduation\n• **Registration Portal**: Online via website Events section\n• **Venue & Date**: Mumbai (To be officially announced soon)\n• **Required Documents**: Marksheet & Passport Photo\n\nFor assistance with registration, contact your Vibhag Head.",
+      enabled: true,
+      adminOnly: false
+    },
+    {
+      id: "kb_edu_committee",
+      cmd: "/edu_committee",
+      icon: "👥",
+      title: "Education Committee Members",
+      answer: "👥 **Education Felicitation 2026 Committee Members**:\n\n• **Pradeep Parmar** — Trustee / Lead Coordinator (+91 9820785209)\n• **Keshav Wagh** — Lower Parel Head (+91 9967821964)\n• **Ashwin Kataria** — Ramdev Nagar Head (+91 8082234187)\n• **Samiksha Chudasama** — Committee Member (+91 7977561920)\n• **Dinesh Sondarva** — Mahalaxmi Head (+91 8779227886)\n• **Khushi Jogadiya** — Pratiksha Nagar Head (+91 8591563577)",
+      enabled: true,
+      adminOnly: false
+    },
+    {
+      id: "kb_cwc_committee",
+      cmd: "/cwc_committee",
+      icon: "🏛️",
+      title: "CWC Committee Members",
+      answer: "🏛️ **Central Working Committee (CWC) Members**:\n\n• **President**: MMP Central Leadership\n• **General Secretary**: CWC Executive\n• **Treasurer / Financial Head**: Trust Executive\n• **Coordination Team**: Central Vibhag Team\n\n*(You can edit full member details & phone numbers in Admin Panel)*",
+      enabled: true,
+      adminOnly: false
+    },
+    {
+      id: "kb_donate",
+      cmd: "/donate",
+      icon: "💰",
+      title: "80G Tax Donations & Bank Details",
+      answer: "💰 **Donations & 80G Tax Exemption**:\n\n• Vidya Gohil Charitable Trust offers **80G Tax Benefits** for all eligible donations under Indian Income Tax regulations.\n• You can donate online securely via Razorpay (UPI, Google Pay, PhonePe, Cards, NetBanking) on our **Donate** page.\n• Automated 80G tax receipts and 10BE acknowledgement certificates are provided.",
+      enabled: false, // Default hidden as per user request for MMP
+      adminOnly: false
+    },
+    {
+      id: "kb_contact",
+      cmd: "/contact",
+      icon: "📞",
+      title: "Trust Helpline & Office Contacts",
+      answer: "📞 **Trust Office & Helpline Contacts**:\n\n• **Office**: Mumbai, Maharashtra\n• **Email**: info@mmp-cwc-new.com\n• **Helpline Mobile**: +91 9820785209 / +91 9967821964\n• **Timings**: 10:00 AM – 7:00 PM (Mon – Sat)",
+      enabled: true,
+      adminOnly: false
+    }
+  ];
+
+  const kbList = Array.isArray(C.chatbotKnowledgeBase) && C.chatbotKnowledgeBase.length > 0 ? C.chatbotKnowledgeBase : DEFAULT_KB;
+
+  // New Q&A Form State
+  const [editingKbId, setEditingKbId] = useState(null);
+  const [kbForm, setKbForm] = useState({
+    cmd: "",
+    icon: "❓",
+    title: "",
+    answer: "",
+    enabled: true,
+    adminOnly: false
+  });
+
+  const VIBHAG_LIST = [
+    "10 MAHALAXMI",
+    "15 RAMDEV NAGAR",
+    "2 WALPAKHADI",
+    "22 LOWER PAREL",
+    "30 PRATKISHA NAGAR",
+    "55 BHAYANDER",
+    "65 KALWA",
+    "14-MMP",
+    "17-MMP",
+    "71-MMP"
+  ];
+
+  useEffect(() => {
+    const fetchAll = async () => {
+      setLoadingUsers(true);
+      try {
+        const [usersList, regsList] = await Promise.all([
+          fbFetchAllUsers(auth?.idToken).catch(() => []),
+          fbFetchRegistrations(auth?.idToken).catch(() => [])
+        ]);
+
+        const map = new Map();
+
+        const savedList = Array.isArray(C.committeeMobiles) ? C.committeeMobiles : [];
+        savedList.forEach(m => {
+          const item = typeof m === "string" ? { name: "Committee Member", mobile: m, scope: "individual", vibhag: "Individual Only", role: "Applicant" } : m;
+          const cleanMob = String(item.mobile).replace(/\D/g, "").slice(-10);
+          if (cleanMob) {
+            map.set(cleanMob, { ...item, mobile: cleanMob, source: "config" });
+          }
+        });
+
+        if (!map.has("9820785209")) {
+          map.set("9820785209", {
+            name: "Pradeep Parmar (Super Admin)",
+            mobile: "9820785209",
+            scope: "all",
+            vibhag: "All Vibhags",
+            role: "Trustee / Super Admin",
+            addedAt: "System Default",
+            source: "config"
+          });
+        }
+
+        (usersList || []).forEach(u => {
+          const mobMatch = String(u.mobile || u.phone || u.phoneNumber || "").match(/([6-9]\d{9})/);
+          const cleanMob = mobMatch ? mobMatch[1] : (u.id && u.id.match(/([6-9]\d{9})/) ? u.id.match(/([6-9]\d{9})/)[1] : "");
+          
+          if (cleanMob && cleanMob.length === 10) {
+            if (!map.has(cleanMob)) {
+              map.set(cleanMob, {
+                name: u.name || u.displayName || u.email?.split("@")[0] || "Registered User",
+                mobile: cleanMob,
+                email: u.email || "",
+                scope: "individual",
+                vibhag: u.vibhag || u.address?.split(",")?.slice(-2)?.join(",")?.trim() || "Individual Only",
+                role: u.email ? `Auth User (${u.email})` : "Phone Auth User",
+                addedAt: "Firebase Auth",
+                source: "auth_user"
+              });
+            } else {
+              const existing = map.get(cleanMob);
+              if ((!existing.name || existing.name === "Registered Applicant") && u.name) {
+                existing.name = u.name;
+              }
+              if (!existing.email && u.email) existing.email = u.email;
+            }
+          }
+        });
+
+        (regsList || []).forEach(r => {
+          if (r.deleted) return;
+          const mobs = [
+            r.submitterMob,
+            r["Mobile Number"],
+            r["Alternate Mobile Number"]
+          ].map(m => String(m || "").replace(/\D/g, "").slice(-10)).filter(m => m && m.length === 10);
+
+          mobs.forEach(mob => {
+            if (!map.has(mob)) {
+              map.set(mob, {
+                name: r["Full Name"] || r["Submitted By"] || "Registered Applicant",
+                mobile: mob,
+                email: r["Email Address"] || "",
+                scope: "individual",
+                vibhag: r["Vibhag"] || "Individual Only",
+                role: `Applicant (${r.eventName || r.eventTitle || "Education Felicitation"})`,
+                addedAt: r._submittedAt ? new Date(r._submittedAt).toLocaleDateString("en-IN") : "Recent",
+                source: "registration"
+              });
+            } else {
+              const existing = map.get(mob);
+              if ((!existing.name || existing.name === "Registered User") && (r["Full Name"] || r["Submitted By"])) {
+                existing.name = r["Full Name"] || r["Submitted By"];
+              }
+              if (existing.vibhag === "Individual Only" && r["Vibhag"]) {
+                existing.vibhag = r["Vibhag"];
+              }
+            }
+          });
+        });
+
+        setAllRegisteredUsers(Array.from(map.values()));
+      } catch (e) {
+        console.error("Failed to load registered users for chatbot:", e);
+      } finally {
+        setLoadingUsers(false);
+      }
+    };
+
+    fetchAll();
+  }, [C.committeeMobiles, auth?.idToken]);
+
+  const saveMobilesToFirebase = async (updatedList) => {
+    const newC = { ...C, committeeMobiles: updatedList };
+    if (setC) setC(newC);
+    try {
+      await fbSave(newC, auth?.idToken);
+    } catch(e) {
+      alert("Failed to save to database: " + e.message);
+    }
+  };
+
+  const saveKnowledgeBaseToFirebase = async (updatedKb) => {
+    const newC = { ...C, chatbotKnowledgeBase: updatedKb };
+    if (setC) setC(newC);
+    try {
+      await fbSave(newC, auth?.idToken);
+      alert("Chatbot Knowledge Base saved successfully!");
+    } catch(e) {
+      alert("Failed to save to database: " + e.message);
+    }
+  };
+
+  const updateMemberScope = (targetMobile, newScope, newVibhag) => {
+    const cleanTarget = String(targetMobile).replace(/\D/g, "").slice(-10);
+    const existingConfig = Array.isArray(C.committeeMobiles) ? [...C.committeeMobiles] : [];
+    
+    const userObj = allRegisteredUsers.find(u => u.mobile === cleanTarget);
+    const foundIdx = existingConfig.findIndex(m => (typeof m === "string" ? m : m.mobile) === cleanTarget);
+
+    let assignedVibhag = "Individual Only";
+    if (newScope === "vibhag") {
+      assignedVibhag = (newVibhag && newVibhag !== "All Vibhags" && newVibhag !== "Individual Only")
+        ? newVibhag
+        : (userObj?.vibhag && userObj.vibhag !== "All Vibhags" && userObj.vibhag !== "Individual Only" ? userObj.vibhag : "10 MAHALAXMI");
+    } else if (newScope === "all") {
+      assignedVibhag = "All Vibhags";
+    }
+
+    const updatedEntry = {
+      ...(userObj || {}),
+      mobile: cleanTarget,
+      name: userObj?.name || "Member",
+      scope: newScope,
+      vibhag: assignedVibhag,
+      role: userObj?.role || (newScope === "all" ? "Super Admin" : newScope === "vibhag" ? "Vibhag Head" : "Applicant"),
+      addedAt: userObj?.addedAt || new Date().toLocaleDateString("en-IN")
+    };
+
+    if (foundIdx !== -1) {
+      existingConfig[foundIdx] = updatedEntry;
+    } else {
+      existingConfig.push(updatedEntry);
+    }
+
+    setAllRegisteredUsers(prev => prev.map(u => u.mobile === cleanTarget ? updatedEntry : u));
+    saveMobilesToFirebase(existingConfig);
+  };
+
+  const toggleKbEnabled = (kbId) => {
+    const updated = kbList.map(item => item.id === kbId ? { ...item, enabled: !item.enabled } : item);
+    saveKnowledgeBaseToFirebase(updated);
+  };
+
+  const deleteKbItem = (kbId) => {
+    if (!confirm("Are you sure you want to delete this Q&A shortcut?")) return;
+    const updated = kbList.filter(item => item.id !== kbId);
+    saveKnowledgeBaseToFirebase(updated);
+  };
+
+  const handleSaveKbForm = (e) => {
+    e.preventDefault();
+    let cleanCmd = kbForm.cmd.trim();
+    if (!cleanCmd.startsWith("/")) cleanCmd = "/" + cleanCmd;
+    if (!kbForm.title.trim() || !kbForm.answer.trim()) return alert("Please fill Title and Answer.");
+
+    let updated = [];
+    if (editingKbId) {
+      updated = kbList.map(item => item.id === editingKbId ? { ...kbForm, id: editingKbId, cmd: cleanCmd } : item);
+    } else {
+      const newEntry = {
+        ...kbForm,
+        id: "kb_" + Date.now(),
+        cmd: cleanCmd
+      };
+      updated = [...kbList, newEntry];
+    }
+
+    saveKnowledgeBaseToFirebase(updated);
+    setEditingKbId(null);
+    setKbForm({ cmd: "", icon: "❓", title: "", answer: "", enabled: true, adminOnly: false });
+  };
+
+  const filteredUsers = allRegisteredUsers.filter(u => {
+    if (!searchFilter.trim()) return true;
+    const q = searchFilter.toLowerCase();
+    return (
+      (u.name && u.name.toLowerCase().includes(q)) ||
+      (u.mobile && u.mobile.includes(q)) ||
+      (u.email && u.email.toLowerCase().includes(q)) ||
+      (u.vibhag && u.vibhag.toLowerCase().includes(q)) ||
+      (u.role && u.role.toLowerCase().includes(q))
+    );
+  });
+
+  return (
+    <div style={{animation:"fadeIn .3s ease"}}>
+      {/* Chatbot Global Master Enable / Disable Toggle Banner */}
+      <div style={{
+        background: C.chatbotEnabled !== false ? "linear-gradient(135deg, #F0FDF4, #DCFCE7)" : "linear-gradient(135deg, #FEF2F2, #FEE2E2)",
+        border: `1.5px solid ${C.chatbotEnabled !== false ? "#86EFAC" : "#FCA5A5"}`,
+        borderRadius: 14,
+        padding: "14px 20px",
+        marginBottom: 20,
+        display: "flex",
+        justifyContent: "space-between",
+        alignItems: "center",
+        flexWrap: "wrap",
+        gap: 14,
+        boxShadow: "0 2px 10px rgba(0,0,0,0.04)"
+      }}>
+        <div style={{display:"flex",alignItems:"center",gap:12}}>
+          <div style={{
+            width: 44,
+            height: 44,
+            borderRadius: "50%",
+            background: C.chatbotEnabled !== false ? "#16A34A" : "#DC2626",
+            color: "white",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            fontSize: "1.4rem",
+            boxShadow: `0 4px 12px ${C.chatbotEnabled !== false ? "rgba(22,163,74,0.3)" : "rgba(220,38,38,0.3)"}`
+          }}>
+            {C.chatbotEnabled !== false ? "🤖" : "🛑"}
+          </div>
+          <div>
+            <div style={{display:"flex",alignItems:"center",gap:8}}>
+              <span style={{fontSize:"1.05rem",fontWeight:800,color: C.chatbotEnabled !== false ? "#14532D" : "#7F1D1D"}}>
+                Chatbot Assistant Status: {C.chatbotEnabled !== false ? "ACTIVE (Visible Online)" : "INACTIVE (Disabled & Hidden)"}
+              </span>
+              <span style={{
+                background: C.chatbotEnabled !== false ? "#22C55E" : "#EF4444",
+                color: "white",
+                fontSize: ".68rem",
+                fontWeight: 800,
+                padding: "2px 8px",
+                borderRadius: 10,
+                textTransform: "uppercase"
+              }}>
+                {C.chatbotEnabled !== false ? "ONLINE" : "OFFLINE"}
+              </span>
+            </div>
+            <p style={{fontSize:".8rem",color: C.chatbotEnabled !== false ? "#166534" : "#991B1B",margin:"2px 0 0 0"}}>
+              {C.chatbotEnabled !== false 
+                ? "The floating Trust Assistant widget is currently visible to all website visitors on public and portal pages."
+                : "The Chatbot widget is completely hidden from public visitors. Toggle ON anytime to reactivate."}
+            </p>
+          </div>
+        </div>
+
+        {/* Master Toggle Switch Button */}
+        <button
+          type="button"
+          onClick={async () => {
+            const nextState = !(C.chatbotEnabled !== false);
+            const newC = { ...C, chatbotEnabled: nextState };
+            if (setC) setC(newC);
+            try {
+              await fbSave(newC, auth?.idToken);
+            } catch(err) {
+              alert("Failed to save status: " + err.message);
+            }
+          }}
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 10,
+            background: C.chatbotEnabled !== false ? "#16A34A" : "#475569",
+            color: "white",
+            border: "none",
+            borderRadius: 30,
+            padding: "8px 18px",
+            fontSize: ".88rem",
+            fontWeight: 800,
+            cursor: "pointer",
+            boxShadow: "0 4px 14px rgba(0,0,0,0.15)",
+            transition: "all 0.2s"
+          }}
+          title={C.chatbotEnabled !== false ? "Click to deactivate/hide chatbot from website" : "Click to activate/show chatbot on website"}
+        >
+          <span>{C.chatbotEnabled !== false ? "🟢 Active (Turn OFF)" : "🔴 Inactive (Turn ON)"}</span>
+          <div style={{
+            width: 38,
+            height: 20,
+            background: "rgba(0,0,0,0.25)",
+            borderRadius: 20,
+            position: "relative",
+            display: "flex",
+            alignItems: "center",
+            padding: 2
+          }}>
+            <div style={{
+              width: 16,
+              height: 16,
+              borderRadius: "50%",
+              background: "white",
+              transform: C.chatbotEnabled !== false ? "translateX(18px)" : "translateX(0px)",
+              transition: "transform 0.2s",
+              boxShadow: "0 1px 4px rgba(0,0,0,0.3)"
+            }} />
+          </div>
+        </button>
+      </div>
+
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:20,flexWrap:"wrap",gap:16}}>
+        <div>
+          <h2 className="sh" style={{fontSize:"1.4rem",color:"var(--dt)",marginBottom:4,display:"flex",alignItems:"center",gap:8}}>
+            <span>⚙️</span> Chatbot Configuration & Access Console
+          </h2>
+          <p style={{fontSize:".85rem",color:"var(--mu)",margin:0}}>
+            Configure <strong>Header Branding</strong>, <strong>User Access Scopes</strong> and dynamic <strong>Slash Commands</strong> in real-time.
+          </p>
+        </div>
+
+        {/* Sub-Tabs Switcher */}
+        <div style={{display:"flex",background:"#E2E8F0",padding:4,borderRadius:12,gap:4,flexWrap:"wrap",boxShadow:"inset 0 1px 3px rgba(0,0,0,0.1)"}}>
+          <button
+            onClick={() => setActiveTab("branding")}
+            style={{
+              padding: "8px 14px",
+              borderRadius: 8,
+              fontSize: ".82rem",
+              fontWeight: 800,
+              background: activeTab === "branding" ? "white" : "transparent",
+              color: activeTab === "branding" ? "#0F172A" : "#475569",
+              border: activeTab === "branding" ? "1px solid #CBD5E1" : "1px solid transparent",
+              cursor: "pointer",
+              boxShadow: activeTab === "branding" ? "0 2px 6px rgba(0,0,0,0.08)" : "none"
+            }}
+          >
+            🎨 Header & Branding
+          </button>
+          <button
+            onClick={() => setActiveTab("kb")}
+            style={{
+              padding: "8px 14px",
+              borderRadius: 8,
+              fontSize: ".82rem",
+              fontWeight: 800,
+              background: activeTab === "kb" ? "white" : "transparent",
+              color: activeTab === "kb" ? "#0F172A" : "#475569",
+              border: activeTab === "kb" ? "1px solid #CBD5E1" : "1px solid transparent",
+              cursor: "pointer",
+              boxShadow: activeTab === "kb" ? "0 2px 6px rgba(0,0,0,0.08)" : "none"
+            }}
+          >
+            ❓ Slash Commands & Q&A ({kbList.length})
+          </button>
+          <button
+            onClick={() => setActiveTab("users")}
+            style={{
+              padding: "8px 14px",
+              borderRadius: 8,
+              fontSize: ".82rem",
+              fontWeight: 800,
+              background: activeTab === "users" ? "white" : "transparent",
+              color: activeTab === "users" ? "#0F172A" : "#475569",
+              border: activeTab === "users" ? "1px solid #CBD5E1" : "1px solid transparent",
+              cursor: "pointer",
+              boxShadow: activeTab === "users" ? "0 2px 6px rgba(0,0,0,0.08)" : "none"
+            }}
+          >
+            👥 User Access & Scopes ({allRegisteredUsers.length})
+          </button>
+          <button
+            onClick={() => setActiveTab("rules")}
+            style={{
+              padding: "8px 14px",
+              borderRadius: 8,
+              fontSize: ".82rem",
+              fontWeight: 800,
+              background: activeTab === "rules" ? "#15803D" : "#DCFCE7",
+              color: activeTab === "rules" ? "white" : "#166534",
+              border: "1px solid #86EFAC",
+              cursor: "pointer",
+              boxShadow: activeTab === "rules" ? "0 2px 8px rgba(21,128,61,0.3)" : "none"
+            }}
+          >
+            🛡️ Restricted Messages & Rules
+          </button>
+        </div>
+      </div>
+
+      {activeTab === "branding" && (
+        <div style={{animation:"fadeIn .2s ease"}}>
+          <div style={{background:"white",border:"1px solid #CBD5E1",borderRadius:12,padding:"24px 26px",marginBottom:24,boxShadow:"0 2px 8px rgba(0,0,0,0.04)"}}>
+            <div style={{fontSize:"1.05rem",fontWeight:800,color:"#0F172A",marginBottom:16,display:"flex",alignItems:"center",gap:8}}>
+              <span>🎨</span> Custom Chatbot Header, Titles & Greeting Configuration:
+            </div>
+            
+            <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit, minmax(280px, 1fr))",gap:18,marginBottom:18}}>
+              <div>
+                <label style={{fontSize:".8rem",fontWeight:700,color:"#334155",display:"block",marginBottom:6}}>
+                  Chatbot Header Title (Displayed at top of Chat Window):
+                </label>
+                <div style={{display:"flex",gap:8}}>
+                  <input
+                    type="text"
+                    value={C.chatbotTitle !== undefined ? C.chatbotTitle : (C.trust?.name ? `${C.trust.name} Assistant` : "Mumbai Meghwal Panchayat Assistant")}
+                    onChange={e => {
+                      const newC = { ...C, chatbotTitle: e.target.value };
+                      if (setC) setC(newC);
+                    }}
+                    placeholder="e.g. Mumbai Meghwal Panchayat Assistant"
+                    style={{flex:1,padding:"11px 14px",borderRadius:8,border:"1px solid #CBD5E1",fontSize:".9rem",fontWeight:700,boxSizing:"border-box"}}
+                  />
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      try {
+                        await fbSave(C, auth?.idToken);
+                        alert("Header Title saved successfully to database!");
+                      } catch(err) {
+                        alert("Save failed: " + err.message);
+                      }
+                    }}
+                    style={{padding:"10px 16px",background:"#2563EB",color:"white",border:"none",borderRadius:8,fontWeight:700,fontSize:".82rem",cursor:"pointer",whiteSpace:"nowrap"}}
+                  >
+                    💾 Save Title
+                  </button>
+                </div>
+                <span style={{fontSize:".72rem",color:"#64748B",display:"block",marginTop:4}}>
+                  Appears prominently in the dark top header bar of the chatbot window.
+                </span>
+              </div>
+
+              <div>
+                <label style={{fontSize:".8rem",fontWeight:700,color:"#334155",display:"block",marginBottom:6}}>
+                  Launcher Pill Label (Floating Button on Screen):
+                </label>
+                <input
+                  type="text"
+                  value={C.chatbotPillLabel !== undefined ? C.chatbotPillLabel : "Trust Assistant"}
+                  onChange={e => {
+                    const newC = { ...C, chatbotPillLabel: e.target.value };
+                    if (setC) setC(newC);
+                  }}
+                  placeholder="e.g. Trust Assistant or Ask Help"
+                  style={{width:"100%",padding:"11px 14px",borderRadius:8,border:"1px solid #CBD5E1",fontSize:".9rem",fontWeight:700,boxSizing:"border-box"}}
+                />
+                <span style={{fontSize:".72rem",color:"#64748B",display:"block",marginTop:4}}>
+                  Appears on the floating pill launcher button at the bottom of the screen.
+                </span>
+              </div>
+            </div>
+
+            <div style={{marginBottom:18}}>
+              <label style={{fontSize:".8rem",fontWeight:700,color:"#334155",display:"block",marginBottom:6}}>
+                Chatbot Welcome Greeting Message (Supports **bold**, bullet points, and links):
+              </label>
+              <textarea
+                value={C.chatbotWelcomeText !== undefined ? C.chatbotWelcomeText : "👋 **Namaste & Welcome!**\n\nI am your **MMP & Vidya Gohil Trust Assistant**.\n\n• 🔍 **Check Application Status**: Type your **Transaction ID (e.g. VG-7, EDU26-2)** or registered **Mobile Number**.\n• ⚡ **Question Shortcuts**: Type **`/`** to see all FAQ shortcuts (Education Committee, CWC, Events, Vibhag Summary).\n• 🛡️ **Committee Admin**: Enter your authorized mobile to unlock live analytics."}
+                onChange={e => {
+                  const newC = { ...C, chatbotWelcomeText: e.target.value };
+                  if (setC) setC(newC);
+                }}
+                rows={6}
+                style={{width:"100%",padding:"12px 14px",borderRadius:8,border:"1px solid #CBD5E1",fontSize:".85rem",lineHeight:1.6,fontFamily:"inherit",boxSizing:"border-box"}}
+              />
+            </div>
+
+            {/* Configurable Restricted Access & Error Messages */}
+            <div style={{background:"#F0FDF4",border:"1px solid #BBF7D0",borderRadius:10,padding:"18px 20px",marginBottom:20}}>
+              <div style={{fontSize:".95rem",fontWeight:800,color:"#166534",marginBottom:14,display:"flex",alignItems:"center",gap:6}}>
+                <span>🛡️</span> Configurable Restricted Access & Query Guidance Messages:
+              </div>
+
+              <div style={{marginBottom:14}}>
+                <label style={{fontSize:".78rem",fontWeight:700,color:"#1E293B",display:"block",marginBottom:4}}>
+                  1. Unauthorized Vibhag Access Message (Placeholders: <code>{'{ASSIGNED_VIBHAG}'}</code>, <code>{'{REQUESTED_VIBHAG}'}</code>, <code>{'{ADMIN_PHONE}'}</code>):
+                </label>
+                <textarea
+                  value={C.chatbotRestrictedVibhagMsg !== undefined ? C.chatbotRestrictedVibhagMsg : "🔒 **Access Restricted to {ASSIGNED_VIBHAG}**\n\nYou have administrative access assigned specifically for **{ASSIGNED_VIBHAG}**.\n\n• 🚫 You do not have permission to view registrations or analytics for **{REQUESTED_VIBHAG}**.\n• ℹ️ **Check your access level of Vibhag**: Please connect with Admin ({ADMIN_PHONE}) if you require access to this Vibhag.\n• 👉 Type **`/vibhag`** or **`/all`** to view live analytics for **{ASSIGNED_VIBHAG}**."}
+                  onChange={e => {
+                    const newC = { ...C, chatbotRestrictedVibhagMsg: e.target.value };
+                    if (setC) setC(newC);
+                  }}
+                  rows={5}
+                  style={{width:"100%",padding:"10px 12px",borderRadius:8,border:"1px solid #CBD5E1",fontSize:".82rem",lineHeight:1.5,fontFamily:"monospace",boxSizing:"border-box",background:"white"}}
+                />
+              </div>
+
+              <div style={{marginBottom:14}}>
+                <label style={{fontSize:".78rem",fontWeight:700,color:"#1E293B",display:"block",marginBottom:4}}>
+                  2. General Admin-Only Restricted Message (Shown to public/regular users querying admin data):
+                </label>
+                <textarea
+                  value={C.chatbotAdminRestrictedMsg !== undefined ? C.chatbotAdminRestrictedMsg : "🔒 **Access Restricted**\n\nRegistration summaries, Vibhag counts, and committee metrics are restricted to authorized Committee Admins.\n\n👉 If you are a Committee Admin, please enter your **10-digit Authorized Mobile Number** to unlock your assigned access level.\n\n🔍 Regular applicants can check their individual status by typing their **Transaction ID (e.g. VG-7, EDU26-2)** or registered **Mobile Number**."}
+                  onChange={e => {
+                    const newC = { ...C, chatbotAdminRestrictedMsg: e.target.value };
+                    if (setC) setC(newC);
+                  }}
+                  rows={4}
+                  style={{width:"100%",padding:"10px 12px",borderRadius:8,border:"1px solid #CBD5E1",fontSize:".82rem",lineHeight:1.5,fontFamily:"monospace",boxSizing:"border-box",background:"white"}}
+                />
+              </div>
+
+              <div>
+                <label style={{fontSize:".78rem",fontWeight:700,color:"#1E293B",display:"block",marginBottom:4}}>
+                  3. Non-Relevant Question / Default Fallback Message:
+                </label>
+                <textarea
+                  value={C.chatbotNonRelevantMsg !== undefined ? C.chatbotNonRelevantMsg : "⚠️ **This Question is not relevant to this community.**\n\nI am specifically designed to help with **Mumbai Meghwal Panchayat & Vidya Gohil Trust** community activities, Education Felicitation 2026 event registrations, and application status tracking.\n\n👉 Type **`/`** to view all available community questions & shortcuts."}
+                  onChange={e => {
+                    const newC = { ...C, chatbotNonRelevantMsg: e.target.value };
+                    if (setC) setC(newC);
+                  }}
+                  rows={4}
+                  style={{width:"100%",padding:"10px 12px",borderRadius:8,border:"1px solid #CBD5E1",fontSize:".82rem",lineHeight:1.5,fontFamily:"monospace",boxSizing:"border-box",background:"white"}}
+                />
+              </div>
+            </div>
+
+            {/* Live Preview Box */}
+            <div style={{background:"#F8FAFC",border:"1px solid #E2E8F0",borderRadius:10,padding:16,marginBottom:20}}>
+              <div style={{fontSize:".75rem",fontWeight:800,color:"#64748B",textTransform:"uppercase",marginBottom:8}}>
+                👁️ Live Header Preview:
+              </div>
+              <div style={{
+                background:"linear-gradient(135deg, #0F172A, #1E293B)",
+                color:"white",
+                padding:"10px 14px",
+                borderRadius:10,
+                display:"inline-flex",
+                alignItems:"center",
+                gap:10,
+                boxShadow:"0 2px 8px rgba(0,0,0,0.15)"
+              }}>
+                <div style={{width:28,height:28,borderRadius:7,background:"#2563EB",display:"flex",alignItems:"center",justifyContent:"center",fontSize:"1rem"}}>
+                  🤖
+                </div>
+                <div>
+                  <div style={{fontSize:".86rem",fontWeight:800,lineHeight:1.2}}>
+                    {C.chatbotTitle || (C.trust?.name ? `${C.trust.name} Assistant` : "MMP & Vidya Gohil Assistant")}
+                  </div>
+                  <div style={{fontSize:".68rem",color:"#94A3B8"}}>🟢 Online | Public</div>
+                </div>
+              </div>
+            </div>
+
+            <div style={{display:"flex",justifyContent:"flex-end"}}>
+              <button
+                type="button"
+                onClick={async () => {
+                  try {
+                    await fbSave(C, auth?.idToken);
+                    alert("Chatbot Header Title & Welcome Branding saved successfully!");
+                  } catch(err) {
+                    alert("Failed to save: " + err.message);
+                  }
+                }}
+                style={{
+                  padding:"10px 24px",
+                  background:"linear-gradient(135deg, #10B981, #059669)",
+                  color:"white",
+                  border:"none",
+                  borderRadius:8,
+                  fontWeight:800,
+                  fontSize:".88rem",
+                  cursor:"pointer",
+                  boxShadow:"0 2px 6px rgba(16,185,129,0.25)"
+                }}
+              >
+                💾 Save Header Title & Branding Changes
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      
+      {/* DEDICATED SUB-TAB: 🛡️ Restricted Messages & Rules */}
+      {activeTab === "rules" && (
+        <div style={{animation:"fadeIn .2s ease"}}>
+          <div style={{background:"white",border:"1px solid #CBD5E1",borderRadius:12,padding:"24px 26px",marginBottom:24,boxShadow:"0 2px 8px rgba(0,0,0,0.04)"}}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:16,flexWrap:"wrap",gap:12}}>
+              <div>
+                <div style={{fontSize:"1.15rem",fontWeight:800,color:"#166534",display:"flex",alignItems:"center",gap:8}}>
+                  <span>🛡️</span> Chatbot Access Rules & Error Response Console
+                </div>
+                <p style={{fontSize:".85rem",color:"#475569",margin:"4px 0 0 0"}}>
+                  Configure the exact response messages triggered when users ask specific questions or query restricted Vibhags.
+                </p>
+              </div>
+
+              <button
+                type="button"
+                onClick={async () => {
+                  try {
+                    await fbSave(C, auth?.idToken);
+                    alert("✅ All Access Rules & Messages saved successfully to database!");
+                  } catch(err) {
+                    alert("Failed to save: " + err.message);
+                  }
+                }}
+                style={{
+                  padding:"10px 22px",
+                  background:"linear-gradient(135deg, #166534, #15803D)",
+                  color:"white",
+                  border:"none",
+                  borderRadius:8,
+                  fontWeight:800,
+                  fontSize:".88rem",
+                  cursor:"pointer",
+                  boxShadow:"0 2px 8px rgba(22,101,52,0.3)"
+                }}
+              >
+                💾 Save All Messages to Database
+              </button>
+            </div>
+
+            {/* How It Connects Explanation Banner */}
+            <div style={{background:"#F8FAFC",border:"1px solid #E2E8F0",borderRadius:10,padding:"14px 18px",marginBottom:20}}>
+              <div style={{fontSize:".82rem",fontWeight:800,color:"#0F172A",marginBottom:6,display:"flex",alignItems:"center",gap:6}}>
+                <span>🔗</span> How are these messages connected to questions?
+              </div>
+              <ul style={{margin:0,paddingLeft:20,fontSize:".78rem",color:"#475569",lineHeight:1.6}}>
+                <li><strong>Rule 1 (Unauthorized Vibhag Query)</strong>: Connected to any question mentioning a Vibhag (e.g. <code>Summary data of vibhag 15 RAMDEV NAGAR</code> or <code>/vibhag 15 RAMDEV NAGAR</code>) when the user only has access to a different Vibhag (e.g. <code>10 MAHALAXMI</code>).</li>
+                <li><strong>Rule 2 (Admin Only Reports)</strong>: Connected when regular applicants query admin-only reports (<code>/all</code>, <code>/pending</code>, <code>/approved</code>).</li>
+                <li><strong>Rule 3 (General Fallback)</strong>: Connected when a user asks any question that is not related to community events or registrations.</li>
+              </ul>
+            </div>
+
+            {/* Configurable Message Cards */}
+            <div style={{display:"flex",flexDirection:"column",gap:20}}>
+              
+              {/* Rule 1 */}
+              <div style={{background:"#F0FDF4",border:"1px solid #BBF7D0",borderRadius:10,padding:"18px 20px"}}>
+                <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8,flexWrap:"wrap",gap:8}}>
+                  <div>
+                    <span style={{background:"#DCFCE7",color:"#166534",padding:"3px 8px",borderRadius:6,fontSize:".7rem",fontWeight:800,marginRight:8}}>RULE 1 (AUTOMATIC)</span>
+                    <strong style={{fontSize:".88rem",color:"#0F172A"}}>Unauthorized Vibhag Access Message</strong>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const newC = { ...C, chatbotRestrictedVibhagMsg: "🔒 **Access Restricted to {ASSIGNED_VIBHAG}**\n\nYou have administrative access assigned specifically for **{ASSIGNED_VIBHAG}**.\n\n• 🚫 You do not have permission to view registrations or analytics for **{REQUESTED_VIBHAG}**.\n• ℹ️ **Check your access level of Vibhag**: Please connect with Admin ({ADMIN_PHONE}) if you require access to this Vibhag.\n• 👉 Type **`/vibhag`** or **`/all`** to view live analytics for **{ASSIGNED_VIBHAG}**." };
+                      if (setC) setC(newC);
+                    }}
+                    style={{background:"white",border:"1px solid #86EFAC",color:"#166534",padding:"4px 10px",borderRadius:6,fontSize:".72rem",fontWeight:700,cursor:"pointer"}}
+                  >
+                    ↺ Reset to Default Template
+                  </button>
+                </div>
+
+                <div style={{fontSize:".75rem",color:"#15803D",marginBottom:8,display:"flex",alignItems:"center",gap:6,flexWrap:"wrap"}}>
+                  <span>Insert Placeholders:</span>
+                  <button type="button" onClick={() => {
+                    const cur = C.chatbotRestrictedVibhagMsg || "🔒 **Access Restricted to {ASSIGNED_VIBHAG}**\n\nYou have administrative access assigned specifically for **{ASSIGNED_VIBHAG}**.\n\n• 🚫 You do not have permission to view registrations or analytics for **{REQUESTED_VIBHAG}**.\n• ℹ️ **Check your access level of Vibhag**: Please connect with Admin ({ADMIN_PHONE}) if you require access to this Vibhag.\n• 👉 Type **`/vibhag`** or **`/all`** to view live analytics for **{ASSIGNED_VIBHAG}**.";
+                    if (setC) setC({ ...C, chatbotRestrictedVibhagMsg: cur + " {ASSIGNED_VIBHAG}" });
+                  }} style={{background:"white",border:"1px solid #CBD5E1",padding:"2px 6px",borderRadius:4,fontSize:".7rem",cursor:"pointer"}}>+ {'{ASSIGNED_VIBHAG}'}</button>
+                  <button type="button" onClick={() => {
+                    const cur = C.chatbotRestrictedVibhagMsg || "🔒 **Access Restricted to {ASSIGNED_VIBHAG}**\n\nYou have administrative access assigned specifically for **{ASSIGNED_VIBHAG}**.\n\n• 🚫 You do not have permission to view registrations or analytics for **{REQUESTED_VIBHAG}**.\n• ℹ️ **Check your access level of Vibhag**: Please connect with Admin ({ADMIN_PHONE}) if you require access to this Vibhag.\n• 👉 Type **`/vibhag`** or **`/all`** to view live analytics for **{ASSIGNED_VIBHAG}**.";
+                    if (setC) setC({ ...C, chatbotRestrictedVibhagMsg: cur + " {REQUESTED_VIBHAG}" });
+                  }} style={{background:"white",border:"1px solid #CBD5E1",padding:"2px 6px",borderRadius:4,fontSize:".7rem",cursor:"pointer"}}>+ {'{REQUESTED_VIBHAG}'}</button>
+                  <button type="button" onClick={() => {
+                    const cur = C.chatbotRestrictedVibhagMsg || "🔒 **Access Restricted to {ASSIGNED_VIBHAG}**\n\nYou have administrative access assigned specifically for **{ASSIGNED_VIBHAG}**.\n\n• 🚫 You do not have permission to view registrations or analytics for **{REQUESTED_VIBHAG}**.\n• ℹ️ **Check your access level of Vibhag**: Please connect with Admin ({ADMIN_PHONE}) if you require access to this Vibhag.\n• 👉 Type **`/vibhag`** or **`/all`** to view live analytics for **{ASSIGNED_VIBHAG}**.";
+                    if (setC) setC({ ...C, chatbotRestrictedVibhagMsg: cur + " {ADMIN_PHONE}" });
+                  }} style={{background:"white",border:"1px solid #CBD5E1",padding:"2px 6px",borderRadius:4,fontSize:".7rem",cursor:"pointer"}}>+ {'{ADMIN_PHONE}'}</button>
+                </div>
+
+                <textarea
+                  value={(C.chatbotRestrictedVibhagMsg && C.chatbotRestrictedVibhagMsg.trim()) ? C.chatbotRestrictedVibhagMsg : "🔒 **Access Restricted to {ASSIGNED_VIBHAG}**\n\nYou have administrative access assigned specifically for **{ASSIGNED_VIBHAG}**.\n\n• 🚫 You do not have permission to view registrations or analytics for **{REQUESTED_VIBHAG}**.\n• ℹ️ **Check your access level of Vibhag**: Please connect with Admin ({ADMIN_PHONE}) if you require access to this Vibhag.\n• 👉 Type **`/vibhag`** or **`/all`** to view live analytics for **{ASSIGNED_VIBHAG}**."}
+                  onChange={e => {
+                    const newC = { ...C, chatbotRestrictedVibhagMsg: e.target.value };
+                    if (setC) setC(newC);
+                  }}
+                  rows={6}
+                  style={{width:"100%",padding:"12px 14px",borderRadius:8,border:"1px solid #CBD5E1",fontSize:".85rem",lineHeight:1.6,fontFamily:"inherit",boxSizing:"border-box",background:"white"}}
+                />
+              </div>
+
+              {/* Rule 2 */}
+              <div style={{background:"#EFF6FF",border:"1px solid #BFDBFE",borderRadius:10,padding:"18px 20px"}}>
+                <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8,flexWrap:"wrap",gap:8}}>
+                  <div>
+                    <span style={{background:"#DBEAFE",color:"#1E40AF",padding:"3px 8px",borderRadius:6,fontSize:".7rem",fontWeight:800,marginRight:8}}>RULE 2 (AUTOMATIC)</span>
+                    <strong style={{fontSize:".88rem",color:"#0F172A"}}>General Admin Summary Restricted Message (Shown to Public/Applicants)</strong>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const newC = { ...C, chatbotAdminRestrictedMsg: "🔒 **Access Restricted**\n\nRegistration summaries, Vibhag counts, and committee metrics are restricted to authorized Committee Admins.\n\n👉 If you are a Committee Admin, please enter your **10-digit Authorized Mobile Number** to unlock your assigned access level.\n\n🔍 Regular applicants can check their individual status by typing their **Transaction ID (e.g. VG-7, EDU26-2)** or registered **Mobile Number**." };
+                      if (setC) setC(newC);
+                    }}
+                    style={{background:"white",border:"1px solid #93C5FD",color:"#1E40AF",padding:"4px 10px",borderRadius:6,fontSize:".72rem",fontWeight:700,cursor:"pointer"}}
+                  >
+                    ↺ Reset to Default Template
+                  </button>
+                </div>
+
+                <textarea
+                  value={(C.chatbotAdminRestrictedMsg && C.chatbotAdminRestrictedMsg.trim()) ? C.chatbotAdminRestrictedMsg : "🔒 **Access Restricted**\n\nRegistration summaries, Vibhag counts, and committee metrics are restricted to authorized Committee Admins.\n\n👉 If you are a Committee Admin, please enter your **10-digit Authorized Mobile Number** to unlock your assigned access level.\n\n🔍 Regular applicants can check their individual status by typing their **Transaction ID (e.g. VG-7, EDU26-2)** or registered **Mobile Number**."}
+                  onChange={e => {
+                    const newC = { ...C, chatbotAdminRestrictedMsg: e.target.value };
+                    if (setC) setC(newC);
+                  }}
+                  rows={5}
+                  style={{width:"100%",padding:"12px 14px",borderRadius:8,border:"1px solid #CBD5E1",fontSize:".85rem",lineHeight:1.6,fontFamily:"inherit",boxSizing:"border-box",background:"white"}}
+                />
+              </div>
+
+              {/* Rule 3 */}
+              <div style={{background:"#FFFBEB",border:"1px solid #FDE68A",borderRadius:10,padding:"18px 20px"}}>
+                <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8,flexWrap:"wrap",gap:8}}>
+                  <div>
+                    <span style={{background:"#FEF3C7",color:"#92400E",padding:"3px 8px",borderRadius:6,fontSize:".7rem",fontWeight:800,marginRight:8}}>RULE 3 (FALLBACK)</span>
+                    <strong style={{fontSize:".88rem",color:"#0F172A"}}>Non-Relevant Question / Default Fallback Message</strong>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const newC = { ...C, chatbotNonRelevantMsg: "⚠️ **This Question is not relevant to this community.**\n\nI am specifically designed to help with **Mumbai Meghwal Panchayat & Vidya Gohil Trust** community activities, Education Felicitation 2026 event registrations, and application status tracking.\n\n👉 Type **`/`** to view all available community questions & shortcuts." };
+                      if (setC) setC(newC);
+                    }}
+                    style={{background:"white",border:"1px solid #FCD34D",color:"#92400E",padding:"4px 10px",borderRadius:6,fontSize:".72rem",fontWeight:700,cursor:"pointer"}}
+                  >
+                    ↺ Reset to Default Template
+                  </button>
+                </div>
+
+                <textarea
+                  value={(C.chatbotNonRelevantMsg && C.chatbotNonRelevantMsg.trim()) ? C.chatbotNonRelevantMsg : "⚠️ **This Question is not relevant to this community.**\n\nI am specifically designed to help with **Mumbai Meghwal Panchayat & Vidya Gohil Trust** community activities, Education Felicitation 2026 event registrations, and application status tracking.\n\n👉 Type **`/`** to view all available community questions & shortcuts."}
+                  onChange={e => {
+                    const newC = { ...C, chatbotNonRelevantMsg: e.target.value };
+                    if (setC) setC(newC);
+                  }}
+                  rows={5}
+                  style={{width:"100%",padding:"12px 14px",borderRadius:8,border:"1px solid #CBD5E1",fontSize:".85rem",lineHeight:1.6,fontFamily:"inherit",boxSizing:"border-box",background:"white"}}
+                />
+              </div>
+
+            </div>
+
+            <div style={{display:"flex",justifyContent:"flex-end",marginTop:24}}>
+              <button
+                type="button"
+                onClick={async () => {
+                  try {
+                    await fbSave(C, auth?.idToken);
+                    alert("✅ All Access Rules & Messages saved successfully to database!");
+                  } catch(err) {
+                    alert("Failed to save: " + err.message);
+                  }
+                }}
+                style={{
+                  padding:"12px 28px",
+                  background:"linear-gradient(135deg, #166534, #15803D)",
+                  color:"white",
+                  border:"none",
+                  borderRadius:8,
+                  fontWeight:800,
+                  fontSize:".92rem",
+                  cursor:"pointer",
+                  boxShadow:"0 2px 8px rgba(22,101,52,0.3)"
+                }}
+              >
+                💾 Save All Messages to Database
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      
+      {/* SUB-TAB: 📡 WhatsApp Direct API Gateway */}
+      {activeTab === "gateway" && (
+        <div style={{animation:"fadeIn .2s ease"}}>
+          <div style={{background:"white",border:"1px solid #CBD5E1",borderRadius:12,padding:"24px 26px",marginBottom:24,boxShadow:"0 2px 8px rgba(0,0,0,0.04)"}}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:16,flexWrap:"wrap",gap:12}}>
+              <div>
+                <div style={{fontSize:"1.15rem",fontWeight:800,color:"#0369A1",display:"flex",alignItems:"center",gap:8}}>
+                  <span>📡</span> WhatsApp Direct Background API Gateway
+                </div>
+                <p style={{fontSize:".85rem",color:"#475569",margin:"4px 0 0 0"}}>
+                  Send WhatsApp messages directly in the background with <strong>zero tabs opened</strong> and <strong>100% automated delivery</strong> for 300+ applicants.
+                </p>
+              </div>
+
+              <button
+                type="button"
+                onClick={async () => {
+                  try {
+                    await fbSave(C, auth?.idToken);
+                    alert("✅ WhatsApp Gateway settings saved successfully!");
+                  } catch(err) {
+                    alert("Failed to save: " + err.message);
+                  }
+                }}
+                style={{
+                  padding:"10px 22px",
+                  background:"linear-gradient(135deg, #0284C7, #0369A1)",
+                  color:"white",
+                  border:"none",
+                  borderRadius:8,
+                  fontWeight:800,
+                  fontSize:".88rem",
+                  cursor:"pointer",
+                  boxShadow:"0 2px 8px rgba(2,132,199,0.3)"
+                }}
+              >
+                💾 Save Gateway Settings
+              </button>
+            </div>
+
+            <div style={{background:"#F0F9FF",border:"1px solid #BAE6FD",borderRadius:10,padding:"18px 20px",marginBottom:20}}>
+              
+              <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:16,paddingBottom:12,borderBottom:"1px solid #E0F2FE",flexWrap:"wrap",gap:10}}>
+                <div>
+                  <strong style={{fontSize:".9rem",color:"#0C4A6E"}}>Enable Background REST API Sending</strong>
+                  <div style={{fontSize:".75rem",color:"#0369A1"}}>When enabled, clicking 'Send WhatsApp' delivers messages instantly via HTTP API without opening WhatsApp Web tabs.</div>
+                </div>
+                <label style={{display:"flex",alignItems:"center",gap:8,cursor:"pointer",fontWeight:700,fontSize:".85rem",color:"#0369A1"}}>
+                  <input 
+                    type="checkbox" 
+                    checked={Boolean(C.whatsAppGateway?.enabled)} 
+                    onChange={e => {
+                      const cur = C.whatsAppGateway || {};
+                      setC({ ...C, whatsAppGateway: { ...cur, enabled: e.target.checked } });
+                    }}
+                    style={{width:18,height:18,cursor:"pointer"}}
+                  />
+                  <span>Enable API Gateway</span>
+                </label>
+              </div>
+
+              <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit, minmax(240px, 1fr))",gap:16,marginBottom:16}}>
+                <div>
+                  <label style={{fontSize:".78rem",fontWeight:800,color:"#0F172A",display:"block",marginBottom:4}}>API Provider:</label>
+                  <select 
+                    value={C.whatsAppGateway?.provider || "ultramsg"}
+                    onChange={e => {
+                      const cur = C.whatsAppGateway || {};
+                      setC({ ...C, whatsAppGateway: { ...cur, provider: e.target.value } });
+                    }}
+                    style={{width:"100%",padding:"10px 12px",borderRadius:6,border:"1px solid #CBD5E1",fontSize:".85rem",fontWeight:700,background:"white"}}
+                  >
+                    <option value="meta">Official Meta WhatsApp Cloud API (1,000 Free Messages/Month)</option>
+                    <option value="greenapi">Green-API (Free Developer / Standard)</option>
+                    <option value="ultramsg">UltraMsg (Instance + Token)</option>
+                    <option value="direct_web">Direct WhatsApp Web / App Launch (Free)</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label style={{fontSize:".78rem",fontWeight:800,color:"#0F172A",display:"block",marginBottom:4}}>Instance ID / Phone ID:</label>
+                  <input 
+                    type="text" 
+                    value={C.whatsAppGateway?.instanceId || ""} 
+                    onChange={e => {
+                      const cur = C.whatsAppGateway || {};
+                      setC({ ...C, whatsAppGateway: { ...cur, instanceId: e.target.value } });
+                    }}
+                    placeholder="e.g. instance12345 or 110023456" 
+                    style={{width:"100%",padding:"10px 12px",borderRadius:6,border:"1px solid #CBD5E1",fontSize:".85rem",background:"white",boxSizing:"border-box"}}
+                  />
+                </div>
+
+                <div>
+                  <label style={{fontSize:".78rem",fontWeight:800,color:"#0F172A",display:"block",marginBottom:4}}>API Token / Secret Key:</label>
+                  <input 
+                    type="password" 
+                    value={C.whatsAppGateway?.token || ""} 
+                    onChange={e => {
+                      const cur = C.whatsAppGateway || {};
+                      setC({ ...C, whatsAppGateway: { ...cur, token: e.target.value } });
+                    }}
+                    placeholder="e.g. your_secret_api_token" 
+                    style={{width:"100%",padding:"10px 12px",borderRadius:6,border:"1px solid #CBD5E1",fontSize:".85rem",background:"white",boxSizing:"border-box"}}
+                  />
+                </div>
+              </div>
+
+              <div style={{fontSize:".78rem",color:"#0369A1",background:"white",padding:"12px 14px",borderRadius:8,border:"1px solid #BAE6FD",lineHeight:1.5}}>
+                ℹ️ <strong>How to connect UltraMsg or Green-API in 2 minutes:</strong><br/>
+                1. Create a free instance on <a href="https://ultramsg.com" target="_blank" rel="noreferrer" style={{color:"#0284C7",fontWeight:700}}>UltraMsg.com</a> or <a href="https://green-api.com" target="_blank" rel="noreferrer" style={{color:"#0284C7",fontWeight:700}}>Green-API.com</a>.<br/>
+                2. Scan your committee WhatsApp QR code on their dashboard.<br/>
+                3. Paste your <strong>Instance ID</strong> and <strong>Token</strong> above and click <strong>Save</strong>.<br/>
+                4. Messages will now send directly from the website with <strong>0 tabs opened!</strong>
+              </div>
+
+            </div>
+
+            <div style={{display:"flex",justifyContent:"flex-end"}}>
+              <button
+                type="button"
+                onClick={async () => {
+                  try {
+                    await fbSave(C, auth?.idToken);
+                    alert("✅ WhatsApp Gateway settings saved successfully!");
+                  } catch(err) {
+                    alert("Failed to save: " + err.message);
+                  }
+                }}
+                style={{
+                  padding:"11px 26px",
+                  background:"linear-gradient(135deg, #0284C7, #0369A1)",
+                  color:"white",
+                  border:"none",
+                  borderRadius:8,
+                  fontWeight:800,
+                  fontSize:".9rem",
+                  cursor:"pointer",
+                  boxShadow:"0 2px 8px rgba(2,132,199,0.3)"
+                }}
+              >
+                💾 Save Gateway Settings
+              </button>
+            </div>
+
+          </div>
+        </div>
+      )}
+
+      {activeTab === "users" && (
+        <>
+          {/* Add / Authorize Member Form */}
+          <div style={{background:"white",border:"1px solid #CBD5E1",borderRadius:12,padding:"20px 24px",marginBottom:24,boxShadow:"0 2px 8px rgba(0,0,0,0.04)"}}>
+            <div style={{fontSize:".9rem",fontWeight:800,color:"#0F172A",marginBottom:12}}>➕ Authorize Custom User / Committee Member:</div>
+            <form 
+              onSubmit={e => {
+                e.preventDefault();
+                const form = e.target;
+                const name = form.cName.value.trim();
+                const mobile = form.cMobile.value.trim().replace(/\D/g, "").slice(-10);
+                const role = form.cRole.value.trim();
+                if (!mobile || mobile.length !== 10) return alert("Please enter a valid 10-digit mobile number.");
+
+                const newEntry = { 
+                  name: name || "Member", 
+                  mobile, 
+                  scope: accessScope,
+                  vibhag: accessScope === "vibhag" ? selectedVibhag : accessScope === "all" ? "All Vibhags" : "Individual Only",
+                  role: role || (accessScope === "all" ? "Super Admin" : accessScope === "vibhag" ? `${selectedVibhag} Head` : "Applicant"), 
+                  addedAt: new Date().toLocaleDateString("en-IN") 
+                };
+                
+                const existingConfig = Array.isArray(C.committeeMobiles) ? [...C.committeeMobiles] : [];
+                const idx = existingConfig.findIndex(m => (typeof m === "string" ? m : m.mobile) === mobile);
+                if (idx !== -1) existingConfig[idx] = newEntry;
+                else existingConfig.push(newEntry);
+
+                setAllRegisteredUsers(prev => {
+                  const f = prev.filter(x => x.mobile !== mobile);
+                  return [newEntry, ...f];
+                });
+                saveMobilesToFirebase(existingConfig);
+                form.reset();
+                alert(`${name} (+91 ${mobile}) has been added with ${accessScope.toUpperCase()} access!`);
+              }}
+              style={{display:"grid",gridTemplateColumns:"repeat(auto-fit, minmax(180px, 1fr))",gap:14,alignItems:"end"}}
+            >
+              <div>
+                <label style={{fontSize:".78rem",fontWeight:700,color:"#475569",display:"block",marginBottom:4}}>Member / User Name:</label>
+                <input name="cName" type="text" placeholder="e.g. Keshav Wagh" required style={{width:"100%",padding:"10px 12px",borderRadius:6,border:"1px solid #CBD5E1",fontSize:".85rem",background:"white",boxSizing:"border-box"}}/>
+              </div>
+              <div>
+                <label style={{fontSize:".78rem",fontWeight:700,color:"#475569",display:"block",marginBottom:4}}>10-Digit Mobile Number:</label>
+                <input name="cMobile" type="tel" placeholder="e.g. 9967821964" required style={{width:"100%",padding:"10px 12px",borderRadius:6,border:"1px solid #CBD5E1",fontSize:".85rem",background:"white",boxSizing:"border-box"}}/>
+              </div>
+              <div>
+                <label style={{fontSize:".78rem",fontWeight:700,color:"#475569",display:"block",marginBottom:4}}>Access Level (Default: Mobile/Txn):</label>
+                <div style={{display:"flex",background:"#F1F5F9",padding:3,borderRadius:8,border:"1px solid #CBD5E1",gap:2}}>
+                  <label style={{flex:1,textAlign:"center",padding:"7px 4px",borderRadius:6,fontSize:".73rem",fontWeight:accessScope==="individual"?800:600,background:accessScope==="individual"?"#475569":"transparent",color:accessScope==="individual"?"white":"#475569",cursor:"pointer",userSelect:"none"}}>
+                    <input type="radio" name="newScope" value="individual" checked={accessScope==="individual"} onChange={()=>setAccessScope("individual")} style={{display:"none"}}/>
+                    📱 Mobile/Txn
+                  </label>
+                  <label style={{flex:1,textAlign:"center",padding:"7px 4px",borderRadius:6,fontSize:".73rem",fontWeight:accessScope==="vibhag"?800:600,background:accessScope==="vibhag"?"#D97706":"transparent",color:accessScope==="vibhag"?"white":"#78350F",cursor:"pointer",userSelect:"none"}}>
+                    <input type="radio" name="newScope" value="vibhag" checked={accessScope==="vibhag"} onChange={()=>setAccessScope("vibhag")} style={{display:"none"}}/>
+                    📍 Vibhag
+                  </label>
+                  <label style={{flex:1,textAlign:"center",padding:"7px 4px",borderRadius:6,fontSize:".73rem",fontWeight:accessScope==="all"?800:600,background:accessScope==="all"?"#2563EB":"transparent",color:accessScope==="all"?"white":"#1E40AF",cursor:"pointer",userSelect:"none"}}>
+                    <input type="radio" name="newScope" value="all" checked={accessScope==="all"} onChange={()=>setAccessScope("all")} style={{display:"none"}}/>
+                    🌐 ALL
+                  </label>
+                </div>
+              </div>
+
+              {accessScope === "vibhag" && (
+                <div>
+                  <label style={{fontSize:".78rem",fontWeight:700,color:"#475569",display:"block",marginBottom:4}}>Select Assigned Vibhag:</label>
+                  <select 
+                    value={selectedVibhag} 
+                    onChange={e=>setSelectedVibhag(e.target.value)}
+                    style={{width:"100%",padding:"10px 12px",borderRadius:6,border:"1px solid #CBD5E1",fontSize:".85rem",background:"white",boxSizing:"border-box",fontWeight:600}}
+                  >
+                    {VIBHAG_LIST.map(v => <option key={v} value={v}>{v}</option>)}
+                  </select>
+                </div>
+              )}
+
+              <div>
+                <label style={{fontSize:".78rem",fontWeight:700,color:"#475569",display:"block",marginBottom:4}}>Designation / Role:</label>
+                <input name="cRole" type="text" placeholder="e.g. Core Committee / Volunteer" style={{width:"100%",padding:"10px 12px",borderRadius:6,border:"1px solid #CBD5E1",fontSize:".85rem",background:"white",boxSizing:"border-box"}}/>
+              </div>
+
+              <div>
+                <button 
+                  type="submit" 
+                  style={{
+                    width:"100%",
+                    padding:"10px 14px",
+                    background:"linear-gradient(135deg, #2563EB, #1D4ED8)",
+                    color:"white",
+                    border:"none",
+                    borderRadius:6,
+                    fontWeight:700,
+                    fontSize:".85rem",
+                    cursor:"pointer",
+                    boxShadow:"0 2px 6px rgba(37,99,235,0.25)"
+                  }}
+                >
+                  + Authorize Access
+                </button>
+              </div>
+            </form>
+          </div>
+
+          {/* Registered Users Table */}
+          <div style={{background:"white",borderRadius:12,border:"1px solid #E2E8F0",overflow:"hidden",boxShadow:"0 2px 8px rgba(0,0,0,0.04)"}}>
+            <div style={{padding:"14px 18px",background:"#F8FAFC",borderBottom:"1px solid #E2E8F0",display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:10}}>
+              <div style={{fontWeight:700,fontSize:".88rem",color:"#0F172A"}}>
+                All Registered & Auth Users ({filteredUsers.length})
+                <span style={{fontSize:".75rem",color:"#64748B",fontWeight:500,marginLeft:8}}>
+                  (Merged from Firebase Auth Users & Event Registrations)
+                </span>
+              </div>
+              <div>
+                <input 
+                  type="text" 
+                  value={searchFilter} 
+                  onChange={e=>setSearchFilter(e.target.value)} 
+                  placeholder="🔍 Search user, mobile, vibhag..." 
+                  style={{padding:"6px 12px",borderRadius:6,border:"1px solid #CBD5E1",fontSize:".8rem",width:220}}
+                />
+              </div>
+            </div>
+
+            <div style={{overflowX:"auto"}}>
+              {loadingUsers ? (
+                <div style={{padding:30,textAlign:"center",color:"#64748B",fontSize:".85rem"}}>⏳ Loading all Firebase Auth & registered users...</div>
+              ) : (
+                <table style={{width:"100%",borderCollapse:"collapse",fontSize:".85rem"}}>
+                  <thead>
+                    <tr style={{background:"#1E293B",color:"white"}}>
+                      <th style={{padding:"11px 16px",textAlign:"left"}}>User / Applicant Name</th>
+                      <th style={{padding:"11px 16px",textAlign:"left"}}>Registered Mobile Number</th>
+                      <th style={{padding:"11px 16px",textAlign:"left",minWidth:280}}>Chatbot Access Scope (Dynamic)</th>
+                      <th style={{padding:"11px 16px",textAlign:"left"}}>Details / Vibhag</th>
+                      <th style={{padding:"11px 16px",textAlign:"center"}}>Chatbot Status</th>
+                      <th style={{padding:"11px 16px",textAlign:"right"}}>Action</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {filteredUsers.map((item, idx) => {
+                      const currentScope = item.scope || "individual";
+
+                      return (
+                        <tr key={item.mobile + "_" + idx} style={{borderBottom:"1px solid #F1F5F9",background:idx%2===1?"#F8FAFC":"white"}}>
+                          <td style={{padding:"12px 16px",fontWeight:700,color:"#0F172A"}}>
+                            {item.name}
+                            {item.email && <div style={{fontSize:".72rem",color:"#64748B",fontWeight:400}}>{item.email}</div>}
+                          </td>
+                          <td style={{padding:"12px 16px",fontWeight:700,color:"#2563EB",fontFamily:"monospace",fontSize:".9rem"}}>+91 {item.mobile}</td>
+                          
+                          {/* Interactive Radio Scope Selector */}
+                          <td style={{padding:"10px 16px"}}>
+                            <div style={{display:"flex",flexDirection:"column",gap:6}}>
+                              <div style={{display:"inline-flex",background:"#F1F5F9",padding:3,borderRadius:8,border:"1px solid #CBD5E1",gap:2,width:"fit-content"}}>
+                                <label style={{
+                                  padding: "4px 8px",
+                                  borderRadius: 6,
+                                  fontSize: ".72rem",
+                                  fontWeight: currentScope === "individual" ? 800 : 600,
+                                  background: currentScope === "individual" ? "#475569" : "transparent",
+                                  color: currentScope === "individual" ? "white" : "#475569",
+                                  cursor: "pointer",
+                                  display: "flex",
+                                  alignItems: "center",
+                                  gap: 4,
+                                  userSelect: "none"
+                                }}>
+                                  <input 
+                                    type="radio" 
+                                    name={`scope_row_${idx}`} 
+                                    value="individual" 
+                                    checked={currentScope === "individual"} 
+                                    onChange={() => updateMemberScope(item.mobile, "individual", item.vibhag)}
+                                    style={{display:"none"}}
+                                  />
+                                  📱 Mobile/Txn
+                                </label>
+
+                                <label style={{
+                                  padding: "4px 8px",
+                                  borderRadius: 6,
+                                  fontSize: ".72rem",
+                                  fontWeight: currentScope === "vibhag" ? 800 : 600,
+                                  background: currentScope === "vibhag" ? "#D97706" : "transparent",
+                                  color: currentScope === "vibhag" ? "white" : "#78350F",
+                                  cursor: "pointer",
+                                  display: "flex",
+                                  alignItems: "center",
+                                  gap: 4,
+                                  userSelect: "none"
+                                }}>
+                                  <input 
+                                    type="radio" 
+                                    name={`scope_row_${idx}`} 
+                                    value="vibhag" 
+                                    checked={currentScope === "vibhag"} 
+                                    onChange={() => updateMemberScope(item.mobile, "vibhag", item.vibhag && item.vibhag !== "Individual Only" && item.vibhag !== "All Vibhags" ? item.vibhag : "10 MAHALAXMI")}
+                                    style={{display:"none"}}
+                                  />
+                                  📍 Vibhag
+                                </label>
+
+                                <label style={{
+                                  padding: "4px 8px",
+                                  borderRadius: 6,
+                                  fontSize: ".72rem",
+                                  fontWeight: currentScope === "all" ? 800 : 600,
+                                  background: currentScope === "all" ? "#2563EB" : "transparent",
+                                  color: currentScope === "all" ? "white" : "#1E40AF",
+                                  cursor: "pointer",
+                                  display: "flex",
+                                  alignItems: "center",
+                                  gap: 4,
+                                  userSelect: "none"
+                                }}>
+                                  <input 
+                                    type="radio" 
+                                    name={`scope_row_${idx}`} 
+                                    value="all" 
+                                    checked={currentScope === "all"} 
+                                    onChange={() => updateMemberScope(item.mobile, "all", "All Vibhags")}
+                                    style={{display:"none"}}
+                                  />
+                                  🌐 ALL
+                                </label>
+                              </div>
+
+                              {/* Inline Vibhag Dropdown when Vibhag radio is chosen */}
+                              {currentScope === "vibhag" && (
+                                <div style={{display:"flex",alignItems:"center",gap:6}}>
+                                  <span style={{fontSize:".7rem",color:"#B45309",fontWeight:700}}>Assigned:</span>
+                                  <select 
+                                    value={item.vibhag && item.vibhag !== "Individual Only" && item.vibhag !== "All Vibhags" ? item.vibhag : "10 MAHALAXMI"}
+                                    onChange={e => updateMemberScope(item.mobile, "vibhag", e.target.value)}
+                                    style={{
+                                      padding: "4px 8px",
+                                      borderRadius: 6,
+                                      border: "1px solid #FCD34D",
+                                      background: "#FFFBEB",
+                                      fontSize: ".74rem",
+                                      fontWeight: 700,
+                                      color: "#92400E",
+                                      outline: "none",
+                                      cursor: "pointer"
+                                    }}
+                                  >
+                                    {VIBHAG_LIST.map(v => <option key={v} value={v}>{v}</option>)}
+                                  </select>
+                                </div>
+                              )}
+                            </div>
+                          </td>
+
+                          <td style={{padding:"12px 16px",color:"#475569"}}>
+                            {item.role || item.vibhag || "Registered User"}
+                          </td>
+                          <td style={{padding:"12px 16px",textAlign:"center"}}>
+                            <span style={{
+                              background: currentScope === "all" ? "#DBEAFE" : currentScope === "vibhag" ? "#FEF3C7" : "#F1F5F9",
+                              color: currentScope === "all" ? "#1E40AF" : currentScope === "vibhag" ? "#92400E" : "#475569",
+                              padding:"4px 10px",
+                              borderRadius:12,
+                              fontSize:".75rem",
+                              fontWeight:800
+                            }}>
+                              {currentScope === "all" ? "🌐 Super Admin" : currentScope === "vibhag" ? "📍 Vibhag Admin" : "📱 User (Own Txn)"}
+                            </span>
+                          </td>
+                          <td style={{padding:"12px 16px",textAlign:"right"}}>
+                            {item.mobile === "9820785209" ? (
+                              <span style={{fontSize:".75rem",color:"#64748B",fontWeight:600}}>Master Admin</span>
+                            ) : (
+                              <button 
+                                onClick={() => updateMemberScope(item.mobile, "individual", "Individual Only")}
+                                style={{background:"#F1F5F9",color:"#475569",border:"1px solid #CBD5E1",padding:"4px 10px",borderRadius:6,fontSize:".74rem",fontWeight:600,cursor:"pointer"}}
+                                title="Reset back to default Mobile/Txn"
+                              >
+                                Reset
+                              </button>
+                            )}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              )}
+            </div>
+          </div>
+        </>
+      )}
+
+      {activeTab === "kb" && (
+        <div>
+          {/* Add / Edit Q&A Form */}
+          <div style={{background:"white",border:"1px solid #CBD5E1",borderRadius:12,padding:"20px 24px",marginBottom:24,boxShadow:"0 2px 8px rgba(0,0,0,0.04)"}}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14}}>
+              <div style={{fontSize:".95rem",fontWeight:800,color:"#0F172A"}}>
+                {editingKbId ? "✏️ Edit Slash Command & Custom Answer:" : "➕ Add New Slash Command & Answer:"}
+              </div>
+              {editingKbId && (
+                <button
+                  onClick={() => {
+                    setEditingKbId(null);
+                    setKbForm({ cmd: "", icon: "❓", title: "", answer: "", enabled: true, adminOnly: false });
+                  }}
+                  style={{background:"#F1F5F9",border:"none",padding:"4px 10px",borderRadius:6,fontSize:".75rem",cursor:"pointer",fontWeight:600}}
+                >
+                  Cancel Edit
+                </button>
+              )}
+            </div>
+
+            <form onSubmit={handleSaveKbForm} style={{display:"flex",flexDirection:"column",gap:14}}>
+              <div style={{display:"grid",gridTemplateColumns:"100px 160px 1fr 140px",gap:12}}>
+                <div>
+                  <label style={{fontSize:".75rem",fontWeight:700,color:"#475569",display:"block",marginBottom:4}}>Icon:</label>
+                  <input
+                    type="text"
+                    value={kbForm.icon}
+                    onChange={e=>setKbForm({...kbForm, icon: e.target.value})}
+                    placeholder="🎓"
+                    style={{width:"100%",padding:"9px 12px",borderRadius:6,border:"1px solid #CBD5E1",fontSize:".9rem",textAlign:"center",boxSizing:"border-box"}}
+                  />
+                </div>
+                <div>
+                  <label style={{fontSize:".75rem",fontWeight:700,color:"#475569",display:"block",marginBottom:4}}>Command Shortcut:</label>
+                  <input
+                    type="text"
+                    value={kbForm.cmd}
+                    onChange={e=>setKbForm({...kbForm, cmd: e.target.value})}
+                    placeholder="/edu_committee"
+                    required
+                    style={{width:"100%",padding:"9px 12px",borderRadius:6,border:"1px solid #CBD5E1",fontSize:".85rem",fontFamily:"monospace",fontWeight:700,boxSizing:"border-box"}}
+                  />
+                </div>
+                <div>
+                  <label style={{fontSize:".75rem",fontWeight:700,color:"#475569",display:"block",marginBottom:4}}>Question / Title Label:</label>
+                  <input
+                    type="text"
+                    value={kbForm.title}
+                    onChange={e=>setKbForm({...kbForm, title: e.target.value})}
+                    placeholder="e.g. Education Committee Members"
+                    required
+                    style={{width:"100%",padding:"9px 12px",borderRadius:6,border:"1px solid #CBD5E1",fontSize:".85rem",boxSizing:"border-box"}}
+                  />
+                </div>
+                <div>
+                  <label style={{fontSize:".75rem",fontWeight:700,color:"#475569",display:"block",marginBottom:4}}>Visibility / Hide:</label>
+                  <select
+                    value={kbForm.enabled ? "enabled" : "hidden"}
+                    onChange={e=>setKbForm({...kbForm, enabled: e.target.value === "enabled"})}
+                    style={{width:"100%",padding:"9px 12px",borderRadius:6,border:"1px solid #CBD5E1",fontSize:".82rem",fontWeight:700,boxSizing:"border-box"}}
+                  >
+                    <option value="enabled">👁️ Enabled (Visible)</option>
+                    <option value="hidden">🙈 Hidden (Disabled)</option>
+                  </select>
+                </div>
+              </div>
+
+              <div>
+                <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:6,flexWrap:"wrap",gap:6}}>
+                  <label style={{fontSize:".75rem",fontWeight:700,color:"#475569"}}>
+                    Answer / Response Text (Click helper buttons to insert clickable links & formatting):
+                  </label>
+                  <div style={{display:"flex",gap:4,flexWrap:"wrap"}}>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const url = prompt("Enter YouTube URL (e.g. https://youtu.be/hg2dxZjDLfo):", "https://youtu.be/hg2dxZjDLfo");
+                        if (!url) return;
+                        const label = prompt("Enter Button Label:", "Watch Video on YouTube") || "Watch Video on YouTube";
+                        const linkStr = `\n• [${label}](${url.trim()})`;
+                        setKbForm(prev => ({ ...prev, answer: prev.answer + linkStr }));
+                      }}
+                      style={{background:"#FEE2E2",color:"#DC2626",border:"1px solid #FCA5A5",padding:"4px 10px",borderRadius:6,fontSize:".75rem",fontWeight:700,cursor:"pointer"}}
+                    >
+                      + 🎥 Insert YouTube Link
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const url = prompt("Enter Website URL (e.g. www.mmp-cwc.com or https://...):", "www.mmp-cwc.com");
+                        if (!url) return;
+                        const label = prompt("Enter Button Label:", "Visit Website Portal") || "Visit Website Portal";
+                        const linkStr = `\n• [${label}](${url.trim()})`;
+                        setKbForm(prev => ({ ...prev, answer: prev.answer + linkStr }));
+                      }}
+                      style={{background:"#EFF6FF",color:"#1D4ED8",border:"1px solid #BFDBFE",padding:"4px 10px",borderRadius:6,fontSize:".75rem",fontWeight:700,cursor:"pointer"}}
+                    >
+                      + 🔗 Insert Web Link
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setKbForm(prev => ({ ...prev, answer: prev.answer + "\n• **Name** — Designation (+91 9820785209)" }));
+                      }}
+                      style={{background:"#F1F5F9",color:"#334155",border:"1px solid #CBD5E1",padding:"2px 8px",borderRadius:6,fontSize:".72rem",fontWeight:700,cursor:"pointer"}}
+                    >
+                      + 👤 Member
+                    </button>
+                  </div>
+                </div>
+                <textarea
+                  value={kbForm.answer}
+                  onChange={e=>setKbForm({...kbForm, answer: e.target.value})}
+                  placeholder="Enter detailed answer, committee member list with mobile numbers, event guidelines, or instructions..."
+                  rows={5}
+                  required
+                  style={{width:"100%",padding:"10px 12px",borderRadius:8,border:"1px solid #CBD5E1",fontSize:".85rem",lineHeight:1.5,fontFamily:"inherit",boxSizing:"border-box"}}
+                />
+              </div>
+
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",paddingTop:4}}>
+                <label style={{display:"flex",alignItems:"center",gap:8,fontSize:".8rem",color:"#475569",cursor:"pointer",fontWeight:600}}>
+                  <input
+                    type="checkbox"
+                    checked={kbForm.adminOnly}
+                    onChange={e=>setKbForm({...kbForm, adminOnly: e.target.checked})}
+                  />
+                  🔒 Restrict to Committee Admins Only (Hide from Public Users)
+                </label>
+
+                <button
+                  type="submit"
+                  style={{
+                    padding:"10px 24px",
+                    background:"linear-gradient(135deg, #2563EB, #1D4ED8)",
+                    color:"white",
+                    border:"none",
+                    borderRadius:8,
+                    fontWeight:700,
+                    fontSize:".88rem",
+                    cursor:"pointer",
+                    boxShadow:"0 2px 8px rgba(37,99,235,0.25)"
+                  }}
+                >
+                  {editingKbId ? "💾 Save Changes" : "+ Add Slash Command"}
+                </button>
+              </div>
+            </form>
+          </div>
+
+          {/* Knowledge Base Table */}
+          <div style={{background:"white",borderRadius:12,border:"1px solid #E2E8F0",overflow:"hidden",boxShadow:"0 2px 8px rgba(0,0,0,0.04)"}}>
+            <div style={{padding:"14px 18px",background:"#F8FAFC",borderBottom:"1px solid #E2E8F0",fontWeight:700,fontSize:".88rem",color:"#0F172A",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+              <span>Configured Questions & Slash Commands ({kbList.length})</span>
+              <span style={{fontSize:".75rem",color:"#64748B"}}>Toggle Hide/Unhide with one click</span>
+            </div>
+
+            <div style={{overflowX:"auto"}}>
+              <table style={{width:"100%",borderCollapse:"collapse",fontSize:".85rem"}}>
+                <thead>
+                  <tr style={{background:"#1E293B",color:"white"}}>
+                    <th style={{padding:"11px 16px",textAlign:"left",width:140}}>Command (/)</th>
+                    <th style={{padding:"11px 16px",textAlign:"left",width:240}}>Question / Title</th>
+                    <th style={{padding:"11px 16px",textAlign:"left"}}>Answer Preview</th>
+                    <th style={{padding:"11px 16px",textAlign:"center",width:130}}>Status (Hide/Unhide)</th>
+                    <th style={{padding:"11px 16px",textAlign:"right",width:140}}>Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {kbList.map((item, idx) => (
+                    <tr key={item.id || idx} style={{borderBottom:"1px solid #F1F5F9",background:item.enabled ? (idx%2===1?"#F8FAFC":"white") : "#FFFBEB"}}>
+                      <td style={{padding:"12px 16px",fontWeight:800,fontFamily:"monospace",color:"#2563EB",fontSize:".9rem"}}>
+                        <span style={{marginRight:6}}>{item.icon || "❓"}</span>
+                        {item.cmd}
+                      </td>
+                      <td style={{padding:"12px 16px",fontWeight:700,color:"#0F172A"}}>
+                        {item.title}
+                        {item.adminOnly && (
+                          <div style={{fontSize:".68rem",color:"#B45309",fontWeight:800,marginTop:2}}>🔒 Admin Only</div>
+                        )}
+                      </td>
+                      <td style={{padding:"12px 16px",color:"#475569",fontSize:".8rem",lineHeight:1.4,maxWidth:320,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>
+                        {item.answer}
+                      </td>
+                      <td style={{padding:"12px 16px",textAlign:"center"}}>
+                        <button
+                          onClick={() => toggleKbEnabled(item.id)}
+                          style={{
+                            background: item.enabled ? "#DCFCE7" : "#FEE2E2",
+                            color: item.enabled ? "#15803D" : "#DC2626",
+                            border: `1px solid ${item.enabled ? "#86EFAC" : "#FCA5A5"}`,
+                            padding: "4px 10px",
+                            borderRadius: 12,
+                            fontSize: ".75rem",
+                            fontWeight: 800,
+                            cursor: "pointer"
+                          }}
+                          title="Click to toggle visibility in Chatbot"
+                        >
+                          {item.enabled ? "👁️ Visible" : "🙈 Hidden"}
+                        </button>
+                      </td>
+                      <td style={{padding:"12px 16px",textAlign:"right"}}>
+                        <div style={{display:"flex",justifyContent:"flex-end",gap:6}}>
+                          <button
+                            onClick={() => {
+                              setEditingKbId(item.id);
+                              setKbForm({ ...item });
+                              window.scrollTo({ top: 0, behavior: "smooth" });
+                            }}
+                            style={{background:"#EFF6FF",color:"#1D4ED8",border:"1px solid #BFDBFE",padding:"4px 8px",borderRadius:6,fontSize:".75rem",fontWeight:700,cursor:"pointer"}}
+                          >
+                            Edit
+                          </button>
+                          <button
+                            onClick={() => deleteKbItem(item.id)}
+                            style={{background:"#FEE2E2",color:"#DC2626",border:"1px solid #FCA5A5",padding:"4px 8px",borderRadius:6,fontSize:".75rem",fontWeight:700,cursor:"pointer"}}
+                          >
+                            Delete
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+
 function AdminAccess({ C, setC, master, auth }) {
   if (!master) return <div style={{padding:40,textAlign:"center"}}>Access Denied.</div>;
 
@@ -12713,12 +17105,138 @@ function AdminAccess({ C, setC, master, auth }) {
       <div style={{marginTop:20,background:"#FFF4EC",padding:16,borderRadius:8,fontSize:".8rem",color:"var(--sf)"}}>
         <strong>Super Admins:</strong> <code>admin@vidyagohiltrust.org</code> and <code>pradeepparmar902@yahoo.com</code> automatically have full access to all tabs.
       </div>
+
+      {/* ── Chatbot Committee Admin Mobile Access Section ── */}
+      <div style={{marginTop:32,paddingTop:24,borderTop:"2px dashed #E2E8F0"}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:16,flexWrap:"wrap",gap:12}}>
+          <div>
+            <h3 style={{fontSize:"1.2rem",color:"#0F172A",margin:0,display:"flex",alignItems:"center",gap:8}}>
+              <span>🤖</span> Chatbot Committee Admin Mobile Numbers
+            </h3>
+            <p style={{fontSize:".82rem",color:"#64748B",margin:"4px 0 0 0"}}>
+              Authorize Committee Members and Vibhag Heads to access Chatbot Summary Analytics using their mobile number.
+            </p>
+          </div>
+        </div>
+
+        {/* Add Committee Member Box */}
+        <div style={{background:"#F8FAFC",border:"1px solid #CBD5E1",borderRadius:12,padding:"16px 20px",marginBottom:20}}>
+          <div style={{fontSize:".85rem",fontWeight:700,color:"#1E293B",marginBottom:10}}>➕ Authorize New Committee Member:</div>
+          <form 
+            onSubmit={e => {
+              e.preventDefault();
+              const form = e.target;
+              const name = form.cName.value.trim();
+              const mobile = form.cMobile.value.trim().replace(/\D/g, "").slice(-10);
+              const role = form.cRole.value.trim();
+              if (!mobile || mobile.length !== 10) return alert("Please enter a valid 10-digit mobile number.");
+              
+              const currentList = Array.isArray(C.committeeMobiles) ? C.committeeMobiles : [];
+              const exists = currentList.find(m => (typeof m === "string" ? m : m.mobile) === mobile);
+              if (exists) return alert("This mobile number is already authorized as a Committee Admin.");
+
+              const newEntry = { name: name || "Committee Member", mobile, role: role || "Committee Admin", addedAt: new Date().toLocaleDateString("en-IN") };
+              const newC = { ...C, committeeMobiles: [...currentList, newEntry] };
+              setC(newC);
+              saveToFirebase(newC);
+              form.reset();
+              alert(`Mobile number ${mobile} (${newEntry.name}) has been authorized for Chatbot Admin Access!`);
+            }}
+            style={{display:"grid",gridTemplateColumns:"repeat(auto-fit, minmax(180px, 1fr)) 120px",gap:10,alignItems:"end"}}
+          >
+            <div>
+              <label style={{fontSize:".75rem",fontWeight:700,color:"#475569",display:"block",marginBottom:4}}>Member Name:</label>
+              <input name="cName" type="text" placeholder="e.g. Keshav Wagh" required style={{width:"100%",padding:"8px 12px",borderRadius:6,border:"1px solid #CBD5E1",fontSize:".85rem",background:"white",boxSizing:"border-box"}}/>
+            </div>
+            <div>
+              <label style={{fontSize:".75rem",fontWeight:700,color:"#475569",display:"block",marginBottom:4}}>10-Digit Mobile Number:</label>
+              <input name="cMobile" type="tel" placeholder="e.g. 9967821964" required style={{width:"100%",padding:"8px 12px",borderRadius:6,border:"1px solid #CBD5E1",fontSize:".85rem",background:"white",boxSizing:"border-box"}}/>
+            </div>
+            <div>
+              <label style={{fontSize:".75rem",fontWeight:700,color:"#475569",display:"block",marginBottom:4}}>Vibhag / Designation:</label>
+              <input name="cRole" type="text" placeholder="e.g. Lower Parel / Trustee" style={{width:"100%",padding:"8px 12px",borderRadius:6,border:"1px solid #CBD5E1",fontSize:".85rem",background:"white",boxSizing:"border-box"}}/>
+            </div>
+            <div>
+              <button 
+                type="submit" 
+                style={{
+                  width:"100%",
+                  padding:"9px 14px",
+                  background:"linear-gradient(135deg, #2563EB, #1D4ED8)",
+                  color:"white",
+                  border:"none",
+                  borderRadius:6,
+                  fontWeight:700,
+                  fontSize:".82rem",
+                  cursor:"pointer",
+                  boxShadow:"0 2px 6px rgba(37,99,235,0.25)"
+                }}
+              >
+                + Add Member
+              </button>
+            </div>
+          </form>
+        </div>
+
+        {/* Committee Members Table */}
+        <div style={{background:"white",borderRadius:12,border:"1px solid #E2E8F0",overflow:"hidden"}}>
+          <table style={{width:"100%",borderCollapse:"collapse",fontSize:".85rem"}}>
+            <thead>
+              <tr style={{background:"#1E293B",color:"white"}}>
+                <th style={{padding:"10px 14px",textAlign:"left"}}>Member Name</th>
+                <th style={{padding:"10px 14px",textAlign:"left"}}>Authorized Mobile Number</th>
+                <th style={{padding:"10px 14px",textAlign:"left"}}>Role / Vibhag</th>
+                <th style={{padding:"10px 14px",textAlign:"center"}}>Access Level</th>
+                <th style={{padding:"10px 14px",textAlign:"right"}}>Action</th>
+              </tr>
+            </thead>
+            <tbody>
+              {(Array.isArray(C.committeeMobiles) && C.committeeMobiles.length > 0 ? C.committeeMobiles : [
+                { name: "Pradeep Parmar (Super Admin)", mobile: "9820785209", role: "Trustee / Super Admin", addedAt: "System Default" },
+                { name: "Keshav Wagh", mobile: "9967821964", role: "Committee Member", addedAt: "System Default" },
+                { name: "Ashwin Kataria", mobile: "8082234187", role: "Ramdev Nagar Head", addedAt: "System Default" }
+              ]).map((m, idx) => {
+                const item = typeof m === "string" ? { name: "Committee Member", mobile: m, role: "Committee Admin", addedAt: "-" } : m;
+                return (
+                  <tr key={idx} style={{borderBottom:"1px solid #F1F5F9",background:idx%2===1?"#F8FAFC":"white"}}>
+                    <td style={{padding:"10px 14px",fontWeight:700,color:"#0F172A"}}>{item.name}</td>
+                    <td style={{padding:"10px 14px",fontWeight:600,color:"#2563EB",fontFamily:"monospace"}}>+91 {item.mobile}</td>
+                    <td style={{padding:"10px 14px",color:"#475569"}}>{item.role}</td>
+                    <td style={{padding:"10px 14px",textAlign:"center"}}>
+                      <span style={{background:"#DCFCE7",color:"#15803D",padding:"3px 8px",borderRadius:10,fontSize:".72rem",fontWeight:800}}>
+                        🛡️ Chatbot Admin
+                      </span>
+                    </td>
+                    <td style={{padding:"10px 14px",textAlign:"right"}}>
+                      <button 
+                        onClick={() => {
+                          if (!confirm(`Revoke Chatbot Admin access for ${item.name} (+91 ${item.mobile})?`)) return;
+                          const current = Array.isArray(C.committeeMobiles) ? C.committeeMobiles : [];
+                          const updated = current.filter(x => (typeof x === "string" ? x : x.mobile) !== item.mobile);
+                          const newC = { ...C, committeeMobiles: updated };
+                          setC(newC);
+                          saveToFirebase(newC);
+                        }}
+                        style={{background:"#FEE2E2",color:"#DC2626",border:"1px solid #FCA5A5",padding:"4px 10px",borderRadius:6,fontSize:".75rem",fontWeight:700,cursor:"pointer"}}
+                      >
+                        Revoke Access
+                      </button>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      </div>
     </div>
   );
 }
 
 
 function VerificationModal({ viewing, setViewing, allRegs, saveVerification, C }) {
+  const w = useW();
+  const mob = w < 768;
   const [eventFilter, setEventFilter] = useState(viewing.eventName || viewing.eventTitle || viewing.eventId || "");
   const [statusFilter, setStatusFilter] = useState(viewing['Status'] || "Pending");
 
@@ -12779,12 +17297,15 @@ function VerificationModal({ viewing, setViewing, allRegs, saveVerification, C }
     }
   });
 
+  const [activeTab, setActiveTab] = useState(docItems.length > 0 ? "docs" : "details");
+
   useEffect(() => {
     setActiveDoc(docItems.length > 0 ? docItems[0].url : null);
     setStatus(viewing['Status'] || 'Pending');
     setRemarks(viewing['Remarks'] || '');
     setEditedReg(viewing);
     setIsEditing(false);
+    setActiveTab(docItems.length > 0 ? "docs" : "details");
   }, [viewing]);
 
   const handleSave = async () => {
@@ -12871,414 +17392,2166 @@ function VerificationModal({ viewing, setViewing, allRegs, saveVerification, C }
   const isPdf = activeDoc && activeDoc.toLowerCase().includes('.pdf');
 
   return (
-    <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.7)",zIndex:9999,display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
-      <div style={{background:"white",width:"100%",maxWidth:1200,height:"90vh",borderRadius:12,display:"flex",flexDirection:"column",overflow:"hidden",boxShadow:"0 24px 48px rgba(0,0,0,0.2)"}}>
+    <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.8)",zIndex:99999,display:"flex",alignItems:"center",justifyContent:"center",padding:mob?0:16,boxSizing:"border-box"}}>
+      <div style={{background:"white",width:"100%",maxWidth:1200,height:mob?"100dvh":"90vh",maxHeight:"100dvh",borderRadius:mob?0:12,display:"flex",flexDirection:"column",overflow:"hidden",boxShadow:"0 24px 48px rgba(0,0,0,0.3)"}}>
         
-        {/* Header */}
-        <div style={{padding:"12px 24px",background:"var(--dt)",color:"white",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-          <div style={{display:"flex",alignItems:"center",gap:24}}>
-             <div>
-               <h3 style={{fontSize:"1.1rem",fontWeight:700,margin:0,whiteSpace:"nowrap"}}>Verification Workflow</h3>
-               <div style={{fontSize:".75rem",opacity:0.8,marginTop:2}}>ID: {viewing['Transaction ID'] || "N/A"}</div>
-             </div>
-             
-             {/* Filter Dropdowns */}
-             <div style={{display:"flex",gap:8,alignItems:"center",borderLeft:"1px solid rgba(255,255,255,0.2)",paddingLeft:24}}>
-               <span style={{fontSize:".75rem",fontWeight:600,textTransform:"uppercase",opacity:0.8}}>Filter:</span>
-               <select value={eventFilter} onChange={e=>handleFilterChange('event', e.target.value)} style={{padding:"6px 12px",borderRadius:6,border:"none",fontSize:".8rem",outline:"none",background:"rgba(255,255,255,0.1)",color:"white"}}>
-                 <option value="" style={{color:"black"}}>All Events</option>
-                 {uniqueEvents.map(e => <option key={e} value={e} style={{color:"black"}}>{e}</option>)}
-               </select>
+        {/* Header - Mobile Responsive */}
+        <div style={{padding:mob?"10px 14px":"12px 24px",background:"var(--dt)",color:"white",display:"flex",flexDirection:"column",gap:8,flexShrink:0}}>
+          {/* Top Row: Title, ID & Always Visible Close X Button */}
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",width:"100%"}}>
+            <div style={{minWidth:0,flex:1,paddingRight:8}}>
+              <h3 style={{fontSize:mob?"1rem":"1.1rem",fontWeight:700,margin:0,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>
+                Verification Workflow
+              </h3>
+              <div style={{fontSize:".72rem",opacity:0.85,marginTop:1,fontFamily:"monospace"}}>
+                ID: {viewing['Transaction ID'] || viewing.id || "N/A"}
+              </div>
+            </div>
 
-               <select value={statusFilter} onChange={e=>handleFilterChange('status', e.target.value)} style={{padding:"6px 12px",borderRadius:6,border:"none",fontSize:".8rem",outline:"none",background:"rgba(255,255,255,0.1)",color:"white"}}>
-                 <option value="All" style={{color:"black"}}>All Status</option>
-                 <option value="Pending" style={{color:"black"}}>Pending</option>
-                 <option value="Needs Info" style={{color:"black"}}>Needs Info</option>
-                 <option value="Approved" style={{color:"black"}}>Approved</option>
-                 <option value="Disapproved" style={{color:"black"}}>Disapproved</option>
-               </select>
-             </div>
+            <button 
+              onClick={() => setViewing(null)} 
+              style={{
+                background:"rgba(255,255,255,0.25)",
+                border:"none",
+                color:"white",
+                width:34,
+                height:34,
+                borderRadius:"50%",
+                fontSize:"1.2rem",
+                cursor:"pointer",
+                display:"flex",
+                alignItems:"center",
+                justifyContent:"center",
+                flexShrink:0
+              }}
+              title="Close Modal"
+            >
+              ✕
+            </button>
           </div>
-          
-          <div style={{display:"flex",alignItems:"center",gap:20}}>
-             <div style={{fontSize:".8rem",fontWeight:600,display:"flex",alignItems:"center",gap:8,background:"rgba(0,0,0,0.2)",padding:"4px 12px",borderRadius:20}}>
-               <button onClick={goPrev} disabled={currentIndex <= 0} style={{background:"none",border:"none",color:"white",cursor:currentIndex<=0?"not-allowed":"pointer",opacity:currentIndex<=0?0.3:1}}>◄ Prev</button>
-               <span>{currentIndex >= 0 ? currentIndex + 1 : 0} of {filteredList.length}</span>
-               <button onClick={goNext} disabled={currentIndex === -1 || currentIndex >= filteredList.length - 1} style={{background:"none",border:"none",color:"white",cursor:(currentIndex===-1||currentIndex>=filteredList.length-1)?"not-allowed":"pointer",opacity:(currentIndex===-1||currentIndex>=filteredList.length-1)?0.3:1}}>Next ►</button>
-             </div>
-             <button onClick={()=>setViewing(null)} style={{background:"rgba(255,255,255,0.2)",border:"none",color:"white",width:32,height:32,borderRadius:"50%",fontSize:"1.1rem",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center"}} onMouseOver={e=>e.target.style.background="rgba(255,255,255,0.3)"} onMouseOut={e=>e.target.style.background="rgba(255,255,255,0.2)"}>✕</button>
+
+          {/* Bottom Row: Filters & Prev/Next Counter */}
+          <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:8,flexWrap:"wrap",borderTop:"1px solid rgba(255,255,255,0.15)",paddingTop:6}}>
+            <div style={{display:"flex",gap:6,alignItems:"center",flexWrap:"wrap"}}>
+              <select value={eventFilter} onChange={e=>handleFilterChange('event', e.target.value)} style={{padding:"4px 8px",borderRadius:6,border:"none",fontSize:".75rem",outline:"none",background:"rgba(255,255,255,0.15)",color:"white",maxWidth:mob?130:200}}>
+                <option value="" style={{color:"black"}}>All Events</option>
+                {uniqueEvents.map(e => <option key={e} value={e} style={{color:"black"}}>{e}</option>)}
+              </select>
+
+              <select value={statusFilter} onChange={e=>handleFilterChange('status', e.target.value)} style={{padding:"4px 8px",borderRadius:6,border:"none",fontSize:".75rem",outline:"none",background:"rgba(255,255,255,0.15)",color:"white"}}>
+                <option value="All" style={{color:"black"}}>All Status</option>
+                <option value="Pending" style={{color:"black"}}>Pending</option>
+                <option value="Needs Info" style={{color:"black"}}>Needs Info</option>
+                <option value="Approved" style={{color:"black"}}>Approved</option>
+                <option value="Disapproved" style={{color:"black"}}>Disapproved</option>
+              </select>
+            </div>
+
+            <div style={{fontSize:".75rem",fontWeight:600,display:"flex",alignItems:"center",gap:6,background:"rgba(0,0,0,0.25)",padding:"3px 10px",borderRadius:16}}>
+              <button onClick={goPrev} disabled={currentIndex <= 0} style={{background:"none",border:"none",color:"white",cursor:currentIndex<=0?"not-allowed":"pointer",opacity:currentIndex<=0?0.3:1}}>◄ Prev</button>
+              <span>{currentIndex >= 0 ? currentIndex + 1 : 0} / {filteredList.length}</span>
+              <button onClick={goNext} disabled={currentIndex === -1 || currentIndex >= filteredList.length - 1} style={{background:"none",border:"none",color:"white",cursor:(currentIndex===-1||currentIndex>=filteredList.length-1)?"not-allowed":"pointer",opacity:(currentIndex===-1||currentIndex>=filteredList.length-1)?0.3:1}}>Next ►</button>
+            </div>
           </div>
         </div>
 
-        {/* Split Screen Body */}
-        <div style={{display:"flex",flex:1,overflow:"hidden"}}>
+        {/* Mobile View Tab Bar Switcher */}
+        {mob && (
+          <div style={{display:"flex",background:"#F0F4F8",borderBottom:"1px solid var(--bd)",flexShrink:0}}>
+            <button 
+              onClick={() => setActiveTab("docs")} 
+              style={{
+                flex:1, padding:"10px 6px", border:"none",
+                background:activeTab==="docs"?"white":"transparent",
+                color:activeTab==="docs"?"var(--sf)":"var(--dt)",
+                fontWeight:activeTab==="docs"?700:600, fontSize:".8rem",
+                borderBottom:activeTab==="docs"?"3px solid var(--sf)":"none",
+                cursor:"pointer"
+              }}
+            >
+              📄 Documents ({docItems.length})
+            </button>
+            <button 
+              onClick={() => setActiveTab("details")} 
+              style={{
+                flex:1, padding:"10px 6px", border:"none",
+                background:activeTab==="details"?"white":"transparent",
+                color:activeTab==="details"?"var(--sf)":"var(--dt)",
+                fontWeight:activeTab==="details"?700:600, fontSize:".8rem",
+                borderBottom:activeTab==="details"?"3px solid var(--sf)":"none",
+                cursor:"pointer"
+              }}
+            >
+              📋 Details & Action
+            </button>
+          </div>
+        )}
+
+        {/* Modal Body */}
+        <div style={{display:"flex",flexDirection:mob?"column":"row",flex:1,overflow:"hidden"}}>
           
-          {/* Left: Document Viewer */}
-          <div style={{flex:1,borderRight:"1px solid var(--bd)",display:"flex",flexDirection:"column",background:"#F5F5F7"}}>
-            {docItems.length > 0 ? (
-              <>
-                <div style={{padding:"12px 16px",background:"white",borderBottom:"1px solid var(--bd)",display:"flex",gap:8,overflowX:"auto",alignItems:"center"}}>
-                  <span style={{fontSize:".75rem",fontWeight:700,color:"var(--dt)",textTransform:"uppercase",letterSpacing:.5,marginRight:4}}>
-                    Attached Documents ({docItems.length}):
-                  </span>
-                  {docItems.map((item, idx) => {
-                    const active = activeDoc === item.url;
+          {/* Document Viewer (Shown if !mob OR if mob and activeTab === 'docs') */}
+          {(!mob || activeTab === "docs") && (
+            <div style={{flex:1,borderRight:mob?"none":"1px solid var(--bd)",display:"flex",flexDirection:"column",background:"#F5F5F7",height:mob?"100%":"auto",overflow:"hidden"}}>
+              {docItems.length > 0 ? (
+                <>
+                  <div style={{padding:"10px 14px",background:"white",borderBottom:"1px solid var(--bd)",display:"flex",gap:8,overflowX:"auto",alignItems:"center",flexShrink:0}}>
+                    <span style={{fontSize:".75rem",fontWeight:700,color:"var(--dt)",textTransform:"uppercase",letterSpacing:.5,marginRight:4,whiteSpace:"nowrap"}}>
+                      Attached ({docItems.length}):
+                    </span>
+                    {docItems.map((item, idx) => {
+                      const active = activeDoc === item.url;
+                      return (
+                        <button key={idx} onClick={()=>setActiveDoc(item.url)} style={{padding:"4px 12px",borderRadius:20,border:`1.5px solid ${active?"var(--sf)":"var(--bd)"}`,background:active?"var(--sf)":"white",color:active?"white":"var(--dt)",fontSize:".75rem",fontWeight:700,cursor:"pointer",whiteSpace:"nowrap",display:"flex",alignItems:"center",gap:6,transition:"all .2s"}}>
+                          <span>📄</span>
+                          <span>{item.label}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+
+                  <div style={{flex:1,padding:mob?8:16,display:"flex",alignItems:"center",justifyContent:"center",overflow:"hidden"}}>
+                    {isPdf ? (
+                      <iframe src={activeDoc} style={{width:"100%",height:"100%",border:"none",borderRadius:8,background:"white",boxShadow:"0 4px 12px rgba(0,0,0,0.05)"}} title="Document" />
+                    ) : (
+                      <img src={activeDoc} alt="Document" style={{maxWidth:"100%",maxHeight:"100%",objectFit:"contain",borderRadius:8,boxShadow:"0 4px 12px rgba(0,0,0,0.05)"}} />
+                    )}
+                  </div>
+                </>
+              ) : (
+                <div style={{flex:1,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",color:"var(--mu)",padding:30,textAlign:"center"}}>
+                  <div style={{fontSize:"2.5rem",marginBottom:12,opacity:0.5}}>📄</div>
+                  <h4 style={{margin:0,fontSize:"1rem",fontWeight:600,color:"var(--dt)"}}>No Documents Provided</h4>
+                  <p style={{fontSize:".85rem",marginTop:6}}>This registration does not contain any uploaded files or images.</p>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Right: Data & Verification Controls (Shown if !mob OR if mob and activeTab === 'details') */}
+          {(!mob || activeTab === "details") && (
+            <div style={{width:mob?"100%":400,display:"flex",flexDirection:"column",background:"white",height:mob?"100%":"auto",overflow:"hidden"}}>
+              
+              {/* Input Data List */}
+              <div style={{flex:1,overflowY:"auto",padding:mob?"16px":"24px"}}>
+                <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16}}>
+                  <h4 style={{fontSize:".95rem",fontWeight:700,color:"var(--dt)",margin:0,textTransform:"uppercase",letterSpacing:1}}>Submitted Details</h4>
+                  <button 
+                    onClick={() => setIsEditing(!isEditing)} 
+                    style={{
+                      background: "none", 
+                      border: "none", 
+                      color: "var(--dt)", 
+                      cursor: "pointer", 
+                      fontSize: ".85rem", 
+                      fontWeight: 600,
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 4
+                    }}
+                  >
+                    {isEditing ? "👁 Read Only" : "✏️ Edit Fields"}
+                  </button>
+                </div>
+                <div style={{display:"flex",flexDirection:"column",gap:16}}>
+                  {fieldsToRender.map(f => {
+                    const val = (editedReg || viewing)[f.key];
+                    if (typeof val === 'string' && val.startsWith('http')) return null; // Skip docs
+                    const displayVal = typeof val === 'string' ? val.replace(/\|/g, ' ') : String(val);
+
+                    if (isEditing) {
+                      if (f.type === 'dropdown') {
+                        return (
+                          <div key={f.key}>
+                            <div style={{fontSize:".75rem",color:"var(--mu)",fontWeight:600,marginBottom:4}}>{f.label}</div>
+                            <select 
+                              value={editedReg[f.key] || ""} 
+                              onChange={(e) => setEditedReg(prev => ({ ...prev, [f.key]: e.target.value }))}
+                              style={{
+                                width: "100%",
+                                padding: "10px",
+                                borderRadius: 6,
+                                border: "1px solid var(--bd)",
+                                fontFamily: "inherit",
+                                fontSize: ".9rem",
+                                background: "#fff",
+                                outline: "none"
+                              }}
+                            >
+                              <option value="">-- Select --</option>
+                              {(f.options || "").split(",").map((opt, oi) => opt.trim() && <option key={oi} value={opt.trim()}>{opt.trim()}</option>)}
+                            </select>
+                          </div>
+                        );
+                      }
+                      
+                      if (f.type === 'gender') {
+                        return (
+                          <div key={f.key}>
+                            <div style={{fontSize:".75rem",color:"var(--mu)",fontWeight:600,marginBottom:4}}>{f.label}</div>
+                            <select 
+                              value={editedReg[f.key] || ""} 
+                              onChange={(e) => setEditedReg(prev => ({ ...prev, [f.key]: e.target.value }))}
+                              style={{
+                                width: "100%",
+                                padding: "10px",
+                                borderRadius: 6,
+                                border: "1px solid var(--bd)",
+                                fontFamily: "inherit",
+                                fontSize: ".9rem",
+                                background: "#fff",
+                                outline: "none"
+                              }}
+                            >
+                              <option value="">-- Select Gender --</option>
+                              <option value="Male">Male</option>
+                              <option value="Female">Female</option>
+                              <option value="Other">Other</option>
+                            </select>
+                          </div>
+                        );
+                      }
+
+                      if (f.type === 'fullname') {
+                        const parts = (editedReg[f.key] || "||").split("|");
+                        return (
+                          <div key={f.key}>
+                            <div style={{fontSize:".75rem",color:"var(--mu)",fontWeight:600,marginBottom:4}}>{f.label}</div>
+                            <div style={{display:"grid",gridTemplateColumns:mob?"1fr":"1fr 1fr 1fr",gap:8}}>
+                              <input 
+                                placeholder="First Name" 
+                                value={parts[0] || ""} 
+                                onChange={e => {
+                                  const newParts = [...parts]; newParts[0] = e.target.value;
+                                  setEditedReg(prev => ({ ...prev, [f.key]: newParts.join("|") }));
+                                }} 
+                                style={{width:"100%",padding:"8px 10px",borderRadius:6,border: "1px solid var(--bd)",fontFamily:"inherit",fontSize:".88rem"}}
+                              />
+                              <input 
+                                placeholder="Middle Name" 
+                                value={parts[1] || ""} 
+                                onChange={e => {
+                                  const newParts = [...parts]; newParts[1] = e.target.value;
+                                  setEditedReg(prev => ({ ...prev, [f.key]: newParts.join("|") }));
+                                }} 
+                                style={{width:"100%",padding:"8px 10px",borderRadius:6,border: "1px solid var(--bd)",fontFamily:"inherit",fontSize:".88rem"}}
+                              />
+                              <input 
+                                placeholder="Last Name" 
+                                value={parts[2] || ""} 
+                                onChange={e => {
+                                  const newParts = [...parts]; newParts[2] = e.target.value;
+                                  setEditedReg(prev => ({ ...prev, [f.key]: newParts.join("|") }));
+                                }} 
+                                style={{width:"100%",padding:"8px 10px",borderRadius:6,border: "1px solid var(--bd)",fontFamily:"inherit",fontSize:".88rem"}}
+                              />
+                            </div>
+                          </div>
+                        );
+                      }
+
+                      const isLong = f.type === 'address' || String(val).length > 50 || f.key.toLowerCase().includes("address") || f.key.toLowerCase().includes("remark");
+                      return (
+                        <div key={f.key}>
+                          <div style={{fontSize:".75rem",color:"var(--mu)",fontWeight:600,marginBottom:4}}>{f.label}</div>
+                          {isLong ? (
+                            <textarea 
+                              value={editedReg[f.key] || ""} 
+                              onChange={(e) => setEditedReg(prev => ({ ...prev, [f.key]: e.target.value }))}
+                              rows={3}
+                              style={{
+                                width: "100%",
+                                fontSize: ".9rem",
+                                color: "var(--tx)",
+                                background: "#fff",
+                                padding: "8px 12px",
+                                borderRadius: 6,
+                                border: "1px solid var(--bd)",
+                                boxSizing: "border-box",
+                                outline: "none",
+                                resize: "vertical",
+                                fontFamily: "inherit",
+                                boxShadow: "inset 0 1px 3px rgba(0,0,0,0.05)"
+                              }} 
+                            />
+                          ) : (
+                            <input 
+                              type="text" 
+                              value={editedReg[f.key] || ""} 
+                              onChange={(e) => setEditedReg(prev => ({ ...prev, [f.key]: e.target.value }))}
+                              style={{
+                                width: "100%",
+                                fontSize: ".9rem",
+                                color: "var(--tx)",
+                                background: "#fff",
+                                padding: "8px 12px",
+                                borderRadius: 6,
+                                border: "1px solid var(--bd)",
+                                boxSizing: "border-box",
+                                outline: "none",
+                                boxShadow: "inset 0 1px 3px rgba(0,0,0,0.05)"
+                              }} 
+                            />
+                          )}
+                        </div>
+                      );
+                    }
+
                     return (
-                      <button key={idx} onClick={()=>setActiveDoc(item.url)} style={{padding:"6px 14px",borderRadius:20,border:`1.5px solid ${active?"var(--sf)":"var(--bd)"}`,background:active?"var(--sf)":"white",color:active?"white":"var(--dt)",fontSize:".8rem",fontWeight:700,cursor:"pointer",whiteSpace:"nowrap",display:"flex",alignItems:"center",gap:6,transition:"all .2s"}}>
-                        <span>📄</span>
-                        <span>{item.label}</span>
-                      </button>
+                      <div key={f.key}>
+                        <div style={{fontSize:".75rem",color:"var(--mu)",fontWeight:600,marginBottom:4}}>{f.label}</div>
+                        <div style={{fontSize:".9rem",color:"var(--tx)",wordBreak:"break-word",background:"#FAFAFA",padding:"8px 12px",borderRadius:6,border:"1px solid #EEE"}}>{displayVal || "-"}</div>
+                      </div>
                     );
                   })}
+
+                  {isEditing && (
+                    <button 
+                      onClick={async () => {
+                        setSaving(true);
+                        await saveVerification(editedReg, status, remarks);
+                        setSaving(false);
+                        setIsEditing(false);
+                      }}
+                      disabled={saving}
+                      style={{
+                        marginTop: 12,
+                        width: "100%",
+                        padding: "12px",
+                        borderRadius: 8,
+                        background: "#333",
+                        color: "white",
+                        border: "none",
+                        fontWeight: 700,
+                        fontSize: ".9rem",
+                        cursor: "pointer",
+                        boxShadow: "0 2px 6px rgba(0,0,0,0.15)"
+                      }}
+                    >
+                      {saving ? "Saving..." : "💾 Save Details Only"}
+                    </button>
+                  )}
+
+                  {/* Audit Timeline / History Logs */}
+                  <div style={{marginTop:24,paddingTop:16,borderTop:"1px dashed var(--bd)"}}>
+                    <div style={{fontSize:".85rem",fontWeight:700,color:"var(--dt)",marginBottom:12,display:"flex",alignItems:"center",gap:6}}>
+                      <span>📜 Activity & Verification Log History</span>
+                    </div>
+                    {(!viewing.logHistory || viewing.logHistory.length === 0) ? (
+                      <div style={{fontSize:".8rem",color:"var(--mu)",fontStyle:"italic",padding:"10px 12px",background:"#FAFAFA",borderRadius:8,border:"1px solid #EEE"}}>
+                        1st Entry Submitted on {new Date(viewing.timestamp || viewing._submittedAt || Date.now()).toLocaleString()}
+                      </div>
+                    ) : (
+                      <div style={{display:"flex",flexDirection:"column",gap:10}}>
+                        {viewing.logHistory.map((lg, lgIdx) => (
+                          <div key={lgIdx} style={{background:"#FAFAFA",border:"1px solid var(--bd)",borderRadius:8,padding:"10px 12px",position:"relative"}}>
+                            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:4}}>
+                              <span style={{fontSize:".75rem",fontWeight:800,color:lg.actor === 'User' ? "var(--sf)" : "#1E3A8A"}}>
+                                {lg.actor === 'User' ? "👤 User Action" : `🛡️ Admin (${lg.actor || 'Admin'})`}
+                              </span>
+                              <span style={{fontSize:".7rem",color:"var(--mu)"}}>
+                                {lg.timestamp ? new Date(lg.timestamp).toLocaleString() : ""}
+                              </span>
+                            </div>
+                            <div style={{fontSize:".82rem",fontWeight:700,color:"var(--dt)",marginBottom:2}}>
+                              {lg.action || lg.status || "Updated"}
+                            </div>
+                            <div style={{fontSize:".78rem",color:"var(--mu)",lineHeight:1.4}}>
+                              {lg.remarks || "No additional remarks"}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              {/* Verification Controls */}
+              <div style={{padding:mob?"12px 14px":"16px 20px",background:"#FAFAFA",borderTop:"1px solid var(--bd)",flexShrink:0}}>
+                <h4 style={{fontSize:".9rem",fontWeight:700,color:"var(--dt)",marginBottom:8,marginTop:0}}>Verification Action</h4>
+                
+                <div style={{display:"grid",gridTemplateColumns:mob?"1fr":"120px 1fr",gap:10,marginBottom:10}}>
+                  {/* Column 1: Action Buttons */}
+                  <div style={{display:"flex",flexDirection:mob?"row":"column",gap:6}}>
+                    <button 
+                      onClick={()=>setStatus('Approved')} 
+                      style={{
+                        flex:mob?1:"none",
+                        padding:"8px 6px",
+                        borderRadius:6,
+                        fontWeight:600,
+                        fontSize:".78rem",
+                        cursor:"pointer",
+                        border:status==='Approved'?"2px solid #2E7D32":"1px solid #CCC",
+                        background:status==='Approved'?"#E8F5E9":"white",
+                        color:status==='Approved'?"#2E7D32":"var(--mu)",
+                        transition:"0.2s",
+                        textAlign:mob?"center":"left",
+                        paddingLeft:mob?6:10
+                      }}
+                    >
+                      ✓ Approve
+                    </button>
+                    <button 
+                      onClick={()=>setStatus('Needs Info')} 
+                      style={{
+                        flex:mob?1:"none",
+                        padding:"8px 6px",
+                        borderRadius:6,
+                        fontWeight:600,
+                        fontSize:".78rem",
+                        cursor:"pointer",
+                        border:status==='Needs Info'?"2px solid #EF6C00":"1px solid #CCC",
+                        background:status==='Needs Info'?"#FFF3E0":"white",
+                        color:status==='Needs Info'?"#EF6C00":"var(--mu)",
+                        transition:"0.2s",
+                        textAlign:mob?"center":"left",
+                        paddingLeft:mob?6:10
+                      }}
+                    >
+                      ⏸ Pause
+                    </button>
+                    <button 
+                      onClick={()=>setStatus('Disapproved')} 
+                      style={{
+                        flex:mob?1:"none",
+                        padding:"8px 6px",
+                        borderRadius:6,
+                        fontWeight:600,
+                        fontSize:".78rem",
+                        cursor:"pointer",
+                        border:status==='Disapproved'?"2px solid #C62828":"1px solid #CCC",
+                        background:status==='Disapproved'?"#FFEBEE":"white",
+                        color:status==='Disapproved'?"#C62828":"var(--mu)",
+                        transition:"0.2s",
+                        textAlign:mob?"center":"left",
+                        paddingLeft:mob?6:10
+                      }}
+                    >
+                      ✕ Reject
+                    </button>
+                  </div>
+
+                  {/* Column 2: Remarks TextArea */}
+                  <div style={{display:"flex",flexDirection:"column"}}>
+                    <textarea 
+                      value={remarks} 
+                      onChange={e=>setRemarks(e.target.value)} 
+                      placeholder="Remarks / Reason (Optional)" 
+                      style={{
+                        width:"100%",
+                        height:"100%",
+                        minHeight:mob?"60px":"92px",
+                        padding:"8px 10px",
+                        borderRadius:6,
+                        border:"1px solid var(--bd)",
+                        fontSize:".8rem",
+                        fontFamily:"inherit",
+                        resize:"none",
+                        boxSizing:"border-box"
+                      }} 
+                    />
+                  </div>
                 </div>
 
-                <div style={{flex:1,padding:16,display:"flex",alignItems:"center",justifyContent:"center",overflow:"hidden"}}>
-                  {isPdf ? (
-                    <iframe src={activeDoc} style={{width:"100%",height:"100%",border:"none",borderRadius:8,background:"white",boxShadow:"0 4px 12px rgba(0,0,0,0.05)"}} title="Document" />
-                  ) : (
-                    <img src={activeDoc} alt="Document" style={{maxWidth:"100%",maxHeight:"100%",objectFit:"contain",borderRadius:8,boxShadow:"0 4px 12px rgba(0,0,0,0.05)"}} />
-                  )}
-                </div>
-              </>
-            ) : (
-              <div style={{flex:1,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",color:"var(--mu)",padding:40,textAlign:"center"}}>
-                <div style={{fontSize:"3rem",marginBottom:16,opacity:0.5}}>📄</div>
-                <h4 style={{margin:0,fontSize:"1.1rem",fontWeight:600,color:"var(--dt)"}}>No Documents Provided</h4>
-                <p style={{fontSize:".9rem",marginTop:8}}>This registration does not contain any uploaded files or images.</p>
+                <button onClick={handleSave} disabled={saving} style={{width:"100%",padding:"12px",borderRadius:8,background:"var(--dt)",color:"white",border:"none",fontWeight:700,fontSize:".9rem",cursor:"pointer",opacity:saving?0.7:1,boxShadow:"0 4px 12px rgba(0,0,0,0.15)"}}>
+                  {saving ? "Saving..." : "Save Verification"}
+                </button>
+              </div>
+
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+
+// ── WhatsApp Applicant Communication Modal ───────────────────────────────────────
+
+
+// ── Bulk / Broadcast WhatsApp Message Sender Modal ──────────────────────────────
+function BulkWhatsAppBroadcastModal({ event, recipients = [], C, auth, onLogSent, onClose }) {
+  if (!event || recipients.length === 0) return null;
+
+  const countApproved = recipients.filter(r => (r['Status'] || r.status) === "Approved").length;
+  const countNeedsInfo = recipients.filter(r => (r['Status'] || r.status) === "Needs Info").length;
+  const countPending = recipients.filter(r => (!r['Status'] && !r.status) || (r['Status'] || r.status) === "Pending").length;
+  const countDisapproved = recipients.filter(r => (r['Status'] || r.status) === "Disapproved").length;
+
+  // Determine initial status filter based on the selected recipients
+  const initialStatusFilter = (() => {
+    if (countNeedsInfo > 0 && countApproved === 0 && countPending === 0 && countDisapproved === 0) return "Needs Info";
+    if (countApproved > 0 && countNeedsInfo === 0 && countPending === 0 && countDisapproved === 0) return "Approved";
+    if (countPending > 0 && countApproved === 0 && countNeedsInfo === 0 && countDisapproved === 0) return "Pending";
+    if (countDisapproved > 0 && countApproved === 0 && countNeedsInfo === 0 && countPending === 0) return "Disapproved";
+    return "All";
+  })();
+
+  const initialTplId = (() => {
+    if (initialStatusFilter === "Needs Info") return "tpl_needs_info_notice";
+    if (initialStatusFilter === "Approved") return "tpl_approved_notice";
+    if (initialStatusFilter === "Pending") return "tpl_pending_notice";
+    if (initialStatusFilter === "Disapproved") return "tpl_disapproved_notice";
+    return "auto_status_match";
+  })();
+
+  const [statusFilter, setStatusFilter] = useState(initialStatusFilter);
+  const [selectedTplId, setSelectedTplId] = useState(initialTplId);
+
+  const defaultApprovedTpl = C.whatsAppTplApproved || `🏛️ *MUMBAI MEGHWAL PANCHAYAT*\n🏆 *Education Felicitation 2026*\n═══════════════════════\nNamaste *{STUDENT_NAME}*,\n\n🎉 Hearty Congratulations! Your application for *Education Felicitation 2026* has been *APPROVED* by the Verification Committee.\n\n📋 *Application Details:*\n• *Transaction ID:* {TXN_ID}\n• *Student Name:* {STUDENT_NAME}\n• *Vibhag:* {VIBHAG}\n• *Stream / Class:* {STREAM}\n• *Percentage:* {PERCENTAGE}%\n• *Status:* 🟢 *Approved & Verified*\n\n📅 *Event Date:* 02-10-2026\n📍 *Venue:* Mumbai\n\n👉 View your application on your dashboard:\n{PORTAL_URL}\n\nWarm regards,\n*Mumbai Meghwal Panchayat & Vidya Gohil Trust*\n📞 Committee Helpline: {HELPLINE_PHONES}`;
+
+  const defaultNeedsInfoTpl = C.whatsAppTplNeedsInfo || `🏛️ *MUMBAI MEGHWAL PANCHAYAT*\n🏆 *Education Felicitation 2026*\n═══════════════════════\nNamaste *{STUDENT_NAME}*,\n\nYour application (*{TXN_ID}*) for *Education Felicitation 2026* requires additional information or document correction for verification.\n\n⚠️ *Committee Remarks / Action Required:*\n👉 *{REMARKS}*\n\n📝 *How to Update Your Application:*\n1. Open portal: {PORTAL_URL}\n2. Log in with registered mobile: *+91 {MOBILE}*\n3. Go to *My Dashboard* > *Registrations*\n4. Click *Edit & Resubmit* and update the requested document/details.\n\nPlease complete this at the earliest.\n\nWarm regards,\n*Education Verification Committee*\n📞 Committee Helpline: {HELPLINE_PHONES}`;
+
+  const defaultPendingTpl = C.whatsAppTplPending || `🏛️ *MUMBAI MEGHWAL PANCHAYAT*\n🏆 *Education Felicitation 2026*\n═══════════════════════\nNamaste *{STUDENT_NAME}*,\n\nThank you for submitting your registration for *Education Felicitation 2026*.\n\n📋 *Application Summary:*\n• *Transaction ID:* {TXN_ID}\n• *Student Name:* {STUDENT_NAME}\n• *Vibhag:* {VIBHAG}\n• *Stream / Class:* {STREAM}\n• *Current Status:* ⏳ *Under Verification / Review*\n\nOur Verification Committee is currently reviewing your submitted details and documents. You will receive an update once the verification is completed.\n\n👉 Track your live application status on your student dashboard:\n{PORTAL_URL}\n\nWarm regards,\n*Mumbai Meghwal Panchayat & Vidya Gohil Trust*\n📞 Committee Helpline: {HELPLINE_PHONES}`;
+
+  const defaultDisapprovedTpl = C.whatsAppTplDisapproved || `🏛️ *MUMBAI MEGHWAL PANCHAYAT*\n🏆 *Education Felicitation 2026*\n═══════════════════════\nNamaste *{STUDENT_NAME}*,\n\nRegarding your application (*{TXN_ID}*) for *Education Felicitation 2026*.\n\n• *Status:* 🔴 *Not Approved*\n• *Reason / Remarks:* {REMARKS}\n\nIf you believe this is an error or need clarification, please contact your Vibhag Committee Member or our helpline.\n\nWarm regards,\n*Education Committee*\n📞 Helpline: {HELPLINE_PHONES}`;
+
+  const defaultInviteTpl = C.whatsAppTplInvite || `🏛️ *MUMBAI MEGHWAL PANCHAYAT*\n🏆 *Education Felicitation 2026 - Official Invitation*\n═══════════════════════\nNamaste *{STUDENT_NAME}*,\n\nWe are pleased to invite you and your family as our esteemed guests of honor to the *Annual Student Education Felicitation 2026*.\n\n📋 *Invitation Pass Details:*\n• *Transaction / Pass ID:* {TXN_ID}\n• *Invitee Name:* {STUDENT_NAME}\n• *Vibhag:* {VIBHAG}\n• *Stream / Class:* {STREAM}\n\n📅 *Event Date:* 02-10-2026 (Friday)\n⏰ *Reporting Time:* 09:30 AM\n📍 *Venue:* Mumbai, Maharashtra\n\n👉 *View & Download Official PDF Invitation Letter & Pass:*\n{INVITE_PDF_LINK}\n\nPlease show this digital pass or downloaded invitation letter at the registration desk upon arrival.\n\nWarm regards,\n*Central Working Committee (CWC) & Education Board*\n*Mumbai Meghwal Panchayat & Vidya Gohil Trust*\n📞 Committee Helpline: {HELPLINE_PHONES}`;
+
+  const allBroadcastTemplates = [
+    {
+      id: "auto_status_match",
+      name: "🔄 Dynamic: Auto-Match Each Student's Live Status",
+      isDefault: true,
+      targetStatus: "All",
+      text: "AUTO_STATUS_MATCH"
+    },
+    ...(countNeedsInfo > 0 || initialStatusFilter === "All" ? [{
+      id: "tpl_needs_info_notice",
+      name: `⚠️ Needs Info / Document Correction Notice (${countNeedsInfo} Selected)`,
+      isDefault: false,
+      targetStatus: "Needs Info",
+      text: defaultNeedsInfoTpl
+    }] : []),
+    ...(countApproved > 0 || initialStatusFilter === "All" ? [{
+      id: "tpl_approved_notice",
+      name: `🟢 Application Approved & Verified Notice (${countApproved} Selected)`,
+      isDefault: false,
+      targetStatus: "Approved",
+      text: defaultApprovedTpl
+    }] : []),
+    ...(countPending > 0 || initialStatusFilter === "All" ? [{
+      id: "tpl_pending_notice",
+      name: `⏳ Under Verification / Review Notice (${countPending} Selected)`,
+      isDefault: false,
+      targetStatus: "Pending",
+      text: defaultPendingTpl
+    }] : []),
+    ...(countDisapproved > 0 ? [{
+      id: "tpl_disapproved_notice",
+      name: `🔴 Disapproved Application Notice (${countDisapproved} Selected)`,
+      isDefault: false,
+      targetStatus: "Disapproved",
+      text: defaultDisapprovedTpl
+    }] : []),
+    {
+      id: "tpl_student_pass",
+      name: "🏆 Official Student Invitation & Entry Pass",
+      isDefault: false,
+      targetStatus: "All",
+      text: defaultInviteTpl
+    },
+    ...(event?.whatsAppTemplates || [])
+  ];
+
+  const activeTemplate = allBroadcastTemplates.find(t => t.id === selectedTplId) || allBroadcastTemplates[0];
+
+  // Derive active recipients strictly based on statusFilter
+  const activeRecipients = recipients.filter(r => {
+    if (!r) return false;
+    if (statusFilter === "All") return true;
+    const st = r['Status'] || r.status || 'Pending';
+    return st === statusFilter;
+  });
+
+  const gateway = C.whatsAppGateway || {};
+  const isApiEnabled = gateway.enabled && gateway.instanceId && gateway.token;
+
+  // Broadcast execution states
+  const [broadcasting, setBroadcasting] = useState(false);
+  const [batchSize, setBatchSize] = useState(10);
+  const [currentIndex, setCurrentIndex] = useState(0);
+  const [sentCount, setSentCount] = useState(0);
+  const [failCount, setFailCount] = useState(0);
+  const [broadcastDone, setBroadcastDone] = useState(false);
+  const [copiedBroadcastNumbers, setCopiedBroadcastNumbers] = useState(false);
+  const [launchMode, setLaunchMode] = useState(() => localStorage.getItem("mmp_wa_launch_mode") || "web");
+
+  // When user changes status filter bucket directly
+  const handleStatusFilterChange = (newStatus) => {
+    setStatusFilter(newStatus);
+    setCurrentIndex(0);
+    setSentCount(0);
+    setFailCount(0);
+    setBroadcastDone(false);
+
+    if (newStatus === "Needs Info") setSelectedTplId("tpl_needs_info_notice");
+    else if (newStatus === "Approved") setSelectedTplId("tpl_approved_notice");
+    else if (newStatus === "Pending") setSelectedTplId("tpl_pending_notice");
+    else if (newStatus === "Disapproved") setSelectedTplId("tpl_disapproved_notice");
+    else setSelectedTplId("auto_status_match");
+  };
+
+  // When user changes template dropdown directly
+  const handleTemplateDropdownChange = (tplId) => {
+    setSelectedTplId(tplId);
+    setCurrentIndex(0);
+    setSentCount(0);
+    setFailCount(0);
+    setBroadcastDone(false);
+
+    const chosen = allBroadcastTemplates.find(t => t.id === tplId);
+    if (chosen && chosen.targetStatus && chosen.targetStatus !== "All") {
+      setStatusFilter(chosen.targetStatus);
+    } else if (tplId === "auto_status_match" || tplId === "tpl_student_pass") {
+      setStatusFilter("All");
+    }
+  };
+
+  const formatMessageForReg = (r) => {
+    if (!r) return "";
+    const rName = String(r['Full Name'] || r['Submitted By'] || r['Participant Name'] || r.name || 'Applicant').replace(/\|/g, ' ').trim();
+    const rMobile = String(r['Mobile Number'] || r.submitterMob || r['Alternate Mobile Number'] || r.phone || '').replace(/\D/g, '').slice(-10);
+    const rTxn = r['Transaction ID'] || r.transactionId || r.id || 'N/A';
+    const rVibhag = r['Vibhag'] || r.vibhag || r['MMP Vibhag'] || 'All Vibhags';
+    const rStream = r['Stream / Class'] || r['Stream'] || r['Course'] || 'N/A';
+    const rPct = r['% Obtained'] || r.percentage || r['Marks / Percentage'] || 'N/A';
+    const rRemarks = r['Remarks'] || r.remarks || 'Application under review';
+    const rStatus = r['Status'] || r.status || 'Pending';
+
+    let rawTemplateText = "";
+    if (selectedTplId === "auto_status_match") {
+      if (rStatus === "Approved") rawTemplateText = defaultApprovedTpl;
+      else if (rStatus === "Needs Info") rawTemplateText = defaultNeedsInfoTpl;
+      else if (rStatus === "Disapproved") rawTemplateText = defaultDisapprovedTpl;
+      else rawTemplateText = defaultPendingTpl;
+    } else {
+      rawTemplateText = activeTemplate?.text || defaultApprovedTpl;
+    }
+
+    const baseUrl = `${C.whatsAppPortalUrl || "https://pradeepparmar902.github.io/MY_Community_Website/"}`.replace(/\/?$/, '');
+    const certUrl = `${baseUrl}/?cert=${encodeURIComponent(rTxn || "")}`;
+    const inviteUrl = `${baseUrl}/?invite=${encodeURIComponent(rTxn || "")}`;
+    const defaultUrl = (selectedTplId === "tpl_cert_notice" || activeTemplate?.name?.toLowerCase().includes("certificate")) ? certUrl : inviteUrl;
+
+    let processed = rawTemplateText
+      .replace(/\{STUDENT_NAME\}/g, rName || "Student")
+      .replace(/\{TXN_ID\}/g, rTxn || "N/A")
+      .replace(/\{VIBHAG\}/g, rVibhag || "All Vibhags")
+      .replace(/\{STREAM\}/g, rStream || "N/A")
+      .replace(/\{PERCENTAGE\}/g, rPct || "N/A")
+      .replace(/\{REMARKS\}/g, rRemarks || "Application under review")
+      .replace(/\{MOBILE\}/g, rMobile || "")
+      .replace(/\{CERTIFICATE_LINK\}/g, certUrl)
+      .replace(/\{CERTIFICATE_URL\}/g, certUrl)
+      .replace(/\{INVITE_PDF_LINK\}/g, inviteUrl)
+      .replace(/\{INVITE_LINK\}/g, inviteUrl)
+      .replace(/\{PASS_LINK\}/g, inviteUrl)
+      .replace(/\{PORTAL_URL\}/g, defaultUrl)
+      .replace(/\{WEBSITE_HOME\}/g, baseUrl)
+      .replace(/\{HELPLINE_PHONES\}/g, C.whatsAppHelpline || C.trust?.phone || "+91 9820785209 / +91 9967821964")
+      .replace(/\{ADMIN_MOBILE\}/g, C.whatsAppHelpline || C.trust?.phone || "+91 9820785209");
+
+    if (rTxn && rTxn !== 'N/A' && processed.includes("https://pradeepparmar902.github.io/MY_Community_Website/") && !processed.includes("?invite=") && !processed.includes("?pass=") && !processed.includes("?cert=")) {
+      processed = processed.replace("https://pradeepparmar902.github.io/MY_Community_Website/", defaultUrl);
+    }
+    return processed;
+  };
+
+  // Automated API Gateway Broadcast
+  const startApiBroadcast = async () => {
+    if (activeRecipients.length === 0) return;
+    setBroadcasting(true);
+    setSentCount(0);
+    setFailCount(0);
+    setBroadcastDone(false);
+
+    for (let i = 0; i < activeRecipients.length; i++) {
+      setCurrentIndex(i);
+      const r = activeRecipients[i];
+      const phone = String(r['Mobile Number'] || r.submitterMob || r['Alternate Mobile Number'] || r.phone || '').replace(/\D/g, '').slice(-10);
+      
+      if (!phone || phone.length < 10) {
+        setFailCount(prev => prev + 1);
+        continue;
+      }
+
+      const msg = formatMessageForReg(r);
+
+      try {
+        let apiUrl = "";
+        let payload = {};
+        let res = null;
+
+        if (gateway.provider === "meta") {
+          apiUrl = `https://graph.facebook.com/v19.0/${gateway.instanceId}/messages`;
+          res = await fetch(apiUrl, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              "Authorization": `Bearer ${gateway.token}`
+            },
+            body: JSON.stringify({
+              messaging_product: "whatsapp",
+              recipient_type: "individual",
+              to: `91${phone}`,
+              type: "text",
+              text: { preview_url: true, body: msg }
+            })
+          });
+        } else if (gateway.provider === "greenapi") {
+          apiUrl = `https://api.green-api.com/waInstance${gateway.instanceId}/sendMessage/${gateway.token}`;
+          payload = { chatId: `91${phone}@c.us`, message: msg };
+          res = await fetch(apiUrl, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload)
+          });
+        } else {
+          apiUrl = `https://api.ultramsg.com/${gateway.instanceId}/messages/chat`;
+          payload = { token: gateway.token, to: `+91${phone}`, body: msg };
+          res = await fetch(apiUrl, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload)
+          });
+        }
+
+        if (res && res.ok) {
+          setSentCount(prev => Math.min(prev + 1, activeRecipients.length));
+        } else {
+          setFailCount(prev => prev + 1);
+        }
+      } catch (err) {
+        setFailCount(prev => prev + 1);
+      }
+
+      await new Promise(resolve => setTimeout(resolve, 800));
+    }
+
+    setBroadcasting(false);
+    setBroadcastDone(true);
+  };
+
+  // Open Batch in Multi-Tabs (5, 10, or 20 at a time)
+  const openBatchInTabs = (size = 10) => {
+    const end = Math.min(currentIndex + size, activeRecipients.length);
+    let opened = 0;
+
+    for (let i = currentIndex; i < end; i++) {
+      const r = activeRecipients[i];
+      const phone = String(r['Mobile Number'] || r.submitterMob || r['Alternate Mobile Number'] || r.phone || '').replace(/\D/g, '').slice(-10);
+      if (!phone || phone.length < 10) continue;
+
+      const msg = formatMessageForReg(r);
+      const webUrl = `https://web.whatsapp.com/send?phone=91${phone}&text=${encodeURIComponent(msg)}`;
+      
+      window.open(webUrl, `_wa_tab_${i}_${Date.now()}`);
+      opened++;
+    }
+
+    const nextCount = Math.min(sentCount + opened, activeRecipients.length);
+    setSentCount(nextCount);
+    setCurrentIndex(end);
+    if (end >= activeRecipients.length) {
+      setBroadcastDone(true);
+    }
+  };
+
+  // Execute Send to a specific index and advance
+  const executeSendItem = (idx) => {
+    if (idx >= activeRecipients.length) {
+      setBroadcastDone(true);
+      return;
+    }
+
+    const r = activeRecipients[idx];
+    const phone = String(r?.['Mobile Number'] || r?.submitterMob || r?.['Alternate Mobile Number'] || r?.phone || '').replace(/\D/g, '').slice(-10);
+    const msg = formatMessageForReg(r);
+
+    if (phone && phone.length === 10) {
+      try { navigator.clipboard.writeText(msg); } catch(e){}
+
+      const msgType = selectedTplId === "auto_status_match" 
+        ? `${r['Status'] || r.status || 'Pending'} Notice` 
+        : (activeTemplate?.name || "Status Notice");
+
+      if (typeof onLogSent === "function") {
+        try { onLogSent(r, msgType); } catch(e){}
+      }
+
+      if (launchMode === "app") {
+        const appUrl = `whatsapp://send?phone=91${phone}&text=${encodeURIComponent(msg)}`;
+        window.location.href = appUrl;
+      } else {
+        const webUrl = `https://web.whatsapp.com/send?phone=91${phone}&text=${encodeURIComponent(msg)}`;
+        window.open(webUrl, `_wa_direct_${idx}`);
+      }
+      setSentCount(prev => Math.min(prev + 1, activeRecipients.length));
+    } else {
+      setFailCount(prev => prev + 1);
+    }
+
+    const nextIdx = idx + 1;
+    setCurrentIndex(nextIdx);
+    if (nextIdx >= activeRecipients.length) {
+      setBroadcastDone(true);
+    }
+  };
+
+  // Keyboard shortcut: Press Enter to send next item immediately
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      if (e.key === "Enter" && !broadcastDone && !broadcasting) {
+        e.preventDefault();
+        executeSendItem(currentIndex);
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [currentIndex, broadcastDone, broadcasting, activeRecipients, selectedTplId]);
+
+  // Current active recipient details
+  const currentReg = activeRecipients[Math.min(currentIndex, Math.max(0, activeRecipients.length - 1))] || activeRecipients[0];
+  const currentName = String(currentReg?.['Full Name'] || currentReg?.['Submitted By'] || currentReg?.['Participant Name'] || currentReg?.name || 'Applicant').replace(/\|/g, ' ').trim();
+  const currentStatus = currentReg?.['Status'] || currentReg?.status || 'Pending';
+
+  // Copy phone numbers for WhatsApp Broadcast List
+  const handleCopyBroadcastList = () => {
+    const phoneList = activeRecipients
+      .map(r => {
+        const p = String(r['Mobile Number'] || r.submitterMob || r['Alternate Mobile Number'] || r.phone || '').replace(/\D/g, '').slice(-10);
+        const n = String(r['Full Name'] || r['Submitted By'] || r['Participant Name'] || r.name || 'Applicant').replace(/\|/g, ' ').trim();
+        const st = r['Status'] || r.status || 'Pending';
+        return p.length === 10 ? `+91 ${p} - ${n} (${st})` : null;
+      })
+      .filter(Boolean)
+      .join("\n");
+
+    navigator.clipboard.writeText(phoneList);
+    setCopiedBroadcastNumbers(true);
+    setTimeout(() => setCopiedBroadcastNumbers(false), 2500);
+  };
+
+  const samplePreview = formatMessageForReg(activeRecipients[0]);
+
+  return (
+    <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.65)",zIndex:100004,display:"flex",alignItems:"center",justifyContent:"center",padding:16}} onClick={onClose}>
+      <div style={{background:"white",borderRadius:16,maxWidth:800,width:"100%",maxHeight:"92vh",display:"flex",flexDirection:"column",overflow:"hidden",boxShadow:"0 25px 50px -12px rgba(0,0,0,0.35)"}} onClick={e=>e.stopPropagation()}>
+        
+        {/* Header */}
+        <div style={{padding:"18px 24px",background:"linear-gradient(135deg, #15803D, #166534)",color:"white",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+          <div>
+            <h3 style={{fontSize:"1.15rem",fontWeight:800,margin:0,display:"flex",alignItems:"center",gap:8}}>
+              <span>📢</span> Broadcast WhatsApp ({activeRecipients.length} {statusFilter === 'All' ? 'Selected' : statusFilter})
+            </h3>
+            <div style={{fontSize:".8rem",opacity:0.9,marginTop:2}}>
+              Sending personalized messages to all {activeRecipients.length} {statusFilter === 'All' ? 'selected applicants' : statusFilter + ' students'}.
+            </div>
+          </div>
+          <button onClick={onClose} style={{background:"rgba(255,255,255,0.2)",border:"none",borderRadius:"50%",width:32,height:32,color:"white",cursor:"pointer",fontWeight:800}}>✕</button>
+        </div>
+
+        {/* Content */}
+        <div style={{padding:"20px 24px",overflowY:"auto",flex:1,display:"flex",flexDirection:"column",gap:16}}>
+          
+          {/* STEP 1: STATUS BUCKET FILTER PILLS */}
+          <div style={{background:"#F8FAFC",border:"1.5px solid #E2E8F0",borderRadius:12,padding:"14px 16px"}}>
+            <div style={{fontSize:".8rem",fontWeight:800,color:"#334155",marginBottom:8,display:"flex",alignItems:"center",justifyContent:"space-between"}}>
+              <span>🎯 STATUS BUCKET FOR SELECTED:</span>
+              <span style={{fontSize:".74rem",color:"#64748B",fontWeight:600}}>Showing {activeRecipients.length} of {recipients.length} Selected</span>
+            </div>
+            
+            <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+              <button
+                type="button"
+                onClick={() => handleStatusFilterChange("All")}
+                style={{
+                  padding:"6px 14px",
+                  borderRadius:20,
+                  border: statusFilter === "All" ? "2px solid #0F172A" : "1px solid #CBD5E1",
+                  background: statusFilter === "All" ? "#0F172A" : "white",
+                  color: statusFilter === "All" ? "white" : "#334155",
+                  fontWeight: 700,
+                  fontSize: ".78rem",
+                  cursor: "pointer",
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 6
+                }}
+              >
+                <span>👥 All Selected ({recipients.length})</span>
+              </button>
+
+              {countNeedsInfo > 0 && (
+                <button
+                  type="button"
+                  onClick={() => handleStatusFilterChange("Needs Info")}
+                  style={{
+                    padding:"6px 14px",
+                    borderRadius:20,
+                    border: statusFilter === "Needs Info" ? "2px solid #D97706" : "1.5px solid #FDE68A",
+                    background: statusFilter === "Needs Info" ? "#D97706" : "#FFFBEB",
+                    color: statusFilter === "Needs Info" ? "white" : "#92400E",
+                    fontWeight: 800,
+                    fontSize: ".78rem",
+                    cursor: "pointer",
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 6,
+                    boxShadow: statusFilter === "Needs Info" ? "0 2px 8px rgba(217,119,6,0.3)" : "none"
+                  }}
+                >
+                  <span>⚠️ Needs Info ({countNeedsInfo})</span>
+                </button>
+              )}
+
+              {countApproved > 0 && (
+                <button
+                  type="button"
+                  onClick={() => handleStatusFilterChange("Approved")}
+                  style={{
+                    padding:"6px 14px",
+                    borderRadius:20,
+                    border: statusFilter === "Approved" ? "2px solid #15803D" : "1.5px solid #BBF7D0",
+                    background: statusFilter === "Approved" ? "#15803D" : "#F0FDF4",
+                    color: statusFilter === "Approved" ? "white" : "#166534",
+                    fontWeight: 800,
+                    fontSize: ".78rem",
+                    cursor: "pointer",
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 6,
+                    boxShadow: statusFilter === "Approved" ? "0 2px 8px rgba(21,128,61,0.3)" : "none"
+                  }}
+                >
+                  <span>🟢 Approved ({countApproved})</span>
+                </button>
+              )}
+
+              {countPending > 0 && (
+                <button
+                  type="button"
+                  onClick={() => handleStatusFilterChange("Pending")}
+                  style={{
+                    padding:"6px 14px",
+                    borderRadius:20,
+                    border: statusFilter === "Pending" ? "2px solid #475569" : "1.5px solid #E2E8F0",
+                    background: statusFilter === "Pending" ? "#475569" : "#F1F5F9",
+                    color: statusFilter === "Pending" ? "white" : "#334155",
+                    fontWeight: 700,
+                    fontSize: ".78rem",
+                    cursor: "pointer",
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 6
+                  }}
+                >
+                  <span>⏳ Under Review ({countPending})</span>
+                </button>
+              )}
+
+              {countDisapproved > 0 && (
+                <button
+                  type="button"
+                  onClick={() => handleStatusFilterChange("Disapproved")}
+                  style={{
+                    padding:"6px 14px",
+                    borderRadius:20,
+                    border: statusFilter === "Disapproved" ? "2px solid #DC2626" : "1.5px solid #FECACA",
+                    background: statusFilter === "Disapproved" ? "#DC2626" : "#FEF2F2",
+                    color: statusFilter === "Disapproved" ? "white" : "#991B1B",
+                    fontWeight: 700,
+                    fontSize: ".78rem",
+                    cursor: "pointer",
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 6
+                  }}
+                >
+                  <span>🔴 Disapproved ({countDisapproved})</span>
+                </button>
+              )}
+            </div>
+          </div>
+
+          {/* STEP 2: TEMPLATE SELECTION */}
+          <div style={{background:"#F0FDF4",border:"1.5px solid #86EFAC",borderRadius:10,padding:"14px 16px"}}>
+            <div style={{fontSize:".8rem",fontWeight:800,color:"#15803D",marginBottom:6}}>
+              CHOOSE MESSAGE TEMPLATE:
+            </div>
+            <select
+              value={selectedTplId}
+              onChange={e => handleTemplateDropdownChange(e.target.value)}
+              disabled={broadcasting}
+              style={{
+                width: "100%",
+                padding: "9px 12px",
+                borderRadius: 8,
+                border: "1.5px solid #15803D",
+                fontSize: ".88rem",
+                fontWeight: 700,
+                color: "#14532D",
+                background: "white",
+                cursor: "pointer"
+              }}
+            >
+              {allBroadcastTemplates.map(t => (
+                <option key={t.id} value={t.id}>
+                  {t.name}
+                </option>
+              ))}
+            </select>
+
+            {statusFilter === "Needs Info" && (
+              <div style={{fontSize:".76rem",color:"#92400E",background:"#FEF3C7",padding:"8px 12px",borderRadius:6,marginTop:8,fontWeight:600,lineHeight:1.4}}>
+                ⚠️ <strong>Broadcasting to {countNeedsInfo} students with Needs Info / Pending queries.</strong> Each student will receive their personal correction remarks ({'{REMARKS}'}).
               </div>
             )}
           </div>
 
-          {/* Right: Data & Verification Controls */}
-          <div style={{width:400,display:"flex",flexDirection:"column",background:"white"}}>
-            
-            {/* Input Data List */}
-            <div style={{flex:1,overflowY:"auto",padding:"24px"}}>
-              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16}}>
-                <h4 style={{fontSize:".95rem",fontWeight:700,color:"var(--dt)",margin:0,textTransform:"uppercase",letterSpacing:1}}>Submitted Details</h4>
-                <button 
-                  onClick={() => setIsEditing(!isEditing)} 
-                  style={{
-                    background: "none", 
-                    border: "none", 
-                    color: "var(--dt)", 
-                    cursor: "pointer", 
-                    fontSize: ".85rem", 
-                    fontWeight: 600,
-                    display: "flex",
-                    alignItems: "center",
-                    gap: 4
-                  }}
-                >
-                  {isEditing ? "👁 Read Only" : "✏️ Edit Fields"}
-                </button>
+          {/* Broadcast Strategy Options */}
+          {isApiEnabled ? (
+            <div style={{background:"#EFF6FF",border:"1.5px solid #93C5FD",borderRadius:10,padding:"14px 16px"}}>
+              <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:4}}>
+                <span style={{fontSize:"1.2rem"}}>⚡</span>
+                <strong style={{fontSize:".9rem",color:"#1E40AF"}}>Automated Background API Gateway Active ({gateway.provider?.toUpperCase()})</strong>
               </div>
-              <div style={{display:"flex",flexDirection:"column",gap:16}}>
-                {fieldsToRender.map(f => {
-                  const val = (editedReg || viewing)[f.key];
-                  if (typeof val === 'string' && val.startsWith('http')) return null; // Skip docs
-                  const displayVal = typeof val === 'string' ? val.replace(/\|/g, ' ') : String(val);
-
-                  if (isEditing) {
-                    if (f.type === 'dropdown') {
-                      return (
-                        <div key={f.key}>
-                          <div style={{fontSize:".75rem",color:"var(--mu)",fontWeight:600,marginBottom:4}}>{f.label}</div>
-                          <select 
-                            value={editedReg[f.key] || ""} 
-                            onChange={(e) => setEditedReg(prev => ({ ...prev, [f.key]: e.target.value }))}
-                            style={{
-                              width: "100%",
-                              padding: "10px",
-                              borderRadius: 6,
-                              border: "1px solid var(--bd)",
-                              fontFamily: "inherit",
-                              fontSize: ".9rem",
-                              background: "#fff",
-                              outline: "none"
-                            }}
-                          >
-                            <option value="">-- Select --</option>
-                            {(f.options || "").split(",").map((opt, oi) => opt.trim() && <option key={oi} value={opt.trim()}>{opt.trim()}</option>)}
-                          </select>
-                        </div>
-                      );
-                    }
-                    
-                    if (f.type === 'gender') {
-                      return (
-                        <div key={f.key}>
-                          <div style={{fontSize:".75rem",color:"var(--mu)",fontWeight:600,marginBottom:4}}>{f.label}</div>
-                          <select 
-                            value={editedReg[f.key] || ""} 
-                            onChange={(e) => setEditedReg(prev => ({ ...prev, [f.key]: e.target.value }))}
-                            style={{
-                              width: "100%",
-                              padding: "10px",
-                              borderRadius: 6,
-                              border: "1px solid var(--bd)",
-                              fontFamily: "inherit",
-                              fontSize: ".9rem",
-                              background: "#fff",
-                              outline: "none"
-                            }}
-                          >
-                            <option value="">-- Select Gender --</option>
-                            <option value="Male">Male</option>
-                            <option value="Female">Female</option>
-                            <option value="Other">Other</option>
-                          </select>
-                        </div>
-                      );
-                    }
-
-                    if (f.type === 'fullname') {
-                      const parts = (editedReg[f.key] || "||").split("|");
-                      return (
-                        <div key={f.key}>
-                          <div style={{fontSize:".75rem",color:"var(--mu)",fontWeight:600,marginBottom:4}}>{f.label}</div>
-                          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:12}}>
-                            <input 
-                              placeholder="First" 
-                              value={parts[0] || ""} 
-                              onChange={e => {
-                                const newParts = [...parts]; newParts[0] = e.target.value;
-                                setEditedReg(prev => ({ ...prev, [f.key]: newParts.join("|") }));
-                              }} 
-                              style={{width:"100%",padding:"10px",borderRadius:6,border: "1px solid var(--bd)",fontFamily:"inherit",fontSize:".9rem"}}
-                            />
-                            <input 
-                              placeholder="Middle" 
-                              value={parts[1] || ""} 
-                              onChange={e => {
-                                const newParts = [...parts]; newParts[1] = e.target.value;
-                                setEditedReg(prev => ({ ...prev, [f.key]: newParts.join("|") }));
-                              }} 
-                              style={{width:"100%",padding:"10px",borderRadius:6,border: "1px solid var(--bd)",fontFamily:"inherit",fontSize:".9rem"}}
-                            />
-                            <input 
-                              placeholder="Last" 
-                              value={parts[2] || ""} 
-                              onChange={e => {
-                                const newParts = [...parts]; newParts[2] = e.target.value;
-                                setEditedReg(prev => ({ ...prev, [f.key]: newParts.join("|") }));
-                              }} 
-                              style={{width:"100%",padding:"10px",borderRadius:6,border: "1px solid var(--bd)",fontFamily:"inherit",fontSize:".9rem"}}
-                            />
-                          </div>
-                        </div>
-                      );
-                    }
-
-                    const isLong = f.type === 'address' || String(val).length > 50 || f.key.toLowerCase().includes("address") || f.key.toLowerCase().includes("remark");
-                    return (
-                      <div key={f.key}>
-                        <div style={{fontSize:".75rem",color:"var(--mu)",fontWeight:600,marginBottom:4}}>{f.label}</div>
-                        {isLong ? (
-                          <textarea 
-                            value={editedReg[f.key] || ""} 
-                            onChange={(e) => setEditedReg(prev => ({ ...prev, [f.key]: e.target.value }))}
-                            rows={3}
-                            style={{
-                              width: "100%",
-                              fontSize: ".95rem",
-                              color: "var(--tx)",
-                              background: "#fff",
-                              padding: "8px 12px",
-                              borderRadius: 6,
-                              border: "1px solid var(--bd)",
-                              boxSizing: "border-box",
-                              outline: "none",
-                              resize: "vertical",
-                              fontFamily: "inherit",
-                              boxShadow: "inset 0 1px 3px rgba(0,0,0,0.05)"
-                            }} 
-                          />
-                        ) : (
-                          <input 
-                            type="text" 
-                            value={editedReg[f.key] || ""} 
-                            onChange={(e) => setEditedReg(prev => ({ ...prev, [f.key]: e.target.value }))}
-                            style={{
-                              width: "100%",
-                              fontSize: ".95rem",
-                              color: "var(--tx)",
-                              background: "#fff",
-                              padding: "8px 12px",
-                              borderRadius: 6,
-                              border: "1px solid var(--bd)",
-                              boxSizing: "border-box",
-                              outline: "none",
-                              boxShadow: "inset 0 1px 3px rgba(0,0,0,0.05)"
-                            }} 
-                          />
-                        )}
-                      </div>
-                    );
-                  }
-
-                  return (
-                    <div key={f.key}>
-                      <div style={{fontSize:".75rem",color:"var(--mu)",fontWeight:600,marginBottom:4}}>{f.label}</div>
-                      <div style={{fontSize:".95rem",color:"var(--tx)",wordBreak:"break-word",background:"#FAFAFA",padding:"8px 12px",borderRadius:6,border:"1px solid #EEE"}}>{displayVal || "-"}</div>
+              <p style={{fontSize:".82rem",color:"#1E3A8A",margin:0,lineHeight:1.4}}>
+                100% Silent Background Delivery: All {activeRecipients.length} messages will be sent automatically with ZERO screen movements, popups, or tabs.
+              </p>
+            </div>
+          ) : (
+            <div style={{display:"flex",flexDirection:"column",gap:12}}>
+              
+              {/* Method 1: 1-Click Fast Sequential Tap Runner */}
+              <div style={{background:"#F0FDF4",border:"2px solid #22C55E",borderRadius:10,padding:"16px 18px",boxShadow:"0 2px 8px rgba(34,197,94,0.15)"}}>
+                <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:8,marginBottom:8}}>
+                  <div style={{display:"flex",alignItems:"center",gap:8}}>
+                    <span style={{fontSize:"1.3rem"}}>⚡</span>
+                    <div>
+                      <strong style={{fontSize:".95rem",color:"#14532D"}}>1-Click Fast Tap Runner (Keyboard: Enter / Space)</strong>
+                      <div style={{fontSize:".75rem",color:"#15803D"}}>Sends to {activeRecipients.length} {statusFilter === 'All' ? 'selected applicants' : statusFilter + ' students'}</div>
                     </div>
-                  );
-                })}
+                  </div>
 
-                {isEditing && (
-                  <button 
-                    onClick={async () => {
-                      setSaving(true);
-                      await saveVerification(editedReg, status, remarks);
-                      setSaving(false);
-                      setIsEditing(false);
-                    }}
-                    disabled={saving}
+                  <div style={{display:"flex",gap:4}}>
+                    <button
+                      type="button"
+                      onClick={() => { setLaunchMode("app"); localStorage.setItem("mmp_wa_launch_mode", "app"); }}
+                      style={{padding:"4px 10px",borderRadius:6,fontSize:".74rem",fontWeight:800,border:"none",background:launchMode==="app"?"#15803D":"#E2E8F0",color:launchMode==="app"?"white":"#475569",cursor:"pointer"}}
+                    >
+                      💻 WhatsApp App
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => { setLaunchMode("web"); localStorage.setItem("mmp_wa_launch_mode", "web"); }}
+                      style={{padding:"4px 10px",borderRadius:6,fontSize:".74rem",fontWeight:800,border:"none",background:launchMode==="web"?"#2563EB":"#E2E8F0",color:launchMode==="web"?"white":"#475569",cursor:"pointer"}}
+                    >
+                      🌐 Web Browser
+                    </button>
+                  </div>
+                </div>
+
+                <div style={{display:"flex",alignItems:"center",gap:12,flexWrap:"wrap",marginTop:10}}>
+                  <button
+                    type="button"
+                    onClick={() => executeSendItem(currentIndex)}
+                    disabled={broadcastDone || activeRecipients.length === 0}
                     style={{
-                      marginTop: 12,
-                      width: "100%",
-                      padding: "12px",
+                      padding: "11px 24px",
                       borderRadius: 8,
-                      background: "#333",
+                      background: (broadcastDone || activeRecipients.length === 0) ? "#15803D" : "linear-gradient(135deg, #22C55E, #15803D)",
                       color: "white",
                       border: "none",
-                      fontWeight: 700,
-                      fontSize: ".9rem",
-                      cursor: "pointer",
-                      boxShadow: "0 2px 6px rgba(0,0,0,0.15)"
+                      fontSize: ".95rem",
+                      fontWeight: 800,
+                      cursor: (broadcastDone || activeRecipients.length === 0) ? "default" : "pointer",
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 8,
+                      boxShadow: "0 3px 10px rgba(34,197,94,0.4)"
                     }}
                   >
-                    {saving ? "Saving..." : "💾 Save Details Only"}
+                    <span>{broadcastDone ? "✅" : "🟢"}</span>
+                    <span>{activeRecipients.length === 0 ? "No Students In This Bucket" : broadcastDone ? "All Done!" : `Send to ${currentName} (${currentStatus}) [Press Enter] →`}</span>
                   </button>
-                )}
 
-                {/* Audit Timeline / History Logs */}
-                <div style={{marginTop:24,paddingTop:16,borderTop:"1px dashed var(--bd)"}}>
-                  <div style={{fontSize:".85rem",fontWeight:700,color:"var(--dt)",marginBottom:12,display:"flex",alignItems:"center",gap:6}}>
-                    <span>📜 Activity & Verification Log History</span>
-                  </div>
-                  {(!viewing.logHistory || viewing.logHistory.length === 0) ? (
-                    <div style={{fontSize:".8rem",color:"var(--mu)",fontStyle:"italic",padding:"10px 12px",background:"#FAFAFA",borderRadius:8,border:"1px solid #EEE"}}>
-                      1st Entry Submitted on {new Date(viewing.timestamp || viewing._submittedAt || Date.now()).toLocaleString()}
-                    </div>
-                  ) : (
-                    <div style={{display:"flex",flexDirection:"column",gap:10}}>
-                      {viewing.logHistory.map((lg, lgIdx) => (
-                        <div key={lgIdx} style={{background:"#FAFAFA",border:"1px solid var(--bd)",borderRadius:8,padding:"10px 12px",position:"relative"}}>
-                          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:4}}>
-                            <span style={{fontSize:".75rem",fontWeight:800,color:lg.actor === 'User' ? "var(--sf)" : "#1E3A8A"}}>
-                              {lg.actor === 'User' ? "👤 User Action" : `🛡️ Admin (${lg.actor || 'Admin'})`}
-                            </span>
-                            <span style={{fontSize:".7rem",color:"var(--mu)"}}>
-                              {lg.timestamp ? new Date(lg.timestamp).toLocaleString() : ""}
-                            </span>
-                          </div>
-                          <div style={{fontSize:".82rem",fontWeight:700,color:"var(--dt)",marginBottom:2}}>
-                            {lg.action || lg.status || "Updated"}
-                          </div>
-                          <div style={{fontSize:".78rem",color:"var(--mu)",lineHeight:1.4}}>
-                            {lg.remarks || "No additional remarks"}
-                          </div>
-                        </div>
-                      ))}
+                  {!broadcastDone && activeRecipients.length > 0 && (
+                    <div style={{fontSize:".8rem",color:"#14532D",fontWeight:600}}>
+                      Tip: Just press <kbd style={{background:"#E2E8F0",padding:"2px 6px",borderRadius:4,border:"1px solid #CBD5E1",fontWeight:800}}>Enter</kbd> to rapidly send!
                     </div>
                   )}
                 </div>
               </div>
-            </div>
 
-            {/* Verification Controls */}
-            <div style={{padding:"16px 20px",background:"#FAFAFA",borderTop:"1px solid var(--bd)"}}>
-              <h4 style={{fontSize:".95rem",fontWeight:700,color:"var(--dt)",marginBottom:12}}>Verification Action</h4>
-              
-              <div style={{display:"grid",gridTemplateColumns:"120px 1fr",gap:12,marginBottom:12}}>
-                {/* Column 1: Vertical Buttons */}
-                <div style={{display:"flex",flexDirection:"column",gap:6}}>
-                  <button 
-                    onClick={()=>setStatus('Approved')} 
-                    style={{
-                      padding:"8px",
-                      borderRadius:6,
-                      fontWeight:600,
-                      fontSize:".8rem",
-                      cursor:"pointer",
-                      border:status==='Approved'?"2px solid #2E7D32":"1px solid #CCC",
-                      background:status==='Approved'?"#E8F5E9":"white",
-                      color:status==='Approved'?"#2E7D32":"var(--mu)",
-                      transition:"0.2s",
-                      textAlign:"left",
-                      paddingLeft:"10px"
-                    }}
-                  >
-                    ✓ Approve
-                  </button>
-                  <button 
-                    onClick={()=>setStatus('Needs Info')} 
-                    style={{
-                      padding:"8px",
-                      borderRadius:6,
-                      fontWeight:600,
-                      fontSize:".8rem",
-                      cursor:"pointer",
-                      border:status==='Needs Info'?"2px solid #EF6C00":"1px solid #CCC",
-                      background:status==='Needs Info'?"#FFF3E0":"white",
-                      color:status==='Needs Info'?"#EF6C00":"var(--mu)",
-                      transition:"0.2s",
-                      textAlign:"left",
-                      paddingLeft:"10px"
-                    }}
-                  >
-                    ⏸ Pause
-                  </button>
-                  <button 
-                    onClick={()=>setStatus('Disapproved')} 
-                    style={{
-                      padding:"8px",
-                      borderRadius:6,
-                      fontWeight:600,
-                      fontSize:".8rem",
-                      cursor:"pointer",
-                      border:status==='Disapproved'?"2px solid #C62828":"1px solid #CCC",
-                      background:status==='Disapproved'?"#FFEBEE":"white",
-                      color:status==='Disapproved'?"#C62828":"var(--mu)",
-                      transition:"0.2s",
-                      textAlign:"left",
-                      paddingLeft:"10px"
-                    }}
-                  >
-                    ✕ Reject
-                  </button>
+              {/* Method 2: Open in Batches */}
+              <div style={{background:"#F8FAFC",border:"1.5px solid #CBD5E1",borderRadius:10,padding:"14px 16px"}}>
+                <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:8,marginBottom:6}}>
+                  <div style={{display:"flex",alignItems:"center",gap:8}}>
+                    <span style={{fontSize:"1.1rem"}}>📂</span>
+                    <strong style={{fontSize:".88rem",color:"#0F172A"}}>Alternative: Open Batch in Tabs (Zero Screen Switching)</strong>
+                  </div>
+                  <div style={{display:"flex",alignItems:"center",gap:6}}>
+                    <span style={{fontSize:".78rem",color:"#475569"}}>Batch size:</span>
+                    <select value={batchSize} onChange={e=>setBatchSize(Number(e.target.value))} style={{padding:"3px 8px",borderRadius:6,border:"1px solid #CBD5E1",fontSize:".8rem",fontWeight:700}}>
+                      <option value={5}>5 chats</option>
+                      <option value={10}>10 chats</option>
+                      <option value={20}>20 chats</option>
+                    </select>
+                  </div>
                 </div>
-
-                {/* Column 2: Remarks TextArea */}
-                <div style={{display:"flex",flexDirection:"column"}}>
-                  <textarea 
-                    value={remarks} 
-                    onChange={e=>setRemarks(e.target.value)} 
-                    placeholder="Remarks / Reason (Optional)" 
-                    style={{
-                      width:"100%",
-                      height:"100%",
-                      minHeight:"92px",
-                      padding:"8px 10px",
-                      borderRadius:6,
-                      border:"1px solid var(--bd)",
-                      fontSize:".8rem",
-                      fontFamily:"inherit",
-                      resize:"none",
-                      boxSizing:"border-box"
-                    }} 
-                  />
-                </div>
+                <button
+                  type="button"
+                  onClick={() => openBatchInTabs(batchSize)}
+                  disabled={broadcastDone || activeRecipients.length === 0}
+                  style={{
+                    padding: "8px 16px",
+                    borderRadius: 8,
+                    background: "linear-gradient(135deg, #2563EB, #1D4ED8)",
+                    color: "white",
+                    border: "none",
+                    fontSize: ".85rem",
+                    fontWeight: 700,
+                    cursor: "pointer",
+                    boxShadow: "0 2px 8px rgba(37,99,235,0.25)",
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 6
+                  }}
+                >
+                  <span>🚀</span> Open Next {Math.min(batchSize, Math.max(0, activeRecipients.length - currentIndex))} Tabs (From #{currentIndex + 1})
+                </button>
               </div>
 
-              <button onClick={handleSave} disabled={saving} style={{width:"100%",padding:"12px",borderRadius:8,background:"var(--dt)",color:"white",border:"none",fontWeight:700,fontSize:".9rem",cursor:"pointer",opacity:saving?0.7:1,boxShadow:"0 4px 12px rgba(0,0,0,0.15)"}}>
-                {saving ? "Saving..." : "Save Verification"}
+              {/* Method 3: WhatsApp Official Broadcast List Numbers Export */}
+              <div style={{background:"#F0FDF4",border:"1.5px solid #86EFAC",borderRadius:10,padding:"12px 16px",display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:10}}>
+                <div>
+                  <strong style={{fontSize:".84rem",color:"#15803D"}}>Mobile Broadcast List ({statusFilter} Numbers)</strong>
+                  <div style={{fontSize:".75rem",color:"#166534",marginTop:2}}>
+                    Copy all {activeRecipients.length} phone numbers for this bucket to paste into WhatsApp.
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={handleCopyBroadcastList}
+                  style={{padding:"6px 14px",background:"white",border:"1.5px solid #15803D",color:"#15803D",borderRadius:6,fontSize:".78rem",fontWeight:700,cursor:"pointer"}}
+                >
+                  {copiedBroadcastNumbers ? "✅ Copied Number List!" : "📋 Copy Filtered Numbers"}
+                </button>
+              </div>
+
+            </div>
+          )}
+
+          {/* Progress Bar */}
+          {(broadcasting || broadcastDone || sentCount > 0) && (
+            <div style={{background:"#F8FAFC",border:"1px solid #E2E8F0",borderRadius:10,padding:"14px 16px"}}>
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8,fontSize:".82rem"}}>
+                <strong style={{color:"#0F172A"}}>Broadcast Progress ({statusFilter}):</strong>
+                <span style={{fontWeight:800,color:"#15803D"}}>
+                  {Math.min(sentCount, activeRecipients.length)} of {activeRecipients.length} Processed ({activeRecipients.length === 0 ? 0 : Math.min(100, Math.round(((sentCount) / activeRecipients.length) * 100))}%)
+                </span>
+              </div>
+              <div style={{width:"100%",height:10,background:"#E2E8F0",borderRadius:6,overflow:"hidden"}}>
+                <div
+                  style={{
+                    width: `${activeRecipients.length === 0 ? 0 : Math.min(100, Math.round(((sentCount) / activeRecipients.length) * 100))}%`,
+                    height: "100%",
+                    background: "linear-gradient(90deg, #22C55E, #15803D)",
+                    transition: "width 0.3s"
+                  }}
+                />
+              </div>
+              {failCount > 0 && (
+                <div style={{fontSize:".74rem",color:"#DC2626",marginTop:6,fontWeight:700}}>
+                  ⚠️ {failCount} recipients skipped due to invalid phone numbers.
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Sample Message Preview */}
+          {activeRecipients.length > 0 && (
+            <div>
+              <div style={{fontSize:".78rem",fontWeight:700,color:"#475569",marginBottom:6}}>
+                PREVIEW (Sample for 1st recipient: {String(activeRecipients[0]?.['Full Name'] || 'Student')} - Status: {String(activeRecipients[0]?.['Status'] || 'Pending')}):
+              </div>
+              <textarea
+                value={samplePreview}
+                readOnly
+                rows={5}
+                style={{
+                  width: "100%",
+                  padding: "10px 12px",
+                  borderRadius: 8,
+                  border: "1px solid #CBD5E1",
+                  fontSize: ".8rem",
+                  fontFamily: "monospace",
+                  background: "#FAFDF7",
+                  color: "#334155",
+                  boxSizing: "border-box"
+                }}
+              />
+            </div>
+          )}
+
+        </div>
+
+        {/* Footer Actions */}
+        <div style={{padding:"16px 24px",background:"#F8FAFC",borderTop:"1px solid #E2E8F0",display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:10}}>
+          <button onClick={onClose} style={{padding:"9px 16px",borderRadius:8,background:"white",border:"1px solid #CBD5E1",fontSize:".85rem",cursor:"pointer",fontWeight:600}}>
+            {broadcastDone ? "Done / Close" : "Cancel"}
+          </button>
+
+          {isApiEnabled ? (
+            <button
+              type="button"
+              onClick={startApiBroadcast}
+              disabled={broadcasting || broadcastDone || activeRecipients.length === 0}
+              style={{
+                padding: "10px 24px",
+                borderRadius: 8,
+                background: (broadcastDone || activeRecipients.length === 0) ? "#15803D" : "linear-gradient(135deg, #15803D, #166534)",
+                color: "white",
+                border: "none",
+                fontSize: ".9rem",
+                fontWeight: 800,
+                cursor: broadcasting ? "wait" : "pointer",
+                boxShadow: "0 2px 8px rgba(21,128,61,0.3)",
+                display: "flex",
+                alignItems: "center",
+                gap: 8
+              }}
+            >
+              <span>{broadcasting ? "⏳" : broadcastDone ? "✅" : "🚀"}</span>
+              <span>{broadcasting ? `Broadcasting (${currentIndex + 1}/${activeRecipients.length})...` : broadcastDone ? "All Messages Sent!" : `Send All ${activeRecipients.length} Messages in Background`}</span>
+            </button>
+          ) : (
+            <div style={{display:"flex",alignItems:"center",gap:8}}>
+              <span style={{fontSize:".8rem",color:"#64748B",fontWeight:600}}>
+                {activeRecipients.length === 0 ? "Empty Bucket" : currentIndex < activeRecipients.length ? `Next: ${currentName} (${currentStatus})` : "Complete!"}
+              </span>
+              <button
+                type="button"
+                onClick={() => executeSendItem(currentIndex)}
+                disabled={broadcastDone || activeRecipients.length === 0}
+                style={{
+                  padding: "10px 20px",
+                  borderRadius: 8,
+                  background: (broadcastDone || activeRecipients.length === 0) ? "#15803D" : "linear-gradient(135deg, #25D366, #15803D)",
+                  color: "white",
+                  border: "none",
+                  fontSize: ".88rem",
+                  fontWeight: 800,
+                  cursor: (broadcastDone || activeRecipients.length === 0) ? "default" : "pointer",
+                  boxShadow: "0 2px 8px rgba(37,211,102,0.35)",
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 6
+                }}
+              >
+                <span>{broadcastDone ? "✅" : "🟢"}</span>
+                <span>{activeRecipients.length === 0 ? "None" : broadcastDone ? "All Sent!" : `Send (${currentIndex + 1}/${activeRecipients.length}) [Enter] →`}</span>
+              </button>
+            </div>
+          )}
+        </div>
+
+      </div>
+    </div>
+  );
+}
+
+// ── Workspace-Specific Multi-Template Manager Modal ──────────────────────────────
+function WorkspaceWhatsAppTemplateModal({ event, C, setC, auth, onClose }) {
+  if (!event) return null;
+
+  const defaultTemplates = [
+    {
+      id: "tpl_student_pass",
+      name: "Official Student Invitation & Entry Pass",
+      isDefault: true,
+      text: C.whatsAppTplInvite || `🏛️ *MUMBAI MEGHWAL PANCHAYAT*\n🏆 *Education Felicitation 2026 - Official Invitation*\n═══════════════════════\nNamaste *{STUDENT_NAME}*,\n\nWe are pleased to invite you and your family as our esteemed guests of honor to the *Annual Student Education Felicitation 2026*.\n\n📋 *Invitation Pass Details:*\n• *Transaction / Pass ID:* {TXN_ID}\n• *Invitee Name:* {STUDENT_NAME}\n• *Vibhag:* {VIBHAG}\n• *Stream / Class:* {STREAM}\n\n📅 *Event Date:* 02-10-2026 (Friday)\n⏰ *Reporting Time:* 09:30 AM\n📍 *Venue:* Mumbai, Maharashtra\n\n👉 *View & Download Official PDF Invitation Letter & Pass:*\n{INVITE_PDF_LINK}\n\nPlease show this digital pass or downloaded invitation letter at the registration desk upon arrival.\n\nWarm regards,\n*Central Working Committee (CWC) & Education Board*\n*Mumbai Meghwal Panchayat & Vidya Gohil Trust*\n📞 Committee Helpline: {HELPLINE_PHONES}`
+    },
+    {
+      id: "tpl_vip_guest",
+      name: "VIP / Special Dignitary Invitation",
+      isDefault: false,
+      text: `🏛️ *MUMBAI MEGHWAL PANCHAYAT*\n🌟 *Special Dignitary Invitation - Education Felicitation 2026*\n═══════════════════════\nRespected *{STUDENT_NAME}* Ji,\n\nOn behalf of Mumbai Meghwal Panchayat & Vidya Gohil Charitable Trust, we cordially request the honor of your esteemed presence as our *Special Guest of Honor* at our upcoming Annual Education Felicitation Ceremony.\n\n📅 *Event Date:* 02-10-2026 (Friday)\n⏰ *Reporting Time:* 09:30 AM\n📍 *Venue:* Mumbai, Maharashtra\n\n👉 *View Official Digital Invitation Pass:*\n{INVITE_PDF_LINK}\n\nWe look forward to welcoming you and celebrating together.\n\nWarm regards,\n*President & Central Working Committee (CWC)*\n📞 Helpline: {HELPLINE_PHONES}`
+    },
+    {
+      id: "tpl_event_reminder",
+      name: "Event Reminder & Reporting Time Notice",
+      isDefault: false,
+      text: `🏛️ *MUMBAI MEGHWAL PANCHAYAT*\n⏰ *Gentle Reminder: Education Felicitation 2026*\n═══════════════════════\nNamaste *{STUDENT_NAME}*,\n\nThis is a gentle reminder that the *Annual Student Education Felicitation Ceremony* is scheduled for *02-10-2026 (Friday)*.\n\n• *Invitee Name:* {STUDENT_NAME}\n• *Pass / Txn ID:* {TXN_ID}\n• *Reporting Time:* 09:30 AM Sharp\n• *Venue:* Mumbai, Maharashtra\n\n👉 *Open Your Digital Pass on Mobile:*\n{INVITE_PDF_LINK}\n\nPlease carry your digital pass on your phone for smooth verification at the venue.\n\nWarm regards,\n*Event Management Team*`
+    }
+  ];
+
+  const currentTemplates = (event.whatsAppTemplates && event.whatsAppTemplates.length > 0) 
+    ? event.whatsAppTemplates 
+    : defaultTemplates;
+
+  const [templates, setTemplates] = useState(JSON.parse(JSON.stringify(currentTemplates)));
+  const [activeTplId, setActiveTplId] = useState(templates[0]?.id || "tpl_student_pass");
+  const [saving, setSaving] = useState(false);
+
+  const activeTpl = templates.find(t => t.id === activeTplId) || templates[0];
+
+  const handleUpdateActiveTpl = (field, val) => {
+    setTemplates(prev => prev.map(t => {
+      if (t.id === activeTplId) {
+        return { ...t, [field]: val };
+      }
+      if (field === 'isDefault' && val === true) {
+        return { ...t, isDefault: false };
+      }
+      return t;
+    }));
+  };
+
+  const handleAddNewTemplate = () => {
+    const newId = "tpl_" + Date.now();
+    const newTpl = {
+      id: newId,
+      name: `New Template ${templates.length + 1}`,
+      isDefault: false,
+      text: `🏛️ *MUMBAI MEGHWAL PANCHAYAT*\n🏆 *{EVENT_NAME}*\n═══════════════════════\nNamaste *{STUDENT_NAME}*,\n\n[Write your custom message here]\n\n👉 *Invitation Pass:* {INVITE_PDF_LINK}\n\n📞 Helpline: {HELPLINE_PHONES}`
+    };
+    setTemplates(prev => [...prev, newTpl]);
+    setActiveTplId(newId);
+  };
+
+  const handleDeleteTemplate = (idToDelete) => {
+    if (templates.length <= 1) {
+      alert("At least one template must remain in this workspace.");
+      return;
+    }
+    const tplToDelete = templates.find(t => t.id === idToDelete);
+    if (tplToDelete?.isDefault) {
+      alert("Cannot delete the default template. Please mark another template as default first.");
+      return;
+    }
+    if (!window.confirm(`Are you sure you want to delete template "${tplToDelete?.name}"?`)) return;
+
+    const remaining = templates.filter(t => t.id !== idToDelete);
+    setTemplates(remaining);
+    setActiveTplId(remaining[0].id);
+  };
+
+  const handleSaveAll = async () => {
+    setSaving(true);
+    try {
+      const updatedEvents = (C.events || []).map(e => {
+        if (e.id === event.id || e.title === event.title) {
+          return { ...e, whatsAppTemplates: templates };
+        }
+        return e;
+      });
+
+      const updatedC = { ...C, events: updatedEvents };
+      if (setC) setC(updatedC);
+      await fbSave(updatedC, auth?.idToken);
+      alert("✅ Workspace WhatsApp Templates saved successfully!");
+      onClose();
+    } catch (err) {
+      console.error(err);
+      alert("Failed to save templates: " + err.message);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const insertPlaceholder = (ph) => {
+    if (!activeTpl) return;
+    const cur = activeTpl.text || "";
+    handleUpdateActiveTpl("text", cur + ph);
+  };
+
+  return (
+    <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.65)",zIndex:100003,display:"flex",alignItems:"center",justifyContent:"center",padding:16}} onClick={onClose}>
+      <div style={{background:"white",borderRadius:16,maxWidth:850,width:"100%",maxHeight:"90vh",display:"flex",flexDirection:"column",overflow:"hidden",boxShadow:"0 25px 50px -12px rgba(0,0,0,0.35)"}} onClick={e=>e.stopPropagation()}>
+        
+        {/* Header */}
+        <div style={{padding:"18px 24px",background:"linear-gradient(135deg, #15803D, #166534)",color:"white",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+          <div>
+            <h3 style={{fontSize:"1.15rem",fontWeight:800,margin:0,display:"flex",alignItems:"center",gap:8}}>
+              <span>📝</span> WhatsApp Templates for: {event.title || "Workspace"}
+            </h3>
+            <div style={{fontSize:".8rem",opacity:0.9,marginTop:2}}>
+              Create and manage multiple customizable WhatsApp message templates specific to this event.
+            </div>
+          </div>
+          <button onClick={onClose} style={{background:"rgba(255,255,255,0.2)",border:"none",borderRadius:"50%",width:32,height:32,color:"white",cursor:"pointer",fontWeight:800}}>✕</button>
+        </div>
+
+        {/* Body */}
+        <div style={{display:"flex",flex:1,overflow:"hidden"}}>
+          
+          {/* Left: Templates List */}
+          <div style={{width:260,borderRight:"1px solid #E2E8F0",background:"#F8FAFC",display:"flex",flexDirection:"column"}}>
+            <div style={{padding:"12px 14px",borderBottom:"1px solid #E2E8F0",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+              <span style={{fontSize:".75rem",fontWeight:700,color:"#475569",textTransform:"uppercase"}}>Templates ({templates.length})</span>
+              <button
+                type="button"
+                onClick={handleAddNewTemplate}
+                style={{padding:"4px 8px",background:"#15803D",color:"white",border:"none",borderRadius:6,fontSize:".75rem",fontWeight:700,cursor:"pointer",display:"flex",alignItems:"center",gap:4}}
+              >
+                <span>+</span> Add New
               </button>
             </div>
 
+            <div style={{flex:1,overflowY:"auto",padding:8,display:"flex",flexDirection:"column",gap:6}}>
+              {templates.map(t => {
+                const isActive = t.id === activeTplId;
+                return (
+                  <div
+                    key={t.id}
+                    onClick={() => setActiveTplId(t.id)}
+                    style={{
+                      padding:"10px 12px",
+                      borderRadius:8,
+                      border:isActive ? "2px solid #15803D" : "1px solid #E2E8F0",
+                      background:isActive ? "#F0FDF4" : "white",
+                      cursor:"pointer",
+                      display:"flex",
+                      flexDirection:"column",
+                      gap:4,
+                      transition:"all 0.15s"
+                    }}
+                  >
+                    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+                      <span style={{fontSize:".82rem",fontWeight:700,color:isActive ? "#15803D" : "#0F172A",lineHeight:1.3}}>
+                        {t.name}
+                      </span>
+                      {t.isDefault && (
+                        <span style={{background:"#DCFCE7",color:"#15803D",padding:"1px 6px",borderRadius:4,fontSize:".65rem",fontWeight:800}}>
+                          Default
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Right: Active Template Editor */}
+          {activeTpl && (
+            <div style={{flex:1,padding:"20px 24px",overflowY:"auto",display:"flex",flexDirection:"column",gap:14}}>
+              
+              {/* Template Name & Default Switch */}
+              <div style={{display:"flex",gap:12,alignItems:"flex-end",flexWrap:"wrap"}}>
+                <div style={{flex:1,minWidth:220}}>
+                  <label style={{display:"block",fontSize:".75rem",fontWeight:700,color:"#475569",marginBottom:4}}>TEMPLATE NAME</label>
+                  <input
+                    type="text"
+                    value={activeTpl.name}
+                    onChange={e => handleUpdateActiveTpl("name", e.target.value)}
+                    style={{width:"100%",padding:"8px 12px",borderRadius:8,border:"1px solid #CBD5E1",fontSize:".88rem",fontWeight:600,boxSizing:"border-box"}}
+                  />
+                </div>
+
+                <div style={{display:"flex",alignItems:"center",gap:10}}>
+                  <label style={{display:"flex",alignItems:"center",gap:6,cursor:"pointer",fontSize:".82rem",fontWeight:700,color:"#15803D",background:"#F0FDF4",padding:"8px 12px",borderRadius:8,border:"1px solid #BBF7D0"}}>
+                    <input
+                      type="checkbox"
+                      checked={activeTpl.isDefault || false}
+                      onChange={e => handleUpdateActiveTpl("isDefault", e.target.checked)}
+                      style={{cursor:"pointer"}}
+                    />
+                    <span>Set as Default Template</span>
+                  </label>
+
+                  {templates.length > 1 && !activeTpl.isDefault && (
+                    <button
+                      type="button"
+                      onClick={() => handleDeleteTemplate(activeTpl.id)}
+                      style={{padding:"8px 12px",background:"#FEF2F2",border:"1px solid #FECACA",color:"#DC2626",borderRadius:8,fontSize:".8rem",fontWeight:700,cursor:"pointer"}}
+                      title="Delete this template"
+                    >
+                      🗑️ Delete
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              {/* Placeholder Pills & URL Builder Helper */}
+              <div>
+                <div style={{fontSize:".75rem",fontWeight:700,color:"#475569",marginBottom:6}}>INSERT PERSONALIZED PLACEHOLDERS:</div>
+                <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:10}}>
+                  {[
+                    '{EVENT_NAME}',
+                    '{PORTAL_NAME}',
+                    '{STUDENT_NAME}',
+                    '{TXN_ID}',
+                    '{DATE}',
+                    '{VENUE}',
+                    '{INVITE_PDF_LINK}',
+                    '{CERTIFICATE_LINK}',
+                    '{PORTAL_URL}',
+                    '{VIBHAG}',
+                    '{STREAM}',
+                    '{PERCENTAGE}',
+                    '{HELPLINE_PHONES}'
+                  ].map(ph => (
+                    <button
+                      key={ph}
+                      type="button"
+                      onClick={() => insertPlaceholder(' ' + ph)}
+                      style={{
+                        padding:"5px 10px",
+                        background: ph.includes('EVENT') ? "#FEF3C7" : ph.includes('CERTIFICATE') ? "#EFF6FF" : ph.includes('INVITE') ? "#F0FDF4" : "#F1F5F9",
+                        border: ph.includes('EVENT') ? "1.5px solid #F59E0B" : ph.includes('CERTIFICATE') ? "1px solid #93C5FD" : ph.includes('INVITE') ? "1px solid #86EFAC" : "1px solid #CBD5E1",
+                        color: ph.includes('EVENT') ? "#92400E" : ph.includes('CERTIFICATE') ? "#1D4ED8" : ph.includes('INVITE') ? "#15803D" : "#334155",
+                        borderRadius:6,
+                        fontSize:".75rem",
+                        fontWeight:800,
+                        cursor:"pointer",
+                        boxShadow: ph.includes('EVENT') ? "0 1px 4px rgba(245,158,11,0.2)" : "none"
+                      }}
+                    >
+                      + {ph}
+                    </button>
+                  ))}
+                </div>
+
+                {/* Interactive Direct URL Builder & Copy Helper (Supports all Custom PDF Templates) */}
+                <div style={{background:"#F8FAFC",border:"1px solid #CBD5E1",borderRadius:8,padding:"10px 12px",display:"flex",flexDirection:"column",gap:8}}>
+                  <div style={{fontSize:".74rem",fontWeight:800,color:"#334155"}}>🔗 DIRECT URL GENERATOR HELPER:</div>
+                  <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,background:"white",padding:"6px 10px",borderRadius:6,border:"1px solid #E2E8F0"}}>
+                    <span style={{fontSize:".75rem",color:"#1E293B",fontFamily:"monospace",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>
+                      🎓 <strong>Certificate URL:</strong> https://pradeepparmar902.github.io/MY_Community_Website/?cert={'{TXN_ID}'}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        insertPlaceholder(' https://pradeepparmar902.github.io/MY_Community_Website/?cert={TXN_ID}');
+                        alert("Inserted Certificate URL into template!");
+                      }}
+                      style={{padding:"3px 8px",background:"#2563EB",color:"white",border:"none",borderRadius:4,fontSize:".7rem",fontWeight:700,cursor:"pointer",whiteSpace:"nowrap"}}
+                    >
+                      + Insert in Template
+                    </button>
+                  </div>
+
+                  <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,background:"white",padding:"6px 10px",borderRadius:6,border:"1px solid #E2E8F0"}}>
+                    <span style={{fontSize:".75rem",color:"#1E293B",fontFamily:"monospace",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>
+                      💌 <strong>Invite Pass URL:</strong> https://pradeepparmar902.github.io/MY_Community_Website/?invite={'{TXN_ID}'}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        insertPlaceholder(' https://pradeepparmar902.github.io/MY_Community_Website/?invite={TXN_ID}');
+                        alert("Inserted Invite Pass URL into template!");
+                      }}
+                      style={{padding:"3px 8px",background:"#15803D",color:"white",border:"none",borderRadius:4,fontSize:".7rem",fontWeight:700,cursor:"pointer",whiteSpace:"nowrap"}}
+                    >
+                      + Insert in Template
+                    </button>
+                  </div>
+
+                  {/* List each custom PDF template created for this event */}
+                  {(event?.pdfTemplates || []).map(tpl => {
+                    const customLink = `https://pradeepparmar902.github.io/MY_Community_Website/?doc=${tpl.id}&pass={TXN_ID}`;
+                    return (
+                      <div key={tpl.id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,background:"#F0FDF4",padding:"6px 10px",borderRadius:6,border:"1px solid #86EFAC"}}>
+                        <span style={{fontSize:".75rem",color:"#166534",fontFamily:"monospace",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>
+                          📄 <strong>${tpl.name}:</strong> ${customLink}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            insertPlaceholder(` ${customLink}`);
+                            alert(`Inserted "${tpl.name}" URL into template!`);
+                          }}
+                          style={{padding:"3px 8px",background:"#15803D",color:"white",border:"none",borderRadius:4,fontSize:".7rem",fontWeight:700,cursor:"pointer",whiteSpace:"nowrap"}}
+                        >
+                          + Insert in Template
+                        </button>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Message Textarea */}
+              <div style={{flex:1,display:"flex",flexDirection:"column"}}>
+                <label style={{display:"block",fontSize:".75rem",fontWeight:700,color:"#475569",marginBottom:4}}>MESSAGE CONTENT (WHATSAPP FORMATTED)</label>
+                <textarea
+                  value={activeTpl.text || ""}
+                  onChange={e => handleUpdateActiveTpl("text", e.target.value)}
+                  rows={12}
+                  style={{width:"100%",padding:"12px 14px",borderRadius:8,border:"1px solid #CBD5E1",fontSize:".85rem",lineHeight:1.5,fontFamily:"monospace",boxSizing:"border-box",background:"white",resize:"vertical"}}
+                />
+              </div>
+
+            </div>
+          )}
+
+        </div>
+
+        {/* Footer */}
+        <div style={{padding:"14px 24px",background:"#F8FAFC",borderTop:"1px solid #E2E8F0",display:"flex",justifyContent:"flex-end",gap:10}}>
+          <button onClick={onClose} style={{padding:"8px 18px",borderRadius:8,background:"white",border:"1px solid #CBD5E1",fontSize:".85rem",cursor:"pointer",fontWeight:600}}>
+            Cancel
+          </button>
+          <button
+            onClick={handleSaveAll}
+            disabled={saving}
+            style={{padding:"8px 24px",borderRadius:8,background:"#15803D",color:"white",border:"none",fontSize:".85rem",fontWeight:700,cursor:saving ? "wait" : "pointer"}}
+          >
+            {saving ? "Saving Templates..." : "💾 Save Workspace Templates"}
+          </button>
+        </div>
+
+      </div>
+    </div>
+  );
+}
+
+// ── WhatsApp Applicant Communication Modal ───────────────────────────────────────
+function WhatsAppApplicantMessengerModal({ reg, onClose, C, auth, onLogSent, allRegs = [], onSelectReg }) {
+  if (!reg) return null;
+
+  const rawName = String(reg['Full Name'] || reg['Submitted By'] || reg['Participant Name'] || reg.name || 'Applicant').replace(/\|/g, ' ').trim();
+  const rawMobile = String(reg['Mobile Number'] || reg.submitterMob || reg['Alternate Mobile Number'] || reg.phone || '').replace(/\D/g, '').slice(-10);
+  const [recipientMobile, setRecipientMobile] = useState(rawMobile);
+  const txnId = reg['Transaction ID'] || reg.transactionId || reg.id || 'N/A';
+  const vibhag = reg['Vibhag'] || reg.vibhag || reg['MMP Vibhag'] || 'All Vibhags';
+  const stream = reg['Stream / Class'] || reg['Stream'] || reg['Course'] || 'N/A';
+  const percentage = reg['% Obtained'] || reg.percentage || reg['Marks / Percentage'] || 'N/A';
+  const currentStatus = reg['Status'] || reg.status || 'Pending';
+  const remarks = reg['Remarks'] || reg.remarks || 'Application under review';
+
+  const currentIndex = allRegs.findIndex(r => r.id === reg.id || (r['Transaction ID'] && r['Transaction ID'] === reg['Transaction ID']));
+  const totalCount = allRegs.length;
+
+  const evName = reg.eventName || reg.eventTitle || reg.eventId || "Education felicitation 2026";
+  const eventObj = (C.events || []).find(e => e.id === reg.eventId || e.title === evName || e.titleGu === evName);
+  
+  const defaultWorkspaceTemplates = [
+    {
+      id: "tpl_student_pass",
+      name: "Official Student Invitation & Entry Pass",
+      isDefault: true,
+      text: C.whatsAppTplInvite || `🏛️ *MUMBAI MEGHWAL PANCHAYAT*\n🏆 *Education Felicitation 2026 - Official Invitation*\n═══════════════════════\nNamaste *{STUDENT_NAME}*,\n\nWe are pleased to invite you and your family as our esteemed guests of honor to the *Annual Student Education Felicitation 2026*.\n\n📋 *Invitation Pass Details:*\n• *Transaction / Pass ID:* {TXN_ID}\n• *Invitee Name:* {STUDENT_NAME}\n• *Vibhag:* {VIBHAG}\n• *Stream / Class:* {STREAM}\n\n📅 *Event Date:* 02-10-2026 (Friday)\n⏰ *Reporting Time:* 09:30 AM\n📍 *Venue:* Mumbai, Maharashtra\n\n👉 *View & Download Official PDF Invitation Letter & Pass:*\n{INVITE_PDF_LINK}\n\nPlease show this digital pass or downloaded invitation letter at the registration desk upon arrival.\n\nWarm regards,\n*Central Working Committee (CWC) & Education Board*\n*Mumbai Meghwal Panchayat & Vidya Gohil Trust*\n📞 Committee Helpline: {HELPLINE_PHONES}`
+    },
+    {
+      id: "tpl_vip_guest",
+      name: "VIP / Special Dignitary Invitation",
+      isDefault: false,
+      text: `🏛️ *MUMBAI MEGHWAL PANCHAYAT*\n🌟 *Special Dignitary Invitation - Education Felicitation 2026*\n═══════════════════════\nRespected *{STUDENT_NAME}* Ji,\n\nOn behalf of Mumbai Meghwal Panchayat & Vidya Gohil Charitable Trust, we cordially request the honor of your esteemed presence as our *Special Guest of Honor* at our upcoming Annual Education Felicitation Ceremony.\n\n📅 *Event Date:* 02-10-2026 (Friday)\n⏰ *Reporting Time:* 09:30 AM\n📍 *Venue:* Mumbai, Maharashtra\n\n👉 *View Official Digital Invitation Pass:*\n{INVITE_PDF_LINK}\n\nWe look forward to welcoming you and celebrating together.\n\nWarm regards,\n*President & Central Working Committee (CWC)*\n📞 Helpline: {HELPLINE_PHONES}`
+    },
+    {
+      id: "tpl_event_reminder",
+      name: "Event Reminder & Reporting Time Notice",
+      isDefault: false,
+      text: `🏛️ *MUMBAI MEGHWAL PANCHAYAT*\n⏰ *Gentle Reminder: Education Felicitation 2026*\n═══════════════════════\nNamaste *{STUDENT_NAME}*,\n\nThis is a gentle reminder that the *Annual Student Education Felicitation Ceremony* is scheduled for *02-10-2026 (Friday)*.\n\n• *Invitee Name:* {STUDENT_NAME}\n• *Pass / Txn ID:* {TXN_ID}\n• *Reporting Time:* 09:30 AM Sharp\n• *Venue:* Mumbai, Maharashtra\n\n👉 *Open Your Digital Pass on Mobile:*\n{INVITE_PDF_LINK}\n\nPlease carry your digital pass on your phone for smooth verification at the venue.\n\nWarm regards,\n*Event Management Team*`
+    }
+  ];
+
+  const workspaceTemplates = (eventObj?.whatsAppTemplates && eventObj.whatsAppTemplates.length > 0)
+    ? eventObj.whatsAppTemplates
+    : defaultWorkspaceTemplates;
+
+  const defaultTpl = workspaceTemplates.find(t => t.isDefault) || workspaceTemplates[0];
+  const [selectedTplId, setSelectedTplId] = useState(defaultTpl?.id || "tpl_student_pass");
+
+  const formatTemplateString = (tplString, rName, rMobile, rTxn, rVibhag, rStream, rPct, rRemarks) => {
+    const baseUrl = `${C.whatsAppPortalUrl || "https://pradeepparmar902.github.io/MY_Community_Website/"}`.replace(/\/?$/, '');
+    const certUrl = `${baseUrl}/?cert=${encodeURIComponent(rTxn || "")}`;
+    const inviteUrl = `${baseUrl}/?invite=${encodeURIComponent(rTxn || "")}`;
+    const docUrl = reg.customDocId ? `${baseUrl}/?doc=${encodeURIComponent(reg.customDocId)}&pass=${encodeURIComponent(rTxn || "")}` : null;
+    const portalName = C.trust?.name || "Mumbai Meghwal Panchayat & Vidya Gohil Trust";
+
+    const evTitle = eventObj?.title || reg.eventName || reg.eventTitle || reg.eventId || "Event";
+    const evDate = eventObj?.date ? `${eventObj.date} ${eventObj.month || ''}`.trim() : (reg.Date || reg.eventDate || "2026");
+    const evVenue = eventObj?.location || reg.location || reg.venue || "Mumbai";
+
+    let processed = (tplString || "")
+      .replace(/\{PORTAL_NAME\}/g, portalName)
+      .replace(/\{WEBSITE_NAME\}/g, portalName)
+      .replace(/\{TRUST_NAME\}/g, portalName)
+      .replace(/\{PORTAL_TITLE\}/g, portalName)
+      .replace(/\{EVENT_NAME\}/g, evTitle)
+      .replace(/\{EVENT_TITLE\}/g, evTitle)
+      .replace(/\{EVENT\}/g, evTitle)
+      .replace(/\{DATE\}/g, evDate)
+      .replace(/\{EVENT_DATE\}/g, evDate)
+      .replace(/\{VENUE\}/g, evVenue)
+      .replace(/\{LOCATION\}/g, evVenue)
+      .replace(/\{MEMBER_NAME\}/g, rName || "Member")
+      .replace(/\{STUDENT_NAME\}/g, rName || "Student")
+      .replace(/\{TXN_ID\}/g, rTxn || "N/A")
+      .replace(/\{VIBHAG\}/g, rVibhag || "All Vibhags")
+      .replace(/\{STREAM\}/g, rStream || "N/A")
+      .replace(/\{PERCENTAGE\}/g, rPct || "N/A")
+      .replace(/\{REMARKS\}/g, rRemarks || "Application under review")
+      .replace(/\{MOBILE\}/g, rMobile || "")
+      .replace(/\{CERTIFICATE_LINK\}/g, certUrl)
+      .replace(/\{CERTIFICATE_URL\}/g, certUrl)
+      .replace(/\{INVITE_PDF_LINK\}/g, inviteUrl)
+      .replace(/\{INVITE_LINK\}/g, inviteUrl)
+      .replace(/\{PASS_LINK\}/g, docUrl || inviteUrl)
+      .replace(/\{PORTAL_URL\}/g, baseUrl)
+      .replace(/\{WEBSITE_URL\}/g, baseUrl)
+      .replace(/\{WEBSITE_HOME\}/g, baseUrl)
+      .replace(/\{HELPLINE_PHONES\}/g, C.whatsAppHelpline || C.trust?.phone || "+91 9820785209 / +91 9967821964")
+      .replace(/\{ADMIN_MOBILE\}/g, C.whatsAppHelpline || C.trust?.phone || "+91 9820785209");
+
+    return processed;
+  };
+
+  const buildTemplateForStatus = (st, rName, rMobile, rTxn, rVibhag, rStream, rPct, rRemarks) => {
+    if (reg.isInviteMode) {
+      const activeTpl = workspaceTemplates.find(t => t.id === selectedTplId) || defaultTpl;
+      return formatTemplateString(activeTpl ? activeTpl.text : (C.whatsAppTplInvite || ""), rName, rMobile, rTxn, rVibhag, rStream, rPct, rRemarks);
+    }
+
+    let tpl = "";
+    if (st === "Approved") {
+      tpl = C.whatsAppTplApproved || `🏛️ *MUMBAI MEGHWAL PANCHAYAT*\n🏆 *Education Felicitation 2026*\n═══════════════════════\nNamaste *{STUDENT_NAME}*,\n\n🎉 Hearty Congratulations! Your application for *Education Felicitation 2026* has been *APPROVED* by the Verification Committee.\n\n📋 *Application Details:*\n• *Transaction ID:* {TXN_ID}\n• *Student Name:* {STUDENT_NAME}\n• *Vibhag:* {VIBHAG}\n• *Stream / Class:* {STREAM}\n• *Percentage:* {PERCENTAGE}%\n• *Status:* 🟢 *Approved & Verified*\n\n📅 *Event Date:* 02-10-2026\n📍 *Venue:* Mumbai (Official venue, schedule & invitation letter will be shared soon)\n\n👉 View your application & student certificate on your dashboard:\n{PORTAL_URL}\n\nWarm regards,\n*Mumbai Meghwal Panchayat & Vidya Gohil Trust*\n📞 Committee Helpline: {HELPLINE_PHONES}`;
+    } else if (st === "Needs Info") {
+      tpl = C.whatsAppTplNeedsInfo || `🏛️ *MUMBAI MEGHWAL PANCHAYAT*\n🏆 *Education Felicitation 2026*\n═══════════════════════\nNamaste *{STUDENT_NAME}*,\n\nYour application (*{TXN_ID}*) for *Education Felicitation 2026* requires additional information or document correction for verification.\n\n⚠️ *Committee Remarks / Action Required:*\n👉 *{REMARKS}*\n\n📝 *How to Update Your Application:*\n1. Open portal: {PORTAL_URL}\n2. Log in with registered mobile: *+91 {MOBILE}*\n3. Go to *My Dashboard* > *Registrations*\n4. Click *Edit & Resubmit* and update the requested document/details.\n\nPlease complete this at the earliest to confirm your felicitation eligibility.\n\nWarm regards,\n*Education Verification Committee*\n📞 Committee Helpline: {HELPLINE_PHONES}`;
+    } else if (st === "Disapproved") {
+      tpl = C.whatsAppTplDisapproved || `🏛️ *MUMBAI MEGHWAL PANCHAYAT*\n🏆 *Education Felicitation 2026*\n═══════════════════════\nNamaste *{STUDENT_NAME}*,\n\nRegarding your application (*{TXN_ID}*) for *Education Felicitation 2026*.\n\n• *Status:* 🔴 *Not Approved*\n• *Reason / Remarks:* {REMARKS}\n\nIf you believe this is an error or need clarification, please contact your Vibhag Committee Member or our helpline.\n\nWarm regards,\n*Education Committee*\n📞 Helpline: +91 9820785209`;
+    } else {
+      tpl = C.whatsAppTplPending || `🏛️ *MUMBAI MEGHWAL PANCHAYAT*\n🏆 *Education Felicitation 2026*\n═══════════════════════\nNamaste *{STUDENT_NAME}*,\n\nThank you for submitting your registration for *Education Felicitation 2026*.\n\n📋 *Application Summary:*\n• *Transaction ID:* {TXN_ID}\n• *Student Name:* {STUDENT_NAME}\n• *Vibhag:* {VIBHAG}\n• *Stream / Class:* {STREAM}\n• *Current Status:* ⏳ *Under Verification / Review*\n\nOur Verification Committee is currently reviewing your submitted details and documents. You will receive an update once the verification is completed.\n\n👉 Track your live application status on your student dashboard:\n{PORTAL_URL}\n\nWarm regards,\n*Mumbai Meghwal Panchayat & Vidya Gohil Trust*\n📞 Committee Helpline: {HELPLINE_PHONES}`;
+    }
+
+    return formatTemplateString(tpl, rName, rMobile, rTxn, rVibhag, rStream, rPct, rRemarks);
+  };
+
+  const [customMessage, setCustomMessage] = useState(() => {
+    if (reg.isInviteMode && defaultTpl) {
+      return formatTemplateString(defaultTpl.text, rawName, rawMobile, txnId, vibhag, stream, percentage, remarks);
+    }
+    return buildTemplateForStatus(currentStatus, rawName, rawMobile, txnId, vibhag, stream, percentage, remarks);
+  });
+
+  const handleTemplateSelectChange = (tplId) => {
+    setSelectedTplId(tplId);
+    const chosen = workspaceTemplates.find(t => t.id === tplId);
+    if (chosen) {
+      setCustomMessage(formatTemplateString(chosen.text, rawName, recipientMobile, txnId, vibhag, stream, percentage, remarks));
+    }
+  };
+
+  useEffect(() => {
+    const freshMobile = String(reg['Mobile Number'] || reg.submitterMob || reg['Alternate Mobile Number'] || reg.phone || '').replace(/\D/g, '').slice(-10);
+    setRecipientMobile(freshMobile);
+    const freshStatus = reg['Status'] || reg.status || 'Pending';
+    const freshRemarks = reg['Remarks'] || reg.remarks || 'Application under review';
+    const freshName = String(reg['Full Name'] || reg['Submitted By'] || reg['Participant Name'] || reg.name || 'Applicant').replace(/\|/g, ' ').trim();
+    const freshTxn = reg['Transaction ID'] || reg.transactionId || reg.id || 'N/A';
+    const freshVibhag = reg['Vibhag'] || reg.vibhag || reg['MMP Vibhag'] || 'All Vibhags';
+    const freshStream = reg['Stream / Class'] || reg['Stream'] || reg['Course'] || 'N/A';
+    const freshPct = reg['% Obtained'] || reg.percentage || reg['Marks / Percentage'] || 'N/A';
+
+    if (reg.isInviteMode) {
+      const activeDef = workspaceTemplates.find(t => t.isDefault) || workspaceTemplates[0];
+      const targetId = activeDef?.id || selectedTplId;
+      setSelectedTplId(targetId);
+      const chosen = workspaceTemplates.find(t => t.id === targetId) || activeDef;
+      if (chosen) {
+        setCustomMessage(formatTemplateString(chosen.text, freshName, freshMobile, freshTxn, freshVibhag, freshStream, freshPct, freshRemarks));
+      }
+    } else {
+      setCustomMessage(buildTemplateForStatus(freshStatus, freshName, freshMobile, freshTxn, freshVibhag, freshStream, freshPct, freshRemarks));
+    }
+  }, [reg, C.events]);
+
+  const [copied, setCopied] = useState(false);
+  const [launchMode, setLaunchMode] = useState(() => localStorage.getItem("mmp_wa_launch_mode") || "web");
+
+  const handleCopy = () => {
+    navigator.clipboard.writeText(customMessage);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+
+  const [sendingApi, setSendingApi] = useState(false);
+  const [sendSuccess, setSendSuccess] = useState(false);
+
+  const handleSendWhatsApp = async () => {
+    const cleanPhone = String(recipientMobile).replace(/\D/g, '').slice(-10);
+    if (!cleanPhone || cleanPhone.length < 10) {
+      alert("Please enter a valid 10-digit mobile number for the applicant.");
+      return;
+    }
+
+    const gateway = C.whatsAppGateway || {};
+    if (gateway.enabled && gateway.instanceId && gateway.token) {
+      try {
+        setSendingApi(true);
+        let apiUrl = "";
+        let payload = {};
+
+        let res = null;
+        if (gateway.provider === "meta") {
+          apiUrl = `https://graph.facebook.com/v19.0/${gateway.instanceId}/messages`;
+          res = await fetch(apiUrl, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              "Authorization": `Bearer ${gateway.token}`
+            },
+            body: JSON.stringify({
+              messaging_product: "whatsapp",
+              recipient_type: "individual",
+              to: `91${cleanPhone}`,
+              type: "text",
+              text: { preview_url: true, body: customMessage }
+            })
+          });
+        } else if (gateway.provider === "greenapi") {
+          apiUrl = `https://api.green-api.com/waInstance${gateway.instanceId}/sendMessage/${gateway.token}`;
+          payload = { chatId: `91${cleanPhone}@c.us`, message: customMessage };
+          res = await fetch(apiUrl, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload)
+          });
+        } else {
+          apiUrl = `https://api.ultramsg.com/${gateway.instanceId}/messages/chat`;
+          payload = { token: gateway.token, to: `+91${cleanPhone}`, body: customMessage };
+          res = await fetch(apiUrl, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload)
+          });
+        }
+
+        if (res.ok) {
+          setSendSuccess(true);
+          setTimeout(() => {
+            setSendSuccess(false);
+            onClose();
+          }, 1500);
+          return;
+        }
+      } catch (err) {
+        console.warn("Direct WhatsApp API error, falling back to Web launch:", err);
+      } finally {
+        setSendingApi(false);
+      }
+    }
+
+    try { navigator.clipboard.writeText(customMessage); } catch(e){}
+
+    if (launchMode === "app") {
+      const appUrl = `whatsapp://send?phone=91${cleanPhone}&text=${encodeURIComponent(customMessage)}`;
+      window.location.href = appUrl;
+      return;
+    }
+
+    const msgTypeName = reg.isInviteMode 
+      ? "Official Invitation Pass" 
+      : `${currentStatus} Notice`;
+
+    if (typeof onLogSent === "function") {
+      try { onLogSent(reg, msgTypeName); } catch(e){}
+    }
+
+    const webUrl = `https://web.whatsapp.com/send?phone=91${cleanPhone}&text=${encodeURIComponent(customMessage)}`;
+    window.open(webUrl, "_blank");
+  };
+
+  return (
+    <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.65)",zIndex:100001,display:"flex",alignItems:"center",justifyContent:"center",padding:16}} onClick={onClose}>
+      <div style={{background:"white",borderRadius:16,maxWidth:620,width:"100%",maxHeight:"90vh",display:"flex",flexDirection:"column",overflow:"hidden",boxShadow:"0 20px 40px rgba(0,0,0,0.35)"}} onClick={e=>e.stopPropagation()}>
+        
+        {/* Header */}
+        <div style={{padding:"16px 20px",background:"linear-gradient(135deg, #15803D, #166534)",color:"white",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+          <div style={{display:"flex",alignItems:"center",gap:10}}>
+            <span style={{fontSize:"1.4rem"}}>💬</span>
+            <div>
+              <h3 style={{fontSize:"1.1rem",fontWeight:700,margin:0}}>Send WhatsApp Update to Applicant</h3>
+              <div style={{fontSize:".75rem",opacity:0.85,marginTop:2}}>
+                {rawName} • {txnId} • {vibhag}
+              </div>
+            </div>
+          </div>
+          <button onClick={onClose} style={{background:"rgba(255,255,255,0.2)",border:"none",color:"white",borderRadius:"50%",width:32,height:32,cursor:"pointer",fontWeight:700,fontSize:"1.1rem"}}>✕</button>
+        </div>
+
+        {/* Body */}
+        <div style={{padding:20,overflowY:"auto",flex:1,display:"flex",flexDirection:"column",gap:16}}>
+          
+          {/* Recipient Phone & App/Web Mode Toggle */}
+          <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",background:"#F8FAFC",padding:"10px 14px",borderRadius:8,border:"1px solid #E2E8F0",flexWrap:"wrap",gap:10}}>
+            <div style={{display:"flex",alignItems:"center",gap:6}}>
+              <span style={{fontSize:".82rem",color:"#475569",fontWeight:700}}>📱 Recipient Mobile:</span>
+              <span style={{fontWeight:700,color:"#1E293B",fontSize:".88rem"}}>+91</span>
+              <input 
+                type="tel" 
+                value={recipientMobile} 
+                onChange={e => setRecipientMobile(e.target.value.replace(/\D/g, '').slice(0, 10))}
+                placeholder="10-digit mobile"
+                style={{padding:"5px 8px",borderRadius:6,border:"1px solid #CBD5E1",fontWeight:700,fontSize:".88rem",width:125,color:"#15803D",fontFamily:"monospace"}}
+              />
+            </div>
+
+            {/* Launch Mode Switcher */}
+            <div style={{display:"flex",background:"#E2E8F0",padding:2,borderRadius:6,gap:2}}>
+              <button
+                type="button"
+                onClick={() => {
+                  setLaunchMode("app");
+                  localStorage.setItem("mmp_wa_launch_mode", "app");
+                }}
+                style={{
+                  padding:"4px 10px",
+                  borderRadius:4,
+                  fontSize:".74rem",
+                  fontWeight:800,
+                  border:"none",
+                  cursor:"pointer",
+                  background: launchMode === "app" ? "#15803D" : "transparent",
+                  color: launchMode === "app" ? "white" : "#475569"
+                }}
+                title="Opens directly in WhatsApp Windows/Mac/Mobile App with ZERO browser tabs!"
+              >
+                💻 WhatsApp App (0 Tabs)
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setLaunchMode("web");
+                  localStorage.setItem("mmp_wa_launch_mode", "web");
+                }}
+                style={{
+                  padding:"4px 10px",
+                  borderRadius:4,
+                  fontSize:".74rem",
+                  fontWeight:800,
+                  border:"none",
+                  cursor:"pointer",
+                  background: launchMode === "web" ? "#2563EB" : "transparent",
+                  color: launchMode === "web" ? "white" : "#475569"
+                }}
+                title="Opens in WhatsApp Web in browser"
+              >
+                🌐 Web Browser
+              </button>
+            </div>
+          </div>
+
+          {/* Template Selector for Invite Mode OR Status Binding for Registration Verification */}
+          {reg.isInviteMode ? (
+            <div style={{
+              background: "#F0FDF4",
+              border: "1.5px solid #86EFAC",
+              borderRadius: 10,
+              padding: "12px 14px",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-between",
+              flexWrap: "wrap",
+              gap: 10
+            }}>
+              <div style={{display:"flex",alignItems:"center",gap:8,flex:1,minWidth:250}}>
+                <span style={{fontSize:".84rem",fontWeight:800,color:"#15803D",whiteSpace:"nowrap"}}>📝 Choose Template:</span>
+                <select
+                  value={selectedTplId}
+                  onChange={e => handleTemplateSelectChange(e.target.value)}
+                  style={{
+                    flex: 1,
+                    padding: "7px 12px",
+                    borderRadius: 6,
+                    border: "1.5px solid #15803D",
+                    fontSize: ".84rem",
+                    fontWeight: 700,
+                    color: "#14532D",
+                    background: "white",
+                    cursor: "pointer",
+                    boxShadow: "0 1px 3px rgba(0,0,0,0.05)"
+                  }}
+                >
+                  {workspaceTemplates.map(t => (
+                    <option key={t.id} value={t.id}>
+                      {t.name} {t.isDefault ? "★ (Default)" : ""}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => handleTemplateSelectChange(selectedTplId)}
+                style={{background:"white",border:"1px solid #86EFAC",color:"#15803D",padding:"6px 12px",borderRadius:6,fontSize:".75rem",fontWeight:700,cursor:"pointer"}}
+                title="Reset to selected template content"
+              >
+                ↺ Reset Draft
+              </button>
+            </div>
+          ) : (
+            <div style={{
+              background: currentStatus === "Approved" ? "#F0FDF4" : currentStatus === "Needs Info" ? "#FFFBEB" : currentStatus === "Disapproved" ? "#FEF2F2" : "#F8FAFC",
+              border: currentStatus === "Approved" ? "1px solid #BBF7D0" : currentStatus === "Needs Info" ? "1px solid #FDE68A" : currentStatus === "Disapproved" ? "1px solid #FECACA" : "1px solid #E2E8F0",
+              borderRadius: 8,
+              padding: "10px 14px",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-between",
+              flexWrap: "wrap",
+              gap: 8
+            }}>
+              <div style={{display:"flex",alignItems:"center",gap:8}}>
+                <span style={{fontSize:"1.1rem"}}>
+                  {currentStatus === "Approved" ? "🟢" : currentStatus === "Needs Info" ? "⚠️" : currentStatus === "Disapproved" ? "🔴" : "⏳"}
+                </span>
+                <div>
+                  <div style={{fontSize:".82rem",fontWeight:800,color:"#0F172A"}}>
+                    Application Status: {currentStatus === "Approved" ? "Approved & Verified" : currentStatus === "Needs Info" ? "Needs Info / Action Required" : currentStatus === "Disapproved" ? "Disapproved" : "Under Verification (Pending)"}
+                  </div>
+                  <div style={{fontSize:".72rem",color:"#64748B"}}>
+                    Message template is automatically connected to this verified status.
+                  </div>
+                </div>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => {
+                  const freshMobile = String(reg['Mobile Number'] || reg.submitterMob || reg['Alternate Mobile Number'] || reg.phone || '').replace(/\D/g, '').slice(-10);
+                  const freshStatus = reg['Status'] || reg.status || 'Pending';
+                  const freshRemarks = reg['Remarks'] || reg.remarks || 'Application under review';
+                  const freshName = String(reg['Full Name'] || reg['Submitted By'] || reg['Participant Name'] || reg.name || 'Applicant').replace(/\|/g, ' ').trim();
+                  const freshTxn = reg['Transaction ID'] || reg.transactionId || reg.id || 'N/A';
+                  const freshVibhag = reg['Vibhag'] || reg.vibhag || reg['MMP Vibhag'] || 'All Vibhags';
+                  const freshStream = reg['Stream / Class'] || reg['Stream'] || reg['Course'] || 'N/A';
+                  const freshPct = reg['% Obtained'] || reg.percentage || reg['Marks / Percentage'] || 'N/A';
+                  setCustomMessage(buildTemplateForStatus(freshStatus, freshName, freshMobile, freshTxn, freshVibhag, freshStream, freshPct, freshRemarks));
+                }}
+                style={{background:"white",border:"1px solid #CBD5E1",color:"#334155",padding:"4px 10px",borderRadius:6,fontSize:".72rem",fontWeight:700,cursor:"pointer"}}
+                title="Reset message to official default draft"
+              >
+                ↺ Reset Draft
+              </button>
+            </div>
+          )}
+
+          {/* Formatted Message Editor */}
+          <div>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:6}}>
+              <label style={{fontSize:".8rem",fontWeight:700,color:"#334155"}}>
+                Message Content (WhatsApp Formatted):
+              </label>
+              <button
+                type="button"
+                onClick={handleCopy}
+                style={{background:"none",border:"none",color:copied?"#15803D":"#2563EB",fontSize:".75rem",fontWeight:700,cursor:"pointer"}}
+              >
+                {copied ? "✅ Copied to Clipboard!" : "📋 Copy Text"}
+              </button>
+            </div>
+            <textarea
+              value={customMessage}
+              onChange={e => setCustomMessage(e.target.value)}
+              rows={10}
+              style={{
+                width: "100%",
+                padding: "12px 14px",
+                borderRadius: 8,
+                border: "1px solid #CBD5E1",
+                fontSize: ".82rem",
+                lineHeight: 1.5,
+                fontFamily: "monospace",
+                boxSizing: "border-box",
+                background: "#FAFDF7"
+              }}
+            />
+          </div>
+
+        </div>
+
+        {/* Footer Actions */}
+        <div style={{padding:"14px 20px",background:"#F8FAFC",borderTop:"1px solid #E2E8F0",display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:10}}>
+          <div style={{display:"flex",alignItems:"center",gap:6}}>
+            <button
+              type="button"
+              onClick={onClose}
+              style={{padding:"9px 14px",background:"white",border:"1px solid #CBD5E1",borderRadius:8,fontSize:".82rem",fontWeight:700,color:"#475569",cursor:"pointer"}}
+            >
+              Close
+            </button>
+
+            {currentIndex > 0 && onSelectReg && (
+              <button
+                type="button"
+                onClick={() => onSelectReg(allRegs[currentIndex - 1])}
+                style={{padding:"9px 12px",background:"#F1F5F9",border:"1px solid #CBD5E1",borderRadius:8,fontSize:".8rem",fontWeight:700,cursor:"pointer"}}
+                title="Previous Applicant"
+              >
+                ◀ Prev
+              </button>
+            )}
+
+            {currentIndex >= 0 && currentIndex < totalCount - 1 && onSelectReg && (
+              <button
+                type="button"
+                onClick={() => onSelectReg(allRegs[currentIndex + 1])}
+                style={{padding:"9px 12px",background:"#F1F5F9",border:"1px solid #CBD5E1",borderRadius:8,fontSize:".8rem",fontWeight:700,cursor:"pointer"}}
+                title="Next Applicant"
+              >
+                Next ▶ ({currentIndex + 1}/{totalCount})
+              </button>
+            )}
+          </div>
+
+          <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+            <button
+              type="button"
+              onClick={handleCopy}
+              style={{
+                padding: "9px 14px",
+                background: copied ? "#DCFCE7" : "white",
+                color: copied ? "#15803D" : "#334155",
+                border: "1px solid #CBD5E1",
+                borderRadius: 8,
+                fontSize: ".82rem",
+                fontWeight: 700,
+                cursor: "pointer"
+              }}
+            >
+              {copied ? "✅ Copied" : "📋 Copy"}
+            </button>
+
+            <button
+              type="button"
+              onClick={() => {
+                handleSendWhatsApp();
+                if (currentIndex >= 0 && currentIndex < totalCount - 1 && onSelectReg) {
+                  setTimeout(() => onSelectReg(allRegs[currentIndex + 1]), 400);
+                }
+              }}
+              disabled={sendingApi}
+              style={{
+                padding: "9px 18px",
+                background: sendSuccess ? "#15803D" : "#25D366",
+                color: "white",
+                border: "none",
+                borderRadius: 8,
+                fontSize: ".85rem",
+                fontWeight: 800,
+                cursor: sendingApi ? "wait" : "pointer",
+                display: "flex",
+                alignItems: "center",
+                gap: 6,
+                boxShadow: "0 2px 8px rgba(37,211,102,0.35)"
+              }}
+            >
+              <span>{sendSuccess ? "✅" : sendingApi ? "⏳" : "🟢"}</span>
+              <span>{sendSuccess ? "Sent Directly!" : (currentIndex >= 0 && currentIndex < totalCount - 1 ? "Send & Next Student →" : "Send WhatsApp (Same Tab)")}</span>
+            </button>
           </div>
         </div>
+
       </div>
     </div>
   );
@@ -13296,6 +19569,12 @@ function AdminRegistrations({ mob, C, setC, auth }) {
   const [selectedPreset, setSelectedPreset] = useState("");
   const [showBulkTools, setShowBulkTools] = useState(false);
   const [historyModalReg, setHistoryModalReg] = useState(null);
+  const [whatsAppModalReg, setWhatsAppModalReg] = useState(null);
+  const [showBulkWhatsAppModal, setShowBulkWhatsAppModal] = useState(false);
+  const [selectedIds, setSelectedIds] = useState([]);
+  const [statusPillFilter, setStatusPillFilter] = useState(null);
+  const [openPillFilter, setOpenPillFilter] = useState(null);
+  const [selectedOnlyFilter, setSelectedOnlyFilter] = useState(false);
 
   const saveToFb = async (newC) => {
     try {
@@ -13506,6 +19785,7 @@ function AdminRegistrations({ mob, C, setC, auth }) {
   const [refreshing, setRefreshing] = useState(false);
   const [viewing, setViewing] = useState(null);
 
+
   const handleRefresh = async () => {
     setRefreshing(true);
     try {
@@ -13698,8 +19978,31 @@ function AdminRegistrations({ mob, C, setC, auth }) {
       const q = searchQuery.toLowerCase();
       if (!Object.values(r).some(val => String(val).toLowerCase().includes(q))) return false;
     }
+
+    // 2. Interactive Status Pill Filter (Single or Combined)
+    if (statusPillFilter) {
+      const st = r.Status || r.status || 'Pending';
+      if (statusPillFilter === "Pending") {
+        if (st !== "Pending" && st !== "") return false;
+      } else {
+        if (st !== statusPillFilter) return false;
+      }
+    }
+
+    // 3. Interactive Pass Open / Unopened Pill Filter (Single or Combined)
+    if (openPillFilter) {
+      const hasOpened = r.passOpenCount && r.passOpenCount > 0;
+      if (openPillFilter === "opened" && !hasOpened) return false;
+      if (openPillFilter === "unopened" && hasOpened) return false;
+    }
+
+    // 4. Show Only Selected Rows Toggle
+    if (selectedOnlyFilter) {
+      const rowId = r.id || r['Transaction ID'];
+      if (!selectedIds.includes(rowId)) return false;
+    }
     
-    // 2. Column filters
+    // 5. Column filters
     for (const [colKey, filterVal] of Object.entries(columnFilters)) {
       if(!filterVal) continue;
       
@@ -13854,18 +20157,245 @@ function AdminRegistrations({ mob, C, setC, auth }) {
 
           {/* Right: Search + Refresh + Export + Bulk Tools Toggle */}
           <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
+            {/* Quick Status Checkbox Selectors */}
+            {(() => {
+              // Base candidates before status / open pill filters to show accurate bucket counts
+              const basePool = activeRegsList.filter(r => {
+                const ev = (C.events || []).find(e => e.id === r.eventId || e.title === r.eventName || e.titleGu === r.eventName);
+                const evSection = ev?.section || "Default";
+                if (selectedSection !== "All") {
+                  if (selectedSection === "Default") {
+                    if (evSection !== "Default" && evSection !== "") return false;
+                  } else {
+                    if (evSection !== selectedSection) return false;
+                  }
+                }
+                if (searchQuery) {
+                  const q = searchQuery.toLowerCase();
+                  if (!Object.values(r).some(val => String(val).toLowerCase().includes(q))) return false;
+                }
+                return true;
+              });
+
+              const cOpened = basePool.filter(r => r.passOpenCount && r.passOpenCount > 0).length;
+              const cUnopened = basePool.filter(r => !r.passOpenCount || r.passOpenCount === 0).length;
+              const cNeedsInfo = basePool.filter(r => (r.Status || r.status) === "Needs Info").length;
+              const cApproved = basePool.filter(r => (r.Status || r.status) === "Approved").length;
+              const cPending = basePool.filter(r => (!r.Status && !r.status) || (r.Status || r.status) === "Pending").length;
+
+              const isAnyFilterActive = statusPillFilter !== null || openPillFilter !== null || selectedOnlyFilter;
+
+              return (
+                <div style={{display:"flex",alignItems:"center",gap:4,background:"#F8FAFC",padding:"4px 8px",borderRadius:10,border:"1.5px solid #CBD5E1",flexWrap:"wrap"}}>
+                  <span style={{fontSize:".72rem",fontWeight:800,color:"#334155",paddingRight:2,display:"flex",alignItems:"center",gap:3}}>
+                    <span>🎯</span> Filter Rows:
+                  </span>
+                  
+                  {/* Opened Pill */}
+                  <button
+                    type="button"
+                    onClick={() => setOpenPillFilter(prev => prev === "opened" ? null : "opened")}
+                    style={{
+                      padding: "4px 9px",
+                      borderRadius: 6,
+                      border: openPillFilter === "opened" ? "2px solid #1E40AF" : "1px solid #BFDBFE",
+                      background: openPillFilter === "opened" ? "#1D4ED8" : "#EFF6FF",
+                      color: openPillFilter === "opened" ? "white" : "#1D4ED8",
+                      fontSize: ".74rem",
+                      fontWeight: 800,
+                      cursor: "pointer",
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 4,
+                      boxShadow: openPillFilter === "opened" ? "0 2px 6px rgba(29,78,216,0.35)" : "none"
+                    }}
+                    title={openPillFilter === "opened" ? "Click to remove filter" : "Filter ONLY applicants who have opened their invitation pass"}
+                  >
+                    <span>👁️</span> Opened ({cOpened}) {openPillFilter === "opened" && "✓"}
+                  </button>
+
+                  {/* Unopened Pill */}
+                  <button
+                    type="button"
+                    onClick={() => setOpenPillFilter(prev => prev === "unopened" ? null : "unopened")}
+                    style={{
+                      padding: "4px 9px",
+                      borderRadius: 6,
+                      border: openPillFilter === "unopened" ? "2px solid #475569" : "1px solid #CBD5E1",
+                      background: openPillFilter === "unopened" ? "#475569" : "white",
+                      color: openPillFilter === "unopened" ? "white" : "#64748B",
+                      fontSize: ".74rem",
+                      fontWeight: 800,
+                      cursor: "pointer",
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 4,
+                      boxShadow: openPillFilter === "unopened" ? "0 2px 6px rgba(71,85,105,0.35)" : "none"
+                    }}
+                    title={openPillFilter === "unopened" ? "Click to remove filter" : "Filter ONLY applicants who have NOT opened their pass"}
+                  >
+                    <span>⚪</span> Unopened ({cUnopened}) {openPillFilter === "unopened" && "✓"}
+                  </button>
+
+                  <span style={{color:"#CBD5E1",fontSize:".8rem",margin:"0 2px"}}>|</span>
+
+                  {/* Needs Info Pill */}
+                  <button
+                    type="button"
+                    onClick={() => setStatusPillFilter(prev => prev === "Needs Info" ? null : "Needs Info")}
+                    style={{
+                      padding: "4px 9px",
+                      borderRadius: 6,
+                      border: statusPillFilter === "Needs Info" ? "2px solid #B45309" : "1px solid #FDE68A",
+                      background: statusPillFilter === "Needs Info" ? "#D97706" : "#FFFBEB",
+                      color: statusPillFilter === "Needs Info" ? "white" : "#92400E",
+                      fontSize: ".74rem",
+                      fontWeight: 800,
+                      cursor: "pointer",
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 4,
+                      boxShadow: statusPillFilter === "Needs Info" ? "0 2px 6px rgba(217,119,6,0.35)" : "none"
+                    }}
+                    title={statusPillFilter === "Needs Info" ? "Click to remove filter" : "Filter ONLY Needs Info / Pending Query students"}
+                  >
+                    <span>⚠️</span> Needs Info ({cNeedsInfo}) {statusPillFilter === "Needs Info" && "✓"}
+                  </button>
+
+                  {/* Approved Pill */}
+                  <button
+                    type="button"
+                    onClick={() => setStatusPillFilter(prev => prev === "Approved" ? null : "Approved")}
+                    style={{
+                      padding: "4px 9px",
+                      borderRadius: 6,
+                      border: statusPillFilter === "Approved" ? "2px solid #15803D" : "1px solid #BBF7D0",
+                      background: statusPillFilter === "Approved" ? "#15803D" : "#F0FDF4",
+                      color: statusPillFilter === "Approved" ? "white" : "#166534",
+                      fontSize: ".74rem",
+                      fontWeight: 800,
+                      cursor: "pointer",
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 4,
+                      boxShadow: statusPillFilter === "Approved" ? "0 2px 6px rgba(21,128,61,0.35)" : "none"
+                    }}
+                    title={statusPillFilter === "Approved" ? "Click to remove filter" : "Filter ONLY Approved students"}
+                  >
+                    <span>🟢</span> Approved ({cApproved}) {statusPillFilter === "Approved" && "✓"}
+                  </button>
+
+                  {/* Pending Pill */}
+                  <button
+                    type="button"
+                    onClick={() => setStatusPillFilter(prev => prev === "Pending" ? null : "Pending")}
+                    style={{
+                      padding: "4px 9px",
+                      borderRadius: 6,
+                      border: statusPillFilter === "Pending" ? "2px solid #334155" : "1px solid #E2E8F0",
+                      background: statusPillFilter === "Pending" ? "#334155" : "white",
+                      color: statusPillFilter === "Pending" ? "white" : "#334155",
+                      fontSize: ".74rem",
+                      fontWeight: 800,
+                      cursor: "pointer",
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 4,
+                      boxShadow: statusPillFilter === "Pending" ? "0 2px 6px rgba(51,65,85,0.35)" : "none"
+                    }}
+                    title={statusPillFilter === "Pending" ? "Click to remove filter" : "Filter ONLY Under Review / Pending students"}
+                  >
+                    <span>⏳</span> Pending ({cPending}) {statusPillFilter === "Pending" && "✓"}
+                  </button>
+
+                  {/* Reset Filters */}
+                  {isAnyFilterActive && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setStatusPillFilter(null);
+                        setOpenPillFilter(null);
+                        setSelectedOnlyFilter(false);
+                      }}
+                      style={{
+                        padding: "4px 8px",
+                        borderRadius: 6,
+                        border: "1px solid #FECACA",
+                        background: "#FEF2F2",
+                        color: "#DC2626",
+                        fontSize: ".72rem",
+                        fontWeight: 800,
+                        cursor: "pointer",
+                        marginLeft: 4
+                      }}
+                      title="Clear all active status and open filters"
+                    >
+                      ✕ Reset ({filteredRegs.length} shown)
+                    </button>
+                  )}
+                </div>
+              );
+            })()}
+
             <input 
               type="text" 
               placeholder="Search..." 
               value={searchQuery}
               onChange={e=>setSearchQuery(e.target.value)}
-              style={{padding:"6px 12px",borderRadius:8,border:"1px solid var(--bd)",fontSize:".82rem",width:160,outline:"none",fontFamily:"inherit"}}
+              style={{padding:"6px 12px",borderRadius:8,border:"1px solid var(--bd)",fontSize:".82rem",width:140,outline:"none",fontFamily:"inherit"}}
             />
             <button onClick={handleRefresh} disabled={refreshing} style={{padding:"6px 12px",borderRadius:8,fontSize:".8rem",fontWeight:600,display:"flex",alignItems:"center",gap:4,background:"white",border:"1px solid var(--bd)",color:"var(--dt)",cursor:refreshing?"wait":"pointer",whiteSpace:"nowrap"}}>
               {refreshing ? "..." : "↻"} Refresh
             </button>
             <button onClick={handleExportCSV} className="bt" style={{padding:"6px 12px",borderRadius:8,fontSize:".8rem",fontWeight:600,display:"flex",alignItems:"center",gap:4,whiteSpace:"nowrap"}}>
               <span>📥</span> Export CSV
+            </button>
+            {selectedIds.length > 0 && (
+              <button
+                type="button"
+                onClick={() => setSelectedIds([])}
+                style={{
+                  padding: "6px 10px",
+                  borderRadius: 8,
+                  fontSize: ".78rem",
+                  fontWeight: 700,
+                  background: "#F1F5F9",
+                  color: "#475569",
+                  border: "1px solid #CBD5E1",
+                  cursor: "pointer",
+                  whiteSpace: "nowrap"
+                }}
+                title="Clear selected rows"
+              >
+                ✕ Clear ({selectedIds.length})
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={() => {
+                const targetList = selectedIds.length > 0
+                  ? filteredRegs.filter(r => selectedIds.includes(r.id || r['Transaction ID']))
+                  : filteredRegs;
+                if (targetList.length === 0) return alert("No registrations selected or found to broadcast.");
+                setShowBulkWhatsAppModal(true);
+              }}
+              style={{
+                padding: "6px 14px",
+                borderRadius: 8,
+                fontSize: ".82rem",
+                fontWeight: 800,
+                display: "flex",
+                alignItems: "center",
+                gap: 6,
+                background: selectedIds.length > 0 ? "linear-gradient(135deg, #15803D, #166534)" : "#25D366",
+                color: "white",
+                border: "none",
+                cursor: "pointer",
+                boxShadow: "0 2px 8px rgba(37,211,102,0.35)",
+                whiteSpace: "nowrap"
+              }}
+            >
+              <span>🚀</span> Broadcast WhatsApp {selectedIds.length > 0 ? `(${selectedIds.length} Selected)` : `(${filteredRegs.length})`}
             </button>
             <button onClick={() => setShowBulkTools(!showBulkTools)} style={{padding:"6px 12px",borderRadius:8,fontSize:".8rem",fontWeight:600,display:"flex",alignItems:"center",gap:4,background:showBulkTools?"#E8650A":"#F5F5F5",color:showBulkTools?"white":"var(--dt)",border:"1px solid var(--bd)",cursor:"pointer",whiteSpace:"nowrap"}}>
               ⚡ Bulk Tools {showBulkTools ? "▲" : "▼"}
@@ -13904,15 +20434,22 @@ function AdminRegistrations({ mob, C, setC, auth }) {
               </button>
               <button
                 onClick={async () => {
-                  const prefix = prompt("Enter Serial Txn ID Prefix (e.g. VG or REG):", "VG");
+                  const targetRegs = filteredRegs;
+                  if (targetRegs.length === 0) {
+                    alert("No active registrations found to sequence.");
+                    return;
+                  }
+
+                  const currentFirstPrefix = (targetRegs.find(r => r["Transaction ID"])?.["Transaction ID"]?.split("-")[0]) || "EDU26";
+                  const prefix = prompt("Enter Serial Txn ID Prefix (e.g. EDU26 or VG):", currentFirstPrefix);
                   if (prefix === null) return;
-                  const startNumInput = prompt("Enter Starting Serial Number (e.g. 1001 or 1):", "1001");
+                  const startNumInput = prompt("Enter Starting Serial Number (e.g. 1 or 1001):", "1");
                   if (startNumInput === null) return;
-                  const startNum = parseInt(startNumInput.trim(), 10) || 1001;
+                  const startNum = parseInt(startNumInput.trim(), 10) || 1;
 
-                  if (!confirm(`Are you sure you want to assign sequential Txn IDs (${prefix.toUpperCase()}-${startNum}, ${prefix.toUpperCase()}-${startNum + 1}...) to ALL ${regs.length} registrations sorted chronologically by date?`)) return;
+                  if (!confirm(`Are you sure you want to assign sequential Txn IDs (${prefix.toUpperCase()}-${startNum}, ${prefix.toUpperCase()}-${startNum + 1}...) to ALL ${targetRegs.length} active registrations sorted chronologically by date?`)) return;
 
-                  const sortedRegs = [...regs].sort((a, b) => new Date(a._submittedAt || 0) - new Date(b._submittedAt || 0));
+                  const sortedRegs = [...targetRegs].sort((a, b) => new Date(a._submittedAt || 0) - new Date(b._submittedAt || 0));
 
                   setRefreshing(true);
                   try {
@@ -13926,7 +20463,7 @@ function AdminRegistrations({ mob, C, setC, auth }) {
                     }
                     const fresh = await fbFetchRegistrations(auth?.idToken);
                     setRegs(fresh || []);
-                    alert(`Successfully assigned sequential Txn IDs (${cleanPrefix}-${startNum} to ${cleanPrefix}-${startNum + sortedRegs.length - 1}) to all ${sortedRegs.length} registrations!`);
+                    alert(`Successfully assigned sequential Txn IDs (${cleanPrefix}-${startNum} to ${cleanPrefix}-${startNum + sortedRegs.length - 1}) to all ${sortedRegs.length} active registrations!`);
                   } catch (err) {
                     alert("Failed to assign sequential Txn IDs: " + err.message);
                   } finally {
@@ -14021,6 +20558,22 @@ function AdminRegistrations({ mob, C, setC, auth }) {
           <table className="admin-table" style={{width:"100%",borderCollapse:"collapse",fontSize:".85rem",minWidth:1200}}>
             <thead>
               <tr>
+                <th style={{padding:"14px 8px",textAlign:"center",width:36}}>
+                  <input
+                    type="checkbox"
+                    checked={filteredRegs.length > 0 && filteredRegs.every(r => selectedIds.includes(r.id || r['Transaction ID']))}
+                    onChange={() => {
+                      const allVisibleSelected = filteredRegs.length > 0 && filteredRegs.every(r => selectedIds.includes(r.id || r['Transaction ID']));
+                      if (allVisibleSelected) {
+                        setSelectedIds([]);
+                      } else {
+                        setSelectedIds(filteredRegs.map(r => r.id || r['Transaction ID']));
+                      }
+                    }}
+                    title="Select / Unselect All Filtered Rows"
+                    style={{cursor:"pointer",width:16,height:16,accentColor:"#15803D"}}
+                  />
+                </th>
                 <th style={{padding:"14px 12px",textAlign:"center",whiteSpace:"nowrap"}}>View</th>
                 <th style={{padding:"14px 12px",textAlign:"left",whiteSpace:"nowrap"}}>Date</th>
                 <th style={{padding:"14px 12px",textAlign:"left",whiteSpace:"nowrap"}}>Event</th>
@@ -14034,6 +20587,55 @@ function AdminRegistrations({ mob, C, setC, auth }) {
                 <th style={{padding:"14px 12px",textAlign:"left"}}>Delete</th>
               </tr>
               <tr style={{background:"#FAFAFA", borderBottom:"2px solid #E0E0E0"}}>
+                <th style={{padding:"4px 6px",textAlign:"center"}}>
+                  <select
+                    value=""
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      if (!val) return;
+                      if (val === "ALL") {
+                        setSelectedIds(filteredRegs.map(r => r.id || r['Transaction ID']));
+                      } else if (val === "NONE") {
+                        setSelectedIds([]);
+                      } else if (val === "OPENED") {
+                        const matches = filteredRegs.filter(r => r.passOpenCount && r.passOpenCount > 0);
+                        setSelectedIds(matches.map(r => r.id || r['Transaction ID']));
+                      } else if (val === "UNOPENED") {
+                        const matches = filteredRegs.filter(r => !r.passOpenCount || r.passOpenCount === 0);
+                        setSelectedIds(matches.map(r => r.id || r['Transaction ID']));
+                      } else {
+                        const matches = filteredRegs.filter(r => {
+                          const st = r['Status'] || r.status || 'Pending';
+                          return st === val;
+                        });
+                        setSelectedIds(matches.map(r => r.id || r['Transaction ID']));
+                      }
+                    }}
+                    style={{
+                      padding: "3px 4px",
+                      fontSize: ".7rem",
+                      fontWeight: 700,
+                      borderRadius: 4,
+                      border: "1.5px solid #15803D",
+                      background: "#F0FDF4",
+                      color: "#166534",
+                      cursor: "pointer",
+                      width: "100%",
+                      maxWidth: 95
+                    }}
+                    title="Select checkboxes specifically by Status or Pass Open"
+                  >
+                    <option value="">☑ Select...</option>
+                    <option value="OPENED">👁️ Opened ({filteredRegs.filter(r => r.passOpenCount && r.passOpenCount > 0).length})</option>
+                    <option value="UNOPENED">⚪ Unopened ({filteredRegs.filter(r => !r.passOpenCount || r.passOpenCount === 0).length})</option>
+                    <option value="Needs Info">⚠️ Needs Info ({filteredRegs.filter(r => (r.Status || r.status) === "Needs Info").length})</option>
+                    <option value="Approved">🟢 Approved ({filteredRegs.filter(r => (r.Status || r.status) === "Approved").length})</option>
+                    <option value="Pending">⏳ Pending ({filteredRegs.filter(r => (!r.Status && !r.status) || (r.Status || r.status) === "Pending").length})</option>
+                    <option value="Disapproved">🔴 Rejected ({filteredRegs.filter(r => (r.Status || r.status) === "Disapproved").length})</option>
+                    <option value="ALL">All ({filteredRegs.length})</option>
+                    <option value="NONE">⬜ Clear All</option>
+                  </select>
+                </th>
                 <th></th>
                 {["Date", "Event", "Transaction ID", "Status", "Remarks", "Updated By", ...allKeys].map(k => {
                   const uniqueVals = getUniqueValues(k);
@@ -14066,18 +20668,63 @@ function AdminRegistrations({ mob, C, setC, auth }) {
             <tbody>
               {filteredRegs.map((r, i) => {
                 if(!r) return null;
+                const rowId = r.id || r['Transaction ID'];
+                const isSelected = selectedIds.includes(rowId);
                 let date = "-";
                 try { if(r._submittedAt) date = new Date(r._submittedAt).toLocaleString(); } catch(e){}
                 let evName = r.eventName || r.eventTitle || r.eventId || "Unknown Event";
                 const ev = C.events?.find(e => e.title === r.eventTitle || e.title === r.eventName || e.title === r.eventId || e.id === r.eventId);
 
                 return (
-                  <tr key={i}>
+                  <tr key={i} style={{background: isSelected ? "#F0FDF4" : "transparent", transition: "background 0.2s"}}>
+                    <td style={{padding:"12px 8px",textAlign:"center"}}>
+                      <input
+                        type="checkbox"
+                        checked={isSelected}
+                        onChange={() => {
+                          setSelectedIds(prev => prev.includes(rowId) ? prev.filter(x => x !== rowId) : [...prev, rowId]);
+                        }}
+                        style={{cursor:"pointer",width:16,height:16,accentColor:"#15803D"}}
+                        title="Select this student to include/exclude in bulk operations"
+                      />
+                    </td>
                     <td style={{padding:"12px",textAlign:"center",whiteSpace:"nowrap"}}>
                       <div style={{display:"flex",gap:4,justifyContent:"center",alignItems:"center"}}>
                         <button onClick={()=>setViewing(r)} style={{padding:"6px 10px",borderRadius:6,fontSize:".75rem",background:"var(--dt)",color:"white",border:"none",cursor:"pointer",fontWeight:600,boxShadow:"0 2px 4px rgba(0,0,0,0.1)"}}>
                           View
                         </button>
+                        {(() => {
+                          const waLogs = (r.logHistory || []).filter(lg => lg.type === "whatsapp" || (lg.action && String(lg.action).toLowerCase().includes("whatsapp")));
+                          const count = Math.max(r.whatsAppCount || 0, waLogs.length);
+                          const lastLog = waLogs[waLogs.length - 1];
+                          const lastType = r.lastWhatsAppType || lastLog?.messageType || lastLog?.action || "";
+                          const lastDate = r.lastWhatsAppAt || lastLog?.timestamp;
+                          const tooltip = count > 0 
+                            ? `WhatsApp sent ${count} time${count > 1 ? 's' : ''}. Last: ${lastType} on ${lastDate ? new Date(lastDate).toLocaleDateString() : 'recent'}`
+                            : "Click to send WhatsApp update";
+                          return (
+                            <button 
+                              onClick={()=>setWhatsAppModalReg(r)} 
+                              style={{
+                                padding:"6px 9px",
+                                borderRadius:6,
+                                fontSize:".75rem",
+                                background: count > 0 ? "#DCFCE7" : "#F8FAFC",
+                                color: count > 0 ? "#15803D" : "#475569",
+                                border: count > 0 ? "1.5px solid #22C55E" : "1px solid #CBD5E1",
+                                cursor:"pointer",
+                                fontWeight: count > 0 ? 800 : 600,
+                                display:"flex",
+                                alignItems:"center",
+                                gap:4,
+                                boxShadow: count > 0 ? "0 1px 4px rgba(34,197,94,0.2)" : "none"
+                              }} 
+                              title={tooltip}
+                            >
+                              <span>💬</span> WhatsApp {count > 0 ? `(${count})` : ""}
+                            </button>
+                          );
+                        })()}
                         <button onClick={()=>setHistoryModalReg(r)} style={{padding:"6px 8px",borderRadius:6,fontSize:".75rem",background:"#FFF4EC",color:"var(--sf)",border:"1px solid #FDDBB8",cursor:"pointer",fontWeight:700}} title="View Log History">
                           📜 Logs {r.logHistory && r.logHistory.length > 0 ? `(${r.logHistory.length})` : ""}
                         </button>
@@ -14092,7 +20739,26 @@ function AdminRegistrations({ mob, C, setC, auth }) {
                         </span>
                       )}
                     </td>
-                    <td style={{padding:"12px",whiteSpace:"nowrap",fontWeight:600,color:"#111827"}}>{r['Transaction ID'] || "-"}</td>
+                    <td style={{padding:"12px",whiteSpace:"nowrap",color:"#111827"}}>
+                      <div style={{fontWeight:700,fontFamily:"monospace",color:"#0F172A"}}>{r['Transaction ID'] || "-"}</div>
+                      <div style={{marginTop:3}}>
+                        {(r.passOpenCount && r.passOpenCount > 0) ? (
+                          <span 
+                            style={{background:"#EFF6FF",color:"#1D4ED8",border:"1px solid #BFDBFE",padding:"1px 6px",borderRadius:10,fontSize:".68rem",fontWeight:800,display:"inline-flex",alignItems:"center",gap:3}} 
+                            title={`Pass opened ${r.passOpenCount} time${r.passOpenCount > 1 ? 's' : ''}. Last: ${new Date(r.lastPassOpenedAt || r._submittedAt).toLocaleString()}`}
+                          >
+                            <span>👁️</span> {r.passOpenCount} {r.passOpenCount === 1 ? 'Open' : 'Opens'}
+                          </span>
+                        ) : (
+                          <span 
+                            style={{background:"#F8FAFC",color:"#94A3B8",border:"1px solid #E2E8F0",padding:"1px 6px",borderRadius:10,fontSize:".68rem",fontWeight:600}} 
+                            title="Recipient has not clicked/opened their invitation pass link yet"
+                          >
+                            ⚪ Unopened
+                          </span>
+                        )}
+                      </div>
+                    </td>
                     <td style={{padding:"12px",whiteSpace:"nowrap"}}>
                       <select 
                         value={r['Status'] || "Pending"} 
@@ -14178,6 +20844,67 @@ function AdminRegistrations({ mob, C, setC, auth }) {
 
       {viewing && (
         <VerificationModal viewing={viewing} setViewing={setViewing} allRegs={regs} saveVerification={saveVerification} C={C} />
+      )}
+
+      {showBulkWhatsAppModal && (
+        <BulkWhatsAppBroadcastModal
+          event={(C.events || []).find(e => e.title === filteredRegs[0]?.eventName || e.title === filteredRegs[0]?.eventTitle || e.id === filteredRegs[0]?.eventId) || (C.events || [])[0] || { title: "Event Registrations" }}
+          recipients={selectedIds.length > 0 ? filteredRegs.filter(r => selectedIds.includes(r.id || r['Transaction ID'])) : filteredRegs}
+          C={C}
+          auth={auth}
+          onLogSent={async (r, msgType) => {
+            const updatedBy = auth?.email || "Admin";
+            const existingLogs = Array.isArray(r.logHistory) ? r.logHistory : [];
+            const waLog = {
+              timestamp: new Date().toISOString(),
+              actor: updatedBy,
+              action: `WhatsApp Sent: ${msgType}`,
+              type: "whatsapp",
+              messageType: msgType,
+              remarks: `WhatsApp message (${msgType}) sent to applicant.`
+            };
+            const newLogs = [...existingLogs, waLog];
+            const newCount = (r.whatsAppCount || 0) + 1;
+            setRegs(prev => prev.map(x => x.id === r.id ? { ...x, logHistory: newLogs, whatsAppCount: newCount, lastWhatsAppType: msgType, lastWhatsAppAt: waLog.timestamp } : x));
+            try {
+              const cleanData = { ...r, logHistory: newLogs, whatsAppCount: newCount, lastWhatsAppType: msgType, lastWhatsAppAt: waLog.timestamp };
+              delete cleanData.id; delete cleanData._submittedAt;
+              await fbUpdateRegistration(r.id, cleanData, auth?.idToken);
+            } catch(e){}
+          }}
+          onClose={() => setShowBulkWhatsAppModal(false)}
+        />
+      )}
+
+      {whatsAppModalReg && (
+        <WhatsAppApplicantMessengerModal 
+          reg={whatsAppModalReg} 
+          onClose={() => setWhatsAppModalReg(null)} 
+          C={C} 
+          auth={auth}
+          allRegs={filteredRegs}
+          onSelectReg={setWhatsAppModalReg}
+          onLogSent={async (r, msgType) => {
+            const updatedBy = auth?.email || "Admin";
+            const existingLogs = Array.isArray(r.logHistory) ? r.logHistory : [];
+            const waLog = {
+              timestamp: new Date().toISOString(),
+              actor: updatedBy,
+              action: `WhatsApp Sent: ${msgType}`,
+              type: "whatsapp",
+              messageType: msgType,
+              remarks: `WhatsApp message (${msgType}) sent to applicant.`
+            };
+            const newLogs = [...existingLogs, waLog];
+            const newCount = (r.whatsAppCount || 0) + 1;
+            setRegs(prev => prev.map(x => x.id === r.id ? { ...x, logHistory: newLogs, whatsAppCount: newCount, lastWhatsAppType: msgType, lastWhatsAppAt: waLog.timestamp } : x));
+            try {
+              const cleanData = { ...r, logHistory: newLogs, whatsAppCount: newCount, lastWhatsAppType: msgType, lastWhatsAppAt: waLog.timestamp };
+              delete cleanData.id; delete cleanData._submittedAt;
+              await fbUpdateRegistration(r.id, cleanData, auth?.idToken);
+            } catch(e){}
+          }}
+        />
       )}
 
       {historyModalReg && (
@@ -14838,7 +21565,7 @@ function BulkSelectionModal({ isOpen, onClose, title, items = [], actionLabel = 
   );
 }
 
-function AdminCertificates({ mob, C, auth }) {
+function AdminCertificates({ mob, C, setC, auth }) {
   const [regs, setRegs] = useState([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -14849,6 +21576,13 @@ function AdminCertificates({ mob, C, auth }) {
   const [downloadingBulk, setDownloadingBulk] = useState(false);
   const [downloadProgress, setDownloadProgress] = useState(0);
   const [showSelectModal, setShowSelectModal] = useState(false);
+  const [selectedIds, setSelectedIds] = useState([]);
+  const [certOpenPillFilter, setCertOpenPillFilter] = useState(null);
+  const [certReleasePillFilter, setCertReleasePillFilter] = useState(null);
+  const [selectedWhatsAppReg, setSelectedWhatsAppReg] = useState(null);
+  const [showBulkWhatsAppModal, setShowBulkWhatsAppModal] = useState(false);
+  const [showWorkspaceTplModal, setShowWorkspaceTplModal] = useState(false);
+  const [historyModalReg, setHistoryModalReg] = useState(null);
 
   const handleBulkDownload = () => {
     if (filteredRegs.length === 0) return alert("No certificates available to download.");
@@ -14993,9 +21727,20 @@ function AdminCertificates({ mob, C, auth }) {
   });
 
   const filteredRegs = certRegs.filter(r => {
-    if (!searchQuery) return true;
-    const q = searchQuery.toLowerCase();
-    return Object.values(r).some(v => String(v).toLowerCase().includes(q));
+    if (searchQuery) {
+      const q = searchQuery.toLowerCase();
+      if (!Object.values(r).some(v => String(v).toLowerCase().includes(q))) return false;
+    }
+    if (certOpenPillFilter) {
+      const hasOpened = r.passOpenCount && r.passOpenCount > 0;
+      if (certOpenPillFilter === "opened" && !hasOpened) return false;
+      if (certOpenPillFilter === "unopened" && hasOpened) return false;
+    }
+    if (certReleasePillFilter) {
+      if (certReleasePillFilter === "released" && (!r.certificateReleased || r.certificateHold)) return false;
+      if (certReleasePillFilter === "pending" && (r.certificateReleased || r.certificateHold)) return false;
+    }
+    return true;
   });
 
   if (!selectedEventId) {
@@ -15045,13 +21790,38 @@ function AdminCertificates({ mob, C, auth }) {
             <h2 style={{fontFamily:"'Playfair Display',serif",color:"var(--dt)",margin:0}}>Certificate Console</h2>
             <p style={{fontSize:".85rem",color:"var(--mu)",marginTop:4}}>Manage and release certificates for: <strong>{activeEvent.title}</strong></p>
           </div>
-          <div style={{display:"flex",gap:12,width:mob?"100%":"auto",flexWrap:"wrap"}}>
-            <input type="text" placeholder="Search students..." value={searchQuery} onChange={e=>setSearchQuery(e.target.value)} style={{padding:"8px 12px",borderRadius:8,border:"1px solid var(--bd)",fontSize:".85rem",flex:1,minWidth:200,outline:"none",fontFamily:"inherit"}} />
+          <div style={{display:"flex",gap:10,width:mob?"100%":"auto",flexWrap:"wrap"}}>
+            <button onClick={() => setShowWorkspaceTplModal(true)} style={{padding:"8px 16px",borderRadius:8,fontSize:".85rem",fontWeight:700,display:"flex",alignItems:"center",gap:6,background:"#F0FDF4",border:"1px solid #86EFAC",color:"#15803D",cursor:"pointer",boxShadow:"0 2px 8px rgba(21,128,61,0.15)",whiteSpace:"nowrap"}}>
+              📝 Workspace WhatsApp Templates ({((activeEvent?.whatsAppTemplates && activeEvent.whatsAppTemplates.length > 0) ? activeEvent.whatsAppTemplates.length : 3)})
+            </button>
             <button onClick={handleRefresh} disabled={refreshing || releasingAll || downloadingBulk} style={{padding:"8px 16px",borderRadius:8,fontSize:".85rem",fontWeight:600,display:"flex",alignItems:"center",gap:6,background:"white",border:"1px solid var(--bd)",color:"var(--dt)",cursor:(refreshing || releasingAll || downloadingBulk)?"wait":"pointer",boxShadow:"0 2px 8px rgba(0,0,0,0.05)",whiteSpace:"nowrap"}}>
               {refreshing ? "..." : "↻"} Refresh
             </button>
             <button onClick={handleReleaseAll} disabled={releasingAll || refreshing || downloadingBulk} style={{padding:"8px 16px",borderRadius:8,fontSize:".85rem",fontWeight:600,display:"flex",alignItems:"center",gap:6,background:"var(--dt)",color:"white",border:"none",cursor:(releasingAll || refreshing || downloadingBulk)?"wait":"pointer",boxShadow:"0 2px 8px rgba(0,0,0,0.1)",whiteSpace:"nowrap"}}>
               {releasingAll ? "Releasing..." : "📢 Release All"}
+            </button>
+            <button onClick={() => {
+              const targetList = selectedIds.length > 0
+                ? filteredRegs.filter(r => selectedIds.includes(r.id || r['Transaction ID']))
+                : filteredRegs;
+              if (targetList.length === 0) return alert("No approved students selected or available to send.");
+              setShowBulkWhatsAppModal(true);
+            }} style={{
+              padding:"8px 18px",
+              borderRadius:8,
+              fontSize:".85rem",
+              fontWeight:800,
+              display:"flex",
+              alignItems:"center",
+              gap:6,
+              background: selectedIds.length > 0 ? "linear-gradient(135deg, #15803D, #166534)" : "#25D366",
+              color:"white",
+              border:"none",
+              cursor:"pointer",
+              boxShadow:"0 2px 8px rgba(37,211,102,0.35)",
+              whiteSpace:"nowrap"
+            }}>
+              <span>🚀</span> Send All WhatsApp {selectedIds.length > 0 ? `(${selectedIds.length} Selected)` : `(${filteredRegs.length})`}
             </button>
             <button onClick={handleBulkDownload} disabled={downloadingBulk || releasingAll || refreshing} style={{padding:"8px 16px",borderRadius:8,fontSize:".85rem",fontWeight:600,display:"flex",alignItems:"center",gap:6,background:"var(--sf)",color:"white",border:"none",cursor:(downloadingBulk || releasingAll || refreshing)?"wait":"pointer",boxShadow:"0 2px 8px rgba(0,0,0,0.1)",whiteSpace:"nowrap"}}>
               {downloadingBulk ? `Generating ZIP (${downloadProgress}/${filteredRegs.length})...` : "📦 Bulk Download ZIP"}
@@ -15059,12 +21829,189 @@ function AdminCertificates({ mob, C, auth }) {
           </div>
         </div>
 
+        {/* Search + Interactive Multi-Filter Toggles */}
+        <div style={{marginBottom: 16, display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap"}}>
+          <input type="text" placeholder="Search students..." value={searchQuery} onChange={e=>setSearchQuery(e.target.value)} style={{padding:"8px 12px",borderRadius:8,border:"1px solid var(--bd)",fontSize:".85rem",width:220,outline:"none",fontFamily:"inherit"}} />
+          
+          {(() => {
+            const basePool = certRegs.filter(r => {
+              if (!searchQuery) return true;
+              const q = searchQuery.toLowerCase();
+              return Object.values(r).some(v => String(v).toLowerCase().includes(q));
+            });
+
+            const cOpened = basePool.filter(r => r.passOpenCount && r.passOpenCount > 0).length;
+            const cUnopened = basePool.filter(r => !r.passOpenCount || r.passOpenCount === 0).length;
+            const cReleased = basePool.filter(r => r.certificateReleased && !r.certificateHold).length;
+            const cPendingRel = basePool.filter(r => !r.certificateReleased && !r.certificateHold).length;
+
+            const isAnyFilterActive = certOpenPillFilter !== null || certReleasePillFilter !== null;
+
+            return (
+              <div style={{display:"flex",alignItems:"center",gap:6,background:"#F8FAFC",padding:"4px 8px",borderRadius:10,border:"1.5px solid #CBD5E1",flexWrap:"wrap"}}>
+                <span style={{fontSize:".75rem",fontWeight:800,color:"#334155",display:"flex",alignItems:"center",gap:3}}>
+                  <span>🎯</span> Filter Rows:
+                </span>
+                
+                {/* Contact Group Filter */}
+                {Array.from(new Set(inviteRegs.map(r => r.Group || r.Category || r.Vibhag).filter(Boolean))).length > 1 && (
+                  <select
+                    value={selectedContactGroup}
+                    onChange={(e) => setSelectedContactGroup(e.target.value)}
+                    style={{padding:"3px 8px",borderRadius:6,border:"1.5px solid #CBD5E1",fontSize:".72rem",fontWeight:800,background:"white",color:"#0F172A",cursor:"pointer"}}
+                  >
+                    <option value="All">👥 All Groups ({inviteRegs.length})</option>
+                    {Array.from(new Set(inviteRegs.map(r => r.Group || r.Category || r.Vibhag).filter(Boolean))).map(grp => (
+                      <option key={grp} value={grp}>{grp} ({inviteRegs.filter(r => (r.Group || r.Category || r.Vibhag) === grp).length})</option>
+                    ))}
+                  </select>
+                )}
+                
+                {/* Opened Pill */}
+                <button
+                  type="button"
+                  onClick={() => setCertOpenPillFilter(prev => prev === "opened" ? null : "opened")}
+                  style={{
+                    padding: "4px 9px",
+                    borderRadius: 6,
+                    border: certOpenPillFilter === "opened" ? "2px solid #1E40AF" : "1px solid #BFDBFE",
+                    background: certOpenPillFilter === "opened" ? "#1D4ED8" : "#EFF6FF",
+                    color: certOpenPillFilter === "opened" ? "white" : "#1D4ED8",
+                    fontSize: ".74rem",
+                    fontWeight: 800,
+                    cursor: "pointer",
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 4,
+                    boxShadow: certOpenPillFilter === "opened" ? "0 2px 6px rgba(29,78,216,0.35)" : "none"
+                  }}
+                  title={certOpenPillFilter === "opened" ? "Click to remove filter" : "Filter ONLY students who have opened their certificate pass"}
+                >
+                  <span>👁️</span> Opened ({cOpened}) {certOpenPillFilter === "opened" && "✓"}
+                </button>
+
+                {/* Unopened Pill */}
+                <button
+                  type="button"
+                  onClick={() => setCertOpenPillFilter(prev => prev === "unopened" ? null : "unopened")}
+                  style={{
+                    padding: "4px 9px",
+                    borderRadius: 6,
+                    border: certOpenPillFilter === "unopened" ? "2px solid #475569" : "1px solid #CBD5E1",
+                    background: certOpenPillFilter === "unopened" ? "#475569" : "white",
+                    color: certOpenPillFilter === "unopened" ? "white" : "#64748B",
+                    fontSize: ".74rem",
+                    fontWeight: 800,
+                    cursor: "pointer",
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 4,
+                    boxShadow: certOpenPillFilter === "unopened" ? "0 2px 6px rgba(71,85,105,0.35)" : "none"
+                  }}
+                  title={certOpenPillFilter === "unopened" ? "Click to remove filter" : "Filter ONLY students who have NOT opened their pass"}
+                >
+                  <span>⚪</span> Unopened ({cUnopened}) {certOpenPillFilter === "unopened" && "✓"}
+                </button>
+
+                <span style={{color:"#CBD5E1",fontSize:".8rem",margin:"0 2px"}}>|</span>
+
+                {/* Released Pill */}
+                <button
+                  type="button"
+                  onClick={() => setCertReleasePillFilter(prev => prev === "released" ? null : "released")}
+                  style={{
+                    padding: "4px 9px",
+                    borderRadius: 6,
+                    border: certReleasePillFilter === "released" ? "2px solid #15803D" : "1px solid #BBF7D0",
+                    background: certReleasePillFilter === "released" ? "#15803D" : "#F0FDF4",
+                    color: certReleasePillFilter === "released" ? "white" : "#166534",
+                    fontSize: ".74rem",
+                    fontWeight: 800,
+                    cursor: "pointer",
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 4,
+                    boxShadow: certReleasePillFilter === "released" ? "0 2px 6px rgba(21,128,61,0.35)" : "none"
+                  }}
+                  title={certReleasePillFilter === "released" ? "Click to remove filter" : "Filter ONLY released certificates"}
+                >
+                  <span>📢</span> Released ({cReleased}) {certReleasePillFilter === "released" && "✓"}
+                </button>
+
+                {/* Pending Release Pill */}
+                <button
+                  type="button"
+                  onClick={() => setCertReleasePillFilter(prev => prev === "pending" ? null : "pending")}
+                  style={{
+                    padding: "4px 9px",
+                    borderRadius: 6,
+                    border: certReleasePillFilter === "pending" ? "2px solid #D97706" : "1px solid #FDE68A",
+                    background: certReleasePillFilter === "pending" ? "#D97706" : "#FFFBEB",
+                    color: certReleasePillFilter === "pending" ? "white" : "#92400E",
+                    fontSize: ".74rem",
+                    fontWeight: 800,
+                    cursor: "pointer",
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 4,
+                    boxShadow: certReleasePillFilter === "pending" ? "0 2px 6px rgba(217,119,6,0.35)" : "none"
+                  }}
+                  title={certReleasePillFilter === "pending" ? "Click to remove filter" : "Filter ONLY pending release certificates"}
+                >
+                  <span>⏳</span> Pending ({cPendingRel}) {certReleasePillFilter === "pending" && "✓"}
+                </button>
+
+                {/* Reset Filters */}
+                {isAnyFilterActive && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setCertOpenPillFilter(null);
+                      setCertReleasePillFilter(null);
+                    }}
+                    style={{
+                      padding: "4px 8px",
+                      borderRadius: 6,
+                      border: "1px solid #FECACA",
+                      background: "#FEF2F2",
+                      color: "#DC2626",
+                      fontSize: ".72rem",
+                      fontWeight: 800,
+                      cursor: "pointer",
+                      marginLeft: 4
+                    }}
+                    title="Clear all active filters"
+                  >
+                    ✕ Reset ({filteredRegs.length} shown)
+                  </button>
+                )}
+              </div>
+            );
+          })()}
+        </div>
+
         {loading ? <p>Loading certificates...</p> : (
           <div style={{borderRadius:12,boxShadow:"0 10px 30px rgba(0,0,0,0.06)",overflow:"hidden",border:"1px solid #E0E0E0",background:"white",overflowX:"auto"}}>
             <table style={{width:"100%",borderCollapse:"collapse",fontSize:".85rem",minWidth:900}}>
               <thead>
                 <tr>
-                  <th style={{padding:"14px 12px",textAlign:"center",background:"var(--dt)",color:"white",fontWeight:600,width:"220px"}}>Actions</th>
+                  <th style={{padding:"14px 8px",textAlign:"center",background:"var(--dt)",color:"white",fontWeight:600,width:36}}>
+                    <input
+                      type="checkbox"
+                      checked={filteredRegs.length > 0 && filteredRegs.every(r => selectedIds.includes(r.id || r['Transaction ID']))}
+                      onChange={() => {
+                        const allVisibleSelected = filteredRegs.length > 0 && filteredRegs.every(r => selectedIds.includes(r.id || r['Transaction ID']));
+                        if (allVisibleSelected) {
+                          setSelectedIds([]);
+                        } else {
+                          setSelectedIds(filteredRegs.map(r => r.id || r['Transaction ID']));
+                        }
+                      }}
+                      title="Select / Unselect All Filtered Rows"
+                      style={{cursor:"pointer",width:16,height:16,accentColor:"#15803D"}}
+                    />
+                  </th>
+                  <th style={{padding:"14px 12px",textAlign:"center",background:"var(--dt)",color:"white",fontWeight:600,minWidth:"240px"}}>Actions</th>
                   <th style={{padding:"14px 12px",textAlign:"left",background:"var(--dt)",color:"white",fontWeight:600}}>Date Approved</th>
                   <th style={{padding:"14px 12px",textAlign:"left",background:"var(--dt)",color:"white",fontWeight:600}}>Event</th>
                   <th style={{padding:"14px 12px",textAlign:"left",background:"var(--dt)",color:"white",fontWeight:600}}>Participant Name</th>
@@ -15084,6 +22031,17 @@ function AdminCertificates({ mob, C, auth }) {
                   let vDate = r.certViewDate ? new Date(r.certViewDate).toLocaleString() : "-";
                   let dDate = r.certDownloadDate ? new Date(r.certDownloadDate).toLocaleString() : "-";
 
+                  const rowId = r.id || r['Transaction ID'];
+                  const isSelected = selectedIds.includes(rowId);
+                  const waLogs = (r.logHistory || []).filter(lg => lg.type === "whatsapp" || (lg.action && String(lg.action).toLowerCase().includes("whatsapp")));
+                  const waCount = Math.max(r.whatsAppCount || 0, waLogs.length);
+                  const lastWaLog = waLogs[waLogs.length - 1];
+                  const lastWaType = r.lastWhatsAppType || lastWaLog?.messageType || lastWaLog?.action || "Certificate Notice";
+                  const lastWaDate = r.lastWhatsAppAt || lastWaLog?.timestamp;
+                  const waTooltip = waCount > 0 
+                    ? `WhatsApp sent ${waCount} time${waCount > 1 ? 's' : ''}. Last: ${lastWaType} on ${lastWaDate ? new Date(lastWaDate).toLocaleDateString() : 'recent'}`
+                    : "Send WhatsApp Certificate Link";
+
                   return (
                     <tr 
                       key={i} 
@@ -15091,24 +22049,77 @@ function AdminCertificates({ mob, C, auth }) {
                       style={{
                         borderBottom:"1px solid #eee",
                         cursor: "pointer",
-                        background: previewCertRegId === r.id ? "#E8F4F8" : "transparent",
+                        background: isSelected ? "#F0FDF4" : previewCertRegId === r.id ? "#E8F4F8" : "transparent",
                         transition: "background-color 0.2s"
                       }}
                     >
+                      <td style={{padding:"12px 8px",textAlign:"center"}} onClick={(e)=>e.stopPropagation()}>
+                        <input
+                          type="checkbox"
+                          checked={isSelected}
+                          onChange={() => {
+                            setSelectedIds(prev => prev.includes(rowId) ? prev.filter(x => x !== rowId) : [...prev, rowId]);
+                          }}
+                          style={{cursor:"pointer",width:16,height:16,accentColor:"#15803D"}}
+                          title="Select this student"
+                        />
+                      </td>
                       <td style={{padding:"12px",textAlign:"center"}} onClick={(e)=>e.stopPropagation()}>
-                        <div style={{display:"flex",justifyContent:"center",gap:8}}>
-                          <button onClick={(e)=>{e.stopPropagation(); handlePreview(r, ev);}} style={{padding:"6px 12px",borderRadius:6,fontSize:".75rem",background:"white",border:"1px solid var(--bd)",cursor:"pointer",fontWeight:600}}>Preview</button>
-                          <button onClick={(e)=>{e.stopPropagation(); toggleRelease(r);}} disabled={r.certificateHold} style={{padding:"6px 12px",borderRadius:6,fontSize:".75rem",background:r.certificateHold?"#eaeaea":r.certificateReleased?"#f5f5f5":"var(--dt)",color:r.certificateHold?"#aaa":r.certificateReleased?"#333":"white",border:r.certificateReleased?"1px solid #ccc":"none",cursor:r.certificateHold?"not-allowed":"pointer",fontWeight:600}}>
+                        <div style={{display:"flex",justifyContent:"center",gap:6,flexWrap:"wrap",alignItems:"center"}}>
+                          <button onClick={(e)=>{e.stopPropagation(); handlePreview(r, ev);}} style={{padding:"5px 8px",borderRadius:6,fontSize:".74rem",background:"white",border:"1px solid var(--bd)",cursor:"pointer",fontWeight:600}}>Preview</button>
+                          <button 
+                            onClick={(e)=>{e.stopPropagation(); setSelectedWhatsAppReg(r);}} 
+                            style={{
+                              padding:"5px 9px",
+                              borderRadius:6,
+                              fontSize:".74rem",
+                              background: waCount > 0 ? "#DCFCE7" : "#F8FAFC",
+                              border: waCount > 0 ? "1.5px solid #22C55E" : "1px solid #86EFAC",
+                              color: waCount > 0 ? "#15803D" : "#475569",
+                              cursor:"pointer",
+                              fontWeight: waCount > 0 ? 800 : 700,
+                              display:"flex",
+                              alignItems:"center",
+                              gap:4
+                            }}
+                            title={waTooltip}
+                          >
+                            <span>💬</span> WhatsApp {waCount > 0 ? `(${waCount})` : ""}
+                          </button>
+                          <button onClick={(e)=>{e.stopPropagation(); setHistoryModalReg(r);}} style={{padding:"5px 7px",borderRadius:6,fontSize:".74rem",background:"#FFF4EC",color:"var(--sf)",border:"1px solid #FDDBB8",cursor:"pointer",fontWeight:700}} title="View Audit Logs & Pass Open History">
+                            📜 Logs {r.logHistory && r.logHistory.length > 0 ? `(${r.logHistory.length})` : ""}
+                          </button>
+                          <button onClick={(e)=>{e.stopPropagation(); toggleRelease(r);}} disabled={r.certificateHold} style={{padding:"5px 8px",borderRadius:6,fontSize:".74rem",background:r.certificateHold?"#eaeaea":r.certificateReleased?"#f5f5f5":"var(--dt)",color:r.certificateHold?"#aaa":r.certificateReleased?"#333":"white",border:r.certificateReleased?"1px solid #ccc":"none",cursor:r.certificateHold?"not-allowed":"pointer",fontWeight:600}}>
                             {r.certificateReleased ? "Revoke" : "Release"}
                           </button>
-                          <button onClick={(e)=>{e.stopPropagation(); toggleHold(r);}} style={{padding:"6px 12px",borderRadius:6,fontSize:".75rem",background:r.certificateHold?"#FEE2E2":"#f5f5f5",color:r.certificateHold?"#991B1B":"#666",border:r.certificateHold?"1px solid #FCA5A5":"1px solid #ccc",cursor:"pointer",fontWeight:600}}>
+                          <button onClick={(e)=>{e.stopPropagation(); toggleHold(r);}} style={{padding:"5px 8px",borderRadius:6,fontSize:".74rem",background:r.certificateHold?"#FEE2E2":"#f5f5f5",color:r.certificateHold?"#991B1B":"#666",border:r.certificateHold?"1px solid #FCA5A5":"1px solid #ccc",cursor:"pointer",fontWeight:600}}>
                             {r.certificateHold ? "Unhold" : "Hold"}
                           </button>
                         </div>
                       </td>
                       <td style={{padding:"12px"}}>{date}</td>
                       <td style={{padding:"12px"}}>{evName}</td>
-                      <td style={{padding:"12px",fontWeight:600}}>{pName}</td>
+                      <td style={{padding:"12px",color:"#111827"}}>
+                        <div style={{fontWeight:700,color:"#0F172A"}}>{pName}</div>
+                        <div style={{marginTop:3,display:"flex",alignItems:"center",gap:6}}>
+                          <span style={{fontSize:".72rem",color:"#64748B",fontFamily:"monospace"}}>{r['Transaction ID'] || r.id}</span>
+                          {(r.passOpenCount && r.passOpenCount > 0) ? (
+                            <span 
+                              style={{background:"#EFF6FF",color:"#1D4ED8",border:"1px solid #BFDBFE",padding:"1px 6px",borderRadius:10,fontSize:".68rem",fontWeight:800,display:"inline-flex",alignItems:"center",gap:3}} 
+                              title={`Pass opened ${r.passOpenCount} time${r.passOpenCount > 1 ? 's' : ''}. Last opened: ${new Date(r.lastPassOpenedAt || r._submittedAt).toLocaleString()}`}
+                            >
+                              <span>👁️</span> {r.passOpenCount} {r.passOpenCount === 1 ? 'Open' : 'Opens'}
+                            </span>
+                          ) : (
+                            <span 
+                              style={{background:"#F8FAFC",color:"#94A3B8",border:"1px solid #E2E8F0",padding:"1px 6px",borderRadius:10,fontSize:".68rem",fontWeight:600}} 
+                              title="Recipient has not opened their invitation link yet"
+                            >
+                              ⚪ Unopened
+                            </span>
+                          )}
+                        </div>
+                      </td>
                       <td style={{padding:"12px",textAlign:"center"}}>
                         {r.certificateHold ? (
                           <span style={{padding:"4px 8px",borderRadius:6,fontSize:".75rem",fontWeight:700,background:"#FEE2E2",color:"#991B1B",display:"inline-block"}}>
@@ -15125,7 +22136,7 @@ function AdminCertificates({ mob, C, auth }) {
                     </tr>
                   );
                 })}
-                {filteredRegs.length === 0 && <tr><td colSpan={7} style={{padding:40,textAlign:"center",color:"var(--mu)"}}>No certificates found to manage.</td></tr>}
+                {filteredRegs.length === 0 && <tr><td colSpan={9} style={{padding:40,textAlign:"center",color:"var(--mu)"}}>No certificates found to manage.</td></tr>}
               </tbody>
             </table>
           </div>
@@ -15159,22 +22170,175 @@ function AdminCertificates({ mob, C, auth }) {
         isProcessing={downloadingBulk} 
         progress={downloadProgress} 
       />
+
+      {/* Bulk WhatsApp Broadcast Modal */}
+      {showBulkWhatsAppModal && (
+        <BulkWhatsAppBroadcastModal
+          event={activeEvent}
+          recipients={selectedIds.length > 0 ? filteredRegs.filter(r => selectedIds.includes(r.id || r['Transaction ID'])) : filteredRegs}
+          C={C}
+          auth={auth}
+          onLogSent={async (r, msgType) => {
+            const updatedBy = auth?.email || "Admin";
+            const existingLogs = Array.isArray(r.logHistory) ? r.logHistory : [];
+            const waLog = {
+              timestamp: new Date().toISOString(),
+              actor: updatedBy,
+              action: `WhatsApp Sent: ${msgType}`,
+              type: "whatsapp",
+              messageType: msgType,
+              remarks: `WhatsApp certificate update (${msgType}) sent to applicant.`
+            };
+            const newLogs = [...existingLogs, waLog];
+            const newCount = (r.whatsAppCount || 0) + 1;
+            setRegs(prev => prev.map(x => x.id === r.id ? { ...x, logHistory: newLogs, whatsAppCount: newCount, lastWhatsAppType: msgType, lastWhatsAppAt: waLog.timestamp } : x));
+            try {
+              const cleanData = { ...r, logHistory: newLogs, whatsAppCount: newCount, lastWhatsAppType: msgType, lastWhatsAppAt: waLog.timestamp };
+              delete cleanData.id; delete cleanData._submittedAt;
+              await fbUpdateRegistration(r.id, cleanData, auth?.idToken);
+            } catch(e){}
+          }}
+          onClose={() => setShowBulkWhatsAppModal(false)}
+        />
+      )}
+
+      {/* Workspace Multi-Template Modal */}
+      {showWorkspaceTplModal && (
+        <WorkspaceWhatsAppTemplateModal
+          event={activeEvent}
+          C={C}
+          setC={setC}
+          auth={auth}
+          onClose={() => setShowWorkspaceTplModal(false)}
+        />
+      )}
+
+      {/* WhatsApp Applicant Messenger Modal */}
+      {selectedWhatsAppReg && (
+        <WhatsAppApplicantMessengerModal
+          reg={{ ...selectedWhatsAppReg, isCertMode: true }}
+          onClose={() => setSelectedWhatsAppReg(null)}
+          C={C}
+          auth={auth}
+          allRegs={filteredRegs}
+          onSelectReg={(nextR) => setSelectedWhatsAppReg(nextR)}
+          onLogSent={async (r, msgType) => {
+            const updatedBy = auth?.email || "Admin";
+            const existingLogs = Array.isArray(r.logHistory) ? r.logHistory : [];
+            const waLog = {
+              timestamp: new Date().toISOString(),
+              actor: updatedBy,
+              action: `WhatsApp Sent: ${msgType}`,
+              type: "whatsapp",
+              messageType: msgType,
+              remarks: `WhatsApp certificate update (${msgType}) sent to applicant.`
+            };
+            const newLogs = [...existingLogs, waLog];
+            const newCount = (r.whatsAppCount || 0) + 1;
+            setRegs(prev => prev.map(x => x.id === r.id ? { ...x, logHistory: newLogs, whatsAppCount: newCount, lastWhatsAppType: msgType, lastWhatsAppAt: waLog.timestamp } : x));
+            try {
+              const cleanData = { ...r, logHistory: newLogs, whatsAppCount: newCount, lastWhatsAppType: msgType, lastWhatsAppAt: waLog.timestamp };
+              delete cleanData.id; delete cleanData._submittedAt;
+              await fbUpdateRegistration(r.id, cleanData, auth?.idToken);
+            } catch(e){}
+          }}
+        />
+      )}
+
+      {/* Audit Logs & Pass Open History Modal */}
+      {historyModalReg && (
+        <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.65)",zIndex:100000,display:"flex",alignItems:"center",justifyContent:"center",padding:16}} onClick={()=>setHistoryModalReg(null)}>
+          <div style={{background:"white",borderRadius:16,maxWidth:540,width:"100%",maxHeight:"85vh",display:"flex",flexDirection:"column",overflow:"hidden",boxShadow:"0 20px 40px rgba(0,0,0,0.3)"}} onClick={e=>e.stopPropagation()}>
+            <div style={{padding:"16px 20px",background:"linear-gradient(135deg, #15803D, #166534)",color:"white",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+              <div>
+                <h3 style={{fontSize:"1.1rem",fontWeight:700,margin:0}}>📜 Certificate & Activity Log</h3>
+                <div style={{fontSize:".75rem",opacity:0.9,marginTop:2}}>
+                  {historyModalReg['Full Name'] || historyModalReg.name} • {historyModalReg['Transaction ID'] || historyModalReg.id}
+                </div>
+              </div>
+              <button onClick={()=>setHistoryModalReg(null)} style={{background:"rgba(255,255,255,0.2)",border:"none",color:"white",borderRadius:"50%",width:32,height:32,cursor:"pointer",fontWeight:700,fontSize:"1.1rem"}}>✕</button>
+            </div>
+
+            <div style={{padding:20,overflowY:"auto",flex:1,display:"flex",flexDirection:"column",gap:12}}>
+              {(() => {
+                const logs = (historyModalReg.logHistory && historyModalReg.logHistory.length > 0)
+                  ? historyModalReg.logHistory
+                  : [
+                      {
+                        actor: "User",
+                        action: "1st Entry Submitted",
+                        timestamp: historyModalReg.timestamp || historyModalReg._submittedAt,
+                        remarks: "Initial registration entry submitted"
+                      }
+                    ];
+
+                return logs.map((lg, lgIdx) => (
+                  <div key={lgIdx} style={{background:"#FAFAFA",border:"1.5px solid var(--bd)",borderRadius:10,padding:14,position:"relative"}}>
+                    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:6}}>
+                      <span style={{fontSize:".78rem",fontWeight:800,color:lg.actor?.includes('Student') ? "#1D4ED8" : lg.actor === 'User' ? "var(--sf)" : "#15803D"}}>
+                        {lg.actor?.includes('Student') ? "👤 Student (Recipient)" : lg.actor === 'User' ? "👤 User (Registrant)" : `🛡️ Admin (${lg.actor || 'Admin'})`}
+                      </span>
+                      <span style={{fontSize:".7rem",color:"var(--mu)",fontWeight:600}}>
+                        {lg.timestamp ? new Date(lg.timestamp).toLocaleString() : ""}
+                      </span>
+                    </div>
+                    {lg.type === 'pass_open' || (lg.action && String(lg.action).toLowerCase().includes('pass / invite opened')) ? (
+                      <div style={{marginBottom:6}}>
+                        <span style={{background:"#EFF6FF",color:"#1D4ED8",border:"1px solid #93C5FD",padding:"3px 8px",borderRadius:6,fontSize:".76rem",fontWeight:800,display:"inline-flex",alignItems:"center",gap:4}}>
+                          <span>👁️</span> {lg.action} • {lg.device || 'Mobile'}
+                        </span>
+                      </div>
+                    ) : lg.type === 'whatsapp' || (lg.action && String(lg.action).toLowerCase().includes('whatsapp')) ? (
+                      <div style={{marginBottom:6}}>
+                        <span style={{background:"#DCFCE7",color:"#15803D",border:"1px solid #86EFAC",padding:"3px 8px",borderRadius:6,fontSize:".76rem",fontWeight:800,display:"inline-flex",alignItems:"center",gap:4}}>
+                          <span>💬</span> {lg.action || `WhatsApp Sent (${lg.messageType || 'Update'})`}
+                        </span>
+                      </div>
+                    ) : (
+                      <div style={{fontSize:".88rem",fontWeight:700,color:"var(--dt)",marginBottom:4}}>
+                        {lg.action || lg.status}
+                      </div>
+                    )}
+                    <div style={{fontSize:".82rem",color:"var(--tx)",lineHeight:1.4,background:"white",padding:"8px 10px",borderRadius:6,border:"1px solid #EEE"}}>
+                      {lg.remarks || "No remarks provided"}
+                    </div>
+                  </div>
+                ));
+              })()}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
 
 
-function AdminInviteLetters({ mob, C, auth }) {
+
+const getContactGroups = (contact) => {
+  if (!contact) return ["General Committee"];
+  if (Array.isArray(contact.groups) && contact.groups.length > 0) return contact.groups.map(s => String(s).trim()).filter(Boolean);
+  if (Array.isArray(contact.Groups) && contact.Groups.length > 0) return contact.Groups.map(s => String(s).trim()).filter(Boolean);
+  const raw = contact.Group || contact.group || contact.Category || contact.category || contact.Team || contact.team || contact.Vibhag || "";
+  if (!raw || typeof raw !== 'string') return ["General Committee"];
+  const parts = raw.split(/[,/|;]+/).map(s => s.trim()).filter(Boolean);
+  return parts.length > 0 ? parts : ["General Committee"];
+};
+
+function AdminInviteLetters({ mob, C, setC, auth }) {
   const [regs, setRegs] = useState([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedEventId, setSelectedEventId] = useState(null);
+  const [activeDocType, setActiveDocType] = useState("invite");
 
   // Global guest modals
   const [showGlobalGuestsModal, setShowGlobalGuestsModal] = useState(false);
   const [showImportGuestModal, setShowImportGuestModal] = useState(false);
-  const [guestForm, setGuestForm] = useState({ fullName: "", mobile: "", email: "", address: "", designation: "" });
+  const [guestForm, setGuestForm] = useState({ fullName: "", mobile: "", email: "", address: "", designation: "", group: "CWC Member" });
+  const [showImportContactGroupModal, setShowImportContactGroupModal] = useState(false);
+  const [selectedContactGroup, setSelectedContactGroup] = useState("All");
   const [addingGuest, setAddingGuest] = useState(false);
 
   // Field mapping
@@ -15190,20 +22354,53 @@ function AdminInviteLetters({ mob, C, auth }) {
   const [downloadingEnvelopes, setDownloadingEnvelopes] = useState(false);
   const [releasingAll, setReleasingAll] = useState(false);
   const [bulkSelectMode, setBulkSelectMode] = useState(null);
+  const [selectedWhatsAppReg, setSelectedWhatsAppReg] = useState(null);
+  const [showInviteTplModal, setShowInviteTplModal] = useState(false);
+  const [showWorkspaceTplModal, setShowWorkspaceTplModal] = useState(false);
+  const [showBulkWhatsAppModal, setShowBulkWhatsAppModal] = useState(false);
+  const [selectedIds, setSelectedIds] = useState([]);
+  const [historyModalReg, setHistoryModalReg] = useState(null);
+  const [inviteOpenPillFilter, setInviteOpenPillFilter] = useState(null);
+  const [inviteReleasePillFilter, setInviteReleasePillFilter] = useState(null);
 
   const globalGuests = regs.filter(r => r.isGlobalGuest === true);
 
-  const inviteEvents = (C.events || []).filter(e => {
-    if (e.issueInviteLetters === true || e.issueInviteLetters === "true") return true;
-    return regs.some(r => r.eventId === e.id || r.eventName === e.title || r.eventTitle === e.title);
-  });
+  const inviteEvents = C.events || [];
+
+  const activeEvent = inviteEvents.find(e => e.id === selectedEventId) || {};
+
+  const availableDocTemplates = [
+    { id: 'invite', name: 'Official Invite Letter', icon: '💌', bgUrl: activeEvent?.inviteBgUrl, targetSection: 'invites', isDefault: true },
+    ...(activeEvent?.issueCertificates ? [{ id: 'cert', name: 'Certificate Pass', icon: '🎓', bgUrl: activeEvent?.certBgUrl, targetSection: 'awards' }] : []),
+    ...(activeEvent?.pdfTemplates || []).map(t => ({ id: t.id, name: t.name, icon: '🎟️', bgUrl: t.bgUrl, targetSection: t.targetSection || 'invites', customTpl: t }))
+  ];
+  const currentDocTpl = availableDocTemplates.find(d => d.id === activeDocType) || availableDocTemplates[0];
+
+  const getDocReleaseStatus = (r, docId) => {
+    if (!r) return { isReleased: false, isHeld: false };
+    if (docId === 'cert') {
+      return { 
+        isReleased: Boolean(r.certificateReleased && !r.certificateHold), 
+        isHeld: Boolean(r.certificateHold) 
+      };
+    }
+    if (docId === 'invite') {
+      return { 
+        isReleased: Boolean(r.inviteLetterReleased && !r.inviteLetterHold), 
+        isHeld: Boolean(r.inviteLetterHold) 
+      };
+    }
+    const isHeld = Boolean(r.heldDocs && r.heldDocs[docId]);
+    const isReleased = Boolean(r.releasedDocs && r.releasedDocs[docId] && !isHeld);
+    return { isReleased, isHeld };
+  };
 
   const inviteRegs = regs.filter(r => {
     if (!selectedEventId) return false;
-    // Only Approved registrations (same as Certificates — exclude Pending/Rejected)
-    if (r.Status !== "Approved" && r.status !== "Approved") return false;
-    // Exclude special/global guests (they are handled separately)
-    if (r.isGlobalGuest || r.isSpecialGuest || r.globalGuestId) return false;
+    // Only Approved registrations or special/committee guests
+    if (r.Status !== "Approved" && r.status !== "Approved" && !r.isSpecialGuest) return false;
+    // Exclude the raw global directory pool entry itself
+    if (r.isGlobalGuest) return false;
     const ev = inviteEvents.find(e => e.id === selectedEventId);
     if (!ev) return false;
     let evName = r.eventName || r.eventTitle || r.eventId;
@@ -15211,10 +22408,35 @@ function AdminInviteLetters({ mob, C, auth }) {
   });
 
   const filteredRegs = inviteRegs.filter(r => {
-    if (!searchQuery) return true;
-    const q = searchQuery.toLowerCase();
-    return Object.values(r).some(v => String(v).toLowerCase().includes(q));
+    if (searchQuery) {
+      const q = searchQuery.toLowerCase();
+      if (!Object.values(r).some(v => String(v).toLowerCase().includes(q))) return false;
+    }
+    if (inviteOpenPillFilter) {
+      const hasOpened = r.passOpenCount && r.passOpenCount > 0;
+      if (inviteOpenPillFilter === "opened" && !hasOpened) return false;
+      if (inviteOpenPillFilter === "unopened" && hasOpened) return false;
+    }
+    if (inviteReleasePillFilter) {
+      const activeDocId = currentDocTpl?.id || 'invite';
+      const st = getDocReleaseStatus(r, activeDocId);
+      if (inviteReleasePillFilter === "released" && !st.isReleased) return false;
+      if (inviteReleasePillFilter === "pending" && (st.isReleased || st.isHeld)) return false;
+    }
+    if (selectedContactGroup && selectedContactGroup !== "All") {
+      const rGroups = getContactGroups(r);
+      if (!rGroups.includes(selectedContactGroup)) return false;
+    }
+    return true;
   });
+
+  const toggleSelectAll = () => {
+    if (selectedIds.length === filteredRegs.length && filteredRegs.length > 0) {
+      setSelectedIds([]);
+    } else {
+      setSelectedIds(filteredRegs.map(r => r.id || r['Transaction ID']));
+    }
+  };
 
   const fetchRegs = async () => {
     try {
@@ -15239,29 +22461,74 @@ function AdminInviteLetters({ mob, C, auth }) {
     e.preventDefault();
     if (!guestForm.fullName) return alert("Full Name is required.");
     
-    setAddingGuest(true);
-    const newGlobalGuest = {
-      "Full Name": guestForm.fullName,
-      "Participant Name": guestForm.fullName,
-      "Name": guestForm.fullName,
-      "Mobile": guestForm.mobile,
-      "Mobile Number": guestForm.mobile,
-      "Email": guestForm.email,
-      "Address": guestForm.address,
-      "Designation": guestForm.designation,
-      "Organization": guestForm.designation,
-      isGlobalGuest: true,
-      _submittedAt: Date.now(),
-      formId: "global_guest_directory"
-    };
+    const assignedGroups = (guestForm.groups && guestForm.groups.length > 0)
+      ? guestForm.groups
+      : getContactGroups({ group: guestForm.group });
 
-    try {
-      await fbSubmitRegistration(newGlobalGuest, auth?.idToken);
-      alert("Global guest added to directory!");
-      setGuestForm({ fullName: "", mobile: "", email: "", address: "", designation: "" });
-      fetchRegs();
-    } catch (err) {
-      alert("Error adding global guest: " + err.message);
+    const groupStr = assignedGroups.join(", ");
+
+    setAddingGuest(true);
+    if (editingGuest) {
+      // Update existing contact
+      try {
+        const updatedData = {
+          ...editingGuest,
+          "Full Name": guestForm.fullName,
+          "Participant Name": guestForm.fullName,
+          "Name": guestForm.fullName,
+          "Mobile": guestForm.mobile,
+          "Mobile Number": guestForm.mobile,
+          "Email": guestForm.email,
+          "Address": guestForm.address,
+          "Designation": guestForm.designation,
+          "Organization": guestForm.designation,
+          "Group": groupStr,
+          "Category": groupStr,
+          "Vibhag": assignedGroups[0] || "General Committee",
+          groups: assignedGroups,
+          Groups: assignedGroups
+        };
+        const cleanCopy = { ...updatedData };
+        delete cleanCopy.id;
+        delete cleanCopy._submittedAt;
+        await fbUpdateRegistration(editingGuest.id, cleanCopy, auth?.idToken);
+        alert("Contact details and groups updated successfully!");
+        setEditingGuest(null);
+        setGuestForm({ fullName: "", mobile: "", email: "", address: "", designation: "", group: "CWC Member", groups: ["CWC Member"] });
+        fetchRegs();
+      } catch (err) {
+        alert("Error updating contact: " + err.message);
+      }
+    } else {
+      // Create new contact
+      const newGlobalGuest = {
+        "Full Name": guestForm.fullName,
+        "Participant Name": guestForm.fullName,
+        "Name": guestForm.fullName,
+        "Mobile": guestForm.mobile,
+        "Mobile Number": guestForm.mobile,
+        "Email": guestForm.email,
+        "Address": guestForm.address,
+        "Designation": guestForm.designation,
+        "Organization": guestForm.designation,
+        "Group": groupStr,
+        "Category": groupStr,
+        "Vibhag": assignedGroups[0] || "General Committee",
+        groups: assignedGroups,
+        Groups: assignedGroups,
+        isGlobalGuest: true,
+        _submittedAt: Date.now(),
+        formId: "global_guest_directory"
+      };
+
+      try {
+        await fbSubmitRegistration(newGlobalGuest, auth?.idToken);
+        alert("Global guest added to directory with assigned groups!");
+        setGuestForm({ fullName: "", mobile: "", email: "", address: "", designation: "", group: "CWC Member", groups: ["CWC Member"] });
+        fetchRegs();
+      } catch (err) {
+        alert("Error adding global guest: " + err.message);
+      }
     }
     setAddingGuest(false);
   };
@@ -15290,6 +22557,7 @@ function AdminInviteLetters({ mob, C, auth }) {
         const designation = row["Designation"] || row["Organization"] || row["Company"] || "";
         const address = row["Address"] || row["Location"] || "";
 
+        const groupName = row.Group || row.group || row.Category || row.category || row.Team || row.team || row.Vibhag || "CWC Member";
         const newGlobalGuest = {
           "Full Name": fullName,
           "Participant Name": fullName,
@@ -15300,6 +22568,9 @@ function AdminInviteLetters({ mob, C, auth }) {
           "Address": address,
           "Designation": designation,
           "Organization": designation,
+          "Group": groupName,
+          "Category": groupName,
+          "Vibhag": groupName,
           isGlobalGuest: true,
           _submittedAt: Date.now(),
           formId: "global_guest_directory_import"
@@ -15314,6 +22585,56 @@ function AdminInviteLetters({ mob, C, auth }) {
     }
     setUploadingExcel(false);
     if (fileInputRef.current) fileInputRef.current.value = "";
+  };
+
+  const handleImportContactGroup = async (targetGroup) => {
+    const ev = inviteEvents.find(ev => ev.id === selectedEventId);
+    if (!ev) return alert("Please select a valid event workspace.");
+
+    const guestsInGroup = globalGuests.filter(g => {
+      if (targetGroup === "All") return true;
+      const gGroups = getContactGroups(g);
+      return gGroups.includes(targetGroup);
+    });
+
+    if (guestsInGroup.length === 0) return alert("No contacts found in group " + targetGroup);
+
+    const unimported = guestsInGroup.filter(g => !regs.some(r => r.globalGuestId === g.id && r.eventId === ev.id));
+    if (unimported.length === 0) return alert("All " + guestsInGroup.length + " contacts from " + targetGroup + " are already imported into this workspace!");
+
+    if (!window.confirm("Import " + unimported.length + " contacts from " + targetGroup + " into " + ev.title + "?")) return;
+
+    let successCount = 0;
+    for (const g of unimported) {
+      const newEventGuest = {
+        ...g,
+        eventId: ev.id,
+        eventName: ev.title || "Unknown Event",
+        eventTitle: ev.title || "Unknown Event",
+        Status: "Approved",
+        isSpecialGuest: true,
+        globalGuestId: g.id,
+        _submittedAt: Date.now()
+      };
+      if (ev.guestMapping) {
+        if (ev.guestMapping.fullName) newEventGuest[ev.guestMapping.fullName] = g["Full Name"];
+        if (ev.guestMapping.designation) newEventGuest[ev.guestMapping.designation] = g.Designation;
+        if (ev.guestMapping.mobile) newEventGuest[ev.guestMapping.mobile] = g.Mobile;
+        if (ev.guestMapping.email) newEventGuest[ev.guestMapping.email] = g.Email;
+        if (ev.guestMapping.address) newEventGuest[ev.guestMapping.address] = g.Address;
+      }
+      delete newEventGuest.isGlobalGuest;
+      delete newEventGuest.id;
+      try {
+        await fbSubmitRegistration(newEventGuest, auth?.idToken);
+        successCount++;
+      } catch(e) {
+        console.error("Error importing contact:", e);
+      }
+    }
+    alert("Successfully imported " + successCount + " contacts from " + targetGroup + "!");
+    setShowImportContactGroupModal(false);
+    fetchRegs();
   };
 
   const handleImportGlobalGuest = async (globalGuest) => {
@@ -15395,10 +22716,24 @@ function AdminInviteLetters({ mob, C, auth }) {
   };
 
   const toggleRelease = async (r) => {
-    const newVal = !r.inviteLetterReleased;
-    setRegs(prev => prev.map(x => x.id === r.id ? { ...x, inviteLetterReleased: newVal } : x));
+    const docId = currentDocTpl?.id || 'invite';
+    const status = getDocReleaseStatus(r, docId);
+    const newVal = !status.isReleased;
+    let updatedR = { ...r };
+
+    if (docId === 'cert') {
+      updatedR.certificateReleased = newVal;
+    } else if (docId === 'invite') {
+      updatedR.inviteLetterReleased = newVal;
+    } else {
+      const currentReleased = { ...(r.releasedDocs || {}) };
+      currentReleased[docId] = newVal;
+      updatedR.releasedDocs = currentReleased;
+    }
+
+    setRegs(prev => prev.map(x => x.id === r.id ? updatedR : x));
     try {
-      const cleanData = { ...r, inviteLetterReleased: newVal };
+      const cleanData = { ...updatedR };
       delete cleanData.id; delete cleanData._submittedAt;
       await fbUpdateRegistration(r.id, cleanData, auth?.idToken);
     } catch (e) {
@@ -15408,10 +22743,24 @@ function AdminInviteLetters({ mob, C, auth }) {
   };
 
   const toggleHold = async (r) => {
-    const newVal = !r.inviteLetterHold;
-    setRegs(prev => prev.map(x => x.id === r.id ? { ...x, inviteLetterHold: newVal } : x));
+    const docId = currentDocTpl?.id || 'invite';
+    const status = getDocReleaseStatus(r, docId);
+    const newVal = !status.isHeld;
+    let updatedR = { ...r };
+
+    if (docId === 'cert') {
+      updatedR.certificateHold = newVal;
+    } else if (docId === 'invite') {
+      updatedR.inviteLetterHold = newVal;
+    } else {
+      const currentHeld = { ...(r.heldDocs || {}) };
+      currentHeld[docId] = newVal;
+      updatedR.heldDocs = currentHeld;
+    }
+
+    setRegs(prev => prev.map(x => x.id === r.id ? updatedR : x));
     try {
-      const cleanData = { ...r, inviteLetterHold: newVal };
+      const cleanData = { ...updatedR };
       delete cleanData.id; delete cleanData._submittedAt;
       await fbUpdateRegistration(r.id, cleanData, auth?.idToken);
     } catch (e) {
@@ -15421,26 +22770,39 @@ function AdminInviteLetters({ mob, C, auth }) {
   };
 
   const handleReleaseAll = async () => {
-    const unreleased = filteredRegs.filter(r => !r.inviteLetterReleased && !r.inviteLetterHold);
+    const docId = currentDocTpl?.id || 'invite';
+    const unreleased = filteredRegs.filter(r => {
+      const st = getDocReleaseStatus(r, docId);
+      return !st.isReleased && !st.isHeld;
+    });
     if (unreleased.length === 0) {
-      alert("All visible invite letters are already released or on hold!");
+      alert(`All visible ${currentDocTpl?.name || 'documents'} are already released or on hold!`);
       return;
     }
-    if (!window.confirm(`Are you sure you want to release ${unreleased.length} invite letters?`)) return;
+    if (!window.confirm(`Are you sure you want to release ${unreleased.length} ${currentDocTpl?.name || 'documents'}?`)) return;
     
     setReleasingAll(true);
     let successCount = 0;
     try {
       for (const r of unreleased) {
-        const cleanData = { ...r, inviteLetterReleased: true };
-        delete cleanData.id; delete cleanData._submittedAt;
-        await fbUpdateRegistration(r.id, cleanData, auth?.idToken);
-        setRegs(prev => prev.map(x => x.id === r.id ? { ...x, inviteLetterReleased: true } : x));
+        let updatedR = { ...r };
+        if (docId === 'cert') {
+          updatedR.certificateReleased = true;
+        } else if (docId === 'invite') {
+          updatedR.inviteLetterReleased = true;
+        } else {
+          const currentReleased = { ...(r.releasedDocs || {}) };
+          currentReleased[docId] = true;
+          updatedR.releasedDocs = currentReleased;
+        }
+        delete updatedR.id; delete updatedR._submittedAt;
+        await fbUpdateRegistration(r.id, updatedR, auth?.idToken);
+        setRegs(prev => prev.map(x => x.id === r.id ? { ...x, ...updatedR } : x));
         successCount++;
       }
-      alert(`Successfully released ${successCount} invite letters!`);
+      alert(`Successfully released ${successCount} ${currentDocTpl?.name || 'documents'}!`);
     } catch (e) {
-      alert(`Error after releasing ${successCount} invite letters: ` + e.message);
+      alert(`Error after releasing ${successCount} ${currentDocTpl?.name || 'documents'}: ` + e.message);
     }
     setReleasingAll(false);
   };
@@ -15449,11 +22811,12 @@ function AdminInviteLetters({ mob, C, auth }) {
     const fieldsData = {...r};
     const sName = fieldsData["Full Name"] || fieldsData["Name"] || fieldsData["Participant Name"] || "Student";
     try {
-      const url = await generateCertificatePDF(ev, fieldsData, sName, 'invite', 'url');
+      const targetDoc = currentDocTpl?.customTpl || currentDocTpl?.id || 'invite';
+      const url = await generateCertificatePDF(ev, fieldsData, sName, targetDoc, 'url');
       setPreviewCertUrl(url);
       setPreviewCertRegId(r.id);
     } catch (e) {
-      alert("Error generating invite letter: " + e.message);
+      alert(`Error generating ${currentDocTpl?.name || 'document'}: ` + e.message);
     }
   };
 
@@ -15519,14 +22882,17 @@ function AdminInviteLetters({ mob, C, auth }) {
       const ev = inviteEvents.find(e => e.id === selectedEventId);
       if (!ev) throw new Error("Active event not found.");
       
+      const targetDoc = currentDocTpl?.customTpl || currentDocTpl?.id || 'invite';
+      const docPrefix = (currentDocTpl?.name || "Document").replace(/[^a-zA-Z0-9]/g, '_');
+
       for (const r of targetList) {
         const fieldsData = {...r};
         const sName = fieldsData["Full Name"] || fieldsData["Name"] || fieldsData["Participant Name"] || "Student";
         
-        const pdfBlob = await generateCertificatePDF(ev, fieldsData, sName, "invite", "blob");
+        const pdfBlob = await generateCertificatePDF(ev, fieldsData, sName, targetDoc, "blob");
         if (pdfBlob) {
           const safeName = sName.replace(/[^a-z0-9]/gi, '_').toLowerCase();
-          zip.file(`Invite_${safeName}_${r.id.substring(0,5)}.pdf`, pdfBlob);
+          zip.file(`${docPrefix}_${safeName}_${r.id.substring(0,5)}.pdf`, pdfBlob);
         }
         count++;
         setDownloadProgress(count);
@@ -15535,7 +22901,7 @@ function AdminInviteLetters({ mob, C, auth }) {
       const zipBlob = await zip.generateAsync({ type: "blob" });
       const link = document.createElement("a");
       link.href = URL.createObjectURL(zipBlob);
-      link.download = `Invite_Letters_${new Date().getTime()}.zip`;
+      link.download = `${docPrefix}_${new Date().getTime()}.zip`;
       link.click();
       setBulkSelectMode(null);
     } catch (e) {
@@ -15563,9 +22929,15 @@ function AdminInviteLetters({ mob, C, auth }) {
                 <label style={{display:"block",fontSize:".85rem",fontWeight:600,marginBottom:6}}>Full Name (Required)</label>
                 <input required type="text" value={guestForm.fullName} onChange={e=>setGuestForm({...guestForm, fullName: e.target.value})} style={{width:"100%",padding:"8px 12px",borderRadius:8,border:"1px solid var(--bd)",boxSizing:"border-box",fontFamily:"inherit"}} />
               </div>
-              <div>
-                <label style={{display:"block",fontSize:".85rem",fontWeight:600,marginBottom:6}}>Designation / Organization</label>
-                <input type="text" value={guestForm.designation} onChange={e=>setGuestForm({...guestForm, designation: e.target.value})} style={{width:"100%",padding:"8px 12px",borderRadius:8,border:"1px solid var(--bd)",boxSizing:"border-box",fontFamily:"inherit"}} />
+              <div style={{display:"flex",gap:16}}>
+                <div style={{flex:1}}>
+                  <label style={{display:"block",fontSize:".85rem",fontWeight:600,marginBottom:6}}>Designation / Role</label>
+                  <input type="text" placeholder="e.g. CWC Member, Trustee, Lead" value={guestForm.designation} onChange={e=>setGuestForm({...guestForm, designation: e.target.value})} style={{width:"100%",padding:"8px 12px",borderRadius:8,border:"1px solid var(--bd)",boxSizing:"border-box",fontFamily:"inherit"}} />
+                </div>
+                <div style={{flex:1}}>
+                  <label style={{display:"block",fontSize:".85rem",fontWeight:600,marginBottom:6}}>Contact Group / Team</label>
+                  <input type="text" placeholder="e.g. CWC Members, Trustees, Volunteers" value={guestForm.group} onChange={e=>setGuestForm({...guestForm, group: e.target.value})} style={{width:"100%",padding:"8px 12px",borderRadius:8,border:"1px solid var(--bd)",boxSizing:"border-box",fontFamily:"inherit"}} />
+                </div>
               </div>
               <div style={{display:"flex",gap:16}}>
                 <div style={{flex:1}}>
@@ -15632,12 +23004,60 @@ function AdminInviteLetters({ mob, C, auth }) {
       <div style={{padding:mob?"16px":"32px",width:"100%",boxSizing:"border-box"}}>
          <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:24,flexDirection:mob?"column":"row",gap:16}}>
            <div>
-             <h2 style={{fontFamily:"'Playfair Display',serif",color:"var(--dt)",margin:0}}>Invite Letters Workspaces</h2>
-             <p style={{fontSize:".85rem",color:"var(--mu)",marginTop:4}}>Select an event below to manage its invite letters.</p>
+             <h2 style={{fontFamily:"'Playfair Display',serif",color:"var(--dt)",margin:0}}>Letters & Certificates Workspaces</h2>
+             <p style={{fontSize:".85rem",color:"var(--mu)",marginTop:4}}>Select an event below to manage invite letters, certificates, token passes, and custom PDF templates in one unified hub.</p>
            </div>
-           <button onClick={() => setShowGlobalGuestsModal(true)} style={{padding:"10px 16px",borderRadius:8,fontSize:".85rem",fontWeight:600,display:"flex",alignItems:"center",gap:8,background:"white",border:"1px solid var(--dt)",color:"var(--dt)",cursor:"pointer",boxShadow:"0 2px 8px rgba(0,0,0,0.05)"}}>
-             <span style={{fontSize:"1.2rem"}}>👥</span> Manage Special Guests Directory ({globalGuests.length})
-           </button>
+           <div style={{display:"flex",gap:10,flexWrap:"wrap",alignItems:"center"}}>
+             <button 
+               onClick={() => {
+                 const title = prompt("Enter Title for Internal Admin Workspace (e.g. Local Committee Member Invites, Trustee Meeting & Circulars, Volunteer Duty Passes):");
+                 if (title && title.trim()) {
+                   const cleanTitle = title.trim();
+                   const newEvId = "ev_internal_" + Date.now();
+                   const newInternalEv = {
+                     id: newEvId,
+                     title: cleanTitle,
+                     isInternalOnly: true,
+                     issueInviteLetters: true,
+                     date: "Ongoing",
+                     month: "2026",
+                     location: "Internal Committee",
+                     tag: "Internal Admin",
+                     color: "#EFF6FF",
+                     formId: ""
+                   };
+                   const updatedEvents = [newInternalEv, ...(C.events || [])];
+                   const updatedC = { ...C, events: updatedEvents };
+                   if (setC) setC(updatedC);
+                   fbSave(updatedC, auth?.idToken);
+                   setSelectedEventId(newEvId);
+                   alert(`Created internal workspace "${cleanTitle}"! You can now import committee members/guests and configure PDF passes.`);
+                 }
+               }}
+               style={{
+                 padding:"10px 18px",
+                 borderRadius:8,
+                 fontSize:".85rem",
+                 fontWeight:800,
+                 display:"flex",
+                 alignItems:"center",
+                 gap:8,
+                 background:"linear-gradient(135deg, #0D4B5E, #135D74)",
+                 border:"none",
+                 color:"white",
+                 cursor:"pointer",
+                 boxShadow:"0 2px 8px rgba(13,75,94,0.25)"
+               }}
+             >
+               <span>➕</span> Create Internal Workspace
+             </button>
+             <button onClick={() => setShowInviteTplModal(true)} style={{padding:"10px 18px",borderRadius:8,fontSize:".85rem",fontWeight:700,display:"flex",alignItems:"center",gap:8,background:"#DCFCE7",border:"1px solid #86EFAC",color:"#15803D",cursor:"pointer",boxShadow:"0 2px 8px rgba(21,128,61,0.15)"}}>
+               <span style={{fontSize:"1.1rem"}}>📝</span> WhatsApp Invite Template
+             </button>
+             <button onClick={() => setShowGlobalGuestsModal(true)} style={{padding:"10px 16px",borderRadius:8,fontSize:".85rem",fontWeight:600,display:"flex",alignItems:"center",gap:8,background:"white",border:"1px solid var(--dt)",color:"var(--dt)",cursor:"pointer",boxShadow:"0 2px 8px rgba(0,0,0,0.05)"}}>
+               <span style={{fontSize:"1.2rem"}}>👥</span> Manage Special Guests Directory ({globalGuests.length})
+             </button>
+           </div>
          </div>
          
          <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(280px,1fr))",gap:20,marginTop:24}}>
@@ -15647,26 +23067,128 @@ function AdminInviteLetters({ mob, C, auth }) {
                      let evName = r.eventName || r.eventTitle || r.eventId;
                      return r.eventId === ev.id || evName === ev.title || evName === ev.titleGu;
                  }).length;
+                 const isInternal = Boolean(ev.isInternalOnly || ev.hideFromPublicWebsite);
                  return (
-                     <div key={ev.id} onClick={() => setSelectedEventId(ev.id)} style={{background:"white",border:"1px solid var(--bd)",borderRadius:12,padding:24,cursor:"pointer",boxShadow:"0 4px 12px rgba(0,0,0,0.04)",transition:"transform 0.2s, box-shadow 0.2s"}} onMouseEnter={e=>{e.currentTarget.style.transform="translateY(-4px)"; e.currentTarget.style.boxShadow="0 8px 24px rgba(0,0,0,0.08)"}} onMouseLeave={e=>{e.currentTarget.style.transform="none"; e.currentTarget.style.boxShadow="0 4px 12px rgba(0,0,0,0.04)"}}>
-                          <div style={{fontSize:"2.5rem",marginBottom:12}}>💌</div>
-                          <h3 style={{margin:"0 0 8px 0",color:"#333"}}>{ev.title || "Unnamed Event"}</h3>
-                          <p style={{margin:0,fontSize:".85rem",color:"var(--mu)"}}>{count} approved registrants</p>
+                     <div 
+                       key={ev.id} 
+                       onClick={() => setSelectedEventId(ev.id)} 
+                       style={{
+                         background: isInternal ? "linear-gradient(135deg, #FFFFFF, #F0F9FF)" : "white",
+                         border: isInternal ? "1.5px solid #BAE6FD" : "1px solid var(--bd)",
+                         borderRadius: 12,
+                         padding: 24,
+                         cursor: "pointer",
+                         boxShadow: isInternal ? "0 4px 14px rgba(2,132,199,0.08)" : "0 4px 12px rgba(0,0,0,0.04)",
+                         transition: "transform 0.2s, box-shadow 0.2s",
+                         position: "relative",
+                         overflow: "hidden"
+                       }} 
+                       onMouseEnter={e=>{e.currentTarget.style.transform="translateY(-4px)"; e.currentTarget.style.boxShadow="0 8px 24px rgba(0,0,0,0.08)"}} 
+                       onMouseLeave={e=>{e.currentTarget.style.transform="none"; e.currentTarget.style.boxShadow=isInternal?"0 4px 14px rgba(2,132,199,0.08)":"0 4px 12px rgba(0,0,0,0.04)"}}
+                     >
+                          <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:12}}>
+                            <div style={{fontSize:"2.5rem"}}>{isInternal ? "🔒" : "💌"}</div>
+                            {isInternal && (
+                              <span style={{fontSize:".68rem",fontWeight:800,background:"#E0F2FE",color:"#0369A1",padding:"3px 8px",borderRadius:6,border:"1px solid #BAE6FD"}}>
+                                🔒 Internal Committee
+                              </span>
+                            )}
+                          </div>
+                          <h3 style={{margin:"0 0 8px 0",color:"#1E293B",fontSize:"1.05rem",fontWeight:800}}>{ev.title || "Unnamed Event"}</h3>
+                          <p style={{margin:0,fontSize:".85rem",color:"var(--mu)",fontWeight:600}}>{count} {isInternal ? 'members / invitees' : 'approved registrants'}</p>
                      </div>
                  );
              })}
              {inviteEvents.length === 0 && (
-                 <p style={{color:"var(--mu)"}}>No events have Invite Letters enabled yet. Enable them in Content Editor {">"} Events.</p>
+                 <p style={{color:"var(--mu)"}}>No events have Invite Letters enabled yet. Click "+ Create Internal Workspace" above or enable them in Content Editor {">"} Events.</p>
              )}
          </div>
+
+         {/* Bulk WhatsApp Broadcast Modal */}
+      {showBulkWhatsAppModal && (
+        <BulkWhatsAppBroadcastModal
+          event={activeEvent}
+          recipients={filteredRegs}
+          C={C}
+          onClose={() => setShowBulkWhatsAppModal(false)}
+        />
+      )}
+
+      {/* Workspace Multi-Template Modal */}
+      {showWorkspaceTplModal && (
+        <WorkspaceWhatsAppTemplateModal
+          event={activeEvent}
+          C={C}
+          setC={setC}
+          auth={auth}
+          onClose={() => setShowWorkspaceTplModal(false)}
+        />
+      )}
+      {/* WhatsApp Invite Letter Template Modal */}
+         {showInviteTplModal && (
+           <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.6)",zIndex:100002,display:"flex",alignItems:"center",justifyContent:"center",padding:16}} onClick={()=>setShowInviteTplModal(false)}>
+             <div style={{background:"white",borderRadius:16,maxWidth:700,width:"100%",maxHeight:"90vh",overflowY:"auto",padding:24,boxShadow:"0 20px 40px rgba(0,0,0,0.3)"}} onClick={e=>e.stopPropagation()}>
+               <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16,borderBottom:"1px solid #E2E8F0",paddingBottom:12}}>
+                 <div>
+                   <h3 style={{fontSize:"1.15rem",fontWeight:800,color:"#15803D",margin:0,display:"flex",alignItems:"center",gap:8}}>
+                     <span>📩</span> Official WhatsApp Invitation Letter & Pass Template
+                   </h3>
+                   <div style={{fontSize:".8rem",color:"#64748B",marginTop:2}}>
+                     Configure the invitation message sent to students and guests for events.
+                   </div>
+                 </div>
+                 <button onClick={()=>setShowInviteTplModal(false)} style={{background:"#F1F5F9",border:"none",borderRadius:"50%",width:32,height:32,cursor:"pointer",fontWeight:700}}>✕</button>
+               </div>
+
+               <div style={{background:"#F8FAFC",border:"1px solid #CBD5E1",borderRadius:10,padding:16,marginBottom:16}}>
+                 <div style={{fontSize:".78rem",fontWeight:700,color:"#334155",marginBottom:8,display:"flex",alignItems:"center",gap:6,flexWrap:"wrap"}}>
+                   <span>Insert Placeholders:</span>
+                   <span style={{background:"white",border:"1px solid #CBD5E1",padding:"2px 6px",borderRadius:4,fontSize:".7rem"}}>{'{STUDENT_NAME}'}</span>
+                   <span style={{background:"white",border:"1px solid #CBD5E1",padding:"2px 6px",borderRadius:4,fontSize:".7rem"}}>{'{TXN_ID}'}</span>
+                   <span style={{background:"white",border:"1px solid #CBD5E1",padding:"2px 6px",borderRadius:4,fontSize:".7rem"}}>{'{VIBHAG}'}</span>
+                   <span style={{background:"white",border:"1px solid #CBD5E1",padding:"2px 6px",borderRadius:4,fontSize:".7rem"}}>{'{STREAM}'}</span>
+                   <span style={{background:"white",border:"1px solid #CBD5E1",padding:"2px 6px",borderRadius:4,fontSize:".7rem"}}>{'{PORTAL_URL}'}</span>
+                   <span style={{background:"white",border:"1px solid #CBD5E1",padding:"2px 6px",borderRadius:4,fontSize:".7rem"}}>{'{HELPLINE_PHONES}'}</span>
+                 </div>
+
+                 <textarea
+                   defaultValue={C.whatsAppTplInvite !== undefined ? C.whatsAppTplInvite : `🏛️ *MUMBAI MEGHWAL PANCHAYAT*\n🏆 *Education Felicitation 2026 - Official Invitation*\n═══════════════════════\nNamaste *{STUDENT_NAME}*,\n\nWe are pleased to invite you and your family as our esteemed guests of honor to the *Annual Student Education Felicitation 2026*.\n\n📋 *Invitation Pass Details:*\n• *Transaction / Pass ID:* {TXN_ID}\n• *Invitee Name:* {STUDENT_NAME}\n• *Vibhag:* {VIBHAG}\n• *Stream / Class:* {STREAM}\n\n📅 *Event Date:* 02-10-2026 (Friday)\n⏰ *Reporting Time:* 09:30 AM\n📍 *Venue:* Mumbai, Maharashtra\n\n👉 *Download Official PDF Invitation Letter & Entry Pass:*\n{PORTAL_URL}\n\nPlease show this digital pass or downloaded invitation letter at the registration desk upon arrival.\n\nWarm regards,\n*Central Working Committee (CWC) & Education Board*\n*Mumbai Meghwal Panchayat & Vidya Gohil Trust*\n📞 Committee Helpline: {HELPLINE_PHONES}`}
+                   onChange={e => {
+                     if (C) C.whatsAppTplInvite = e.target.value;
+                   }}
+                   rows={11}
+                   style={{width:"100%",padding:"12px 14px",borderRadius:8,border:"1px solid #CBD5E1",fontSize:".85rem",lineHeight:1.5,fontFamily:"monospace",boxSizing:"border-box",background:"white"}}
+                 />
+               </div>
+
+               <div style={{display:"flex",justifyContent:"flex-end",gap:10}}>
+                 <button onClick={()=>setShowInviteTplModal(false)} style={{padding:"8px 16px",borderRadius:8,background:"white",border:"1px solid #CBD5E1",fontSize:".85rem",cursor:"pointer",fontWeight:600}}>
+                   Cancel
+                 </button>
+                 <button 
+                   onClick={async () => {
+                     try {
+                       await fbSave(C, auth?.idToken);
+                       alert("✅ WhatsApp Invitation Letter Template saved successfully!");
+                       setShowInviteTplModal(false);
+                     } catch(err) {
+                       alert("Failed to save: " + err.message);
+                     }
+                   }} 
+                   style={{padding:"8px 20px",borderRadius:8,background:"#15803D",color:"white",border:"none",fontSize:".85rem",fontWeight:700,cursor:"pointer"}}
+                 >
+                   💾 Save Template
+                 </button>
+               </div>
+             </div>
+           </div>
+         )}
 
          {/* Global Guests Modal */}
          {showGlobalGuestsModal && renderGlobalGuestsModal()}
       </div>
     );
   }
-
-  const activeEvent = inviteEvents.find(e => e.id === selectedEventId) || {};
 
   return (
     <div style={{display:"flex",width:"100%"}}>
@@ -15678,12 +23200,18 @@ function AdminInviteLetters({ mob, C, auth }) {
         </div>
         <div style={{display:"flex",flexDirection:mob?"column":"row",justifyContent:"space-between",alignItems:"flex-start",marginBottom:20,gap:16}}>
           <div>
-            <h2 style={{fontFamily:"'Playfair Display',serif",color:"var(--dt)",margin:0}}>Invite Letters Console</h2>
-            <p style={{fontSize:".85rem",color:"var(--mu)",marginTop:4}}>Manage and release invite letters for: <strong>{activeEvent.title}</strong></p>
+            <h2 style={{fontFamily:"'Playfair Display',serif",color:"var(--dt)",margin:0}}>Letters & Certificates Console</h2>
+            <p style={{fontSize:".85rem",color:"var(--mu)",marginTop:4}}>Manage, release, and broadcast official documents for: <strong>{activeEvent.title}</strong></p>
           </div>
           <div style={{display:"flex",gap:12,width:mob?"100%":"auto",flexWrap:"wrap"}}>
-            <button onClick={() => setShowImportGuestModal(true)} style={{padding:"8px 16px",borderRadius:8,fontSize:".85rem",fontWeight:600,display:"flex",alignItems:"center",gap:6,background:"white",border:"1px solid var(--bd)",color:"var(--dt)",cursor:"pointer",boxShadow:"0 2px 8px rgba(0,0,0,0.05)",whiteSpace:"nowrap"}}>
-              + Import Special Guest
+            <button onClick={() => setShowWorkspaceTplModal(true)} style={{padding:"8px 16px",borderRadius:8,fontSize:".85rem",fontWeight:700,display:"flex",alignItems:"center",gap:6,background:"#F0FDF4",border:"1px solid #86EFAC",color:"#15803D",cursor:"pointer",boxShadow:"0 2px 8px rgba(21,128,61,0.15)",whiteSpace:"nowrap"}}>
+              📝 Workspace WhatsApp Templates ({((activeEvent?.whatsAppTemplates && activeEvent.whatsAppTemplates.length > 0) ? activeEvent.whatsAppTemplates.length : 3)})
+            </button>
+            <button onClick={() => setShowImportContactGroupModal(true)} style={{padding:"8px 16px",borderRadius:8,fontSize:".85rem",fontWeight:800,display:"flex",alignItems:"center",gap:6,background:"linear-gradient(135deg, #0D4B5E, #135D74)",color:"white",border:"none",cursor:"pointer",boxShadow:"0 2px 8px rgba(13,75,94,0.2)",whiteSpace:"nowrap"}}>
+              <span>👥</span> Import Contact Group ({Array.from(new Set(globalGuests.map(g => g.Group || g.Category || g.Vibhag || "General Committee"))).length})
+            </button>
+            <button onClick={() => setShowImportGuestModal(true)} style={{padding:"8px 14px",borderRadius:8,fontSize:".85rem",fontWeight:600,display:"flex",alignItems:"center",gap:6,background:"white",border:"1px solid var(--bd)",color:"var(--dt)",cursor:"pointer",boxShadow:"0 2px 8px rgba(0,0,0,0.05)",whiteSpace:"nowrap"}}>
+              + Single Guest
             </button>
             <button onClick={() => {
               setMappingForm({
@@ -15703,6 +23231,29 @@ function AdminInviteLetters({ mob, C, auth }) {
             <button onClick={handleReleaseAll} disabled={releasingAll || refreshing || downloadingBulk || downloadingEnvelopes} style={{padding:"8px 16px",borderRadius:8,fontSize:".85rem",fontWeight:600,display:"flex",alignItems:"center",gap:6,background:"var(--dt)",color:"white",border:"none",cursor:(releasingAll || refreshing || downloadingBulk || downloadingEnvelopes)?"wait":"pointer",boxShadow:"0 2px 8px rgba(0,0,0,0.1)",whiteSpace:"nowrap"}}>
               {releasingAll ? "Releasing..." : "📢 Release All"}
             </button>
+            <button onClick={() => {
+              const targetList = selectedIds.length > 0
+                ? filteredRegs.filter(r => selectedIds.includes(r.id || r['Transaction ID']))
+                : filteredRegs;
+              if (targetList.length === 0) return alert("No approved invitees selected or available to send.");
+              setShowBulkWhatsAppModal(true);
+            }} style={{
+              padding:"8px 18px",
+              borderRadius:8,
+              fontSize:".85rem",
+              fontWeight:800,
+              display:"flex",
+              alignItems:"center",
+              gap:6,
+              background: selectedIds.length > 0 ? "linear-gradient(135deg, #15803D, #166534)" : "#25D366",
+              color:"white",
+              border:"none",
+              cursor:"pointer",
+              boxShadow:"0 2px 8px rgba(37,211,102,0.35)",
+              whiteSpace:"nowrap"
+            }}>
+              <span>🚀</span> Send All WhatsApp {selectedIds.length > 0 ? `(${selectedIds.length} Selected)` : `(${filteredRegs.length})`}
+            </button>
             <button onClick={handleBulkDownload} disabled={downloadingBulk || releasingAll || refreshing || downloadingEnvelopes} style={{padding:"8px 16px",borderRadius:8,fontSize:".85rem",fontWeight:600,display:"flex",alignItems:"center",gap:6,background:"var(--sf)",color:"white",border:"none",cursor:(downloadingBulk || releasingAll || refreshing || downloadingEnvelopes)?"wait":"pointer",boxShadow:"0 2px 8px rgba(0,0,0,0.1)",whiteSpace:"nowrap"}}>
               {downloadingBulk ? `Generating ZIP (${downloadProgress}/${filteredRegs.length})...` : "📦 Bulk Download ZIP"}
             </button>
@@ -15712,22 +23263,314 @@ function AdminInviteLetters({ mob, C, auth }) {
           </div>
         </div>
 
-        <div style={{marginBottom: 16, display: "flex", gap: 12}}>
-          <input type="text" placeholder="Search students/guests..." value={searchQuery} onChange={e=>setSearchQuery(e.target.value)} style={{padding:"8px 12px",borderRadius:8,border:"1px solid var(--bd)",fontSize:".85rem",width:"100%",maxWidth:300,outline:"none",fontFamily:"inherit"}} />
+        <div style={{marginBottom: 16, display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap"}}>
+          <input type="text" placeholder="Search students/guests..." value={searchQuery} onChange={e=>setSearchQuery(e.target.value)} style={{padding:"8px 12px",borderRadius:8,border:"1px solid var(--bd)",fontSize:".85rem",width:240,outline:"none",fontFamily:"inherit"}} />
+          
+{(() => {
+            const basePool = inviteRegs.filter(r => {
+              if (!searchQuery) return true;
+              const q = searchQuery.toLowerCase();
+              return Object.values(r).some(v => String(v).toLowerCase().includes(q));
+            });
+
+            const activeDocId = currentDocTpl?.id || 'invite';
+            const cOpened = basePool.filter(r => r.passOpenCount && r.passOpenCount > 0).length;
+            const cUnopened = basePool.filter(r => !r.passOpenCount || r.passOpenCount === 0).length;
+            const cReleased = basePool.filter(r => getDocReleaseStatus(r, activeDocId).isReleased).length;
+            const cPendingRel = basePool.filter(r => !getDocReleaseStatus(r, activeDocId).isReleased && !getDocReleaseStatus(r, activeDocId).isHeld).length;
+
+            const isAnyFilterActive = inviteOpenPillFilter !== null || inviteReleasePillFilter !== null;
+
+            return (
+              <div style={{display:"flex",alignItems:"center",gap:6,background:"#F8FAFC",padding:"4px 8px",borderRadius:10,border:"1.5px solid #CBD5E1",flexWrap:"wrap"}}>
+                <span style={{fontSize:".75rem",fontWeight:800,color:"#334155",display:"flex",alignItems:"center",gap:3}}>
+                  <span>🎯</span> Filter Rows:
+                </span>
+                
+                {/* Opened Pill */}
+                <button
+                  type="button"
+                  onClick={() => setInviteOpenPillFilter(prev => prev === "opened" ? null : "opened")}
+                  style={{
+                    padding: "4px 9px",
+                    borderRadius: 6,
+                    border: inviteOpenPillFilter === "opened" ? "2px solid #1E40AF" : "1px solid #BFDBFE",
+                    background: inviteOpenPillFilter === "opened" ? "#1D4ED8" : "#EFF6FF",
+                    color: inviteOpenPillFilter === "opened" ? "white" : "#1D4ED8",
+                    fontSize: ".74rem",
+                    fontWeight: 800,
+                    cursor: "pointer",
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 4,
+                    boxShadow: inviteOpenPillFilter === "opened" ? "0 2px 6px rgba(29,78,216,0.35)" : "none"
+                  }}
+                  title={inviteOpenPillFilter === "opened" ? "Click to remove filter" : "Filter ONLY invitees who have opened their pass"}
+                >
+                  <span>👁️</span> Opened ({cOpened}) {inviteOpenPillFilter === "opened" && "✓"}
+                </button>
+
+                {/* Unopened Pill */}
+                <button
+                  type="button"
+                  onClick={() => setInviteOpenPillFilter(prev => prev === "unopened" ? null : "unopened")}
+                  style={{
+                    padding: "4px 9px",
+                    borderRadius: 6,
+                    border: inviteOpenPillFilter === "unopened" ? "2px solid #475569" : "1px solid #CBD5E1",
+                    background: inviteOpenPillFilter === "unopened" ? "#475569" : "white",
+                    color: inviteOpenPillFilter === "unopened" ? "white" : "#64748B",
+                    fontSize: ".74rem",
+                    fontWeight: 800,
+                    cursor: "pointer",
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 4,
+                    boxShadow: inviteOpenPillFilter === "unopened" ? "0 2px 6px rgba(71,85,105,0.35)" : "none"
+                  }}
+                  title={inviteOpenPillFilter === "unopened" ? "Click to remove filter" : "Filter ONLY invitees who have NOT opened their pass"}
+                >
+                  <span>⚪</span> Unopened ({cUnopened}) {inviteOpenPillFilter === "unopened" && "✓"}
+                </button>
+
+                <span style={{color:"#CBD5E1",fontSize:".8rem",margin:"0 2px"}}>|</span>
+
+                {/* Released Pill */}
+                <button
+                  type="button"
+                  onClick={() => setInviteReleasePillFilter(prev => prev === "released" ? null : "released")}
+                  style={{
+                    padding: "4px 9px",
+                    borderRadius: 6,
+                    border: inviteReleasePillFilter === "released" ? "2px solid #15803D" : "1px solid #BBF7D0",
+                    background: inviteReleasePillFilter === "released" ? "#15803D" : "#F0FDF4",
+                    color: inviteReleasePillFilter === "released" ? "white" : "#166534",
+                    fontSize: ".74rem",
+                    fontWeight: 800,
+                    cursor: "pointer",
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 4,
+                    boxShadow: inviteReleasePillFilter === "released" ? "0 2px 6px rgba(21,128,61,0.35)" : "none"
+                  }}
+                  title={inviteReleasePillFilter === "released" ? "Click to remove filter" : "Filter ONLY released invite letters"}
+                >
+                  <span>📢</span> Released ({cReleased}) {inviteReleasePillFilter === "released" && "✓"}
+                </button>
+
+                {/* Pending Release Pill */}
+                <button
+                  type="button"
+                  onClick={() => setInviteReleasePillFilter(prev => prev === "pending" ? null : "pending")}
+                  style={{
+                    padding: "4px 9px",
+                    borderRadius: 6,
+                    border: inviteReleasePillFilter === "pending" ? "2px solid #D97706" : "1px solid #FDE68A",
+                    background: inviteReleasePillFilter === "pending" ? "#D97706" : "#FFFBEB",
+                    color: inviteReleasePillFilter === "pending" ? "white" : "#92400E",
+                    fontSize: ".74rem",
+                    fontWeight: 800,
+                    cursor: "pointer",
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 4,
+                    boxShadow: inviteReleasePillFilter === "pending" ? "0 2px 6px rgba(217,119,6,0.35)" : "none"
+                  }}
+                  title={inviteReleasePillFilter === "pending" ? "Click to remove filter" : "Filter ONLY pending release invite letters"}
+                >
+                  <span>⏳</span> Pending ({cPendingRel}) {inviteReleasePillFilter === "pending" && "✓"}
+                </button>
+
+                {/* Reset Filters */}
+                {isAnyFilterActive && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setInviteOpenPillFilter(null);
+                      setInviteReleasePillFilter(null);
+                    }}
+                    style={{
+                      padding: "4px 8px",
+                      borderRadius: 6,
+                      border: "1px solid #FECACA",
+                      background: "#FEF2F2",
+                      color: "#DC2626",
+                      fontSize: ".72rem",
+                      fontWeight: 800,
+                      cursor: "pointer",
+                      marginLeft: 4
+                    }}
+                    title="Clear all active filters"
+                  >
+                    ✕ Reset ({filteredRegs.length} shown)
+                  </button>
+                )}
+              </div>
+            );
+          })()}
+        </div>
+
+        {/* Document Template Tabs Bar with Inline Placement Dropdowns on Each Tab */}
+        <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:16,borderBottom:"2px solid #CBD5E1",paddingBottom:10,overflowX:"auto",flexWrap:"wrap"}}>
+          <div style={{fontSize:".78rem",fontWeight:800,color:"#334155",textTransform:"uppercase",display:"flex",alignItems:"center",gap:4,marginRight:4}}>
+            <span>📑</span> TEMPLATES & PASSES:
+          </div>
+          
+          {availableDocTemplates.map(tab => {
+            const isActive = tab.id === (currentDocTpl?.id || 'invite');
+            return (
+              <div
+                key={tab.id}
+                onClick={() => {
+                  setActiveDocType(tab.id);
+                  setPreviewCertUrl(null);
+                  setPreviewCertRegId(null);
+                }}
+                style={{
+                  padding: "8px 14px",
+                  borderRadius: "10px",
+                  border: isActive ? "2.5px solid #15803D" : "1.5px solid #CBD5E1",
+                  background: isActive ? "#F0FDF4" : "white",
+                  color: isActive ? "#15803D" : "#334155",
+                  cursor: "pointer",
+                  display: "flex",
+                  flexDirection: "column",
+                  gap: 4,
+                  boxShadow: isActive ? "0 3px 10px rgba(21,128,61,0.18)" : "0 1px 3px rgba(0,0,0,0.04)",
+                  minWidth: 175,
+                  transition: "all 0.15s"
+                }}
+              >
+                {/* Tab Header */}
+                <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:8}}>
+                  <div style={{display:"flex",alignItems:"center",gap:6}}>
+                    <span style={{fontSize:"1.1rem"}}>{tab.icon || '📄'}</span>
+                    <strong style={{fontSize:".86rem",color: isActive ? "#15803D" : "#0F172A"}}>{tab.name}</strong>
+                  </div>
+                  {tab.bgUrl ? (
+                    <span style={{fontSize:".65rem",background:"#DCFCE7",color:"#15803D",padding:"1px 5px",borderRadius:4,fontWeight:800}}>
+                      ✓ Configured
+                    </span>
+                  ) : (
+                    <span style={{fontSize:".65rem",background:"#FEF3C7",color:"#B45309",padding:"1px 5px",borderRadius:4,fontWeight:800}}>
+                      ⚠️ Needs Image
+                    </span>
+                  )}
+                </div>
+
+                {/* Inline Placement Dropdown / Tag directly inside each tab */}
+                <div style={{marginTop: 2}} onClick={e => e.stopPropagation()}>
+                  {tab.id === 'invite' ? (
+                    <span style={{fontSize:".68rem",fontWeight:700,color:"#D2691E",background:"#FFF7ED",padding:"2px 6px",borderRadius:4,border:"1px solid #FFEDD5",display:"inline-block"}}>
+                      📍 Portal: 💌 Special Invites
+                    </span>
+                  ) : tab.id === 'cert' ? (
+                    <span style={{fontSize:".68rem",fontWeight:700,color:"#15803D",background:"#DCFCE7",padding:"2px 6px",borderRadius:4,border:"1px solid #BBF7D0",display:"inline-block"}}>
+                      📍 Portal: 🎓 Education Awards
+                    </span>
+                  ) : (
+                    <div style={{display:"flex",alignItems:"center",gap:4}}>
+                      <span style={{fontSize:".68rem",fontWeight:800,color:"#475569"}}>📍 Portal:</span>
+                      <select
+                        value={tab.customTpl?.targetSection || "invites"}
+                        onChange={(e) => {
+                          e.stopPropagation();
+                          const newSection = e.target.value;
+                          const updatedTpls = (activeEvent.pdfTemplates || []).map(t => t.id === tab.id ? { ...t, targetSection: newSection } : t);
+                          const updatedEvents = (C.events || []).map(ev => (ev.id === activeEvent.id || ev.title === activeEvent.title) ? { ...ev, pdfTemplates: updatedTpls } : ev);
+                          const updatedC = { ...C, events: updatedEvents };
+                          if (setC) setC(updatedC);
+                          fbSave(updatedC, auth?.idToken);
+                        }}
+                        style={{
+                          fontSize: ".7rem",
+                          fontWeight: 800,
+                          padding: "2px 6px",
+                          borderRadius: 4,
+                          border: "1.5px solid #2563EB",
+                          background: (tab.customTpl?.targetSection === 'awards') ? "#F0FDF4" : "#FFF7ED",
+                          color: (tab.customTpl?.targetSection === 'awards') ? "#15803D" : "#D2691E",
+                          cursor: "pointer"
+                        }}
+                      >
+                        <option value="invites">💌 Special Invites</option>
+                        <option value="awards">🎓 Education Awards</option>
+                      </select>
+                    </div>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+
+          {/* Add New Template Button */}
+          <button
+            type="button"
+            onClick={() => {
+              const name = prompt("Enter Name for new PDF Template (e.g. Food Coupon & Dinner Pass, Token Number, Gate Pass):");
+              if (name && name.trim()) {
+                const cleanName = name.trim();
+                const tplId = "doc_" + Date.now();
+                const newTpl = {
+                  id: tplId,
+                  name: cleanName,
+                  targetSection: "invites",
+                  bgUrl: "",
+                  map: {},
+                  fontSize: 30,
+                  fontColor: "#000000"
+                };
+                const updatedTpls = [...(activeEvent.pdfTemplates || []), newTpl];
+                const updatedEvents = (C.events || []).map(e => (e.id === activeEvent.id || e.title === activeEvent.title) ? { ...e, pdfTemplates: updatedTpls } : e);
+                const updatedC = { ...C, events: updatedEvents };
+                if (setC) setC(updatedC);
+                fbSave(updatedC, auth?.idToken);
+                setActiveDocType(tplId);
+                alert(`Created "${cleanName}"! You can configure its background image in Content Editor -> Events.`);
+              }
+            }}
+            style={{
+              padding:"12px 16px",
+              borderRadius:10,
+              fontSize:".8rem",
+              fontWeight:800,
+              background:"#15803D",
+              color:"white",
+              border:"none",
+              cursor:"pointer",
+              display:"flex",
+              alignItems:"center",
+              gap:6,
+              boxShadow:"0 2px 8px rgba(21,128,61,0.25)",
+              whiteSpace:"nowrap"
+            }}
+          >
+            <span>➕</span> + Add New Template
+          </button>
         </div>
 
         {loading ? <p>Loading inviteLetters...</p> : (
           <div style={{borderRadius:12,boxShadow:"0 10px 30px rgba(0,0,0,0.06)",overflow:"hidden",border:"1px solid #E0E0E0",background:"white",overflowX:"auto"}}>
-            <table style={{width:"100%",borderCollapse:"collapse",fontSize:".85rem",minWidth:900}}>
+            <table style={{width:"100%",borderCollapse:"collapse",fontSize:".85rem",minWidth:1000}}>
               <thead>
-                <tr>
-                  <th style={{padding:"14px 12px",textAlign:"center",background:"var(--dt)",color:"white",fontWeight:600,width:"220px"}}>Actions</th>
-                  <th style={{padding:"14px 12px",textAlign:"left",background:"var(--dt)",color:"white",fontWeight:600}}>Date Approved</th>
-                  <th style={{padding:"14px 12px",textAlign:"left",background:"var(--dt)",color:"white",fontWeight:600}}>Event</th>
-                  <th style={{padding:"14px 12px",textAlign:"left",background:"var(--dt)",color:"white",fontWeight:600}}>Participant Name</th>
-                  <th style={{padding:"14px 12px",textAlign:"center",background:"var(--dt)",color:"white",fontWeight:600}}>Status</th>
-                  <th style={{padding:"14px 12px",textAlign:"center",background:"var(--dt)",color:"white",fontWeight:600}}>Viewed On</th>
-                  <th style={{padding:"14px 12px",textAlign:"center",background:"var(--dt)",color:"white",fontWeight:600}}>Downloaded On</th>
+                <tr style={{background:"linear-gradient(135deg, #0D4B5E, #135D74)"}}>
+                  <th style={{padding:"14px 8px",textAlign:"center",color:"white",fontWeight:700,width:"40px"}}>
+                    <input
+                      type="checkbox"
+                      checked={filteredRegs.length > 0 && selectedIds.length === filteredRegs.length}
+                      onChange={toggleSelectAll}
+                      style={{cursor:"pointer",width:16,height:16,accentColor:"#22C55E"}}
+                      title="Select / Deselect all"
+                    />
+                  </th>
+                  <th style={{padding:"14px 12px",textAlign:"center",color:"white",fontWeight:700,width:"240px"}}>Actions</th>
+                  <th style={{padding:"14px 12px",textAlign:"left",color:"white",fontWeight:700}}>Participant & ID</th>
+                  <th style={{padding:"14px 12px",textAlign:"left",color:"white",fontWeight:700}}>📱 Mobile Number</th>
+                  <th style={{padding:"14px 12px",textAlign:"left",color:"white",fontWeight:700}}>Event</th>
+                  <th style={{padding:"14px 12px",textAlign:"center",color:"white",fontWeight:700}}>Date Approved</th>
+                  <th style={{padding:"14px 12px",textAlign:"center",color:"white",fontWeight:700}}>Status</th>
+                  <th style={{padding:"14px 12px",textAlign:"center",color:"white",fontWeight:700}}>👁️ Viewed</th>
+                  <th style={{padding:"14px 12px",textAlign:"center",color:"white",fontWeight:700}}>📥 Downloaded</th>
                 </tr>
               </thead>
               <tbody>
@@ -15741,44 +23584,234 @@ function AdminInviteLetters({ mob, C, auth }) {
                   let vDate = r.inviteViewDate ? new Date(r.inviteViewDate).toLocaleString() : "-";
                   let dDate = r.inviteDownloadDate ? new Date(r.inviteDownloadDate).toLocaleString() : "-";
 
+                  const rowId = r.id || r['Transaction ID'];
+                  const isSelected = selectedIds.includes(rowId);
+                  const waLogs = (r.logHistory || []).filter(lg => lg.type === "whatsapp" || (lg.action && String(lg.action).toLowerCase().includes("whatsapp")));
+                  const waCount = Math.max(r.whatsAppCount || 0, waLogs.length);
+                  const lastWaLog = waLogs[waLogs.length - 1];
+                  const lastWaType = r.lastWhatsAppType || lastWaLog?.messageType || lastWaLog?.action || "Official Invitation Pass";
+                  const lastWaDate = r.lastWhatsAppAt || lastWaLog?.timestamp;
+                  const waTooltip = waCount > 0 
+                    ? `WhatsApp sent ${waCount} time${waCount > 1 ? 's' : ''}. Last: ${lastWaType} on ${lastWaDate ? new Date(lastWaDate).toLocaleDateString() : 'recent'}`
+                    : "Send WhatsApp Invitation Pass";
+
+                  const rawMobile = r["Mobile Number"] || r["Mobile"] || r["submitterMob"] || r["WhatsApp Number"] || r["Phone"] || "";
+                  const cleanMobile = rawMobile ? String(rawMobile).replace(/\D/g, "").slice(-10) : "";
+                  const formattedMobile = cleanMobile ? `+91 ${cleanMobile.slice(0, 5)} ${cleanMobile.slice(5)}` : "-";
+                  const cleanPName = String(pName).replace(/\|/g, " ").replace(/\s+/g, " ").trim();
+                  const txnId = r["Transaction ID"] || r.transactionId || r.id || "";
+                  const vibhag = r["Vibhag"] || r.vibhag || "";
+
                   return (
                     <tr 
                       key={i} 
                       onClick={() => handlePreview(r, ev)}
                       style={{
-                        borderBottom:"1px solid #eee",
+                        borderBottom: "1px solid #E2E8F0",
                         cursor: "pointer",
-                        background: previewCertRegId === r.id ? "#E8F4F8" : "transparent",
-                        transition: "background-color 0.2s"
+                        background: isSelected ? "#F0FDF4" : previewCertRegId === r.id ? "#EFF6FF" : (i % 2 === 0 ? "#FFFFFF" : "#F8FAFC"),
+                        borderLeft: isSelected ? "4px solid #15803D" : previewCertRegId === r.id ? "4px solid #2563EB" : "4px solid transparent",
+                        transition: "all 0.15s"
                       }}
                     >
-                      <td style={{padding:"12px",textAlign:"center"}} onClick={(e)=>e.stopPropagation()}>
-                        <div style={{display:"flex",justifyContent:"center",gap:8}}>
-                          <button onClick={(e)=>{e.stopPropagation(); handlePreview(r, ev);}} style={{padding:"6px 12px",borderRadius:6,fontSize:".75rem",background:"white",border:"1px solid var(--bd)",cursor:"pointer",fontWeight:600}}>Preview</button>
-                          <button onClick={(e)=>{e.stopPropagation(); toggleRelease(r);}} disabled={r.inviteLetterHold} style={{padding:"6px 12px",borderRadius:6,fontSize:".75rem",background:r.inviteLetterHold?"#eaeaea":r.inviteLetterReleased?"#f5f5f5":"var(--dt)",color:r.inviteLetterHold?"#aaa":r.inviteLetterReleased?"#333":"white",border:r.inviteLetterReleased?"1px solid #ccc":"none",cursor:r.inviteLetterHold?"not-allowed":"pointer",fontWeight:600}}>
-                            {r.inviteLetterReleased ? "Revoke" : "Release"}
-                          </button>
-                          <button onClick={(e)=>{e.stopPropagation(); toggleHold(r);}} style={{padding:"6px 12px",borderRadius:6,fontSize:".75rem",background:r.inviteLetterHold?"#FEE2E2":"#f5f5f5",color:r.inviteLetterHold?"#991B1B":"#666",border:r.inviteLetterHold?"1px solid #FCA5A5":"1px solid #ccc",cursor:"pointer",fontWeight:600}}>
-                            {r.inviteLetterHold ? "Unhold" : "Hold"}
-                          </button>
+                      {/* Checkbox */}
+                      <td style={{padding:"12px 8px",textAlign:"center"}} onClick={(e)=>e.stopPropagation()}>
+                        <input
+                          type="checkbox"
+                          checked={isSelected}
+                          onChange={() => {
+                            setSelectedIds(prev => prev.includes(rowId) ? prev.filter(x => x !== rowId) : [...prev, rowId]);
+                          }}
+                          style={{cursor:"pointer",width:16,height:16,accentColor:"#15803D"}}
+                          title="Select this row"
+                        />
+                      </td>
+
+                      {/* Actions */}
+                      <td style={{padding:"10px 8px",textAlign:"center"}} onClick={(e)=>e.stopPropagation()}>
+                        <div style={{display:"flex",flexDirection:"column",gap:6,alignItems:"center"}}>
+                          <div style={{display:"flex",gap:4,alignItems:"center",justifyContent:"center",flexWrap:"wrap"}}>
+                            <button 
+                              onClick={(e)=>{e.stopPropagation(); handlePreview(r, ev);}} 
+                              style={{padding:"4px 8px",borderRadius:6,fontSize:".74rem",background:"white",border:"1.5px solid #CBD5E1",color:"#334155",cursor:"pointer",fontWeight:700,display:"flex",alignItems:"center",gap:3}}
+                              title="Preview active PDF"
+                            >
+                              <span>👁️</span> Preview
+                            </button>
+                            <button 
+                              onClick={(e)=>{e.stopPropagation(); setSelectedWhatsAppReg(r);}} 
+                              style={{
+                                padding:"4px 9px",
+                                borderRadius:6,
+                                fontSize:".74rem",
+                                background: waCount > 0 ? "#DCFCE7" : "#F0FDF4",
+                                border: waCount > 0 ? "1.5px solid #16A34A" : "1.5px solid #86EFAC",
+                                color: waCount > 0 ? "#15803D" : "#166534",
+                                cursor:"pointer",
+                                fontWeight: 800,
+                                display:"flex",
+                                alignItems:"center",
+                                gap:4
+                              }}
+                              title={waTooltip}
+                            >
+                              <span>💬</span> WhatsApp {waCount > 0 ? `(${waCount})` : ""}
+                            </button>
+                            <button 
+                              onClick={(e)=>{e.stopPropagation(); setHistoryModalReg(r);}} 
+                              style={{padding:"4px 8px",borderRadius:6,fontSize:".74rem",background:"#FFF7ED",color:"#C2410C",border:"1.5px solid #FFEDD5",cursor:"pointer",fontWeight:800,display:"flex",alignItems:"center",gap:3}} 
+                              title="View Activity Logs & Open Tracker"
+                            >
+                              <span>📜</span> Logs {r.logHistory && r.logHistory.length > 0 ? `(${r.logHistory.length})` : ""}
+                            </button>
+                          </div>
+
+                          <div style={{display:"flex",gap:4,alignItems:"center",justifyContent:"center",flexWrap:"wrap"}}>
+                            {(() => {
+                              const activeDocId = currentDocTpl?.id || 'invite';
+                              const { isReleased: docIsReleased, isHeld: docIsHeld } = getDocReleaseStatus(r, activeDocId);
+                              return (
+                                <>
+                                  <button 
+                                    onClick={(e)=>{e.stopPropagation(); toggleRelease(r);}} 
+                                    disabled={docIsHeld} 
+                                    style={{
+                                      padding:"4px 10px",
+                                      borderRadius:6,
+                                      fontSize:".74rem",
+                                      background: docIsHeld ? "#F1F5F9" : docIsReleased ? "#F8FAFC" : "#0D4B5E",
+                                      color: docIsHeld ? "#94A3B8" : docIsReleased ? "#334155" : "white",
+                                      border: docIsReleased ? "1.5px solid #CBD5E1" : "none",
+                                      cursor: docIsHeld ? "not-allowed" : "pointer",
+                                      fontWeight: 800,
+                                      boxShadow: (!docIsReleased && !docIsHeld) ? "0 2px 6px rgba(13,75,94,0.3)" : "none"
+                                    }}
+                                  >
+                                    {docIsReleased ? "Revoke" : "📢 Release"}
+                                  </button>
+                                  <button 
+                                    onClick={(e)=>{e.stopPropagation(); toggleHold(r);}} 
+                                    style={{
+                                      padding:"4px 8px",
+                                      borderRadius:6,
+                                      fontSize:".74rem",
+                                      background: docIsHeld ? "#FEE2E2" : "#F8FAFC",
+                                      color: docIsHeld ? "#DC2626" : "#64748B",
+                                      border: docIsHeld ? "1.5px solid #FCA5A5" : "1.5px solid #CBD5E1",
+                                      cursor:"pointer",
+                                      fontWeight: 700
+                                    }}
+                                  >
+                                    {docIsHeld ? "Unhold" : "Hold"}
+                                  </button>
+                                </>
+                              );
+                            })()}
+                          </div>
                         </div>
                       </td>
-                      <td style={{padding:"12px"}}>{date}</td>
-                      <td style={{padding:"12px"}}>{evName}</td>
-                      <td style={{padding:"12px",fontWeight:600}}>{pName}</td>
-                      <td style={{padding:"12px",textAlign:"center"}}>
-                        {r.inviteLetterHold ? (
-                          <span style={{padding:"4px 8px",borderRadius:6,fontSize:".75rem",fontWeight:700,background:"#FEE2E2",color:"#991B1B",display:"inline-block"}}>
-                            Hold
+
+                      {/* Participant & ID */}
+                      <td style={{padding:"12px 10px"}}>
+                        <div style={{display:"flex",flexDirection:"column",gap:3}}>
+                          <span style={{fontSize:".88rem",fontWeight:800,color:"#0F172A",letterSpacing:"-0.01em"}}>
+                            {cleanPName}
                           </span>
+                          <div style={{display:"flex",alignItems:"center",gap:6,flexWrap:"wrap"}}>
+                            {txnId && (
+                              <span style={{fontSize:".7rem",fontFamily:"monospace",fontWeight:800,background:"#1E293B",color:"white",padding:"1px 6px",borderRadius:4}}>
+                                {txnId}
+                              </span>
+                            )}
+                            {vibhag && (
+                              <span style={{fontSize:".7rem",fontWeight:700,background:"#F1F5F9",color:"#475569",padding:"1px 6px",borderRadius:4,border:"1px solid #E2E8F0"}}>
+                                {vibhag}
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      </td>
+
+                      {/* Mobile Number */}
+                      <td style={{padding:"12px 10px"}}>
+                        {cleanMobile ? (
+                          <a
+                            href={`tel:+91${cleanMobile}`}
+                            onClick={(e) => e.stopPropagation()}
+                            style={{
+                              fontSize: ".82rem",
+                              fontWeight: 700,
+                              color: "#0284C7",
+                              textDecoration: "none",
+                              display: "inline-flex",
+                              alignItems: "center",
+                              gap: 4,
+                              background: "#F0F9FF",
+                              padding: "4px 8px",
+                              borderRadius: 6,
+                              border: "1px solid #BAE6FD"
+                            }}
+                            title="Click to call"
+                          >
+                            <span>📱</span> {formattedMobile}
+                          </a>
                         ) : (
-                          <span style={{padding:"4px 8px",borderRadius:6,fontSize:".75rem",fontWeight:700,background:r.inviteLetterReleased?"#EDFAF1":"#FEF9EC",color:r.inviteLetterReleased?"#1A7A3E":"#C8860A"}}>
-                            {r.inviteLetterReleased ? "Released" : "Pending"}
-                          </span>
+                          <span style={{color:"#94A3B8",fontSize:".78rem"}}>-</span>
                         )}
                       </td>
-                      <td style={{padding:"12px",textAlign:"center",color:"var(--mu)",fontSize:".75rem"}}>{vDate}</td>
-                      <td style={{padding:"12px",textAlign:"center",color:"var(--mu)",fontSize:".75rem"}}>{dDate}</td>
+
+                      {/* Event */}
+                      <td style={{padding:"12px 10px",fontSize:".82rem",color:"#334155",fontWeight:600}}>
+                        {evName}
+                      </td>
+
+                      {/* Date Approved */}
+                      <td style={{padding:"12px 10px",fontSize:".8rem",color:"#475569",textAlign:"center"}}>
+                        {date}
+                      </td>
+
+                      {/* Status */}
+                      <td style={{padding:"12px 10px",textAlign:"center"}}>
+                        {(() => {
+                          const activeDocId = currentDocTpl?.id || 'invite';
+                          const { isReleased: docIsReleased, isHeld: docIsHeld } = getDocReleaseStatus(r, activeDocId);
+                          return docIsHeld ? (
+                            <span style={{padding:"4px 10px",borderRadius:12,fontSize:".75rem",fontWeight:800,background:"#FEE2E2",color:"#DC2626",border:"1px solid #FCA5A5",display:"inline-flex",alignItems:"center",gap:4}}>
+                              <span>🔴</span> Hold
+                            </span>
+                          ) : docIsReleased ? (
+                            <span style={{padding:"4px 10px",borderRadius:12,fontSize:".75rem",fontWeight:800,background:"#DCFCE7",color:"#15803D",border:"1px solid #86EFAC",display:"inline-flex",alignItems:"center",gap:4}}>
+                              <span>🟢</span> Released
+                            </span>
+                          ) : (
+                            <span style={{padding:"4px 10px",borderRadius:12,fontSize:".75rem",fontWeight:800,background:"#FEF3C7",color:"#B45309",border:"1px solid #FDE68A",display:"inline-flex",alignItems:"center",gap:4}}>
+                              <span>⏳</span> Pending
+                            </span>
+                          );
+                        })()}
+                      </td>
+
+                      {/* Viewed On */}
+                      <td style={{padding:"12px 10px",textAlign:"center",color:"#64748B",fontSize:".75rem",fontWeight:600}}>
+                        {vDate !== "-" ? (
+                          <span style={{background:"#EFF6FF",color:"#1D4ED8",padding:"3px 7px",borderRadius:6,border:"1px solid #DBEAFE"}}>
+                            👁️ {vDate}
+                          </span>
+                        ) : (
+                          <span style={{color:"#94A3B8"}}>-</span>
+                        )}
+                      </td>
+
+                      {/* Downloaded On */}
+                      <td style={{padding:"12px 10px",textAlign:"center",color:"#64748B",fontSize:".75rem",fontWeight:600}}>
+                        {dDate !== "-" ? (
+                          <span style={{background:"#F0FDF4",color:"#15803D",padding:"3px 7px",borderRadius:6,border:"1px solid #BBF7D0"}}>
+                            📥 {dDate}
+                          </span>
+                        ) : (
+                          <span style={{color:"#94A3B8"}}>-</span>
+                        )}
+                      </td>
                     </tr>
                   );
                 })}
@@ -15806,8 +23839,286 @@ function AdminInviteLetters({ mob, C, auth }) {
         </div>
       )}
 
+      {/* Bulk WhatsApp Broadcast Modal */}
+      {showBulkWhatsAppModal && (
+        <BulkWhatsAppBroadcastModal
+          event={activeEvent}
+          recipients={selectedIds.length > 0 ? filteredRegs.filter(r => selectedIds.includes(r.id || r['Transaction ID'])) : filteredRegs}
+          C={C}
+          auth={auth}
+          onLogSent={async (r, msgType) => {
+            const updatedBy = auth?.email || "Admin";
+            const existingLogs = Array.isArray(r.logHistory) ? r.logHistory : [];
+            const waLog = {
+              timestamp: new Date().toISOString(),
+              actor: updatedBy,
+              action: `WhatsApp Sent: ${msgType}`,
+              type: "whatsapp",
+              messageType: msgType,
+              remarks: `WhatsApp invitation pass (${msgType}) sent to applicant.`
+            };
+            const newLogs = [...existingLogs, waLog];
+            const newCount = (r.whatsAppCount || 0) + 1;
+            setRegs(prev => prev.map(x => x.id === r.id ? { ...x, logHistory: newLogs, whatsAppCount: newCount, lastWhatsAppType: msgType, lastWhatsAppAt: waLog.timestamp } : x));
+            try {
+              const cleanData = { ...r, logHistory: newLogs, whatsAppCount: newCount, lastWhatsAppType: msgType, lastWhatsAppAt: waLog.timestamp };
+              delete cleanData.id; delete cleanData._submittedAt;
+              await fbUpdateRegistration(r.id, cleanData, auth?.idToken);
+            } catch(e){}
+          }}
+          onClose={() => setShowBulkWhatsAppModal(false)}
+        />
+      )}
+
+      {/* Workspace Multi-Template Modal */}
+      {showWorkspaceTplModal && (
+        <WorkspaceWhatsAppTemplateModal
+          event={activeEvent}
+          C={C}
+          setC={setC}
+          auth={auth}
+          onClose={() => setShowWorkspaceTplModal(false)}
+        />
+      )}
+
       {/* Global Guests Modal */}
       {showGlobalGuestsModal && renderGlobalGuestsModal()}
+
+      {/* WhatsApp Applicant Messenger Modal */}
+      {selectedWhatsAppReg && (
+        <WhatsAppApplicantMessengerModal
+          reg={{ 
+            ...selectedWhatsAppReg, 
+            isInviteMode: true, 
+            activeDocTpl: currentDocTpl,
+            customDocId: currentDocTpl?.customTpl ? currentDocTpl.id : null 
+          }}
+          onClose={() => setSelectedWhatsAppReg(null)}
+          C={C}
+          auth={auth}
+          allRegs={filteredRegs}
+          onSelectReg={(nextR) => setSelectedWhatsAppReg(nextR)}
+          onLogSent={async (r, msgType) => {
+            const updatedBy = auth?.email || "Admin";
+            const existingLogs = Array.isArray(r.logHistory) ? r.logHistory : [];
+            const waLog = {
+              timestamp: new Date().toISOString(),
+              actor: updatedBy,
+              action: `WhatsApp Sent: ${msgType}`,
+              type: "whatsapp",
+              messageType: msgType,
+              remarks: `WhatsApp invitation pass (${msgType}) sent to applicant.`
+            };
+            const newLogs = [...existingLogs, waLog];
+            const newCount = (r.whatsAppCount || 0) + 1;
+            setRegs(prev => prev.map(x => x.id === r.id ? { ...x, logHistory: newLogs, whatsAppCount: newCount, lastWhatsAppType: msgType, lastWhatsAppAt: waLog.timestamp } : x));
+            try {
+              const cleanData = { ...r, logHistory: newLogs, whatsAppCount: newCount, lastWhatsAppType: msgType, lastWhatsAppAt: waLog.timestamp };
+              delete cleanData.id; delete cleanData._submittedAt;
+              await fbUpdateRegistration(r.id, cleanData, auth?.idToken);
+            } catch(e){}
+          }}
+        />
+      )}
+
+      {/* Audit Logs & Pass Open History Modal */}
+      {historyModalReg && (
+        <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.65)",zIndex:100000,display:"flex",alignItems:"center",justifyContent:"center",padding:16}} onClick={()=>setHistoryModalReg(null)}>
+          <div style={{background:"white",borderRadius:16,maxWidth:540,width:"100%",maxHeight:"85vh",display:"flex",flexDirection:"column",overflow:"hidden",boxShadow:"0 20px 40px rgba(0,0,0,0.3)"}} onClick={e=>e.stopPropagation()}>
+            <div style={{padding:"16px 20px",background:"linear-gradient(135deg, #15803D, #166534)",color:"white",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+              <div>
+                <h3 style={{fontSize:"1.1rem",fontWeight:700,margin:0}}>📜 Invite Pass & Activity Log</h3>
+                <div style={{fontSize:".75rem",opacity:0.9,marginTop:2}}>
+                  {historyModalReg['Full Name'] || historyModalReg.name} • {historyModalReg['Transaction ID'] || historyModalReg.id}
+                </div>
+              </div>
+              <button onClick={()=>setHistoryModalReg(null)} style={{background:"rgba(255,255,255,0.2)",border:"none",color:"white",borderRadius:"50%",width:32,height:32,cursor:"pointer",fontWeight:700,fontSize:"1.1rem"}}>✕</button>
+            </div>
+
+            <div style={{padding:20,overflowY:"auto",flex:1,display:"flex",flexDirection:"column",gap:12}}>
+              {(() => {
+                const logs = (historyModalReg.logHistory && historyModalReg.logHistory.length > 0)
+                  ? historyModalReg.logHistory
+                  : [
+                      {
+                        actor: "User",
+                        action: "1st Entry Submitted",
+                        timestamp: historyModalReg.timestamp || historyModalReg._submittedAt,
+                        remarks: "Initial registration entry submitted"
+                      }
+                    ];
+
+                return logs.map((lg, lgIdx) => (
+                  <div key={lgIdx} style={{background:"#FAFAFA",border:"1.5px solid var(--bd)",borderRadius:10,padding:14,position:"relative"}}>
+                    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:6}}>
+                      <span style={{fontSize:".78rem",fontWeight:800,color:lg.actor?.includes('Student') ? "#1D4ED8" : lg.actor === 'User' ? "var(--sf)" : "#15803D"}}>
+                        {lg.actor?.includes('Student') ? "👤 Student (Recipient)" : lg.actor === 'User' ? "👤 User (Registrant)" : `🛡️ Admin (${lg.actor || 'Admin'})`}
+                      </span>
+                      <span style={{fontSize:".7rem",color:"var(--mu)",fontWeight:600}}>
+                        {lg.timestamp ? new Date(lg.timestamp).toLocaleString() : ""}
+                      </span>
+                    </div>
+                    {lg.type === 'pass_open' || (lg.action && String(lg.action).toLowerCase().includes('pass / invite opened')) ? (
+                      <div style={{marginBottom:6}}>
+                        <span style={{background:"#EFF6FF",color:"#1D4ED8",border:"1px solid #93C5FD",padding:"3px 8px",borderRadius:6,fontSize:".76rem",fontWeight:800,display:"inline-flex",alignItems:"center",gap:4}}>
+                          <span>👁️</span> {lg.action} • {lg.device || 'Mobile'}
+                        </span>
+                      </div>
+                    ) : lg.type === 'whatsapp' || (lg.action && String(lg.action).toLowerCase().includes('whatsapp')) ? (
+                      <div style={{marginBottom:6}}>
+                        <span style={{background:"#DCFCE7",color:"#15803D",border:"1px solid #86EFAC",padding:"3px 8px",borderRadius:6,fontSize:".76rem",fontWeight:800,display:"inline-flex",alignItems:"center",gap:4}}>
+                          <span>💬</span> {lg.action || `WhatsApp Sent (${lg.messageType || 'Update'})`}
+                        </span>
+                      </div>
+                    ) : (
+                      <div style={{fontSize:".88rem",fontWeight:700,color:"var(--dt)",marginBottom:4}}>
+                        {lg.action || lg.status}
+                      </div>
+                    )}
+                    <div style={{fontSize:".82rem",color:"var(--tx)",lineHeight:1.4,background:"white",padding:"8px 10px",borderRadius:6,border:"1px solid #EEE"}}>
+                      {lg.remarks || "No remarks provided"}
+                    </div>
+                  </div>
+                ));
+              })()}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* WhatsApp Invite Letter Template Modal */}
+      {showInviteTplModal && (
+        <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.6)",zIndex:100002,display:"flex",alignItems:"center",justifyContent:"center",padding:16}} onClick={()=>setShowInviteTplModal(false)}>
+          <div style={{background:"white",borderRadius:16,maxWidth:700,width:"100%",maxHeight:"90vh",overflowY:"auto",padding:24,boxShadow:"0 20px 40px rgba(0,0,0,0.3)"}} onClick={e=>e.stopPropagation()}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16,borderBottom:"1px solid #E2E8F0",paddingBottom:12}}>
+              <div>
+                <h3 style={{fontSize:"1.15rem",fontWeight:800,color:"#15803D",margin:0,display:"flex",alignItems:"center",gap:8}}>
+                  <span>📩</span> Official WhatsApp Invitation Letter & Pass Template
+                </h3>
+                <div style={{fontSize:".8rem",color:"#64748B",marginTop:2}}>
+                  Configure the invitation message sent to students and guests for this event.
+                </div>
+              </div>
+              <button onClick={()=>setShowInviteTplModal(false)} style={{background:"#F1F5F9",border:"none",borderRadius:"50%",width:32,height:32,cursor:"pointer",fontWeight:700}}>✕</button>
+            </div>
+
+            <div style={{background:"#F8FAFC",border:"1px solid #CBD5E1",borderRadius:10,padding:16,marginBottom:16}}>
+              <div style={{fontSize:".78rem",fontWeight:700,color:"#334155",marginBottom:8,display:"flex",alignItems:"center",gap:6,flexWrap:"wrap"}}>
+                <span>Insert Placeholders:</span>
+                <span style={{background:"white",border:"1px solid #CBD5E1",padding:"2px 6px",borderRadius:4,fontSize:".7rem"}}>{'{STUDENT_NAME}'}</span>
+                <span style={{background:"white",border:"1px solid #CBD5E1",padding:"2px 6px",borderRadius:4,fontSize:".7rem"}}>{'{TXN_ID}'}</span>
+                <span style={{background:"white",border:"1px solid #CBD5E1",padding:"2px 6px",borderRadius:4,fontSize:".7rem"}}>{'{VIBHAG}'}</span>
+                <span style={{background:"white",border:"1px solid #CBD5E1",padding:"2px 6px",borderRadius:4,fontSize:".7rem"}}>{'{STREAM}'}</span>
+                <span style={{background:"white",border:"1px solid #CBD5E1",padding:"2px 6px",borderRadius:4,fontSize:".7rem"}}>{'{PORTAL_URL}'}</span>
+                <span style={{background:"white",border:"1px solid #CBD5E1",padding:"2px 6px",borderRadius:4,fontSize:".7rem"}}>{'{HELPLINE_PHONES}'}</span>
+              </div>
+
+              <textarea
+                value={C.whatsAppTplInvite !== undefined ? C.whatsAppTplInvite : `🏛️ *MUMBAI MEGHWAL PANCHAYAT*\n🏆 *Education Felicitation 2026 - Official Invitation*\n═══════════════════════\nNamaste *{STUDENT_NAME}*,\n\nWe are pleased to invite you and your family as our esteemed guests of honor to the *Annual Student Education Felicitation 2026*.\n\n📋 *Invitation Pass Details:*\n• *Transaction / Pass ID:* {TXN_ID}\n• *Invitee Name:* {STUDENT_NAME}\n• *Vibhag:* {VIBHAG}\n• *Stream / Class:* {STREAM}\n\n📅 *Event Date:* 02-10-2026 (Friday)\n⏰ *Reporting Time:* 09:30 AM\n📍 *Venue:* Mumbai, Maharashtra\n\n👉 *Download Official PDF Invitation Letter & Entry Pass:*\n{PORTAL_URL}\n\nPlease show this digital pass or downloaded invitation letter at the registration desk upon arrival.\n\nWarm regards,\n*Central Working Committee (CWC) & Education Board*\n*Mumbai Meghwal Panchayat & Vidya Gohil Trust*\n📞 Committee Helpline: {HELPLINE_PHONES}`}
+                onChange={e => {
+                  if (C) C.whatsAppTplInvite = e.target.value;
+                }}
+                rows={11}
+                style={{width:"100%",padding:"12px 14px",borderRadius:8,border:"1px solid #CBD5E1",fontSize:".85rem",lineHeight:1.5,fontFamily:"monospace",boxSizing:"border-box",background:"white"}}
+              />
+            </div>
+
+            <div style={{display:"flex",justifyContent:"flex-end",gap:10}}>
+              <button onClick={()=>setShowInviteTplModal(false)} style={{padding:"8px 16px",borderRadius:8,background:"white",border:"1px solid #CBD5E1",fontSize:".85rem",cursor:"pointer",fontWeight:600}}>
+                Cancel
+              </button>
+              <button 
+                onClick={async () => {
+                  try {
+                    await fbSave(C, auth?.idToken);
+                    alert("✅ WhatsApp Invitation Letter Template saved successfully!");
+                    setShowInviteTplModal(false);
+                  } catch(err) {
+                    alert("Failed to save: " + err.message);
+                  }
+                }} 
+                style={{padding:"8px 20px",borderRadius:8,background:"#15803D",color:"white",border:"none",fontSize:".85rem",fontWeight:700,cursor:"pointer"}}
+              >
+                💾 Save Template
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Import Contact Group Modal */}
+      {showImportContactGroupModal && (
+        <div style={{position:"fixed",top:0,left:0,right:0,bottom:0,background:"rgba(0,0,0,0.5)",zIndex:9999,display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
+          <div style={{background:"white",borderRadius:12,padding:32,width:"100%",maxWidth:650,maxHeight:"90vh",overflowY:"auto",boxShadow:"0 20px 40px rgba(0,0,0,0.2)"}}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:20}}>
+               <div>
+                 <h2 style={{fontFamily:"'Playfair Display',serif",color:"var(--dt)",marginTop:0,marginBottom:4}}>Import Contact Group</h2>
+                 <p style={{fontSize:".85rem",color:"var(--mu)",margin:0}}>Import all members of a contact group at once into: <strong>{activeEvent.title}</strong></p>
+               </div>
+               <button onClick={()=>setShowImportContactGroupModal(false)} style={{background:"none",border:"none",fontSize:"1.5rem",cursor:"pointer"}}>×</button>
+            </div>
+
+            {(() => {
+              const groupsMap = {};
+              globalGuests.forEach(g => {
+                const grp = g.Group || g.Category || g.Vibhag || "General Committee";
+                if (!groupsMap[grp]) groupsMap[grp] = [];
+                groupsMap[grp].push(g);
+              });
+              const groupNames = Object.keys(groupsMap);
+
+              return (
+                <div style={{display:"flex",flexDirection:"column",gap:16}}>
+                  {groupNames.map(grp => {
+                    const list = groupsMap[grp];
+                    const importedCount = list.filter(g => regs.some(r => r.globalGuestId === g.id && r.eventId === selectedEventId)).length;
+                    const unimportedCount = list.length - importedCount;
+
+                    return (
+                      <div key={grp} style={{padding:16,border:"1.5px solid #CBD5E1",borderRadius:10,background:"#F8FAFC",display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:12}}>
+                        <div>
+                          <div style={{fontSize:"1rem",fontWeight:800,color:"#0F172A",display:"flex",alignItems:"center",gap:6}}>
+                            <span>🏷️</span> {grp}
+                          </div>
+                          <div style={{fontSize:".8rem",color:"#475569",marginTop:4}}>
+                            <strong>{list.length}</strong> total contacts • <span style={{color:"#15803D",fontWeight:700}}>{importedCount} already imported</span> {unimportedCount > 0 && <span style={{color:"#D97706",fontWeight:700}}>• {unimportedCount} ready to import</span>}
+                          </div>
+                        </div>
+                        <button
+                          disabled={unimportedCount === 0}
+                          onClick={() => handleImportContactGroup(grp)}
+                          style={{
+                            padding: "8px 18px",
+                            borderRadius: 8,
+                            border: "none",
+                            background: unimportedCount === 0 ? "#CBD5E1" : "#15803D",
+                            color: unimportedCount === 0 ? "#64748B" : "white",
+                            fontSize: ".84rem",
+                            fontWeight: 800,
+                            cursor: unimportedCount === 0 ? "not-allowed" : "pointer",
+                            boxShadow: unimportedCount > 0 ? "0 2px 8px rgba(21,128,61,0.25)" : "none"
+                          }}
+                        >
+                          {unimportedCount === 0 ? "All Imported ✓" : ("Import " + unimportedCount + " Members ➔")}
+                        </button>
+                      </div>
+                    );
+                  })}
+
+                  {groupNames.length === 0 && (
+                    <div style={{padding:32,textAlign:"center",background:"#F8FAFC",borderRadius:8,border:"1px dashed #CBD5E1"}}>
+                      <p style={{color:"var(--mu)"}}>No contacts found in Special Guests Directory.</p>
+                      <button onClick={()=>{setShowImportContactGroupModal(false); setSelectedEventId(null); setTimeout(()=>setShowGlobalGuestsModal(true), 100);}} style={{padding:"8px 16px",background:"var(--dt)",color:"white",border:"none",borderRadius:6,cursor:"pointer",fontWeight:700,marginTop:12}}>
+                         ➕ Add Contacts to Directory
+                      </button>
+                    </div>
+                  )}
+                </div>
+              );
+            })()}
+          </div>
+        </div>
+      )}
 
       {/* Import Special Guest Modal */}
       {showImportGuestModal && (
@@ -16278,6 +24589,2180 @@ function AdminProfile({ auth, mob, adminProfile, setAdminProfile }) {
   );
 }
 
+
+// ── Rich Text & Card Formatter for Chatbot Messages ─────────────────────────────────────
+function FormattedChatText({ text, onQuickClick }) {
+  if (!text) return null;
+
+  const lines = text.split("\n");
+
+  const renderRawUrls = (textStr, keyPrefix) => {
+    const parts = textStr.split(/(\s+)/);
+    return parts.map((part, pIdx) => {
+      const isUrl = part.startsWith("http://") || part.startsWith("https://") || part.startsWith("www.");
+      if (isUrl) {
+        let cleanUrl = part.trim();
+        if (cleanUrl.startsWith("www.")) cleanUrl = "https://" + cleanUrl;
+        const isYt = cleanUrl.includes("youtube.com") || cleanUrl.includes("youtu.be");
+        return (
+          <a
+            key={`${keyPrefix}_u_${pIdx}`}
+            href={cleanUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              gap: 4,
+              color: isYt ? "#DC2626" : "#1D4ED8",
+              background: isYt ? "#FEE2E2" : "#EFF6FF",
+              border: `1px solid ${isYt ? "#FCA5A5" : "#93C5FD"}`,
+              padding: "2px 8px",
+              borderRadius: 6,
+              fontWeight: 700,
+              textDecoration: "none",
+              fontSize: ".8rem",
+              margin: "2px 3px"
+            }}
+          >
+            <span>{isYt ? "▶️" : "🔗"}</span>
+            <span>{isYt ? "Watch Video" : cleanUrl.replace(/^https?:\/\//i, "").slice(0, 28)}</span>
+            <span style={{fontSize:".7rem"}}>↗</span>
+          </a>
+        );
+      }
+      return part;
+    });
+  };
+
+  const renderInline = (str, keyPrefix) => {
+    const elements = [];
+    let remaining = str;
+    let elemIdx = 0;
+
+    while (remaining) {
+      const linkStart = remaining.indexOf("[");
+      const boldStart = remaining.indexOf("**");
+
+      let nextType = null;
+      let nextPos = -1;
+
+      if (linkStart !== -1) {
+        const linkMid = remaining.indexOf("](", linkStart);
+        const linkEnd = linkMid !== -1 ? remaining.indexOf(")", linkMid + 2) : -1;
+        if (linkMid !== -1 && linkEnd !== -1) {
+          nextType = "link";
+          nextPos = linkStart;
+        }
+      }
+
+      if (boldStart !== -1 && (nextPos === -1 || boldStart < nextPos)) {
+        const boldEnd = remaining.indexOf("**", boldStart + 2);
+        if (boldEnd !== -1) {
+          nextType = "bold";
+          nextPos = boldStart;
+        }
+      }
+
+      if (nextPos === -1) {
+        elements.push(renderRawUrls(remaining, `${keyPrefix}_${elemIdx++}`));
+        break;
+      }
+
+      if (nextPos > 0) {
+        elements.push(renderRawUrls(remaining.slice(0, nextPos), `${keyPrefix}_${elemIdx++}`));
+      }
+
+      if (nextType === "link") {
+        const linkMid = remaining.indexOf("](", nextPos);
+        const linkEnd = remaining.indexOf(")", linkMid + 2);
+        const label = remaining.slice(nextPos + 1, linkMid).trim();
+        let url = remaining.slice(linkMid + 2, linkEnd).trim();
+        if (url.startsWith("www.")) url = "https://" + url;
+        else if (!url.startsWith("http://") && !url.startsWith("https://")) url = "https://" + url;
+
+        const isYt = url.includes("youtube.com") || url.includes("youtu.be");
+
+        elements.push(
+          <a
+            key={`${keyPrefix}_link_${elemIdx++}`}
+            href={url}
+            target="_blank"
+            rel="noopener noreferrer"
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              gap: 4,
+              color: isYt ? "#DC2626" : "#1D4ED8",
+              background: isYt ? "#FEE2E2" : "#EFF6FF",
+              border: `1px solid ${isYt ? "#FCA5A5" : "#93C5FD"}`,
+              padding: "2px 8px",
+              borderRadius: 6,
+              fontWeight: 700,
+              textDecoration: "none",
+              fontSize: ".8rem",
+              margin: "2px 3px"
+            }}
+          >
+            <span>{isYt ? "▶️" : "🔗"}</span>
+            <span>{label}</span>
+            <span style={{fontSize:".7rem"}}>↗</span>
+          </a>
+        );
+
+        remaining = remaining.slice(linkEnd + 1);
+      } else if (nextType === "bold") {
+        const boldEnd = remaining.indexOf("**", nextPos + 2);
+        const boldText = remaining.slice(nextPos + 2, boldEnd);
+        elements.push(
+          <strong key={`${keyPrefix}_bold_${elemIdx++}`} style={{fontWeight:800,color:"#0F172A"}}>
+            {boldText}
+          </strong>
+        );
+        remaining = remaining.slice(boldEnd + 2);
+      }
+    }
+
+    return elements;
+  };
+
+  return (
+    <div style={{display:"flex",flexDirection:"column",gap:6,lineHeight:1.6,fontSize:".84rem"}}>
+      {lines.map((line, lIdx) => {
+        const trimmed = line.trim();
+        if (!trimmed) return <div key={lIdx} style={{height:4}} />;
+
+        const isBullet = trimmed.startsWith("•") || trimmed.startsWith("-") || trimmed.startsWith("* ");
+        const contentStr = isBullet ? trimmed.replace(/^[•\-*]\s*/, "") : trimmed;
+
+        if (isBullet) {
+          return (
+            <div key={lIdx} style={{display:"flex",alignItems:"flex-start",gap:8,paddingLeft:4}}>
+              <span style={{color:"#3B82F6",fontSize:".9rem",lineHeight:1.3}}>•</span>
+              <div style={{flex:1}}>{renderInline(contentStr, `line_${lIdx}`)}</div>
+            </div>
+          );
+        }
+
+        return <div key={lIdx}>{renderInline(contentStr, `line_${lIdx}`)}</div>;
+      })}
+    </div>
+  );
+}
+
+// ── Application Record Card ─────────────────────────────────────────────────────────────
+// ── WhatsApp Message Formatter Helpers ───────────────────────────────────────────
+const generateVibhagSummaryWhatsAppText = (summaryData) => {
+  if (!summaryData) return "";
+  const { total, approved, pending, rejected, vibhagList, scopeTitle } = summaryData;
+  const now = new Date();
+  const dateStr = now.toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" });
+  const timeStr = now.toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit" });
+
+  let text = "🏛️ *MUMBAI MEGHWAL PANCHAYAT*\n";
+  text += "🎓 *Education Felicitation 2026 — Executive Summary*\n";
+  text += `📅 *Date:* ${dateStr}  ⏱️ *Time:* ${timeStr}\n`;
+  text += "━━━━━━━━━━━━━━━━━━━━━━━━━━━\n";
+  text += `📊 *Overall:* Total: *${total}* │ ⏳ Pending: *${pending}* │ 🟢 Approved: *${approved}* │ 🔴 Rejected: *${rejected}*\n`;
+  text += "━━━━━━━━━━━━━━━━━━━━━━━━━━━\n";
+  
+  if (vibhagList && vibhagList.length > 0) {
+    text += "📍 *VIBHAG-WISE BREAKDOWN TABLE:*\n";
+    text += "```\n";
+    text += "#  Vibhag Name       Tot Pend Appr Rej\n";
+    text += "── ───────────────── ─── ──── ──── ───\n";
+
+    let sumTot = 0, sumPen = 0, sumApp = 0, sumRej = 0;
+    vibhagList.forEach(([vName, vStat], idx) => {
+      const numStr = String(idx + 1).padStart(2, "0");
+      let cleanV = vName.length > 17 ? vName.slice(0, 15) + ".." : vName.padEnd(17, " ");
+      const tStr = String(vStat.total).padStart(3, " ");
+      const pStr = String(vStat.pending).padStart(4, " ");
+      const aStr = String(vStat.approved).padStart(4, " ");
+      const rStr = String(vStat.rejected || 0).padStart(3, " ");
+      sumTot += vStat.total;
+      sumPen += vStat.pending;
+      sumApp += vStat.approved;
+      sumRej += (vStat.rejected || 0);
+      text += `${numStr} ${cleanV} ${tStr} ${pStr} ${aStr} ${rStr}\n`;
+    });
+
+    text += "── ───────────────── ─── ─── ───\n";
+    const totT = String(sumTot).padStart(3, " ");
+    const totP = String(sumPen).padStart(4, " ");
+    const totA = String(sumApp).padStart(4, " ");
+    const totR = String(sumRej).padStart(3, " ");
+    text += `   TOTAL             ${totT} ${totP} ${totA} ${totR}\n`;
+    text += "```\n";
+  }
+
+  text += "━━━━━━━━━━━━━━━━━━━━━━━━━━━\n";
+  text += "🌐 *Live Portal:* https://pradeepparmar902.github.io/MY_Community_Website/";
+  return text;
+};
+
+const generateApplicationWhatsAppText = (app) => {
+  if (!app) return "";
+  const rawName = String(app["Full Name"] || app["Submitted By"] || app.name || "Applicant");
+  const displayName = rawName.replace(/\|/g, " ").replace(/\s+/g, " ").trim().toUpperCase();
+  const txnId = String(app["Transaction ID"] || app.transactionId || app.txnId || app.id || "VG-ID").trim().toUpperCase();
+  const status = String(app.Status || app.status || "Pending").trim();
+  const vibhag = String(app["Vibhag"] || "Unspecified").trim().toUpperCase();
+  const stream = String(app["Stream"] || "General").trim();
+  const marksVal = app["% Obtained"] || app["%"];
+  const marks = marksVal ? `${marksVal}%` : "-";
+  const marksDetail = app["Obtained Marks"] ? ` (${app["Obtained Marks"]}/${app["Out Of Marks"]})` : "";
+  const mobile = app["Mobile Number"] || app.submitterMob || app.mobile || "";
+
+  const statusBadge = status === "Approved" 
+    ? "🟢 APPROVED" 
+    : status === "Needs Info" 
+    ? "⚠️ ACTION REQUIRED (NEEDS INFO)" 
+    : (status === "Disapproved" || status === "Rejected") 
+    ? "🔴 REJECTED" 
+    : "⏳ PENDING REVIEW";
+
+  const remarks = app.Remarks || (status === "Approved" ? "Application verified & approved." : status === "Needs Info" ? "Additional marksheets or correction required." : "Application is under committee review.");
+
+  let text = "🏛️ *MUMBAI MEGHWAL PANCHAYAT*\n";
+  text += "🎓 *Education Felicitation 2026 — Application Status*\n";
+  text += "━━━━━━━━━━━━━━━━━━━━━━━━━━\n";
+  text += `🆔 *Txn ID  :* ${txnId}\n`;
+  text += `👤 *Student :* ${displayName}\n`;
+  text += `📍 *Vibhag  :* ${vibhag}\n`;
+  text += `📚 *Stream  :* ${stream} (${marks}${marksDetail})\n`;
+  if (mobile) {
+    text += `📱 *Mobile  :* +91 ${String(mobile).replace(/\D/g, "").slice(-10)}\n`;
+  }
+  text += `📌 *Status  :* ${statusBadge}\n`;
+  text += `💬 *Remarks :* ${remarks}\n`;
+  text += "━━━━━━━━━━━━━━━━━━━━━━━━━━\n";
+  text += "🌐 *Portal:* https://pradeepparmar902.github.io/MY_Community_Website/";
+  return text;
+};
+
+function ApplicationRecordCard({ app, onAction }) {
+  const [copied, setCopied] = useState(false);
+  const status = app.Status || app.status || "Pending";
+  const isApproved = status === "Approved";
+  const isNeedsInfo = status === "Needs Info";
+  const isDisapproved = status === "Disapproved" || status === "Rejected";
+
+  // Clean pipe-delimited names e.g. "Mahima|Bhupendra |Mahida" -> "Mahima Bhupendra Mahida"
+  const rawName = String(app["Full Name"] || app["Submitted By"] || app.name || "Applicant");
+  const displayName = rawName.replace(/\|/g, " ").replace(/\s+/g, " ").trim();
+
+  const badgeBg = isApproved ? "#DCFCE7" : isNeedsInfo ? "#FEF3C7" : isDisapproved ? "#FEE2E2" : "#EFF6FF";
+  const badgeColor = isApproved ? "#15803D" : isNeedsInfo ? "#B45309" : isDisapproved ? "#DC2626" : "#1D4ED8";
+  const badgeIcon = isApproved ? "🟢" : isNeedsInfo ? "⚠️" : isDisapproved ? "🔴" : "⏳";
+
+  const handleCopyWhatsApp = () => {
+    const text = generateApplicationWhatsAppText(app);
+    navigator.clipboard.writeText(text).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    }).catch(() => {
+      prompt("Copy formatted WhatsApp text:", text);
+    });
+  };
+
+  const handleShareWhatsApp = () => {
+    const text = generateApplicationWhatsAppText(app);
+    const url = `https://api.whatsapp.com/send?text=${encodeURIComponent(text)}`;
+    window.open(url, "_blank");
+  };
+
+  return (
+    <div style={{
+      background: "white",
+      borderRadius: 12,
+      border: isNeedsInfo ? "1.5px solid #FCD34D" : "1px solid #E2E8F0",
+      boxShadow: isNeedsInfo ? "0 4px 14px rgba(217,119,6,0.12)" : "0 2px 10px rgba(0,0,0,0.05)",
+      overflow: "hidden",
+      marginTop: 8,
+      marginBottom: 6
+    }}>
+      {/* Card Header */}
+      <div style={{
+        padding: "10px 14px",
+        background: isNeedsInfo ? "linear-gradient(135deg, #FFFBEB, #FEF3C7)" : "linear-gradient(135deg, #F8FAFC, #F1F5F9)",
+        borderBottom: "1px solid #E2E8F0",
+        display: "flex",
+        justifyContent: "space-between",
+        alignItems: "center"
+      }}>
+        <div style={{display:"flex",alignItems:"center",gap:6}}>
+          <span style={{background:"#1E293B",color:"white",fontSize:".7rem",padding:"3px 7px",borderRadius:6,fontWeight:800,fontFamily:"monospace"}}>
+            {app["Transaction ID"] || app.transactionId || "VG-ID"}
+          </span>
+          <span style={{fontSize:".85rem",fontWeight:700,color:"#0F172A"}}>{displayName}</span>
+        </div>
+        <span style={{
+          background: badgeBg,
+          color: badgeColor,
+          padding: "3px 8px",
+          borderRadius: 12,
+          fontSize: ".72rem",
+          fontWeight: 800,
+          display: "flex",
+          alignItems: "center",
+          gap: 4
+        }}>
+          <span>{badgeIcon}</span> {status}
+        </span>
+      </div>
+
+      {/* Card Body Grid */}
+      <div style={{padding:"12px 14px",display:"grid",gridTemplateColumns:"1fr 1fr",gap:"8px 12px",fontSize:".78rem"}}>
+        <div>
+          <span style={{color:"#64748B",display:"block",fontSize:".7rem",fontWeight:600}}>VIBHAG</span>
+          <span style={{color:"#0F172A",fontWeight:700}}>{app["Vibhag"] || "Unspecified"}</span>
+        </div>
+        <div>
+          <span style={{color:"#64748B",display:"block",fontSize:".7rem",fontWeight:600}}>STREAM / CLASS</span>
+          <span style={{color:"#0F172A",fontWeight:700}}>{app["Stream"] || "General"}</span>
+        </div>
+        <div>
+          <span style={{color:"#64748B",display:"block",fontSize:".7rem",fontWeight:600}}>MARKS / PERCENTAGE</span>
+          <span style={{color:"#0F172A",fontWeight:700}}>
+            {app["% Obtained"] || app["%"] ? `${app["% Obtained"] || app["%"]}%` : "-"} 
+            {app["Obtained Marks"] ? ` (${app["Obtained Marks"]}/${app["Out Of Marks"]})` : ""}
+          </span>
+        </div>
+        <div>
+          <span style={{color:"#64748B",display:"block",fontSize:".7rem",fontWeight:600}}>EVENT</span>
+          <span style={{color:"#0F172A",fontWeight:700}}>{app.eventName || app.eventTitle || "Education 2026"}</span>
+        </div>
+      </div>
+
+      {/* Remarks Alert Block */}
+      <div style={{
+        margin: "0 14px 10px 14px",
+        padding: "8px 12px",
+        background: isNeedsInfo ? "#FFFBEB" : isApproved ? "#F0FDF4" : "#F8FAFC",
+        border: `1px solid ${isNeedsInfo ? "#FCD34D" : isApproved ? "#BBF7D0" : "#E2E8F0"}`,
+        borderRadius: 8,
+        fontSize: ".75rem",
+        color: isNeedsInfo ? "#92400E" : isApproved ? "#166534" : "#475569",
+        lineHeight: 1.4
+      }}>
+        💬 <strong>Remarks:</strong> {app.Remarks || (isApproved ? "Application verified & approved by Committee." : isNeedsInfo ? "Additional information or document re-upload required." : "Application is under committee review.")}
+      </div>
+
+      {/* Card Footer Actions (WhatsApp & Document) */}
+      <div style={{
+        padding: "8px 14px",
+        background: "#F8FAFC",
+        borderTop: "1px solid #E2E8F0",
+        display: "flex",
+        justifyContent: "space-between",
+        alignItems: "center",
+        flexWrap: "wrap",
+        gap: 6
+      }}>
+        <div style={{display:"flex",gap:6,alignItems:"center"}}>
+          <button
+            onClick={handleCopyWhatsApp}
+            style={{
+              padding: "4px 9px",
+              background: copied ? "#DCFCE7" : "white",
+              color: copied ? "#15803D" : "#475569",
+              border: `1px solid ${copied ? "#86EFAC" : "#CBD5E1"}`,
+              borderRadius: 6,
+              fontSize: ".72rem",
+              fontWeight: 700,
+              cursor: "pointer",
+              display: "flex",
+              alignItems: "center",
+              gap: 4
+            }}
+            title="Copy formatted status for WhatsApp"
+          >
+            <span>{copied ? "✅" : "📋"}</span>
+            <span>{copied ? "Copied!" : "Copy for WhatsApp"}</span>
+          </button>
+
+          <button
+            onClick={handleShareWhatsApp}
+            style={{
+              padding: "4px 9px",
+              background: "#25D366",
+              color: "white",
+              border: "none",
+              borderRadius: 6,
+              fontSize: ".72rem",
+              fontWeight: 700,
+              cursor: "pointer",
+              display: "flex",
+              alignItems: "center",
+              gap: 4,
+              boxShadow: "0 2px 5px rgba(37,211,102,0.25)"
+            }}
+            title="Share directly to WhatsApp"
+          >
+            <span>🟢</span>
+            <span>Share</span>
+          </button>
+        </div>
+
+        {app["Supporting Document"] && (
+          <a
+            href={app["Supporting Document"]}
+            target="_blank"
+            rel="noreferrer"
+            style={{
+              fontSize: ".74rem",
+              fontWeight: 700,
+              color: "#2563EB",
+              textDecoration: "none",
+              display: "flex",
+              alignItems: "center",
+              gap: 4
+            }}
+          >
+            📄 Marksheet ↗
+          </a>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ── Vibhag Analytics Dashboard Card ─────────────────────────────────────────────────────
+function VibhagSummaryCard({ summaryData }) {
+  const [copied, setCopied] = useState(false);
+  if (!summaryData) return null;
+  const { total, approved, pending, rejected, vibhagList, scopeTitle } = summaryData;
+
+  const handleCopyWhatsApp = () => {
+    const text = generateVibhagSummaryWhatsAppText(summaryData);
+    navigator.clipboard.writeText(text).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    }).catch(() => {
+      prompt("Copy formatted WhatsApp summary:", text);
+    });
+  };
+
+  const handleShareWhatsApp = () => {
+    const text = generateVibhagSummaryWhatsAppText(summaryData);
+    const url = `https://api.whatsapp.com/send?text=${encodeURIComponent(text)}`;
+    window.open(url, "_blank");
+  };
+
+  return (
+    <div style={{
+      background: "white",
+      borderRadius: 12,
+      border: "1px solid #CBD5E1",
+      boxShadow: "0 2px 10px rgba(0,0,0,0.05)",
+      overflow: "hidden",
+      marginTop: 8,
+      marginBottom: 6
+    }}>
+      {/* Dashboard Title */}
+      <div style={{
+        padding: "10px 14px",
+        background: "linear-gradient(135deg, #1E293B, #0F172A)",
+        color: "white",
+        display: "flex",
+        justifyContent: "space-between",
+        alignItems: "center"
+      }}>
+        <span style={{fontSize:".85rem",fontWeight:800}}>📊 {scopeTitle || "Education Felicitation 2026 Summary"}</span>
+        <span style={{background:"#2563EB",color:"white",fontSize:".7rem",padding:"2px 8px",borderRadius:10,fontWeight:700}}>Live</span>
+      </div>
+
+      {/* KPI Counters */}
+      <div style={{display:"grid",gridTemplateColumns:"repeat(4, 1fr)",gap:6,padding:"12px 10px",background:"#F8FAFC",borderBottom:"1px solid #E2E8F0",textAlign:"center"}}>
+        <div style={{background:"white",padding:"6px 4px",borderRadius:8,border:"1px solid #E2E8F0"}}>
+          <div style={{fontSize:".68rem",color:"#64748B",fontWeight:700}}>TOTAL</div>
+          <div style={{fontSize:"1.1rem",fontWeight:800,color:"#0F172A"}}>{total}</div>
+        </div>
+        <div style={{background:"white",padding:"6px 4px",borderRadius:8,border:"1px solid #BBF7D0"}}>
+          <div style={{fontSize:".68rem",color:"#15803D",fontWeight:700}}>APPROVED</div>
+          <div style={{fontSize:"1.1rem",fontWeight:800,color:"#15803D"}}>{approved}</div>
+        </div>
+        <div style={{background:"white",padding:"6px 4px",borderRadius:8,border:"1px solid #FED7AA"}}>
+          <div style={{fontSize:".68rem",color:"#C2410C",fontWeight:700}}>PENDING</div>
+          <div style={{fontSize:"1.1rem",fontWeight:800,color:"#C2410C"}}>{pending}</div>
+        </div>
+        <div style={{background:"white",padding:"6px 4px",borderRadius:8,border:"1px solid #FECACA"}}>
+          <div style={{fontSize:".68rem",color:"#DC2626",fontWeight:700}}>REJECTED</div>
+          <div style={{fontSize:"1.1rem",fontWeight:800,color:"#DC2626"}}>{rejected}</div>
+        </div>
+      </div>
+
+      {/* Breakdown by Vibhag */}
+      {vibhagList && vibhagList.length > 0 && (
+        <div style={{padding:"10px 14px"}}>
+          <div style={{fontSize:".75rem",fontWeight:700,color:"#475569",marginBottom:8,textTransform:"uppercase",letterSpacing:0.5}}>Vibhag Breakdown:</div>
+          <div style={{display:"flex",flexDirection:"column",gap:6,maxHeight:180,overflowY:"auto"}}>
+            {vibhagList.map(([vName, vStat], idx) => (
+              <div key={idx} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"6px 10px",background:"#F8FAFC",borderRadius:6,fontSize:".78rem"}}>
+                <span style={{fontWeight:700,color:"#1E293B"}}>{vName}</span>
+                <div style={{display:"flex",alignItems:"center",gap:6}}>
+                  <span style={{background:"#EFF6FF",color:"#1D4ED8",padding:"2px 6px",borderRadius:4,fontWeight:700,fontSize:".72rem"}}>Total: {vStat.total}</span>
+                  <span style={{background:"#FEF3C7",color:"#B45309",padding:"2px 6px",borderRadius:4,fontWeight:700,fontSize:".72rem"}}>⏳ {vStat.pending}</span>
+                  <span style={{background:"#DCFCE7",color:"#15803D",padding:"2px 6px",borderRadius:4,fontWeight:700,fontSize:".72rem"}}>🟢 {vStat.approved}</span>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* WhatsApp Sharing Bar */}
+      <div style={{
+        padding: "8px 14px",
+        background: "#F8FAFC",
+        borderTop: "1px solid #E2E8F0",
+        display: "flex",
+        justifyContent: "space-between",
+        alignItems: "center",
+        flexWrap: "wrap",
+        gap: 6
+      }}>
+        <div style={{display:"flex",gap:6,alignItems:"center",width:"100%"}}>
+          <button
+            onClick={handleCopyWhatsApp}
+            style={{
+              flex: 1,
+              padding: "6px 10px",
+              background: copied ? "#DCFCE7" : "white",
+              color: copied ? "#15803D" : "#475569",
+              border: `1px solid ${copied ? "#86EFAC" : "#CBD5E1"}`,
+              borderRadius: 6,
+              fontSize: ".75rem",
+              fontWeight: 700,
+              cursor: "pointer",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              gap: 4
+            }}
+            title="Copy formatted summary text for WhatsApp"
+          >
+            <span>{copied ? "✅" : "📋"}</span>
+            <span>{copied ? "Copied to Clipboard!" : "Copy for WhatsApp"}</span>
+          </button>
+
+          <button
+            onClick={handleShareWhatsApp}
+            style={{
+              padding: "6px 12px",
+              background: "#25D366",
+              color: "white",
+              border: "none",
+              borderRadius: 6,
+              fontSize: ".75rem",
+              fontWeight: 700,
+              cursor: "pointer",
+              display: "flex",
+              alignItems: "center",
+              gap: 4,
+              boxShadow: "0 2px 6px rgba(37,211,102,0.25)"
+            }}
+            title="Share summary directly to WhatsApp"
+          >
+            <span>🟢</span>
+            <span>Share on WhatsApp</span>
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Community AI & Registration Chatbot Widget ──────────────────────────────────────────
+function CommunityChatbot({ C, auth, onShowLogin }) {
+  if (C.chatbotEnabled === false) {
+    return null;
+  }
+  const w = useW();
+  const isMob = w <= 640;
+
+  const [isOpen, setIsOpen] = useState(false);
+  const [isMinimized, setIsMinimized] = useState(false);
+  const [manualSessionScope, setManualSessionScope] = useState(auth?.idToken ? "all" : null);
+  const [manualSessionVibhag, setManualSessionVibhag] = useState("");
+  const [verifiedMember, setVerifiedMember] = useState(null);
+  const [input, setInput] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [regs, setRegs] = useState([]);
+  const [regsLoaded, setRegsLoaded] = useState(false);
+  const [showSlashMenu, setShowSlashMenu] = useState(false);
+  const [slashSubmenu, setSlashSubmenu] = useState(null); // null | "vibhags"
+  const chatBottomRef = useRef(null);
+
+  // Draggable Floating Position State (Null = Default Bottom-Right Anchor)
+  const [pos, setPos] = useState({ x: null, y: null });
+  const [isDragging, setIsDragging] = useState(false);
+  const dragOffsetRef = useRef({ x: 0, y: 0 });
+  const didDragRef = useRef(false);
+
+  const VIBHAG_OPTIONS = [
+    "10 MAHALAXMI",
+    "15 RAMDEV NAGAR",
+    "2 WALPAKHADI",
+    "22 LOWER PAREL",
+    "30 PRATKISHA NAGAR",
+    "55 BHAYANDER",
+    "65 KALWA"
+  ];
+
+  // Helper to get active logged-in user from all possible auth sources (Firebase Auth, LocalStorage, Auth prop)
+  const getActiveUser = () => {
+    let storedUser = null;
+    try {
+      const cached = localStorage.getItem("trustPublicProfile") || localStorage.getItem("globalProfile");
+      if (cached) storedUser = JSON.parse(cached);
+    } catch (e) {}
+
+    const fbUser = fbAuth?.currentUser;
+    const rawPhone = storedUser?.mobile || storedUser?.['Mobile Number'] || storedUser?.phone || auth?.mobile || fbUser?.phoneNumber || verifiedMember?.mobile || "";
+    const cleanPhone = String(rawPhone).replace(/\D/g, "").slice(-10);
+    const name = storedUser?.name || storedUser?.['Full Name'] || auth?.name || fbUser?.displayName || verifiedMember?.name || "";
+    const email = String(storedUser?.email || auth?.email || fbUser?.email || "").toLowerCase().trim();
+
+    const isLoggedIn = Boolean(cleanPhone || (email && email !== "mmp_report_runner@gmail.com") || auth?.idToken || fbUser);
+
+    return {
+      isLoggedIn,
+      mobile: cleanPhone,
+      name,
+      email
+    };
+  };
+
+  const activeUser = getActiveUser();
+
+  // Dynamic automatic role and scope detection from logged in mobile + C.committeeMobiles
+  const matchedCommitteeMember = useMemo(() => {
+    const cleanMob = activeUser.mobile;
+    if (!cleanMob || cleanMob.length < 10) return null;
+    const committeeList = Array.isArray(C.committeeMobiles) ? C.committeeMobiles : [];
+    return committeeList.find(m => {
+      const targetMob = typeof m === "string" ? m : m.mobile;
+      return String(targetMob).replace(/\D/g, "").slice(-10) === cleanMob;
+    }) || null;
+  }, [activeUser.mobile, C.committeeMobiles]);
+
+  // 1. If active logged in user has an assigned scope in C.committeeMobiles, prioritize that exact role
+  const userSessionScope = matchedCommitteeMember
+    ? (typeof matchedCommitteeMember === "object" ? (matchedCommitteeMember.scope || "all") : "all")
+    : (manualSessionScope || (auth?.idToken ? "all" : (activeUser.isLoggedIn ? "individual" : "public")));
+
+  let sessionVibhag = matchedCommitteeMember && typeof matchedCommitteeMember === "object" 
+    ? (matchedCommitteeMember.vibhag || manualSessionVibhag || "") 
+    : manualSessionVibhag;
+
+  if (userSessionScope === "vibhag" && (!sessionVibhag || sessionVibhag === "All Vibhags" || sessionVibhag === "Individual Only")) {
+    sessionVibhag = "10 MAHALAXMI";
+  }
+
+  const isAnyAdmin = userSessionScope === "all" || userSessionScope === "vibhag";
+
+  const chatbotTitle = C.chatbotTitle || (C.trust?.name ? `${C.trust.name} Assistant` : "Mumbai Meghwal Panchayat Assistant");
+  const pillLabel = C.chatbotPillLabel || "Trust Assistant";
+  const welcomeText = C.chatbotWelcomeText || "👋 **Namaste & Welcome!**\n\nI am your **MMP & Vidya Gohil Trust Assistant**.\n\n• 🔍 **Check Application Status**: Type your **Transaction ID (e.g. VG-7, EDU26-2)** or registered **Mobile Number**.\n• ⚡ **Question Shortcuts**: Type **`/`** to see all FAQ shortcuts (Education Committee, CWC, Events, Vibhag Summary).\n• 🛡️ **Committee Admin**: Enter your authorized mobile to unlock live analytics.";
+
+  // When Chatbot opens, ensure it expands upwards and never overflows below the bottom edge
+  const openChatbot = () => {
+    setIsOpen(true);
+    setIsMinimized(false);
+    ensureRegistrations();
+
+    setPos(prev => {
+      if (prev.x === null || prev.y === null) return prev;
+      const chatHeight = Math.min(590, window.innerHeight - 80);
+      const chatWidth = Math.min(410, window.innerWidth - 32);
+      
+      const maxY = window.innerHeight - chatHeight - 20;
+      const maxX = window.innerWidth - chatWidth - 20;
+
+      return {
+        x: Math.max(10, Math.min(prev.x, Math.max(10, maxX))),
+        y: Math.max(10, Math.min(prev.y, Math.max(10, maxY)))
+      };
+    });
+  };
+
+  // Drag listeners
+  const startDrag = (e) => {
+    if (e.target.closest("button") || e.target.closest("input") || e.target.closest("a") || e.target.closest("textarea")) {
+      return;
+    }
+    setIsDragging(true);
+    didDragRef.current = false;
+
+    const clientX = e.clientX !== undefined ? e.clientX : (e.touches && e.touches[0].clientX);
+    const clientY = e.clientY !== undefined ? e.clientY : (e.touches && e.touches[0].clientY);
+
+    const widget = document.getElementById("draggable-chatbot-widget");
+    if (widget && clientX !== undefined && clientY !== undefined) {
+      const rect = widget.getBoundingClientRect();
+      dragOffsetRef.current = {
+        x: clientX - rect.left,
+        y: clientY - rect.top
+      };
+    }
+  };
+
+  useEffect(() => {
+    const handleMove = (e) => {
+      if (!isDragging) return;
+      didDragRef.current = true;
+
+      const clientX = e.clientX !== undefined ? e.clientX : (e.touches && e.touches[0].clientX);
+      const clientY = e.clientY !== undefined ? e.clientY : (e.touches && e.touches[0].clientY);
+
+      if (clientX === undefined || clientY === undefined) return;
+
+      let nextX = clientX - dragOffsetRef.current.x;
+      let nextY = clientY - dragOffsetRef.current.y;
+
+      const pillWidth = isMob ? 170 : 190;
+      const pillHeight = 44;
+      const chatHeight = isOpen ? (isMinimized ? 58 : Math.min(590, window.innerHeight - 80)) : pillHeight;
+      const chatWidth = isOpen ? Math.min(410, window.innerWidth - 32) : pillWidth;
+
+      const maxX = Math.max(10, window.innerWidth - chatWidth - 10);
+      const maxY = Math.max(10, window.innerHeight - chatHeight - 10);
+
+      nextX = Math.max(10, Math.min(nextX, maxX));
+      nextY = Math.max(10, Math.min(nextY, maxY));
+
+      setPos({ x: nextX, y: nextY });
+    };
+
+    const handleEnd = () => {
+      if (isDragging) setIsDragging(false);
+    };
+
+    if (isDragging) {
+      window.addEventListener("mousemove", handleMove);
+      window.addEventListener("mouseup", handleEnd);
+      window.addEventListener("touchmove", handleMove, { passive: false });
+      window.addEventListener("touchend", handleEnd);
+    }
+
+    return () => {
+      window.removeEventListener("mousemove", handleMove);
+      window.removeEventListener("mouseup", handleEnd);
+      window.removeEventListener("touchmove", handleMove);
+      window.removeEventListener("touchend", handleEnd);
+    };
+  }, [isDragging, isOpen, isMinimized]);
+
+  // Dynamic Knowledge Base from C.chatbotKnowledgeBase or Defaults
+  const DEFAULT_KB = [
+    {
+      id: "kb_events",
+      cmd: "/events",
+      icon: "🎓",
+      title: "Upcoming Education Felicitation 2026 events",
+      answer: "🎓 **Education Felicitation 2026 - Mumbai Meghwal Panchayat & Vidya Gohil Trust**\n\n• **Event**: Annual Student Education Felicitation 2026\n• **Eligibility**: Students scoring 50%+ in 10th, 12th, Degree, Diploma & Post-Graduation\n• **Registration Portal**: Online via website Events section\n• **Date**: 02-10-2026\n• **Venue**: Mumbai (To be officially announced soon)\n• **Required Documents**: Marksheet & Passport Photo\n\n• [Watch Registration Video](https://youtu.be/hg2dxZjDLfo)\n• [Visit Website Portal](https://www.mmp-cwc.com)",
+      enabled: true,
+      adminOnly: false
+    },
+    {
+      id: "kb_edu_committee",
+      cmd: "/edu_committee",
+      icon: "👥",
+      title: "Education Committee Members",
+      answer: "👥 **Education Felicitation 2026 Committee Members**:\n\n• **Pradeep Parmar** — Trustee / Lead Coordinator (+91 9820785209)\n• **Keshav Wagh** — Lower Parel Head (+91 9967821964)\n• **Ashwin Kataria** — Ramdev Nagar Head (+91 8082234187)\n• **Samiksha Chudasama** — Committee Member (+91 7977561920)\n• **Dinesh Sondarva** — Mahalaxmi Head (+91 8779227886)\n• **Khushi Jogadiya** — Pratiksha Nagar Head (+91 8591563577)",
+      enabled: true,
+      adminOnly: false
+    },
+    {
+      id: "kb_cwc_committee",
+      cmd: "/cwc_committee",
+      icon: "🏛️",
+      title: "CWC Committee Members",
+      answer: "🏛️ **Central Working Committee (CWC) Members**:\n\n• **President**: MMP Central Leadership\n• **General Secretary**: CWC Executive\n• **Treasurer / Financial Head**: Trust Executive\n• **Coordination Team**: Central Vibhag Team\n\n*(You can edit full member details & phone numbers in Admin Panel)*",
+      enabled: true,
+      adminOnly: false
+    },
+    {
+      id: "kb_donate",
+      cmd: "/donate",
+      icon: "💰",
+      title: "80G Tax Donations & Bank Details",
+      answer: "💰 **Donations & 80G Tax Exemption**:\n\n• Vidya Gohil Charitable Trust offers **80G Tax Benefits** for all eligible donations under Indian Income Tax regulations.\n• You can donate online securely via Razorpay (UPI, Google Pay, PhonePe, Cards, NetBanking) on our **Donate** page.\n• Automated 80G tax receipts and 10BE acknowledgement certificates are provided.",
+      enabled: false, // Default hidden for MMP
+      adminOnly: false
+    },
+    {
+      id: "kb_contact",
+      cmd: "/contact",
+      icon: "📞",
+      title: "Trust Helpline & Office Contacts",
+      answer: "📞 **Trust Office & Helpline Contacts**:\n\n• **Office**: Mumbai, Maharashtra\n• **Email**: info@mmp-cwc-new.com\n• **Helpline Mobile**: +91 9820785209 / +91 9967821964\n• **Timings**: 10:00 AM – 7:00 PM (Mon – Sat)",
+      enabled: true,
+      adminOnly: false
+    }
+  ];
+
+  const kbList = Array.isArray(C.chatbotKnowledgeBase) && C.chatbotKnowledgeBase.length > 0 ? C.chatbotKnowledgeBase : DEFAULT_KB;
+
+  // System Core Commands + Custom Knowledge Base Commands
+  const SYSTEM_COMMANDS = [
+    {
+      cmd: "/check",
+      icon: "🔍",
+      label: "Check My Application Status",
+      desc: "Look up your application status by logged-in mobile or Transaction ID",
+      action: "/check",
+      adminOnly: false
+    },
+    {
+      cmd: "/all",
+      icon: "📊",
+      label: "Summary of ALL Entries",
+      desc: "Complete registration counts & metrics across ALL Vibhags",
+      action: "Summary data of all entry ALL",
+      adminOnly: true
+    },
+    {
+      cmd: "/vibhag",
+      icon: "📍",
+      label: "Summary by Vibhag #",
+      desc: "Choose a specific Vibhag (e.g. 15 RAMDEV NAGAR, 10 MAHALAXMI)",
+      hasSubmenu: true,
+      adminOnly: true
+    },
+    {
+      cmd: "/pending",
+      icon: "⏳",
+      label: "Pending Review List",
+      desc: "Show registrations currently awaiting committee approval",
+      action: "Show all pending registrations",
+      adminOnly: true
+    },
+    {
+      cmd: "/approved",
+      icon: "🟢",
+      label: "Approved List",
+      desc: "Show registrations verified & approved by committee",
+      action: "Show approved registrations",
+      adminOnly: true
+    }
+  ];
+
+  const DYNAMIC_KB_COMMANDS = kbList.filter(item => item.enabled !== false).map(item => ({
+    cmd: item.cmd,
+    icon: item.icon || "❓",
+    label: item.title,
+    desc: item.answer.slice(0, 65) + "...",
+    action: item.cmd,
+    adminOnly: Boolean(item.adminOnly)
+  }));
+
+  const ALL_SLASH_COMMANDS = [
+    ...SYSTEM_COMMANDS,
+    ...DYNAMIC_KB_COMMANDS,
+    {
+      cmd: "/help",
+      icon: "❓",
+      label: "Commands & Capabilities Guide",
+      desc: "View full list of questions this chatbot is capable of answering",
+      action: "/help",
+      adminOnly: false
+    }
+  ];
+
+  const [messages, setMessages] = useState([
+    {
+      id: "m_welcome",
+      sender: "bot",
+      type: "welcome",
+      text: welcomeText
+    }
+  ]);
+
+  useEffect(() => {
+    setMessages(prev => {
+      if (prev.length === 1 && prev[0].type === "welcome") {
+        return [{ ...prev[0], text: welcomeText }];
+      }
+      return prev;
+    });
+  }, [welcomeText]);
+
+  useEffect(() => {
+    if (auth?.idToken) {
+      setManualSessionScope("all");
+      setManualSessionVibhag("All Vibhags");
+    }
+  }, [auth]);
+
+  useEffect(() => {
+    if (isOpen && chatBottomRef.current) {
+      chatBottomRef.current.scrollIntoView({ behavior: "smooth" });
+    }
+  }, [messages, isOpen]);
+
+  const ensureRegistrations = async () => {
+    if (regsLoaded && regs.length > 0) return regs;
+    try {
+      setLoading(true);
+      let token = auth?.idToken || localStorage.getItem("trustPublicAuthToken") || localStorage.getItem("globalAuthToken") || "";
+      if (!token && fbAuth?.currentUser) {
+        try { token = await fbAuth.currentUser.getIdToken(); } catch (e) {}
+      }
+      const data = await fbFetchRegistrations(token).catch(err => {
+        console.warn("fbFetchRegistrations fallback:", err);
+        return [];
+      });
+      const cleanList = (data || []).filter(r => !r.deleted && !r.isGlobalGuest && !r.isSpecialGuest);
+      setRegs(cleanList);
+      setRegsLoaded(true);
+      return cleanList;
+    } catch (e) {
+      console.error("Chatbot regs load error:", e);
+      return [];
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleSendMessage = async (userText) => {
+    const query = (userText || input).trim();
+    if (!query) return;
+    setInput("");
+    setShowSlashMenu(false);
+    setSlashSubmenu(null);
+
+    const newMsgId = "m_" + Date.now();
+    const userMsg = { id: newMsgId, sender: "user", text: query };
+    setMessages(prev => [...prev, userMsg]);
+    setLoading(true);
+
+    try {
+      const currentRegs = await ensureRegistrations();
+    const qLower = query.toLowerCase();
+    const cleanQuery = query.trim().toUpperCase().replace(/\s+/g, "");
+    const cleanHyphen = cleanQuery.replace(/[^A-Z0-9]/g, "");
+
+    const phoneMatch = query.match(/(?:\+91[- ]?)?([6-9]\d{9})/);
+
+    const committeeMobilesList = Array.isArray(C.committeeMobiles) && C.committeeMobiles.length > 0 ? C.committeeMobiles : [
+      { name: "Pradeep Parmar (Super Admin)", mobile: "9820785209", scope: "all", vibhag: "All Vibhags", role: "Trustee / Super Admin" },
+      { name: "Keshav Wagh", mobile: "9967821964", scope: "individual", vibhag: "Individual Only", role: "Committee Member" },
+      { name: "Ashwin Kataria", mobile: "8082234187", scope: "individual", vibhag: "Individual Only", role: "Committee Member" },
+      { name: "Samiksha Chudasama", mobile: "7977561920", scope: "individual", vibhag: "Individual Only", role: "Committee Member" },
+      { name: "Dinesh Sondarva", mobile: "8779227886", scope: "individual", vibhag: "Individual Only", role: "Committee Member" },
+      { name: "Khushi Jogadiya", mobile: "8591563577", scope: "individual", vibhag: "Individual Only", role: "Committee Member" }
+    ];
+
+    const committeeMobileMap = {};
+    committeeMobilesList.forEach(m => {
+      const mob = typeof m === "string" ? m : m.mobile;
+      const clean = String(mob).replace(/\D/g, "").slice(-10);
+      committeeMobileMap[clean] = typeof m === "string" ? { name: "Committee Member", scope: "individual", vibhag: "Individual Only", role: "Applicant" } : m;
+    });
+
+    let botReply = "";
+    let botType = "text";
+    let cardData = null;
+
+    const qWords = qLower.split(/\s+/);
+    const matchedKb = kbList.find(kb => {
+      if (kb.enabled === false || !kb.answer || !kb.answer.trim()) return false;
+      const cClean = (kb.cmd || "").toLowerCase().replace(/^\//, "").trim();
+      const tClean = (kb.title || "").toLowerCase().trim();
+      const rawCmd = (kb.cmd || "").toLowerCase().trim();
+
+      if (qLower === rawCmd || qLower === cClean || qLower === tClean) return true;
+      if (cClean.length >= 3 && qWords.includes(cClean)) return true;
+      if (tClean.length >= 5 && qLower.includes(tClean)) return true;
+
+      return false;
+    });
+
+    const isSummaryOrVibhagIntent = qLower.includes("vibhag") || qLower.includes("summary") || qLower.includes("count") || qLower.includes("total") || qLower.includes("report") || qLower.includes("/all") || qLower.includes("/vibhag") || qLower.includes("committee");
+
+    const txnFound = isSummaryOrVibhagIntent ? [] : currentRegs.filter(r => {
+      const tId = String(r["Transaction ID"] || r.transactionId || r.txnId || r.id || "").trim().toUpperCase();
+      const cleanTId = tId.replace(/[^A-Z0-9]/g, "");
+
+      if (tId === cleanQuery || cleanTId === cleanHyphen) return true;
+      if (cleanQuery.length > 2 && (cleanTId.endsWith(cleanHyphen) || cleanTId === cleanHyphen)) return true;
+
+      // Only allow pure numbers if query is short and doesn't contain long phrases
+      const numOnly = query.trim().replace(/\D/g, "");
+      const isPureNumber = /^\d{1,5}$/.test(query.trim());
+      if (isPureNumber && numOnly && (tId === "VG-" + numOnly || tId === "EDU26-" + numOnly || cleanTId === "VG" + numOnly || cleanTId === "EDU26" + numOnly)) {
+        return true;
+      }
+      return false;
+    });
+
+    if (qLower === "/check" || qLower === "check" || qLower === "my status" || qLower === "check status" || qLower === "check my application status" || qLower.includes("application status") || qLower.includes("check application")) {
+      // Look up logged in mobile across all sources
+      const currentActiveUser = getActiveUser();
+      const userPhone = currentActiveUser.mobile;
+      const userEmail = currentActiveUser.email;
+
+      if (currentActiveUser.isLoggedIn && (userPhone || userEmail)) {
+        const userApps = currentRegs.filter(r => {
+          const m1 = String(r.submitterMob || "").replace(/\D/g, "").slice(-10);
+          const m2 = String(r["Mobile Number"] || "").replace(/\D/g, "").slice(-10);
+          const m3 = String(r["Alternate Mobile Number"] || "").replace(/\D/g, "").slice(-10);
+          const em = String(r["Email Address"] || "").toLowerCase().trim();
+
+          if (userPhone && (m1 === userPhone || m2 === userPhone || m3 === userPhone)) return true;
+          if (userEmail && em === userEmail) return true;
+          return false;
+        });
+
+        if (userApps.length > 0) {
+          botType = "apps_list";
+          botReply = `✅ **Found ${userApps.length} Application(s) for your registered account (${currentActiveUser.name ? `${currentActiveUser.name} - ` : ""}${userPhone ? `+91 ${userPhone}` : userEmail})**: `;
+          cardData = { apps: userApps };
+        } else {
+          botReply = `🔍 **No application found for your registered account (${userPhone ? `+91 ${userPhone}` : userEmail})**.\n\n• If you submitted using a different mobile number or have a **Transaction ID (e.g. VG-7, EDU26-2)**, please type it directly in the chat.\n• If you haven't registered yet, please visit the **Events** section to apply.`;
+        }
+      } else {
+        botReply = `🔐 **Please Log In to Check Your Application Status**\n\nFor security and privacy, please log in with your registered mobile number on the website.\n\n• 👉 **Option 1**: Log in using the **Login** button at top right.\n• 👉 **Option 2**: Type your **Transaction ID (e.g. VG-7, EDU26-2)** or **10-digit Mobile Number** directly below to verify.`;
+      }
+    } else if (matchedKb) {
+      if (matchedKb.adminOnly && !isAnyAdmin) {
+        botReply = `🔒 **Access Restricted**\n\nThis question/data is restricted to authorized Committee Admins.\n\n👉 Please type your 10-digit Authorized Mobile Number to unlock.`;
+      } else {
+        botReply = matchedKb.answer;
+      }
+    } else if (qLower === "/help" || qLower === "help" || qLower === "/commands" || qLower.includes("what can you do") || qLower.includes("capabilities")) {
+      const activeCommands = ALL_SLASH_COMMANDS.filter(c => !c.adminOnly || isAnyAdmin);
+      botReply = `🤖 **Chatbot Capabilities & Available Shortcuts**:\n\n` + 
+        activeCommands.map(c => `• ${c.icon} **${c.cmd}** — ${c.label}`).join("\n") + 
+        `\n\n*(You can configure or add new custom shortcuts anytime in the Admin Panel under Chatbot Admins > Slash Commands)*`;
+    } else if (txnFound.length > 0) {
+      const r = txnFound[0];
+      const rVibhag = String(r["Vibhag"] || "Unspecified");
+      const matchedId = r["Transaction ID"] || r.transactionId || r.id;
+
+      if (userSessionScope === "vibhag" && sessionVibhag && !rVibhag.toLowerCase().includes(sessionVibhag.toLowerCase())) {
+        botReply = `🔒 **Vibhag Restricted**: Transaction ID **${matchedId}** belongs to **${rVibhag}**. Your access is assigned to **${sessionVibhag}**.`;
+      } else {
+        botType = "app_card";
+        botReply = `✅ **Registration Record Found (${matchedId})**: `;
+        cardData = { app: r };
+      }
+    } else if (phoneMatch) {
+      const rawDigits = phoneMatch[1].slice(-10);
+      const authRecord = committeeMobileMap[rawDigits];
+
+      if ((authRecord && authRecord.scope && authRecord.scope !== "individual") || auth?.idToken) {
+        const scope = authRecord?.scope || "all";
+        const vibhag = authRecord?.vibhag || "All Vibhags";
+        const memberName = authRecord?.name || "Admin Member";
+
+        setManualSessionScope(scope);
+        setManualSessionVibhag(vibhag);
+        setVerifiedMember(authRecord || { name: memberName, scope, vibhag });
+
+        botType = "admin_verified";
+        if (scope === "all") {
+          botReply = `🛡️ **Super Admin Access Activated: ${memberName}** (+91 ${rawDigits})\n\n✨ **Scope: All Vibhags Unlocked**\nYou can use:\n• 📊 **/all** — Full registration summary across all Vibhags\n• ⏳ **/pending** — All pending applications\n• 🔍 **/check [ID]** — Search any applicant (e.g. *VG-7*, *EDU26-2*)`;
+        } else {
+          botReply = `📍 **Vibhag Admin Access Activated: ${memberName}** (+91 ${rawDigits})\n\n✨ **Scope: ${vibhag}**\nYou can use:\n• 📊 **/vibhag** — Summary count for ${vibhag}\n• ⏳ **/pending** — Pending applications in ${vibhag}\n• 🔍 **/check [ID]** — Search applicants in ${vibhag}`;
+        }
+
+        const personalRegs = currentRegs.filter(r => {
+          const m1 = String(r.submitterMob || "").replace(/\D/g, "").slice(-10);
+          const m2 = String(r["Mobile Number"] || "").replace(/\D/g, "").slice(-10);
+          const m3 = String(r["Alternate Mobile Number"] || "").replace(/\D/g, "").slice(-10);
+          return m1 === rawDigits || m2 === rawDigits || m3 === rawDigits;
+        });
+
+        if (personalRegs.length > 0) {
+          cardData = { apps: personalRegs };
+        }
+      } else {
+        const found = currentRegs.filter(r => {
+          const m1 = String(r.submitterMob || "").replace(/\D/g, "").slice(-10);
+          const m2 = String(r["Mobile Number"] || "").replace(/\D/g, "").slice(-10);
+          const m3 = String(r["Alternate Mobile Number"] || "").replace(/\D/g, "").slice(-10);
+          return m1 === rawDigits || m2 === rawDigits || m3 === rawDigits;
+        });
+
+        if (found.length > 0) {
+          botType = "apps_list";
+          botReply = `✅ **Found ${found.length} Application(s) for Mobile +91 ${rawDigits}**: `;
+          cardData = { apps: found };
+        } else {
+          botReply = `🔍 No registration was found for mobile number **+91 ${rawDigits}**.\n\nPlease check the 10-digit mobile number used during registration, or try looking up by **Transaction ID** (e.g. *VG-7*, *EDU26-2*).`;
+        }
+      }
+    } else if (qLower.includes("pending")) {
+      if (!isAnyAdmin) {
+        botReply = `🔒 **Access Restricted**\n\nPending review lists are restricted to authorized Committee Admins.\n\n👉 If you are a Committee Admin, please enter your **10-digit Authorized Mobile Number** to unlock this list.`;
+      } else {
+        let pendingList = currentRegs.filter(r => {
+          const s = String(r.Status || r.status || "Pending").trim();
+          return s !== "Approved" && s !== "Disapproved" && s !== "Rejected";
+        });
+
+        if (userSessionScope === "vibhag" && sessionVibhag) {
+          pendingList = pendingList.filter(r => {
+            const v = String(r["Vibhag"] || r["vibhag"] || "").toLowerCase();
+            return v.includes(sessionVibhag.toLowerCase()) || sessionVibhag.toLowerCase().includes(v);
+          });
+        }
+
+        if (pendingList.length > 0) {
+          botType = "apps_list";
+          botReply = `⏳ **Found ${pendingList.length} Pending Review Applications${userSessionScope === "vibhag" ? ` (${sessionVibhag})` : ""}:**`;
+          cardData = { apps: pendingList };
+        } else {
+          botReply = `🎉 No pending applications found${userSessionScope === "vibhag" ? ` in ${sessionVibhag}` : ""}! All applications have been reviewed.`;
+        }
+      }
+    } else if (qLower.includes("approved")) {
+      if (!isAnyAdmin) {
+        botReply = `🔒 **Access Restricted**\n\nApproved application registries are restricted to authorized Committee Admins.\n\n👉 If you are a Committee Admin, please enter your **10-digit Authorized Mobile Number** to unlock this list.`;
+      } else {
+        let approvedList = currentRegs.filter(r => String(r.Status || r.status || "").trim() === "Approved");
+        if (userSessionScope === "vibhag" && sessionVibhag) {
+          approvedList = approvedList.filter(r => {
+            const v = String(r["Vibhag"] || r["vibhag"] || "").toLowerCase();
+            return v.includes(sessionVibhag.toLowerCase()) || sessionVibhag.toLowerCase().includes(v);
+          });
+        }
+
+        if (approvedList.length > 0) {
+          botType = "apps_list";
+          botReply = `🟢 **Found ${approvedList.length} Approved Applications${userSessionScope === "vibhag" ? ` (${sessionVibhag})` : ""}:**`;
+          cardData = { apps: approvedList };
+        } else {
+          botReply = `ℹ️ No approved applications recorded yet${userSessionScope === "vibhag" ? ` in ${sessionVibhag}` : ""}.`;
+        }
+      }
+    } else if (!qLower.startsWith("/") && cleanQuery.length >= 3 && (() => {
+      const cleanQ = qLower.replace(/[^a-zA-Z0-9 ]/g, " ").trim();
+      const qTokens = cleanQ.split(/\s+/).filter(w => w.length >= 2);
+      if (qTokens.length === 0) return false;
+
+      const matchedApplicants = currentRegs.filter(r => {
+        const rawFullName = String(r["Full Name"] || r["Submitted By"] || r["Participant Name"] || r.name || "");
+        const cleanName = rawFullName.replace(/\|/g, " ").replace(/[^a-zA-Z0-9 ]/g, " ").toLowerCase().trim();
+        if (!cleanName) return false;
+
+        if (cleanName.includes(cleanQ)) return true;
+        const nameParts = cleanName.split(/\s+/);
+        return qTokens.every(qw => nameParts.some(nt => nt.startsWith(qw) || nt === qw || (qw.length >= 3 && nt.includes(qw))));
+      });
+
+      return matchedApplicants.length > 0;
+    })()) {
+      const cleanQ = qLower.replace(/[^a-zA-Z0-9 ]/g, " ").trim();
+      const qTokens = cleanQ.split(/\s+/).filter(w => w.length >= 2);
+
+      const matchedApplicants = currentRegs.filter(r => {
+        const rawFullName = String(r["Full Name"] || r["Submitted By"] || r["Participant Name"] || r.name || "");
+        const cleanName = rawFullName.replace(/\|/g, " ").replace(/[^a-zA-Z0-9 ]/g, " ").toLowerCase().trim();
+        if (!cleanName) return false;
+
+        if (cleanName.includes(cleanQ)) return true;
+        const nameParts = cleanName.split(/\s+/);
+        return qTokens.every(qw => nameParts.some(nt => nt.startsWith(qw) || nt === qw || (qw.length >= 3 && nt.includes(qw))));
+      });
+
+      if (matchedApplicants.length === 1) {
+        const r = matchedApplicants[0];
+        const rName = String(r["Full Name"] || r["Submitted By"] || r["Participant Name"] || r.name || "Applicant").replace(/\|/g, " ").trim();
+        const matchedId = r["Transaction ID"] || r.transactionId || r.id;
+
+        botType = "app_card";
+        botReply = `✅ **Registration Record Found for "${rName}" (${matchedId})**: `;
+        cardData = { app: r };
+      } else {
+        botType = "apps_list";
+        botReply = `🔍 **Found ${matchedApplicants.length} applicants matching "${query.trim()}"**:\n\n👇 Review the matching applicant records below:`;
+        cardData = { apps: matchedApplicants };
+      }
+    } else if (qLower.includes("vibhag") || qLower.includes("summary") || qLower.includes("count") || qLower.includes("total") || qLower.includes("report") || qLower.includes("kalwa") || qLower.includes("mahalaxmi") || qLower.includes("pakhadi") || qLower.includes("parel") || qLower.includes("ramdev") || qLower.includes("pratiksha") || qLower === "/all") {
+      if (!isAnyAdmin) {
+        botReply = C.chatbotAdminRestrictedMsg || `🔒 **Access Restricted**\n\nRegistration summaries, Vibhag counts, and committee metrics are restricted to authorized Committee Admins.\n\n👉 If you are a Committee Admin, please enter your **10-digit Authorized Mobile Number** to unlock your assigned access level.\n\n🔍 Regular applicants can check their individual status by typing their **Transaction ID (e.g. VG-7, EDU26-2)** or registered **Mobile Number**.`;
+      } else {
+        const explicitlyMentionedVibhag = VIBHAG_OPTIONS.find(v => {
+          const vName = v.toLowerCase();
+          const vWord = v.split(" ")[1]?.toLowerCase();
+          return qLower.includes(vName) || (vWord && vWord.length >= 4 && qLower.includes(vWord));
+        });
+
+        // If user is a Vibhag Admin
+        if (userSessionScope === "vibhag" && sessionVibhag && sessionVibhag !== "All Vibhags") {
+          const cleanSession = sessionVibhag.toLowerCase().trim();
+          const cleanExplicit = explicitlyMentionedVibhag ? explicitlyMentionedVibhag.toLowerCase().trim() : null;
+
+          if (cleanExplicit && !cleanExplicit.includes(cleanSession) && !cleanSession.includes(cleanExplicit)) {
+            botType = "text";
+            const customTpl = C.chatbotRestrictedVibhagMsg || `🔒 **Access Restricted to {ASSIGNED_VIBHAG}**\n\nYou have administrative access assigned specifically for **{ASSIGNED_VIBHAG}**.\n\n• 🚫 You do not have permission to view registrations or analytics for **{REQUESTED_VIBHAG}**.\n• ℹ️ **Check your access level of Vibhag**: Please connect with Admin ({ADMIN_PHONE}) if you require access to this Vibhag.\n• 👉 Type **`/vibhag`** or **`/all`** to view live analytics for **{ASSIGNED_VIBHAG}**.`;
+            botReply = customTpl
+              .replace(/\{ASSIGNED_VIBHAG\}/g, sessionVibhag || "Your Assigned Vibhag")
+              .replace(/\{REQUESTED_VIBHAG\}/g, explicitlyMentionedVibhag || "this Vibhag")
+              .replace(/\{ADMIN_PHONE\}/g, "+91 9820785209");
+          } else {
+            const vibhagRegs = currentRegs.filter(r => {
+              const v = String(r["Vibhag"] || r["vibhag"] || r["MMP Vibhag"] || "").toLowerCase().trim();
+              return v.includes(cleanSession) || cleanSession.includes(v);
+            });
+
+            let approved = 0, pending = 0, rejected = 0;
+            vibhagRegs.forEach(r => {
+              const s = String(r.Status || r.status || "Pending").trim();
+              if (s === "Approved") approved++;
+              else if (s === "Disapproved" || s === "Rejected") rejected++;
+              else pending++;
+            });
+
+            botType = "summary_card";
+            botReply = `📍 **Live Analytics for ${sessionVibhag} (Your Assigned Vibhag)**: `;
+            cardData = {
+              total: vibhagRegs.length,
+              approved,
+              pending,
+              rejected,
+              scopeTitle: `${sessionVibhag} Summary`,
+              vibhagList: [[`${sessionVibhag}`, { total: vibhagRegs.length, approved, pending, rejected }]],
+              apps: vibhagRegs
+            };
+          }
+        } else if (explicitlyMentionedVibhag) {
+          const cleanTarget = explicitlyMentionedVibhag.toLowerCase().trim();
+          const vibhagRegs = currentRegs.filter(r => {
+            const v = String(r["Vibhag"] || r["vibhag"] || r["MMP Vibhag"] || "").toLowerCase().trim();
+            return v.includes(cleanTarget) || cleanTarget.includes(v) || (v.split(" ")[1] && cleanTarget.includes(v.split(" ")[1]));
+          });
+
+          let approved = 0, pending = 0, rejected = 0;
+          vibhagRegs.forEach(r => {
+            const s = String(r.Status || r.status || "Pending").trim();
+            if (s === "Approved") approved++;
+            else if (s === "Disapproved" || s === "Rejected") rejected++;
+            else pending++;
+          });
+
+          botType = "summary_card";
+          botReply = `📍 **Live Analytics for ${explicitlyMentionedVibhag}**: `;
+          cardData = {
+            total: vibhagRegs.length,
+            approved,
+            pending,
+            rejected,
+            scopeTitle: `${explicitlyMentionedVibhag} Summary`,
+            vibhagList: [[`${explicitlyMentionedVibhag}`, { total: vibhagRegs.length, approved, pending, rejected }]],
+            apps: vibhagRegs
+          };
+        } else {
+          const vibhagMap = {};
+          let totalApproved = 0, totalPending = 0, totalRejected = 0, totalAll = 0;
+
+          currentRegs.forEach(r => {
+            const v = String(r["Vibhag"] || r["vibhag"] || r["MMP Vibhag"] || "Unspecified").trim();
+            if (!vibhagMap[v]) vibhagMap[v] = { approved: 0, pending: 0, rejected: 0, total: 0 };
+            const s = String(r.Status || r.status || "Pending").trim();
+            if (s === "Approved") { vibhagMap[v].approved++; totalApproved++; }
+            else if (s === "Disapproved" || s === "Rejected") { vibhagMap[v].rejected++; totalRejected++; }
+            else { vibhagMap[v].pending++; totalPending++; }
+            vibhagMap[v].total++; totalAll++;
+          });
+
+          const sortedVibhags = Object.entries(vibhagMap).sort((a, b) => a[0].localeCompare(b[0]));
+
+          botType = "summary_card";
+          botReply = `📊 **Live Registration Summary (Education Felicitation 2026 - ALL Vibhags)**: `;
+          cardData = {
+            total: totalAll,
+            approved: totalApproved,
+            pending: totalPending,
+            rejected: totalRejected,
+            scopeTitle: "Education Felicitation 2026 (All Vibhags)",
+            vibhagList: sortedVibhags
+          };
+        }
+      }
+    } else {
+      const isGreeting = ['hi', 'hello', 'hey', 'namaste', 'kem cho', 'pranam', 'good morning', 'good afternoon', 'good evening'].some(g => qLower === g || qLower.startsWith(g + ' ') || qLower.startsWith(g + '!'));
+
+      if (isGreeting) {
+        botReply = isAnyAdmin ? 
+          `👋 **Namaste! How can I assist you?**\n\nType **`/`** to browse all question shortcuts, or try:\n• **/all** — Summary data of all entries\n• **/vibhag 15 RAMDEV NAGAR** — Summary for a specific Vibhag\n• **/check** — Check application status\n• **/events** — Event guidelines` :
+          `👋 **Namaste! How can I assist you?**\n\nHere are some things you can try:\n• **/check** — Check your registered application status\n• Enter your **Transaction ID (e.g. VG-7, EDU26-2)** to check application status\n• Type **`/`** for all available question shortcuts.`;
+      } else {
+        const communityKeywords = [
+          'mmp', 'vidya', 'gohil', 'trust', 'community', 'panchayat', 'samiti', 'education', 
+          'felicitation', 'award', 'prize', 'scholarship', 'event', 'program', 'function',
+          'venue', 'date', 'time', 'schedule', 'committee', 'member', 'president', 'secretary', 
+          'trustee', 'office', 'vibhag', 'kalwa', 'mahalaxmi', 'walpakhadi', 'lower parel', 
+          'ramdev', 'pratiksha', 'bhayander', 'donation', '80g', 'receipt', 'tax', 'registration', 
+          'form', 'marksheet', 'document', 'upload', 'student', '10th', '12th', 'degree', 
+          'diploma', 'certificate', 'invite', 'volunteer', 'gallery', 'apply', 'pass', 
+          'fail', 'percentage', 'criteria', 'eligibility', 'contact', 'helpline', 'phone', 
+          'email', 'address', 'rules', 'status', 'entry', 'txn', 'transaction', 'chief guest',
+          'guest', 'hall', 'seat', 'timing', 'parent', 'food', 'snack', 'lunch', 'dinner',
+          'dress', 'dress code', 'mumbai', 'pradeep', 'keshav', 'ashwin', 'samiksha', 'dinesh', 'khushi'
+        ];
+
+        const isCommunityRelated = communityKeywords.some(kw => qLower.includes(kw));
+
+        if (isCommunityRelated) {
+          botReply = `ℹ️ **I do not have answer on this, please connect with committee member.**\n\n• 📞 **Trust Helpline**: +91 9820785209 / +91 9967821964\n• 💬 **Committee Details**: Type **`/edu_committee`** or **`/contact`** to view member contact numbers.`;
+        } else {
+          botReply = C.chatbotNonRelevantMsg || `⚠️ **This Question is not relevant to this community.**\n\nI am specifically designed to help with **Mumbai Meghwal Panchayat & Vidya Gohil Trust** community activities, Education Felicitation 2026 event registrations, and application status tracking.\n\n👉 Type **`/`** to view all available community questions & shortcuts.`;
+        }
+      }
+    }
+
+    const finalBotReply = (botReply && botReply.trim()) ? botReply : "⚠️ **This Question is not relevant to this community.**\n\nI am specifically designed to help with **Mumbai Meghwal Panchayat & Vidya Gohil Trust** community activities, Education Felicitation 2026 event registrations, and application status tracking.\n\n👉 Type **`/`** to view all available community questions & shortcuts.";
+
+    setMessages(prev => [...prev, { id: "m_" + Date.now(), sender: "bot", type: botType, text: finalBotReply, cardData }]);
+    } catch (err) {
+      console.error("handleSendMessage error:", err);
+      setMessages(prev => [...prev, { id: "m_" + Date.now(), sender: "bot", type: "text", text: "⚠️ An error occurred while processing your request. Please try again." }]);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Position Styling (Smoothly Draggable on BOTH Mobile & Desktop, and Stays Below Mobile Drawer Menu)
+  const positionStyle = (isMob && isOpen) ? {
+    position: "fixed",
+    left: 8,
+    right: 8,
+    bottom: 8,
+    top: isMinimized ? "auto" : 8,
+    zIndex: 99999,
+    fontFamily: "inherit",
+    display: "flex",
+    flexDirection: "column",
+    justifyContent: "flex-end"
+  } : (pos.x !== null && pos.y !== null) ? {
+    position: "fixed",
+    left: `${pos.x}px`,
+    top: `${pos.y}px`,
+    zIndex: isOpen ? 99999 : 800, // Stays below mobile drawer (z-index: 1000) when closed so it never blocks menu
+    fontFamily: "inherit",
+    touchAction: "none"
+  } : {
+    position: "fixed",
+    right: isMob ? 14 : 24,
+    bottom: isMob ? 14 : 24,
+    zIndex: isOpen ? 99999 : 800,
+    fontFamily: "inherit",
+    touchAction: "none"
+  };
+
+  const headerStatusLabel = isAnyAdmin
+    ? (userSessionScope === "all" 
+        ? `🛡️ Super Admin (${activeUser.name ? activeUser.name.split(' ')[0] : 'Admin'})`
+        : `📍 ${sessionVibhag || 'Vibhag Admin'} (${activeUser.name ? activeUser.name.split(' ')[0] : 'Member'})`)
+    : (activeUser.isLoggedIn ? `👤 ${activeUser.name ? activeUser.name.split(' ')[0] : 'Logged In'} (+91 ${activeUser.mobile})` : "🟢 Online | Public");
+
+  return (
+    <div 
+      id="draggable-chatbot-widget"
+      style={positionStyle}
+    >
+      {/* Floating Trigger Pill (Movable) */}
+      {!isOpen && (
+        <div
+          onMouseDown={startDrag}
+          onTouchStart={startDrag}
+          onClick={() => {
+            if (!didDragRef.current) {
+              openChatbot();
+            }
+          }}
+          style={{
+            background: "linear-gradient(135deg, #1E293B, #0F172A)",
+            color: "white",
+            border: "2px solid #E2E8F0",
+            padding: "10px 18px",
+            borderRadius: 30,
+            fontSize: ".88rem",
+            fontWeight: 700,
+            cursor: isDragging ? "grabbing" : "grab",
+            boxShadow: "0 8px 24px rgba(15,23,42,0.35)",
+            display: "flex",
+            alignItems: "center",
+            gap: 8,
+            userSelect: "none",
+            touchAction: "none",
+            transition: isDragging ? "none" : "box-shadow 0.2s"
+          }}
+          className="ch"
+          title="Click to open or drag to reposition"
+        >
+          <span style={{opacity:0.5,fontSize:"1rem",letterSpacing:-1}}>⠿</span>
+          <span style={{fontSize:"1.2rem"}}>💬</span>
+          <span>{pillLabel}</span>
+          {isAnyAdmin ? (
+            <span style={{
+              background: userSessionScope === "all" ? "#10B981" : "#EA580C",
+              color: "white",
+              fontSize: ".65rem",
+              padding: "2px 7px",
+              borderRadius: 10,
+              fontWeight: 800,
+              display: "flex",
+              alignItems: "center",
+              gap: 3
+            }}>
+              <span>{userSessionScope === "all" ? "🛡️ Admin (All)" : `📍 ${sessionVibhag ? sessionVibhag.split(" ")[0] : "Vibhag"} Admin`}</span>
+            </span>
+          ) : activeUser.isLoggedIn ? (
+            <span style={{background:"#2563EB",color:"white",fontSize:".65rem",padding:"2px 7px",borderRadius:10,fontWeight:800}}>
+              {activeUser.name ? activeUser.name.split(' ')[0] : "Logged In"}
+            </span>
+          ) : (
+            <span style={{width:8,height:8,borderRadius:"50%",background:"#10B981",display:"inline-block",boxShadow:"0 0 0 2px rgba(16,185,129,0.3)"}}></span>
+          )}
+        </div>
+      )}
+
+      {/* Expanded Chat Window (Fully Mobile Adaptive & Responds to Keyboard) */}
+      {isOpen && (
+        <div style={{
+          width: isMob ? "100%" : "min(410px, calc(100vw - 32px))",
+          height: isMinimized 
+            ? "58px" 
+            : (isMob ? "min(92dvh, calc(100vh - 16px))" : "min(590px, calc(100vh - 80px))"),
+          maxHeight: isMob ? "calc(100dvh - 16px)" : "590px",
+          background: "white",
+          borderRadius: 18,
+          boxShadow: "0 14px 40px rgba(0,0,0,0.25)",
+          border: "1px solid #CBD5E1",
+          display: "flex",
+          flexDirection: "column",
+          overflow: "hidden",
+          boxSizing: "border-box"
+        }}>
+          {/* Header (Drag Handle) */}
+          <div 
+            onMouseDown={startDrag}
+            onTouchStart={startDrag}
+            style={{
+              background: "linear-gradient(135deg, #0F172A, #1E293B)",
+              color: "white",
+              padding: "12px 14px",
+              display: "flex",
+              justifyContent: "space-between",
+              alignItems: "center",
+              boxShadow: "0 2px 8px rgba(0,0,0,0.15)",
+              cursor: isDragging ? "grabbing" : "grab",
+              userSelect: "none"
+            }}
+            title="Drag header to move chatbot window"
+          >
+            <div style={{display:"flex",alignItems:"center",gap:8}}>
+              <span style={{opacity:0.5,fontSize:"1.1rem",cursor:isDragging?"grabbing":"grab"}}>⠿</span>
+              <div style={{
+                width: 32,
+                height: 32,
+                borderRadius: 9,
+                background: "linear-gradient(135deg, #2563EB, #1D4ED8)",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                fontSize: "1.1rem",
+                boxShadow: "0 2px 6px rgba(37,99,235,0.4)"
+              }}>
+                🤖
+              </div>
+              <div>
+                <div style={{fontSize:".86rem",fontWeight:800,lineHeight:1.2}}>{chatbotTitle}</div>
+                <div style={{fontSize:".67rem",color:isAnyAdmin?"#86EFAC":activeUser.isLoggedIn?"#93C5FD":"#94A3B8",display:"flex",alignItems:"center",gap:4,marginTop:2}}>
+                  <span style={{width:6,height:6,borderRadius:"50%",background:isAnyAdmin?"#22C55E":activeUser.isLoggedIn?"#3B82F6":"#10B981",display:"inline-block"}}></span>
+                  {headerStatusLabel}
+                </div>
+              </div>
+            </div>
+
+            <div style={{display:"flex",alignItems:"center",gap:4}}>
+              <button
+                onClick={(e) => { e.stopPropagation(); setIsMinimized(!isMinimized); }}
+                style={{background:"none",border:"none",color:"#94A3B8",fontSize:"1rem",cursor:"pointer",padding:4}}
+                title={isMinimized ? "Maximize" : "Minimize"}
+              >
+                {isMinimized ? "▲" : "▼"}
+              </button>
+              <button
+                onClick={(e) => { e.stopPropagation(); setIsOpen(false); }}
+                style={{background:"none",border:"none",color:"#94A3B8",fontSize:"1.1rem",cursor:"pointer",padding:4}}
+                title="Close"
+              >
+                ✕
+              </button>
+            </div>
+          </div>
+
+          {!isMinimized && (
+            <>
+              {/* Quick Actions Bar */}
+              <div style={{padding:"8px 12px",background:"#F8FAFC",borderBottom:"1px solid #E2E8F0",display:"flex",gap:6,alignItems:"center"}}>
+                <button
+                  onClick={() => { setShowSlashMenu(!showSlashMenu); setSlashSubmenu(null); }}
+                  style={{fontSize:".75rem",background:"#1E293B",border:"none",borderRadius:12,padding:"5px 12px",color:"white",cursor:"pointer",fontWeight:700,boxShadow:"0 1px 3px rgba(0,0,0,0.15)",display:"flex",alignItems:"center",gap:4}}
+                >
+                  <span>⚡</span> Questions / Shortcuts (/)
+                </button>
+                
+                {isAnyAdmin && (
+                  <>
+                    <button
+                      onClick={() => handleSendMessage("Summary data of all entry ALL")}
+                      style={{fontSize:".72rem",background:"#EFF6FF",border:"1px solid #BFDBFE",borderRadius:12,padding:"4px 10px",color:"#1D4ED8",cursor:"pointer",fontWeight:700}}
+                    >
+                      📊 All Entries
+                    </button>
+                    <button
+                      onClick={() => { setShowSlashMenu(true); setSlashSubmenu("vibhags"); }}
+                      style={{fontSize:".72rem",background:"white",border:"1px solid #CBD5E1",borderRadius:12,padding:"4px 10px",color:"#1E293B",cursor:"pointer",fontWeight:600}}
+                    >
+                      📍 Vibhag #
+                    </button>
+                  </>
+                )}
+              </div>
+
+              {/* Messages Area */}
+              <div style={{flex:1,padding:14,overflowY:"auto",display:"flex",flexDirection:"column",gap:12,background:"#F8FAFC"}}>
+                {messages.map(m => {
+                  const isUser = m.sender === "user";
+
+                  return (
+                    <div
+                      key={m.id}
+                      style={{
+                        alignSelf: isUser ? "flex-end" : "flex-start",
+                        maxWidth: "92%",
+                        display: "flex",
+                        flexDirection: "column",
+                        gap: 4
+                      }}
+                    >
+                      <div
+                        style={{
+                          background: isUser ? "linear-gradient(135deg, #2563EB, #1D4ED8)" : "white",
+                          color: isUser ? "white" : "#1E293B",
+                          padding: "12px 16px",
+                          borderRadius: isUser ? "16px 16px 2px 16px" : "16px 16px 16px 2px",
+                          fontSize: ".83rem",
+                          lineHeight: 1.55,
+                          boxShadow: isUser ? "0 3px 10px rgba(37,99,235,0.25)" : "0 2px 8px rgba(0,0,0,0.04)",
+                          border: isUser ? "none" : "1px solid #E2E8F0"
+                        }}
+                      >
+                        {isUser ? (
+                          m.text
+                        ) : (
+                          <FormattedChatText text={m.text} onQuickClick={handleSendMessage} />
+                        )}
+
+                        {/* If Message has an Application Card */}
+                        {m.cardData?.app && (
+                          <ApplicationRecordCard app={m.cardData.app} onAction={handleSendMessage} />
+                        )}
+
+                        {/* If Message has Multiple Application Cards */}
+                        {m.cardData?.apps && m.cardData.apps.length > 0 && (
+                          <div style={{display:"flex",flexDirection:"column",gap:8,marginTop:6}}>
+                            {m.cardData.apps.map((appItem, aIdx) => (
+                              <ApplicationRecordCard key={aIdx} app={appItem} onAction={handleSendMessage} />
+                            ))}
+                          </div>
+                        )}
+
+                        {/* If Message has Summary Card */}
+                        {m.type === "summary_card" && m.cardData && (
+                          <VibhagSummaryCard summaryData={m.cardData} />
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+
+                {loading && (
+                  <div style={{alignSelf:"flex-start",background:"white",padding:"10px 14px",borderRadius:14,fontSize:".78rem",color:"#64748B",border:"1px solid #E2E8F0",display:"flex",alignItems:"center",gap:8,boxShadow:"0 2px 6px rgba(0,0,0,0.03)"}}>
+                    <span style={{animation:"spin 1s linear infinite"}}>⏳</span>
+                    <span>Fetching details & generating response...</span>
+                  </div>
+                )}
+                <div ref={chatBottomRef} />
+              </div>
+
+              {/* Slash Command Autocomplete Menu (Real-time Filtered) */}
+              {(showSlashMenu || input.startsWith("/")) && (
+                <div style={{
+                  background: "white",
+                  borderTop: "1px solid #CBD5E1",
+                  borderBottom: "1px solid #CBD5E1",
+                  maxHeight: 230,
+                  overflowY: "auto",
+                  padding: "6px 8px",
+                  boxShadow: "0 -6px 16px rgba(0,0,0,0.08)",
+                  animation: "fadeIn .2s ease"
+                }}>
+                  {slashSubmenu === "vibhags" ? (
+                    <div>
+                      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"4px 8px",borderBottom:"1px solid #F1F5F9",marginBottom:4}}>
+                        <span style={{fontSize:".75rem",fontWeight:800,color:"#2563EB"}}>Select a Vibhag for Summary:</span>
+                        <button onClick={()=>setSlashSubmenu(null)} style={{background:"none",border:"none",color:"#64748B",fontSize:".75rem",cursor:"pointer",fontWeight:700}}>← Back</button>
+                      </div>
+                      {VIBHAG_OPTIONS.map(v => (
+                        <div
+                          key={v}
+                          onClick={() => handleSendMessage(`Summary data of vibhag ${v}`)}
+                          style={{
+                            padding: "8px 10px",
+                            borderRadius: 6,
+                            cursor: "pointer",
+                            display: "flex",
+                            alignItems: "center",
+                            justifyContent: "space-between",
+                            fontSize: ".8rem",
+                            transition: "background 0.15s"
+                          }}
+                          onMouseEnter={e=>e.currentTarget.style.background="#EFF6FF"}
+                          onMouseLeave={e=>e.currentTarget.style.background="transparent"}
+                        >
+                          <span style={{fontWeight:700,color:"#0F172A"}}>📍 {v}</span>
+                          <span style={{fontSize:".7rem",color:"#2563EB",fontWeight:600}}>Get Count →</span>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div>
+                      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"4px 8px",borderBottom:"1px solid #F1F5F9",marginBottom:4}}>
+                        <span style={{fontSize:".7rem",fontWeight:800,color:"#64748B",textTransform:"uppercase",letterSpacing:0.5}}>
+                          {input.trim().startsWith("/") && input.trim().length > 1 ? `Matching Commands for "${input}":` : "Question Shortcuts & Commands:"}
+                        </span>
+                        <span style={{fontSize:".68rem",color:"#94A3B8"}}>Click to select</span>
+                      </div>
+                      {(() => {
+                        const filterKeyword = input.trim().startsWith("/") ? input.trim().slice(1).toLowerCase() : "";
+                        const displayedCommands = ALL_SLASH_COMMANDS.filter(sc => {
+                          if (!filterKeyword) return true;
+                          const cmd = sc.cmd.toLowerCase().replace(/^\//, "");
+                          const label = (sc.label || "").toLowerCase();
+                          const desc = (sc.desc || "").toLowerCase();
+                          return cmd.includes(filterKeyword) || label.includes(filterKeyword) || desc.includes(filterKeyword);
+                        });
+
+                        if (displayedCommands.length === 0) {
+                          return (
+                            <div style={{padding:"14px 10px",fontSize:".8rem",color:"#64748B",textAlign:"center"}}>
+                              🔍 No command matching <strong>"{input}"</strong>.<br />
+                              <span style={{fontSize:".72rem",color:"#94A3B8"}}>Press Send to ask directly or type "/" to view all commands.</span>
+                            </div>
+                          );
+                        }
+
+                        return displayedCommands.map(sc => {
+                          const isLockedForUser = sc.adminOnly && !isAnyAdmin;
+
+                          return (
+                            <div
+                              key={sc.cmd}
+                              onClick={() => {
+                                if (sc.hasSubmenu) {
+                                  setSlashSubmenu("vibhags");
+                                } else {
+                                  handleSendMessage(sc.action);
+                                }
+                              }}
+                              style={{
+                                padding: "8px 10px",
+                                borderRadius: 8,
+                                cursor: "pointer",
+                                display: "flex",
+                                alignItems: "center",
+                                gap: 10,
+                                fontSize: ".8rem",
+                                transition: "background 0.15s",
+                                opacity: isLockedForUser ? 0.75 : 1
+                              }}
+                              onMouseEnter={e=>e.currentTarget.style.background="#F1F5F9"}
+                              onMouseLeave={e=>e.currentTarget.style.background="transparent"}
+                            >
+                              <span style={{fontSize:"1.1rem"}}>{sc.icon}</span>
+                              <div style={{flex:1}}>
+                                <div style={{display:"flex",alignItems:"center",gap:6}}>
+                                  <span style={{fontWeight:800,color:isLockedForUser?"#64748B":"#2563EB",fontFamily:"monospace"}}>{sc.cmd}</span>
+                                  <span style={{fontWeight:700,color:"#0F172A"}}>{sc.label}</span>
+                                  {isLockedForUser && (
+                                    <span style={{background:"#FEF3C7",color:"#92400E",fontSize:".65rem",padding:"1px 6px",borderRadius:4,fontWeight:800}}>
+                                      🔒 Admin Only
+                                    </span>
+                                  )}
+                                </div>
+                                <div style={{fontSize:".7rem",color:"#64748B"}}>{sc.desc}</div>
+                              </div>
+                              <span style={{fontSize:".75rem",color:"#94A3B8"}}>↵</span>
+                            </div>
+                          );
+                        });
+                      })()}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Input Footer */}
+              <form
+                onSubmit={e => { e.preventDefault(); handleSendMessage(); }}
+                style={{padding:"10px 12px",background:"white",borderTop:"1px solid #E2E8F0",display:"flex",gap:8,alignItems:"center"}}
+              >
+                <input
+                  type="text"
+                  value={input}
+                  onChange={e => {
+                    setInput(e.target.value);
+                    if (e.target.value.startsWith("/")) setShowSlashMenu(true);
+                    else if (showSlashMenu && !e.target.value) setShowSlashMenu(false);
+                  }}
+                  placeholder={isAnyAdmin ? "Type '/' for commands or ask anything..." : "Type '/' or enter Txn ID / Mobile..."}
+                  style={{
+                    flex: 1,
+                    padding: "10px 14px",
+                    borderRadius: 20,
+                    border: "1px solid #CBD5E1",
+                    fontSize: ".83rem",
+                    outline: "none",
+                    background: "#F8FAFC"
+                  }}
+                />
+                <button
+                  type="submit"
+                  disabled={!input.trim() || loading}
+                  style={{
+                    background: input.trim() && !loading ? "linear-gradient(135deg, #2563EB, #1D4ED8)" : "#E2E8F0",
+                    color: input.trim() && !loading ? "white" : "#94A3B8",
+                    border: "none",
+                    padding: "10px 16px",
+                    borderRadius: 20,
+                    fontWeight: 700,
+                    fontSize: ".85rem",
+                    cursor: input.trim() && !loading ? "pointer" : "default",
+                    boxShadow: input.trim() && !loading ? "0 2px 8px rgba(37,99,235,0.3)" : "none"
+                  }}
+                >
+                  Send
+                </button>
+              </form>
+            </>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+
+
+// ── Direct 1-Click Personalized Invitation Pass & Certificate On-Screen Viewer ──────────────
+function DirectInvitePassView({ C, auth }) {
+  const [loading, setLoading] = useState(true);
+  const [regData, setRegData] = useState(null);
+  const [error, setError] = useState(null);
+  const [letterImgUrl, setLetterImgUrl] = useState(null);
+  const [generatingPdf, setGeneratingPdf] = useState(false);
+
+  const searchParams = new URLSearchParams(window.location.search);
+  const customDocId = searchParams.get('doc') || searchParams.get('template');
+  const isCert = !customDocId && !!(searchParams.get('cert') || searchParams.get('certificate'));
+  const passId = searchParams.get('pass') || searchParams.get('cert') || searchParams.get('certificate') || searchParams.get('invite') || searchParams.get('letter') || '';
+
+  useEffect(() => {
+    const loadAndFetchPass = async () => {
+      if (!passId) {
+        setError("Invalid or missing invitation pass ID.");
+        setLoading(false);
+        return;
+      }
+
+      try {
+        let regs = await fbFetchRegistrations(auth?.idToken).catch(() => []);
+        if (!regs || regs.length === 0) {
+          const res = await fetch(`https://firestore.googleapis.com/v1/projects/${getFB().projectId}/databases/(default)/documents/registrations`);
+          if (res.ok) {
+            const data = await res.json();
+            regs = (data.documents || []).map(doc => {
+              const f = doc.fields || {};
+              const obj = { id: doc.name.split('/').pop() };
+              Object.keys(f).forEach(k => {
+                const valObj = f[k];
+                if (valObj.stringValue !== undefined) obj[k] = valObj.stringValue;
+                else if (valObj.integerValue !== undefined) obj[k] = parseInt(valObj.integerValue, 10);
+                else if (valObj.booleanValue !== undefined) obj[k] = valObj.booleanValue;
+              });
+              return obj;
+            });
+          }
+        }
+
+        const cleanPass = String(passId).trim().toLowerCase();
+        
+        const matched = (regs || []).find(r => {
+          const tId = String(r['Transaction ID'] || r.transactionId || r.id || '').toLowerCase().trim();
+          const mob = String(r['Mobile Number'] || r.submitterMob || r.phone || '').replace(/\D/g, '').slice(-10);
+          return tId === cleanPass || tId.endsWith('-' + cleanPass) || mob === cleanPass || r.id === passId;
+        });
+
+        if (matched) {
+          setRegData(matched);
+
+          // ── Pass & Certificate Link Open Tracker: Automatically log when recipient opens link
+          try {
+            const now = new Date().toISOString();
+            const currentCount = parseInt(matched.passOpenCount || 0, 10);
+            const newCount = currentCount + 1;
+            const deviceType = /Mobi|Android|iPhone|iPad/i.test(navigator.userAgent) ? "Mobile" : "Desktop";
+            
+            const existingLogs = Array.isArray(matched.logHistory) ? matched.logHistory : [];
+            const actionLabel = isCert 
+              ? `Certificate Opened (${newCount}${newCount === 1 ? 'st' : newCount === 2 ? 'nd' : newCount === 3 ? 'rd' : 'th'} time)`
+              : `Pass / Invite Opened (${newCount}${newCount === 1 ? 'st' : newCount === 2 ? 'nd' : newCount === 3 ? 'rd' : 'th'} time)`;
+
+            const openLog = {
+              timestamp: now,
+              actor: "Student (Recipient)",
+              action: actionLabel,
+              type: isCert ? "cert_open" : "pass_open",
+              openCount: newCount,
+              device: deviceType,
+              remarks: isCert 
+                ? `Student opened digital merit certificate link via WhatsApp on ${deviceType}.`
+                : `Student opened digital invitation pass link via WhatsApp on ${deviceType}.`
+            };
+            const newLogs = [...existingLogs, openLog];
+            
+            const updatePayload = {
+              ...matched,
+              passOpenCount: newCount,
+              lastPassOpenedAt: now,
+              firstPassOpenedAt: matched.firstPassOpenedAt || now,
+              logHistory: newLogs
+            };
+            delete updatePayload.id;
+            delete updatePayload._submittedAt;
+
+            fbUpdateRegistration(matched.id, updatePayload, auth?.idToken).catch(async () => {
+              // Fallback anonymous Firestore REST update
+              const projectId = getFB().projectId;
+              const fields = {
+                passOpenCount: { integerValue: String(newCount) },
+                lastPassOpenedAt: { stringValue: now },
+                firstPassOpenedAt: { stringValue: matched.firstPassOpenedAt || now }
+              };
+              await fetch(`https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents/registrations/${matched.id}?updateMask.fieldPaths=passOpenCount&updateMask.fieldPaths=lastPassOpenedAt&updateMask.fieldPaths=firstPassOpenedAt`, {
+                method: "PATCH",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ fields })
+              });
+            });
+          } catch(trackErr) {
+            console.warn("Pass open tracking error:", trackErr);
+          }
+
+          const evName = matched.eventName || matched.eventTitle || matched.eventId || "Education felicitation 2026";
+          const ev = (C.events || []).find(e => e.id === matched.eventId || e.title === evName || e.titleGu === evName) || {
+            title: "Education Felicitation 2026",
+            date: "02 Oct",
+            month: "2026",
+            location: "Mumbai, Maharashtra"
+          };
+          const sName = String(matched['Full Name'] || matched['Submitted By'] || matched['Participant Name'] || matched.name || 'Applicant').replace(/\|/g, ' ').trim();
+          
+          const customTpl = customDocId ? (ev.pdfTemplates || []).find(t => t.id === customDocId || t.name?.toLowerCase() === customDocId?.toLowerCase()) : null;
+          // Generate on-screen visual image (Custom PDF Document, Certificate or Invite Letter)
+          let targetBgUrl = customTpl ? customTpl.bgUrl : isCert ? (ev.certBgUrl || ev.bgUrl || ev.inviteBgUrl) : ev.inviteBgUrl;
+          if (targetBgUrl && targetBgUrl.startsWith('asset://')) {
+            const assetId = targetBgUrl.replace('asset://', '');
+            const realAsset = await fbGetAssetDoc(assetId);
+            if (realAsset) targetBgUrl = realAsset;
+          }
+          if (targetBgUrl) {
+            try {
+              const img = new Image();
+              img.crossOrigin = "Anonymous";
+              img.onload = () => {
+                const canvas = document.createElement("canvas");
+                canvas.width = img.width;
+                canvas.height = img.height;
+                const ctx = canvas.getContext("2d");
+                ctx.drawImage(img, 0, 0);
+
+                const fontSize = customTpl ? (customTpl.fontSize || 30) : isCert ? (ev.certFontSize || ev.fontSize || 30) : (ev.inviteFontSize || 30);
+                ctx.font = `bold ${fontSize}px sans-serif`;
+                ctx.fillStyle = customTpl ? (customTpl.fontColor || "#000000") : isCert ? (ev.certFontColor || ev.fontColor || "#000000") : (ev.inviteFontColor || "#000000");
+                ctx.textBaseline = "middle";
+
+                const m = customTpl ? (customTpl.map || customTpl.fieldMap || {}) : isCert ? (ev.certMap || ev.fieldMap || ev.inviteMap || {}) : (ev.inviteMap || {});
+                Object.entries(m).forEach(([key, pos]) => {
+                  if (pos && pos.visible) {
+                    const xPx = (parseFloat(pos.x) / 100) * img.width;
+                    const yPx = (parseFloat(pos.y) / 100) * img.height;
+                    let val = matched[key] || "";
+                    if (key.startsWith("[TEXT] ")) val = key.replace("[TEXT] ", "");
+                    else if (!val && key.toLowerCase().includes("name")) val = sName;
+                    if (typeof val === 'string') val = val.replace(/\|/g, ' ').trim();
+                    ctx.fillText(String(val), xPx, yPx);
+                  }
+                });
+
+                setLetterImgUrl(canvas.toDataURL("image/png"));
+              };
+              img.src = targetBgUrl;
+            } catch(err) {
+              console.warn("Canvas image preview fallback:", err);
+            }
+          }
+        } else {
+          setError(`No matching registration record found for Pass ID "${passId}".`);
+        }
+      } catch (err) {
+        console.error("Error loading pass:", err);
+        setError("Failed to load invitation pass. Please verify your connection.");
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    loadAndFetchPass();
+  }, [passId]);
+
+  const handleDownloadPDF = async () => {
+    if (!regData) return;
+    setGeneratingPdf(true);
+    try {
+      const evName = regData.eventName || regData.eventTitle || regData.eventId || "Education felicitation 2026";
+      const ev = (C.events || []).find(e => e.id === regData.eventId || e.title === evName || e.titleGu === evName) || {
+        title: "Education Felicitation 2026",
+        date: "02 Oct",
+        month: "2026",
+        location: "Mumbai, Maharashtra"
+      };
+
+      const sName = String(regData['Full Name'] || regData['Submitted By'] || regData['Participant Name'] || regData.name || 'Applicant').replace(/\|/g, ' ').trim();
+      const customTpl = customDocId ? (ev.pdfTemplates || []).find(t => t.id === customDocId || t.name?.toLowerCase() === customDocId?.toLowerCase()) : null;
+      const docType = customTpl || (isCert ? 'cert' : 'invite');
+      const pdfBlob = await generateCertificatePDF(ev, regData, sName, docType, 'blob');
+
+      if (pdfBlob) {
+        const url = URL.createObjectURL(pdfBlob);
+        const link = document.createElement('a');
+        link.href = url;
+        const safeName = sName.replace(/[^a-z0-9]/gi, '_');
+        const docNamePrefix = customTpl ? (customTpl.name || 'Document').replace(/[^a-z0-9]/gi, '_') : isCert ? 'Certificate' : 'Invitation_Letter';
+        link.download = `${docNamePrefix}_${safeName}_${regData['Transaction ID'] || passId}.pdf`;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+      }
+    } catch (e) {
+      console.error("PDF download error:", e);
+    } finally {
+      setGeneratingPdf(false);
+    }
+  };
+
+  const sName = regData ? String(regData['Full Name'] || regData['Submitted By'] || regData['Participant Name'] || regData.name || 'Applicant').replace(/\|/g, ' ').trim() : '';
+  const sTxn = regData ? (regData['Transaction ID'] || regData.transactionId || passId) : passId;
+  const sVibhag = regData ? (regData['Vibhag'] || regData.vibhag || regData['MMP Vibhag'] || 'All Vibhags') : '';
+  const sStream = regData ? (regData['Stream / Class'] || regData['Stream'] || regData['Course'] || 'General') : '';
+  const sPct = regData ? (regData['% Obtained'] || regData.percentage || regData['Marks / Percentage'] || '') : '';
+
+  return (
+    <div style={{minHeight:"100vh",background:"linear-gradient(135deg, #0F172A, #1E293B)",padding:"16px 12px",display:"flex",justifyContent:"center",alignItems:"flex-start",fontFamily:"system-ui, -apple-system, sans-serif"}}>
+      <div style={{width:"100%",maxWidth:680,background:"white",borderRadius:16,overflow:"hidden",boxShadow:"0 25px 50px -12px rgba(0,0,0,0.5)",display:"flex",flexDirection:"column"}}>
+        
+        {/* Header Branding */}
+        <div style={{background:"linear-gradient(135deg, #15803D, #166534)",color:"white",padding:"16px 20px",display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:10}}>
+          <div style={{display:"flex",alignItems:"center",gap:10}}>
+            <span style={{fontSize:"1.8rem"}}>🏛️</span>
+            <div>
+              <h1 style={{fontSize:"1.05rem",fontWeight:900,margin:0,letterSpacing:"0.5px",textTransform:"uppercase"}}>
+                Mumbai Meghwal Panchayat
+              </h1>
+              <div style={{fontSize:".75rem",opacity:0.9,marginTop:2,fontWeight:600}}>
+                {isCert ? "🏆 Education Felicitation 2026 • Official Merit Certificate" : "🏆 Education Felicitation 2026 • Official Invitation Pass"}
+              </div>
+            </div>
+          </div>
+
+          {regData && (
+            <button
+              type="button"
+              onClick={handleDownloadPDF}
+              disabled={generatingPdf}
+              style={{
+                padding: "8px 14px",
+                background: "white",
+                color: "#15803D",
+                border: "none",
+                borderRadius: 8,
+                fontWeight: 800,
+                fontSize: ".8rem",
+                cursor: generatingPdf ? "wait" : "pointer",
+                boxShadow: "0 2px 8px rgba(0,0,0,0.2)",
+                display: "flex",
+                alignItems: "center",
+                gap: 6
+              }}
+            >
+              <span>{generatingPdf ? "⏳" : "📥"}</span>
+              <span>{generatingPdf ? "Saving..." : "Save PDF File"}</span>
+            </button>
+          )}
+        </div>
+
+        {/* Content Body */}
+        <div style={{padding:"16px",flex:1,display:"flex",flexDirection:"column",gap:14}}>
+          {loading ? (
+            <div style={{textAlign:"center",padding:"50px 20px"}}>
+              <div style={{fontSize:"2.4rem",marginBottom:14}}>⏳</div>
+              <div style={{fontSize:"1.05rem",fontWeight:800,color:"#0F172A"}}>Opening Your Official Invitation Letter...</div>
+              <div style={{fontSize:".82rem",color:"#64748B",marginTop:6}}>Loading high-resolution invitation pass</div>
+            </div>
+          ) : error ? (
+            <div style={{textAlign:"center",padding:"30px 16px"}}>
+              <div style={{fontSize:"2.2rem",marginBottom:12}}>⚠️</div>
+              <h3 style={{fontSize:"1.1rem",color:"#DC2626",margin:"0 0 8px 0"}}>{error}</h3>
+              <p style={{fontSize:".85rem",color:"#64748B",marginBottom:20}}>Please check your Transaction ID or contact our helpline for assistance.</p>
+              <a href="https://pradeepparmar902.github.io/MY_Community_Website/" style={{display:"inline-block",padding:"10px 20px",background:"#1E293B",color:"white",borderRadius:8,textDecoration:"none",fontSize:".85rem",fontWeight:700}}>
+                ← Go to Community Website
+              </a>
+            </div>
+          ) : (
+            <>
+              {/* If official template image is available, render high-res image directly on screen */}
+              {letterImgUrl ? (
+                <div style={{borderRadius:12,overflow:"hidden",boxShadow:"0 4px 16px rgba(0,0,0,0.12)",border:"1px solid #E2E8F0",background:"#F8FAFC"}}>
+                  <img src={letterImgUrl} alt="Official Invitation Letter" style={{width:"100%",height:"auto",display:"block"}} />
+                </div>
+              ) : (
+                /* Elegant Official Digital Invitation Card - 100% Instant On-Screen Display */
+                <div style={{
+                  background: "linear-gradient(135deg, #FFFDF7 0%, #FFFBEB 100%)",
+                  border: "2px solid #D97706",
+                  borderRadius: 14,
+                  padding: "24px 20px",
+                  boxShadow: "0 6px 20px rgba(217,119,6,0.15)",
+                  position: "relative"
+                }}>
+                  <div style={{textAlign:"center",borderBottom:"2px solid #FDE68A",paddingBottom:16,marginBottom:16}}>
+                    <div style={{fontSize:"2.2rem",marginBottom:4}}>🏛️</div>
+                    <h2 style={{fontSize:"1.15rem",fontWeight:900,color:"#92400E",margin:0,textTransform:"uppercase",letterSpacing:"0.5px"}}>
+                      Mumbai Meghwal Panchayat
+                    </h2>
+                    <div style={{fontSize:".82rem",fontWeight:700,color:"#B45309",marginTop:4}}>
+                      🎓 Annual Student Education Felicitation Ceremony 2026
+                    </div>
+                  </div>
+
+                  <div style={{marginBottom:18,lineHeight:1.6}}>
+                    <div style={{fontSize:".88rem",color:"#78350F",marginBottom:6}}>To,</div>
+                    <div style={{fontSize:"1.25rem",fontWeight:900,color:"#0F172A",fontFamily:"serif"}}>
+                      {sName} & Family
+                    </div>
+                    <div style={{fontSize:".82rem",color:"#92400E",fontWeight:700}}>
+                      📍 Vibhag: {sVibhag} {sStream ? `• ${sStream}` : ""} {sPct ? `(${sPct}%)` : ""}
+                    </div>
+                  </div>
+
+                  <p style={{fontSize:".88rem",color:"#334155",lineHeight:1.6,margin:"0 0 16px 0",background:"white",padding:"14px 16px",borderRadius:10,border:"1px solid #FEF3C7"}}>
+                    We are immensely proud of your academic achievement and cordially invite you and your family as our <strong>Esteemed Guests of Honor</strong> to the <strong>Annual Education Felicitation 2026</strong>.
+                  </p>
+
+                  <div style={{background:"#FEF3C7",border:"1px solid #FCD34D",borderRadius:10,padding:"14px 16px",marginBottom:16,display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,fontSize:".82rem"}}>
+                    <div>
+                      <span style={{color:"#92400E",display:"block",fontSize:".72rem",fontWeight:700}}>📅 EVENT DATE:</span>
+                      <strong style={{color:"#0F172A",fontSize:".88rem"}}>02-10-2026 (Friday)</strong>
+                    </div>
+                    <div>
+                      <span style={{color:"#92400E",display:"block",fontSize:".72rem",fontWeight:700}}>⏰ REPORTING TIME:</span>
+                      <strong style={{color:"#0F172A",fontSize:".88rem"}}>09:30 AM Sharp</strong>
+                    </div>
+                    <div>
+                      <span style={{color:"#92400E",display:"block",fontSize:".72rem",fontWeight:700}}>🎫 ENTRY PASS ID:</span>
+                      <strong style={{color:"#15803D",fontSize:".95rem",fontFamily:"monospace"}}>{sTxn}</strong>
+                    </div>
+                    <div>
+                      <span style={{color:"#92400E",display:"block",fontSize:".72rem",fontWeight:700}}>📍 LOCATION:</span>
+                      <strong style={{color:"#0F172A"}}>Mumbai, Maharashtra</strong>
+                    </div>
+                  </div>
+
+                  <div style={{textAlign:"center",fontSize:".74rem",color:"#92400E",fontWeight:700,borderTop:"1px dashed #FDE68A",paddingTop:12}}>
+                    ✨ Please present this digital pass or screenshot at the registration desk upon entry.
+                  </div>
+                </div>
+              )}
+
+              {/* Action Bar */}
+              <div style={{display:"flex",gap:10,flexWrap:"wrap"}}>
+                <button
+                  type="button"
+                  onClick={handleDownloadPDF}
+                  disabled={generatingPdf}
+                  style={{
+                    flex: 1,
+                    padding: "12px 16px",
+                    background: "linear-gradient(135deg, #15803D, #166534)",
+                    color: "white",
+                    border: "none",
+                    borderRadius: 8,
+                    fontWeight: 800,
+                    fontSize: ".88rem",
+                    cursor: "pointer",
+                    boxShadow: "0 2px 8px rgba(21,128,61,0.3)",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    gap: 6
+                  }}
+                >
+                  <span>📥</span>
+                  <span>Save PDF for Printing</span>
+                </button>
+
+                <a
+                  href="https://pradeepparmar902.github.io/MY_Community_Website/"
+                  style={{
+                    padding: "12px 16px",
+                    background: "#F1F5F9",
+                    color: "#334155",
+                    borderRadius: 8,
+                    textDecoration: "none",
+                    fontWeight: 700,
+                    fontSize: ".82rem",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center"
+                  }}
+                >
+                  Visit Website →
+                </a>
+              </div>
+            </>
+          )}
+        </div>
+
+        {/* Footer */}
+        <div style={{background:"#F8FAFC",borderTop:"1px solid #E2E8F0",padding:"12px 16px",textAlign:"center",fontSize:".72rem",color:"#64748B"}}>
+          📞 Committee Helpline: +91 9820785209 / +91 9967821964 • Mumbai Meghwal Panchayat
+        </div>
+
+      </div>
+    </div>
+  );
+}
+
 export default function App() {
   const [page,    setPage]    = useState("public");
   const [lang,    setLang]    = useState("en");
@@ -16307,7 +26792,16 @@ export default function App() {
 
     fbLoad().then(data => {
       if (active) {
-        if (data) setC(data);
+        if (data) {
+          if (Array.isArray(data.events)) {
+            const eduIdx = data.events.findIndex(e => String(e.title || "").toLowerCase().includes("education felicitation"));
+            if (eduIdx > 0) {
+              const [eduEv] = data.events.splice(eduIdx, 1);
+              data.events.unshift(eduEv);
+            }
+          }
+          setC(data);
+        }
         setFbState("ready");
         clearTimeout(safetyTimer);
       }
@@ -16412,14 +26906,17 @@ export default function App() {
     </div>
   );
 
-  // ── Standalone Form Mode (for QR Code scanning) ──────────────────────────
+  // ── Direct Invitation Pass & Standalone Form Routing ─────────────────────
   const href = window.location.href;
+  const isInviteLetterPass = href.includes('invite=') || href.includes('pass=') || href.includes('letter=') || href.includes('cert=') || href.includes('certificate=');
   const isStandaloneForm = href.includes('event=') || href.includes('register=');
 
   return (
     <div id="app-root" className={C?.theme || "classic"}>
       <G theme={C?.theme || "classic"} />
-      {isStandaloneForm ? (
+      {isInviteLetterPass ? (
+        <DirectInvitePassView C={C} auth={auth} />
+      ) : isStandaloneForm ? (
         <div style={{minHeight:"100vh",background:"#F4F7FB",padding:"20px 12px",display:"flex",justifyContent:"center",alignItems:"flex-start"}}>
           <div style={{width:"100%",maxWidth:550}}>
             <div style={{textAlign:"center",marginBottom:20}}>
@@ -16435,6 +26932,10 @@ export default function App() {
       ) : (
         <Admin  C={C} setC={setC} setPage={setPage} auth={auth} onLogout={handleLogout} onShowLogin={()=>setShowLogin(true)}/>
       )}
+      {/* Login modal — overlays whatever page is showing */}
+      {/* Floating Community AI & Registration Chatbot */}
+      <CommunityChatbot C={C} auth={auth} onShowLogin={()=>setShowLogin(true)} />
+
       {/* Login modal — overlays whatever page is showing */}
       {showLogin && <LoginScreen C={C} onLogin={handleLogin} onSkip={()=>setShowLogin(false)}/>}
     </div>
