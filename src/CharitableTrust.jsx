@@ -25966,7 +25966,7 @@ function VibhagSummaryCard({ summaryData }) {
 }
 
 // ── Community AI & Registration Chatbot Widget ──────────────────────────────────────────
-function CommunityChatbot({ C, auth, regs: propRegs, onShowLogin }) {
+function CommunityChatbot({ C, auth, onShowLogin }) {
   if (C.chatbotEnabled === false) {
     return null;
   }
@@ -26295,7 +26295,7 @@ function CommunityChatbot({ C, auth, regs: propRegs, onShowLogin }) {
   }, [messages, isOpen]);
 
   const ensureRegistrations = async () => {
-    let sourceList = (propRegs && propRegs.length > 0) ? propRegs : regs;
+    let sourceList = regs;
     if (!sourceList || sourceList.length === 0) {
       try {
         setLoading(true);
@@ -27752,7 +27752,7 @@ export default function App() {
       )}
       {/* Login modal — overlays whatever page is showing */}
       {/* Floating Community AI & Registration Chatbot */}
-      <CommunityChatbot C={C} auth={auth} regs={regs} onShowLogin={()=>setShowLogin(true)} />
+      <CommunityChatbot C={C} auth={auth} onShowLogin={()=>setShowLogin(true)} />
 
       {/* Login modal — overlays whatever page is showing */}
       {showLogin && <LoginScreen C={C} onLogin={handleLogin} onSkip={()=>setShowLogin(false)}/>}
