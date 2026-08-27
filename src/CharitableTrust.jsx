@@ -15726,6 +15726,8 @@ function ChatbotAccessManager({ C, setC, auth }) {
   const [allRegisteredUsers, setAllRegisteredUsers] = useState([]);
   const [loadingUsers, setLoadingUsers] = useState(true);
   const [searchFilter, setSearchFilter] = useState("");
+  const [showVibhagManager, setShowVibhagManager] = useState(false);
+  const [newVibhagInput, setNewVibhagInput] = useState("");
 
   // Default Knowledge Base entries
   const DEFAULT_KB = [
@@ -15789,18 +15791,7 @@ function ChatbotAccessManager({ C, setC, auth }) {
     adminOnly: false
   });
 
-  const VIBHAG_LIST = [
-    "10 MAHALAXMI",
-    "15 RAMDEV NAGAR",
-    "2 WALPAKHADI",
-    "22 LOWER PAREL",
-    "30 PRATKISHA NAGAR",
-    "55 BHAYANDER",
-    "65 KALWA",
-    "14-MMP",
-    "17-MMP",
-    "71-MMP"
-  ];
+  const VIBHAG_LIST = getAvailableVibhags(C, allRegisteredUsers);
 
   useEffect(() => {
     const fetchAll = async () => {
@@ -27072,9 +27063,34 @@ function OfflineDonationEntryCard({ initialData, onSubmit }) {
 
         <div>
           <label style={{display:"block",fontSize:".7rem",fontWeight:700,color:"#374151",marginBottom:2}}>Vibhag Number</label>
-          <select value={vibhag} onChange={e=>setVibhag(e.target.value)} style={{width:"100%",padding:"6px 8px",borderRadius:6,border:"1px solid #CBD5E1",fontSize:".78rem",background:"white",boxSizing:"border-box"}}>
+          <select 
+            value={isOtherVibhag ? "__other__" : vibhag} 
+            onChange={e => {
+              if (e.target.value === "__other__") {
+                setIsOtherVibhag(true);
+              } else {
+                setIsOtherVibhag(false);
+                setVibhag(e.target.value);
+              }
+            }} 
+            style={{width:"100%",padding:"6px 8px",borderRadius:6,border:"1px solid #CBD5E1",fontSize:".78rem",background:"white",boxSizing:"border-box"}}
+          >
             {VIBHAG_OPTIONS_DON.map(v => <option key={v} value={v}>{v}</option>)}
+            <option value="__other__">➕ Other / Add New Vibhag</option>
           </select>
+          {isOtherVibhag && (
+            <input
+              type="text"
+              placeholder="Type new Vibhag name..."
+              value={customVibhag}
+              onChange={e => {
+                setCustomVibhag(e.target.value);
+                setVibhag(e.target.value);
+              }}
+              autoFocus
+              style={{width:"100%",marginTop:4,padding:"5px 8px",borderRadius:6,border:"1px solid #F59E0B",fontSize:".78rem",background:"#FFFBEB",boxSizing:"border-box"}}
+            />
+          )}
         </div>
 
         <div>
@@ -27299,15 +27315,7 @@ function CommunityChatbot({ C, auth, onShowLogin }) {
   const dragOffsetRef = useRef({ x: 0, y: 0 });
   const didDragRef = useRef(false);
 
-  const VIBHAG_OPTIONS = [
-    "10 MAHALAXMI",
-    "15 RAMDEV NAGAR",
-    "2 WALPAKHADI",
-    "22 LOWER PAREL",
-    "30 PRATKISHA NAGAR",
-    "55 BHAYANDER",
-    "65 KALWA"
-  ];
+  const VIBHAG_OPTIONS = getAvailableVibhags(C, registrations);
 
   // Helper to get active logged-in user from all possible auth sources (Firebase Auth, LocalStorage, Auth prop)
   const getActiveUser = () => {
