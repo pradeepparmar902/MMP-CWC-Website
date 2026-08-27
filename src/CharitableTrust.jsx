@@ -1,6 +1,86 @@
 import { QRCodeCanvas } from "qrcode.react";
 import { useState, useEffect, useRef, createContext, useContext, useMemo } from "react";
 
+// ── Dynamic Vibhag Extractor (Extracts from Education Forms, Field Library, and Registrations) ──
+export const getAvailableVibhags = (C = {}, registrations = []) => {
+  const set = new Set();
+
+  // 1. Check all forms in C.forms (e.g. Education Felicitation Form)
+  (C?.forms || []).forEach(form => {
+    (form?.fields || []).forEach(field => {
+      const lbl = String(field?.label || field?.dataKey || "").toLowerCase();
+      if (lbl.includes("vibhag")) {
+        if (Array.isArray(field.options)) {
+          field.options.forEach(opt => {
+            const val = typeof opt === "string" ? opt.trim() : (opt?.label || opt?.value || "").trim();
+            if (val && val !== "Select" && val !== "-- Select --") set.add(val);
+          });
+        } else if (typeof field.options === "string") {
+          field.options.split(/[\n,]+/).forEach(opt => {
+            const val = opt.trim();
+            if (val && val !== "Select" && val !== "-- Select --") set.add(val);
+          });
+        }
+      }
+    });
+  });
+
+  // 2. Check fieldLibrary
+  (C?.fieldLibrary || []).forEach(field => {
+    const lbl = String(field?.label || field?.dataKey || "").toLowerCase();
+    if (lbl.includes("vibhag")) {
+      if (Array.isArray(field.options)) {
+        field.options.forEach(opt => {
+          const val = typeof opt === "string" ? opt.trim() : (opt?.label || opt?.value || "").trim();
+          if (val && val !== "Select" && val !== "-- Select --") set.add(val);
+        });
+      } else if (typeof field.options === "string") {
+        field.options.split(/[\n,]+/).forEach(opt => {
+          const val = opt.trim();
+          if (val && val !== "Select" && val !== "-- Select --") set.add(val);
+        });
+      }
+    }
+  });
+
+  // 3. Check C.customVibhags / C.vibhagList / C.vibhags
+  (C?.customVibhags || C?.vibhagList || C?.vibhags || []).forEach(v => {
+    if (typeof v === "string" && v.trim()) set.add(v.trim());
+  });
+
+  // 4. Check submitted registrations
+  (registrations || []).forEach(r => {
+    const v = (r["Vibhag"] || r["vibhag"] || r["MMP Vibhag"] || r["vibhagNumber"] || "").trim();
+    if (v && v !== "Individual Only" && v !== "All Vibhags" && v !== "All") set.add(v);
+  });
+
+  // 5. Baseline fallback defaults
+  const defaults = [
+    "10 MAHALAXMI",
+    "15 RAMDEV NAGAR",
+    "2 WALPAKHADI",
+    "22 LOWER PAREL",
+    "30 PRATKISHA NAGAR",
+    "55 BHAYANDER",
+    "65 KALWA",
+    "14-MMP",
+    "17-MMP",
+    "71-MMP"
+  ];
+  defaults.forEach(d => set.add(d));
+
+  return Array.from(set).sort((a, b) => {
+    const numA = parseInt(a, 10);
+    const numB = parseInt(b, 10);
+    if (!isNaN(numA) && !isNaN(numB)) {
+      if (numA !== numB) return numA - numB;
+    }
+    return a.localeCompare(b);
+  });
+};
+
+
+
 const SearchableDropdown = ({ value, onChange, options, placeholder, required, isError }) => {
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState(value || "");
