@@ -1,86 +1,6 @@
 import { QRCodeCanvas } from "qrcode.react";
 import { useState, useEffect, useRef, createContext, useContext, useMemo } from "react";
 
-// ── Dynamic Vibhag Extractor (Extracts from Education Forms, Field Library, and Registrations) ──
-export const getAvailableVibhags = (C = {}, registrations = []) => {
-  const set = new Set();
-
-  // 1. Check all forms in C.forms (e.g. Education Felicitation Form)
-  (C?.forms || []).forEach(form => {
-    (form?.fields || []).forEach(field => {
-      const lbl = String(field?.label || field?.dataKey || "").toLowerCase();
-      if (lbl.includes("vibhag")) {
-        if (Array.isArray(field.options)) {
-          field.options.forEach(opt => {
-            const val = typeof opt === "string" ? opt.trim() : (opt?.label || opt?.value || "").trim();
-            if (val && val !== "Select" && val !== "-- Select --") set.add(val);
-          });
-        } else if (typeof field.options === "string") {
-          field.options.split(/[\n,]+/).forEach(opt => {
-            const val = opt.trim();
-            if (val && val !== "Select" && val !== "-- Select --") set.add(val);
-          });
-        }
-      }
-    });
-  });
-
-  // 2. Check fieldLibrary
-  (C?.fieldLibrary || []).forEach(field => {
-    const lbl = String(field?.label || field?.dataKey || "").toLowerCase();
-    if (lbl.includes("vibhag")) {
-      if (Array.isArray(field.options)) {
-        field.options.forEach(opt => {
-          const val = typeof opt === "string" ? opt.trim() : (opt?.label || opt?.value || "").trim();
-          if (val && val !== "Select" && val !== "-- Select --") set.add(val);
-        });
-      } else if (typeof field.options === "string") {
-        field.options.split(/[\n,]+/).forEach(opt => {
-          const val = opt.trim();
-          if (val && val !== "Select" && val !== "-- Select --") set.add(val);
-        });
-      }
-    }
-  });
-
-  // 3. Check C.customVibhags / C.vibhagList / C.vibhags
-  (C?.customVibhags || C?.vibhagList || C?.vibhags || []).forEach(v => {
-    if (typeof v === "string" && v.trim()) set.add(v.trim());
-  });
-
-  // 4. Check submitted registrations
-  (registrations || []).forEach(r => {
-    const v = (r["Vibhag"] || r["vibhag"] || r["MMP Vibhag"] || r["vibhagNumber"] || "").trim();
-    if (v && v !== "Individual Only" && v !== "All Vibhags" && v !== "All") set.add(v);
-  });
-
-  // 5. Baseline fallback defaults
-  const defaults = [
-    "10 MAHALAXMI",
-    "15 RAMDEV NAGAR",
-    "2 WALPAKHADI",
-    "22 LOWER PAREL",
-    "30 PRATKISHA NAGAR",
-    "55 BHAYANDER",
-    "65 KALWA",
-    "14-MMP",
-    "17-MMP",
-    "71-MMP"
-  ];
-  defaults.forEach(d => set.add(d));
-
-  return Array.from(set).sort((a, b) => {
-    const numA = parseInt(a, 10);
-    const numB = parseInt(b, 10);
-    if (!isNaN(numA) && !isNaN(numB)) {
-      if (numA !== numB) return numA - numB;
-    }
-    return a.localeCompare(b);
-  });
-};
-
-
-
 const SearchableDropdown = ({ value, onChange, options, placeholder, required, isError }) => {
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState(value || "");
@@ -15806,8 +15726,6 @@ function ChatbotAccessManager({ C, setC, auth }) {
   const [allRegisteredUsers, setAllRegisteredUsers] = useState([]);
   const [loadingUsers, setLoadingUsers] = useState(true);
   const [searchFilter, setSearchFilter] = useState("");
-  const [showVibhagManager, setShowVibhagManager] = useState(false);
-  const [newVibhagInput, setNewVibhagInput] = useState("");
 
   // Default Knowledge Base entries
   const DEFAULT_KB = [
@@ -15871,7 +15789,18 @@ function ChatbotAccessManager({ C, setC, auth }) {
     adminOnly: false
   });
 
-  const VIBHAG_LIST = getAvailableVibhags(C, allRegisteredUsers);
+  const VIBHAG_LIST = [
+    "10 MAHALAXMI",
+    "15 RAMDEV NAGAR",
+    "2 WALPAKHADI",
+    "22 LOWER PAREL",
+    "30 PRATKISHA NAGAR",
+    "55 BHAYANDER",
+    "65 KALWA",
+    "14-MMP",
+    "17-MMP",
+    "71-MMP"
+  ];
 
   useEffect(() => {
     const fetchAll = async () => {
@@ -27143,34 +27072,9 @@ function OfflineDonationEntryCard({ initialData, onSubmit }) {
 
         <div>
           <label style={{display:"block",fontSize:".7rem",fontWeight:700,color:"#374151",marginBottom:2}}>Vibhag Number</label>
-          <select 
-            value={isOtherVibhag ? "__other__" : vibhag} 
-            onChange={e => {
-              if (e.target.value === "__other__") {
-                setIsOtherVibhag(true);
-              } else {
-                setIsOtherVibhag(false);
-                setVibhag(e.target.value);
-              }
-            }} 
-            style={{width:"100%",padding:"6px 8px",borderRadius:6,border:"1px solid #CBD5E1",fontSize:".78rem",background:"white",boxSizing:"border-box"}}
-          >
+          <select value={vibhag} onChange={e=>setVibhag(e.target.value)} style={{width:"100%",padding:"6px 8px",borderRadius:6,border:"1px solid #CBD5E1",fontSize:".78rem",background:"white",boxSizing:"border-box"}}>
             {VIBHAG_OPTIONS_DON.map(v => <option key={v} value={v}>{v}</option>)}
-            <option value="__other__">➕ Other / Add New Vibhag</option>
           </select>
-          {isOtherVibhag && (
-            <input
-              type="text"
-              placeholder="Type new Vibhag name..."
-              value={customVibhag}
-              onChange={e => {
-                setCustomVibhag(e.target.value);
-                setVibhag(e.target.value);
-              }}
-              autoFocus
-              style={{width:"100%",marginTop:4,padding:"5px 8px",borderRadius:6,border:"1px solid #F59E0B",fontSize:".78rem",background:"#FFFBEB",boxSizing:"border-box"}}
-            />
-          )}
         </div>
 
         <div>
@@ -27395,7 +27299,15 @@ function CommunityChatbot({ C, auth, onShowLogin }) {
   const dragOffsetRef = useRef({ x: 0, y: 0 });
   const didDragRef = useRef(false);
 
-  const VIBHAG_OPTIONS = getAvailableVibhags(C, regs);
+  const VIBHAG_OPTIONS = [
+    "10 MAHALAXMI",
+    "15 RAMDEV NAGAR",
+    "2 WALPAKHADI",
+    "22 LOWER PAREL",
+    "30 PRATKISHA NAGAR",
+    "55 BHAYANDER",
+    "65 KALWA"
+  ];
 
   // Helper to get active logged-in user from all possible auth sources (Firebase Auth, LocalStorage, Auth prop)
   const getActiveUser = () => {
