@@ -27395,7 +27395,7 @@ function CommunityChatbot({ C, auth, onShowLogin }) {
   const dragOffsetRef = useRef({ x: 0, y: 0 });
   const didDragRef = useRef(false);
 
-  const VIBHAG_OPTIONS = getAvailableVibhags(C, registrations);
+  const VIBHAG_OPTIONS = getAvailableVibhags(C, regs);
 
   // Helper to get active logged-in user from all possible auth sources (Firebase Auth, LocalStorage, Auth prop)
   const getActiveUser = () => {
