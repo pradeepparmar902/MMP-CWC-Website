@@ -1,6 +1,40 @@
 import { QRCodeCanvas } from "qrcode.react";
 import { useState, useEffect, useRef, createContext, useContext, useMemo } from "react";
 
+// ── Dynamic Vibhag Extractor & Event Code Helpers ──
+export const extractVibhagList = (config = {}) => {
+  if (config && Array.isArray(config.customVibhags) && config.customVibhags.length > 0) {
+    return config.customVibhags.filter(v => typeof v === "string" && v.trim());
+  }
+
+  // Standard official MMP Vibhags list
+  const defaults = [
+    "10 MAHALAXMI",
+    "15 RAMDEV NAGAR",
+    "2 WALPAKHADI",
+    "22 LOWER PAREL",
+    "30 PRATKISHA NAGAR",
+    "55 BHAYANDER",
+    "65 KALWA",
+    "Outside Mumbai / General"
+  ];
+  return defaults;
+};
+
+export const getAvailableVibhags = (config = {}) => extractVibhagList(config);
+
+export const extractEventCodes = (config = {}) => {
+  const codes = new Set(["EDU26", "VG"]);
+  if (config && Array.isArray(config.forms)) {
+    config.forms.forEach(f => {
+      if (f.eventCode) codes.add(f.eventCode.trim());
+      if (f.id && f.id.length <= 10) codes.add(f.id.trim());
+    });
+  }
+  return Array.from(codes);
+};
+
+
 const SearchableDropdown = ({ value, onChange, options, placeholder, required, isError }) => {
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState(value || "");
@@ -9217,6 +9251,57 @@ function Donations({ mob, auth, C }) {
         </table>
         {rows.length===0&&<div style={{textAlign:"center",padding:28,color:"var(--mu)"}}>No results found.</div>}
       </div>
+
+      {/* ── Modal: Add Offline Donation Modal in Admin Panel ── */}
+      {showAddOfflineModal && (
+        <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.65)",zIndex:100001,display:"flex",alignItems:"center",justifyContent:"center",padding:16}}>
+          <div style={{background:"white",borderRadius:12,width:"100%",maxWidth:520,boxShadow:"0 24px 48px rgba(0,0,0,0.3)",overflow:"hidden"}}>
+            <div style={{padding:"14px 20px",background:"linear-gradient(135deg, #15803D, #166534)",color:"white",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+              <h3 style={{margin:0,fontSize:"1.05rem",fontWeight:800}}>➕ Record Offline Donation</h3>
+              <button onClick={()=>setShowAddOfflineModal(false)} style={{background:"none",border:"none",color:"white",fontSize:"1.2rem",cursor:"pointer"}}>✕</button>
+            </div>
+            <div style={{padding:20}}>
+              <OfflineDonationEntryCard
+                initialData={{
+                  initialDate: new Date().toISOString().split('T')[0],
+                  defaultPurpose: "Education Felicitation 2026",
+                  defaultVibhag: "10 MAHALAXMI",
+                  defaultEventCode: "EDU26"
+                }}
+                onSubmit={async (formData) => {
+                  try {
+                    const donRecord = {
+                      name: formData.name.trim(),
+                      amount: parseFloat(formData.amount) || 0,
+                      date: formData.date,
+                      program: formData.purpose || "Education Felicitation 2026",
+                      purpose: formData.purpose || "Education Felicitation 2026",
+                      vibhag: formData.vibhag || "General",
+                      eventCode: formData.eventCode || "EDU26",
+                      receiptNo: formData.receiptNo || `RCP-${Math.floor(1000 + Math.random() * 9000)}`,
+                      internalReceiptNo: formData.receiptNo || `RCP-${Math.floor(1000 + Math.random() * 9000)}`,
+                      paymentMode: "Offline",
+                      paymentMethod: "Offline / Cash / Cheque",
+                      status: "Verified",
+                      isOffline: true,
+                      id: `DON-OFF-${Math.floor(100000 + Math.random() * 900000)}`,
+                      recordedBy: auth?.email || "Admin",
+                      recordedAt: new Date().toISOString()
+                    };
+                    await fbSubmitDonation(donRecord, auth?.idToken);
+                    alert("✅ Offline donation recorded successfully!");
+                    setShowAddOfflineModal(false);
+                    loadDonations();
+                  } catch(err) {
+                    alert("Failed to save donation: " + err.message);
+                  }
+                }}
+              />
+            </div>
+          </div>
+        </div>
+      )}
+
       {previewUrl && (
         <div style={{position:"fixed", inset:0, background:"rgba(0,0,0,0.6)", zIndex:99999, display:"flex", alignItems:"center", justifyContent:"center", padding: "4vh 4vw"}}>
           <div style={{background:"white", borderRadius: 16, width:"100%", maxWidth: 900, height:"100%", display:"flex", flexDirection:"column", overflow:"hidden", boxShadow:"0 20px 40px rgba(0,0,0,0.4)"}}>
@@ -10684,22 +10769,6 @@ function Volunteers({ mob, auth, C }) {
     if (auth) load();
   }, [auth]);
 
-
-  const saveVerification = async (r, newStatus, newRemarks) => {
-    const updatedBy = auth?.email || "Admin";
-    setRegs(prev => prev.map(x => x.id === r.id ? { ...x, Status: newStatus, status: newStatus, Remarks: newRemarks, "Updated By": updatedBy } : x));
-    try {
-      const cleanData = { ...r, Status: newStatus, status: newStatus, Remarks: newRemarks, "Updated By": updatedBy };
-      delete cleanData.id; delete cleanData._submittedAt;
-      await fbUpdateRegistration(r.id, cleanData, auth?.idToken);
-      // Removed setViewing(null) here so modal can handle auto-advance
-    } catch (e) {
-      alert("Failed to save verification: " + e.message);
-      const d = await fbFetchRegistrations(auth?.idToken);
-      setRegs(d || []);
-    }
-  };
-
   const handleStatusChange = async (r, newStatus) => {
     try {
       const updated = { ...r, status: newStatus, statusUpdatedAt: new Date().toISOString() };
@@ -10814,55 +10883,6 @@ function Volunteers({ mob, auth, C }) {
         </table>
       </div>
 
-      {/* ── Modal: Add Offline Donation Modal in Admin Panel ── */}
-      {showAddOfflineModal && (
-        <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.65)",zIndex:100001,display:"flex",alignItems:"center",justifyContent:"center",padding:16}}>
-          <div style={{background:"white",borderRadius:12,width:"100%",maxWidth:520,boxShadow:"0 24px 48px rgba(0,0,0,0.3)",overflow:"hidden"}}>
-            <div style={{padding:"14px 20px",background:"linear-gradient(135deg, #15803D, #166534)",color:"white",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-              <h3 style={{margin:0,fontSize:"1.05rem",fontWeight:800}}>➕ Record Offline Donation</h3>
-              <button onClick={()=>setShowAddOfflineModal(false)} style={{background:"none",border:"none",color:"white",fontSize:"1.2rem",cursor:"pointer"}}>✕</button>
-            </div>
-            <div style={{padding:20}}>
-              <OfflineDonationEntryCard
-                initialData={{
-                  initialDate: new Date().toISOString().split('T')[0],
-                  defaultPurpose: "Education Felicitation 2026",
-                  defaultVibhag: "10 MAHALAXMI",
-                  defaultEventCode: "EDU26"
-                }}
-                onSubmit={async (formData) => {
-                  try {
-                    const donRecord = {
-                      name: formData.name.trim(),
-                      amount: parseFloat(formData.amount) || 0,
-                      date: formData.date,
-                      program: formData.purpose || "Education Felicitation 2026",
-                      purpose: formData.purpose || "Education Felicitation 2026",
-                      vibhag: formData.vibhag || "General",
-                      eventCode: formData.eventCode || "EDU26",
-                      receiptNo: formData.receiptNo || `RCP-${Math.floor(1000 + Math.random() * 9000)}`,
-                      internalReceiptNo: formData.receiptNo || `RCP-${Math.floor(1000 + Math.random() * 9000)}`,
-                      paymentMode: "Offline",
-                      paymentMethod: "Offline / Cash / Cheque",
-                      status: "Verified",
-                      isOffline: true,
-                      id: `DON-OFF-${Math.floor(100000 + Math.random() * 900000)}`,
-                      recordedBy: auth?.email || "Admin",
-                      recordedAt: new Date().toISOString()
-                    };
-                    await fbSubmitDonation(donRecord, auth?.idToken);
-                    alert("✅ Offline donation recorded successfully!");
-                    setShowAddOfflineModal(false);
-                    loadDonations();
-                  } catch(err) {
-                    alert("Failed to save donation: " + err.message);
-                  }
-                }}
-              />
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 }
@@ -15726,57 +15746,229 @@ function ChatbotAccessManager({ C, setC, auth }) {
   const [allRegisteredUsers, setAllRegisteredUsers] = useState([]);
   const [loadingUsers, setLoadingUsers] = useState(true);
   const [searchFilter, setSearchFilter] = useState("");
+  const [selectedWhatsAppTplId, setSelectedWhatsAppTplId] = useState("tpl_edu_appeal");
+  const [cmdColFilter, setCmdColFilter] = useState("all");
+  const [titleColFilter, setTitleColFilter] = useState("all");
+  const [answerColFilter, setAnswerColFilter] = useState("all");
+  const [statusColFilter, setStatusColFilter] = useState("all");
 
   // Default Knowledge Base entries
   const DEFAULT_KB = [
     {
       id: "kb_events",
+      order: 1,
       cmd: "/events",
       icon: "🎓",
       title: "Upcoming Education Felicitation 2026 events",
       answer: "🎓 **Education Felicitation 2026 - Mumbai Meghwal Panchayat & Vidya Gohil Trust**\n\n• **Event**: Annual Student Education Felicitation 2026\n• **Eligibility**: Students scoring 50%+ in 10th, 12th, Degree, Diploma & Post-Graduation\n• **Registration Portal**: Online via website Events section\n• **Venue & Date**: Mumbai (To be officially announced soon)\n• **Required Documents**: Marksheet & Passport Photo\n\nFor assistance with registration, contact your Vibhag Head.",
       enabled: true,
-      adminOnly: false
-    },
-    {
-      id: "kb_edu_committee",
-      cmd: "/edu_committee",
-      icon: "👥",
-      title: "Education Committee Members",
-      answer: "👥 **Education Felicitation 2026 Committee Members**:\n\n• **Pradeep Parmar** — Trustee / Lead Coordinator (+91 9820785209)\n• **Keshav Wagh** — Lower Parel Head (+91 9967821964)\n• **Ashwin Kataria** — Ramdev Nagar Head (+91 8082234187)\n• **Samiksha Chudasama** — Committee Member (+91 7977561920)\n• **Dinesh Sondarva** — Mahalaxmi Head (+91 8779227886)\n• **Khushi Jogadiya** — Pratiksha Nagar Head (+91 8591563577)",
-      enabled: true,
+      roleAccess: "public",
       adminOnly: false
     },
     {
       id: "kb_cwc_committee",
+      order: 13,
       cmd: "/cwc_committee",
       icon: "🏛️",
       title: "CWC Committee Members",
-      answer: "🏛️ **Central Working Committee (CWC) Members**:\n\n• **President**: MMP Central Leadership\n• **General Secretary**: CWC Executive\n• **Treasurer / Financial Head**: Trust Executive\n• **Coordination Team**: Central Vibhag Team\n\n*(You can edit full member details & phone numbers in Admin Panel)*",
+      answer: "🏛️ **Central Working Committee (CWC) Members**:\n\n• **President**: Ravi Dharia - President MMP CWC\n• **General Secretary**: CWC Executive\n• **Treasurer / Financial Head**: Trust Executive\n• **Coordination Team**: Central Vibhag Team\n\n*(You can edit full member details & phone numbers in Admin Panel)*",
       enabled: true,
+      roleAccess: "public",
       adminOnly: false
     },
     {
       id: "kb_donate",
+      order: 12,
       cmd: "/donate",
       icon: "💰",
       title: "80G Tax Donations & Bank Details",
       answer: "💰 **Donations & 80G Tax Exemption**:\n\n• Vidya Gohil Charitable Trust offers **80G Tax Benefits** for all eligible donations under Indian Income Tax regulations.\n• You can donate online securely via Razorpay (UPI, Google Pay, PhonePe, Cards, NetBanking) on our **Donate** page.\n• Automated 80G tax receipts and 10BE acknowledgement certificates are provided.",
-      enabled: false, // Default hidden as per user request for MMP
-      adminOnly: false
+      enabled: true,
+      roleAccess: "public",
+      adminOnly: false,
+      attachedWhatsAppTplId: "tpl_general_donation"
     },
     {
       id: "kb_contact",
+      order: 14,
       cmd: "/contact",
       icon: "📞",
       title: "Trust Helpline & Office Contacts",
       answer: "📞 **Trust Office & Helpline Contacts**:\n\n• **Office**: Mumbai, Maharashtra\n• **Email**: info@mmp-cwc-new.com\n• **Helpline Mobile**: +91 9820785209 / +91 9967821964\n• **Timings**: 10:00 AM – 7:00 PM (Mon – Sat)",
       enabled: true,
+      roleAccess: "public",
       adminOnly: false
+    },
+    {
+      id: "kb_check",
+      order: 7,
+      cmd: "/check",
+      icon: "🔍",
+      title: "Check Application Status",
+      answer: "🔍 **Check Application Status**:\n\nPlease enter your **Transaction ID (e.g. VG-7, EDU26-2)** or **Registered Mobile Number** to look up your live status.",
+      enabled: true,
+      roleAccess: "public",
+      adminOnly: false
+    },
+    {
+      id: "kb_donation_update",
+      order: 11,
+      cmd: "/donation update",
+      icon: "✍️",
+      title: "Record Offline Donation",
+      answer: "✍️ **Record Offline Donation**:\n\nUse the interactive form below to record cash, cheque, or direct bank transfer donations with instant database syncing.",
+      enabled: true,
+      roleAccess: "donation_collector",
+      adminOnly: true,
+      attachedFormId: "builtin_offline_donation",
+      storageDestination: "donations"
+    },
+    {
+      id: "kb_donationsummary",
+      order: 7,
+      cmd: "/don_summary",
+      icon: "📊",
+      title: "Donation Summary (Vibhag-wise Collections)",
+      answer: "📊 **Donation Summary Dashboard**: Real-time breakdown of total collections, online Razorpay vs offline cash/cheque splits, and Vibhag-by-Vibhag financial metrics.",
+      enabled: true,
+      roleAccess: "donation_collector",
+      adminOnly: true,
+      attachedWhatsAppTplId: "tpl_donor_summary"
+    },
+    {
+      id: "kb_donerlist",
+      order: 8,
+      cmd: "/don_list",
+      icon: "📋",
+      title: "Donor Registry List & WhatsApp Broadcast",
+      answer: "📋 **Person-wise Donor Registry**: Numbered list of individual donors, amounts, Vibhags, receipt numbers, and 1-click WhatsApp broadcast generator.",
+      enabled: true,
+      roleAccess: "donation_collector",
+      adminOnly: true,
+      attachedWhatsAppTplId: "tpl_edu_appeal"
+    },
+    {
+      id: "kb_all",
+      order: 4,
+      cmd: "/all",
+      icon: "📈",
+      title: "Summary of ALL Student Registrations",
+      answer: "📈 **All Registrations Summary**:\n\nLive counts and status metrics across all Vibhags and programs.",
+      enabled: true,
+      roleAccess: "vibhag_admin",
+      adminOnly: true
+    },
+    {
+      id: "kb_vibhag",
+      order: 8,
+      cmd: "/vibhag",
+      icon: "📍",
+      title: "Summary by Vibhag #",
+      answer: "📍 **Vibhag-wise Analytics**:\n\nSelect or enter a specific Vibhag (e.g. 10 MAHALAXMI, 15 RAMDEV NAGAR) to see localized registration data.",
+      enabled: true,
+      roleAccess: "vibhag_admin",
+      adminOnly: true
+    },
+    {
+      id: "kb_pending",
+      order: 5,
+      cmd: "/pending",
+      icon: "⏳",
+      title: "Pending Review Registrations",
+      answer: "⏳ **Pending Applications**:\n\nList of student registrations currently awaiting committee document verification.",
+      enabled: true,
+      roleAccess: "vibhag_admin",
+      adminOnly: true
+    },
+    {
+      id: "kb_approved",
+      order: 6,
+      cmd: "/approved",
+      icon: "🟢",
+      title: "Approved Registrations List",
+      answer: "🟢 **Approved Applications**:\n\nList of verified and confirmed student applicants.",
+      enabled: true,
+      roleAccess: "vibhag_admin",
+      adminOnly: true
     }
   ];
 
-  const kbList = Array.isArray(C.chatbotKnowledgeBase) && C.chatbotKnowledgeBase.length > 0 ? C.chatbotKnowledgeBase : DEFAULT_KB;
+  // Merge saved knowledge base by unique ID so edits, renames, and deletions persist 100% reliably
+  const rawKb = Array.isArray(C.chatbotKnowledgeBase) ? C.chatbotKnowledgeBase : [];
+  const kbMap = new Map();
+  DEFAULT_KB.forEach(item => kbMap.set(item.id, { ...item }));
+
+  const SYSTEM_FIXED_CMDS = {
+    "kb_events": "/Edu_events",
+    "kb_edu_committee": "/Edu_committee",
+    "kb_edu_eligibility": "/Edu_eligibility",
+    "kb_all": "/Edu_all",
+    "kb_pending": "/Edu_pending",
+    "kb_approved": "/Edu_approved",
+    "kb_check": "/check",
+    "kb_vibhag": "/vibhag",
+    "kb_donationsummary": "/don_summary",
+    "kb_donerlist": "/don_list",
+    "kb_donation_update": "/don_entry",
+    "kb_donationupdate": "/don_entry",
+    "kb_donate": "/don_80g",
+    "kb_cwc_committee": "/cwc_committee",
+    "kb_contact": "/contact"
+  };
+
+  rawKb.forEach(item => {
+    if (item && item.id) {
+      const existing = kbMap.get(item.id) || {};
+      let correctCmd = item.cmd;
+      
+      // If a command was accidentally overwritten with a duplicate (e.g. /donner or /education)
+      const isDuplicateConflict = item.cmd === "/donner" || item.cmd === "/education" || item.cmd === "/Education";
+      if (SYSTEM_FIXED_CMDS[item.id] && (!item.cmd || isDuplicateConflict)) {
+        correctCmd = SYSTEM_FIXED_CMDS[item.id];
+      }
+      // Ensure distinct descriptive answers for system cards
+      let customAnswer = item.answer;
+      if (item.id === "kb_donationsummary" && (!item.answer || item.answer.includes("Live Donor Registry") || item.answer.includes("Live Donation Collection Summary"))) {
+        customAnswer = "📊 **Donation Summary Dashboard**: Real-time breakdown of total collections, online Razorpay vs offline cash/cheque splits, and Vibhag-by-Vibhag financial metrics.";
+      } else if (item.id === "kb_donerlist" && (!item.answer || item.answer.includes("Live Donation Collection Summary") || item.answer.includes("Live Donor Registry"))) {
+        customAnswer = "📋 **Person-wise Donor Registry**: Numbered list of individual donors, amounts, Vibhags, receipt numbers, and 1-click WhatsApp broadcast generator.";
+      }
+      kbMap.set(item.id, { ...existing, ...item, cmd: correctCmd || existing.cmd, answer: customAnswer || item.answer || existing.answer });
+    } else if (item && item.cmd) {
+      const fallbackId = "kb_" + item.cmd.replace(/\W/g, "");
+      const existing = kbMap.get(fallbackId) || {};
+      kbMap.set(fallbackId, { id: fallbackId, ...existing, ...item });
+    }
+  });
+  const kbList = Array.from(kbMap.values()).map((item, idx) => ({
+    ...item,
+    order: item.order !== undefined && item.order !== null && !isNaN(Number(item.order)) ? Number(item.order) : (idx + 1)
+  })).sort((a, b) => (a.order || 999) - (b.order || 999));
+
+  const uniqueCmds = Array.from(new Set(kbList.map(k => (k.cmd || "").trim()).filter(Boolean))).sort((a, b) => a.localeCompare(b));
+  const uniqueTitles = Array.from(new Set(kbList.map(k => (k.title || "").trim()).filter(Boolean))).sort((a, b) => a.localeCompare(b));
+
+  const filteredKbList = kbList.filter(item => {
+    if (cmdColFilter && cmdColFilter !== "all") {
+      if ((item.cmd || "").trim().toLowerCase() !== cmdColFilter.toLowerCase()) return false;
+    }
+    if (titleColFilter && titleColFilter !== "all") {
+      if ((item.title || "").trim().toLowerCase() !== titleColFilter.toLowerCase()) return false;
+    }
+    if (answerColFilter && answerColFilter !== "all") {
+      if (answerColFilter === "form" && !item.attachedFormId) return false;
+      if (answerColFilter === "whatsapp" && !item.attachedWhatsAppTplId) return false;
+      if (answerColFilter === "text_only" && (item.attachedFormId || item.attachedWhatsAppTplId)) return false;
+    }
+    if (statusColFilter !== "all") {
+      if (statusColFilter === "visible" && item.enabled === false) return false;
+      if (statusColFilter === "hidden" && item.enabled !== false) return false;
+      if (statusColFilter === "public" && item.roleAccess && item.roleAccess !== "public") return false;
+      if (statusColFilter === "donation_collector" && item.roleAccess !== "donation_collector") return false;
+      if (statusColFilter === "admin" && (!item.adminOnly || item.roleAccess === "public")) return false;
+    }
+    return true;
+  });
 
   // New Q&A Form State
   const [editingKbId, setEditingKbId] = useState(null);
@@ -15786,7 +15978,11 @@ function ChatbotAccessManager({ C, setC, auth }) {
     title: "",
     answer: "",
     enabled: true,
-    adminOnly: false
+    adminOnly: false,
+    attachedFormId: "",
+    storageDestination: "donations",
+    roleAccess: "public",
+    attachedWhatsAppTplId: ""
   });
 
   const VIBHAG_LIST = [
@@ -15918,7 +16114,7 @@ function ChatbotAccessManager({ C, setC, auth }) {
     if (setC) setC(newC);
     try {
       await fbSave(newC, auth?.idToken);
-      alert("Chatbot Knowledge Base saved successfully!");
+      alert("✅ Question & Slash Command saved successfully to database!");
     } catch(e) {
       alert("Failed to save to database: " + e.message);
     }
@@ -16008,7 +16204,34 @@ function ChatbotAccessManager({ C, setC, auth }) {
     saveKnowledgeBaseToFirebase(updated);
   };
 
-  const handleSaveKbForm = (e) => {
+  const moveKbOrder = async (kbId, direction) => {
+    const curIdx = kbList.findIndex(k => k.id === kbId);
+    if (curIdx === -1) return;
+    const targetIdx = direction === "up" ? curIdx - 1 : curIdx + 1;
+    if (targetIdx < 0 || targetIdx >= kbList.length) return;
+
+    const listCopy = [...kbList];
+    const temp = listCopy[curIdx];
+    listCopy[curIdx] = listCopy[targetIdx];
+    listCopy[targetIdx] = temp;
+
+    const reordered = listCopy.map((item, idx) => ({
+      ...item,
+      order: idx + 1
+    }));
+
+    await saveKnowledgeBaseToFirebase(reordered);
+  };
+
+  const updateKbOrderDirect = async (kbId, newOrderVal) => {
+    const num = parseInt(newOrderVal, 10);
+    if (isNaN(num)) return;
+    const updated = kbList.map(item => item.id === kbId ? { ...item, order: num } : item)
+      .sort((a, b) => (a.order || 999) - (b.order || 999));
+    await saveKnowledgeBaseToFirebase(updated);
+  };
+
+  const handleSaveKbForm = async (e) => {
     e.preventDefault();
     let cleanCmd = kbForm.cmd.trim();
     if (!cleanCmd.startsWith("/")) cleanCmd = "/" + cleanCmd;
@@ -16016,19 +16239,49 @@ function ChatbotAccessManager({ C, setC, auth }) {
 
     let updated = [];
     if (editingKbId) {
-      updated = kbList.map(item => item.id === editingKbId ? { ...kbForm, id: editingKbId, cmd: cleanCmd } : item);
+      updated = kbList.map(item => (item.id === editingKbId) ? {
+        ...item,
+        ...kbForm,
+        id: editingKbId,
+        cmd: cleanCmd,
+        title: kbForm.title.trim(),
+        answer: kbForm.answer.trim(),
+        roleAccess: kbForm.roleAccess || "public",
+        adminOnly: kbForm.roleAccess !== "public",
+        attachedWhatsAppTplId: kbForm.attachedWhatsAppTplId || "",
+        attachedFormId: kbForm.attachedFormId || "",
+        storageDestination: kbForm.storageDestination || "donations"
+      } : item);
     } else {
       const newEntry = {
         ...kbForm,
         id: "kb_" + Date.now(),
-        cmd: cleanCmd
+        cmd: cleanCmd,
+        title: kbForm.title.trim(),
+        answer: kbForm.answer.trim(),
+        roleAccess: kbForm.roleAccess || "public",
+        adminOnly: kbForm.roleAccess !== "public",
+        attachedWhatsAppTplId: kbForm.attachedWhatsAppTplId || "",
+        attachedFormId: kbForm.attachedFormId || "",
+        storageDestination: kbForm.storageDestination || "donations"
       };
       updated = [...kbList, newEntry];
     }
 
-    saveKnowledgeBaseToFirebase(updated);
+    await saveKnowledgeBaseToFirebase(updated);
     setEditingKbId(null);
-    setKbForm({ cmd: "", icon: "❓", title: "", answer: "", enabled: true, adminOnly: false });
+    setKbForm({
+      cmd: "",
+      icon: "❓",
+      title: "",
+      answer: "",
+      enabled: true,
+      adminOnly: false,
+      attachedFormId: "",
+      storageDestination: "donations",
+      roleAccess: "public",
+      attachedWhatsAppTplId: ""
+    });
   };
 
   const filteredUsers = allRegisteredUsers.filter(u => {
@@ -16228,6 +16481,22 @@ function ChatbotAccessManager({ C, setC, auth }) {
             }}
           >
             🛡️ Restricted Messages & Rules
+          </button>
+          <button
+            onClick={() => setActiveTab("whatsapp")}
+            style={{
+              padding: "8px 14px",
+              borderRadius: 8,
+              fontSize: ".82rem",
+              fontWeight: 800,
+              background: activeTab === "whatsapp" ? "#166534" : "transparent",
+              color: activeTab === "whatsapp" ? "white" : "#166534",
+              border: activeTab === "whatsapp" ? "1px solid #166534" : "1px solid #86EFAC",
+              cursor: "pointer",
+              boxShadow: activeTab === "whatsapp" ? "0 2px 8px rgba(22,101,52,0.3)" : "none"
+            }}
+          >
+            📱 WhatsApp Templates & QR
           </button>
         </div>
       </div>
@@ -17118,7 +17387,19 @@ function ChatbotAccessManager({ C, setC, auth }) {
             </div>
 
             <form onSubmit={handleSaveKbForm} style={{display:"flex",flexDirection:"column",gap:14}}>
-              <div style={{display:"grid",gridTemplateColumns:"100px 160px 1fr 140px",gap:12}}>
+              <div style={{display:"grid",gridTemplateColumns:"70px 90px 160px 1fr 130px",gap:10}}>
+                <div>
+                  <label style={{fontSize:".73rem",fontWeight:800,color:"#1D4ED8",display:"block",marginBottom:4}}># Order:</label>
+                  <input
+                    type="number"
+                    min="1"
+                    max="99"
+                    value={kbForm.order || (editingKbId ? (kbList.find(k=>k.id===editingKbId)?.order || 1) : (kbList.length + 1))}
+                    onChange={e=>setKbForm({...kbForm, order: parseInt(e.target.value, 10) || 1})}
+                    style={{width:"100%",padding:"9px 8px",borderRadius:6,border:"1.5px solid #93C5FD",fontSize:".88rem",fontWeight:800,textAlign:"center",boxSizing:"border-box",background:"#EFF6FF",color:"#1E40AF"}}
+                    title="1 = First, 2 = Second, 3 = Third..."
+                  />
+                </div>
                 <div>
                   <label style={{fontSize:".75rem",fontWeight:700,color:"#475569",display:"block",marginBottom:4}}>Icon:</label>
                   <input
@@ -17217,6 +17498,121 @@ function ChatbotAccessManager({ C, setC, auth }) {
                 />
               </div>
 
+              {/* ── Connect WhatsApp Broadcast Template ── */}
+              <div style={{background:"#F0FDF4",border:"1.5px solid #86EFAC",borderRadius:10,padding:"14px 16px",display:"flex",flexDirection:"column",gap:10}}>
+                <div style={{fontSize:".82rem",fontWeight:800,color:"#166534",display:"flex",alignItems:"center",gap:6}}>
+                  <span>📱</span> Connect WhatsApp Broadcast Template (Adds 📋 Copy & 🟢 Share WhatsApp buttons to Bot response):
+                </div>
+
+                <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit, minmax(280px, 1fr))",gap:12}}>
+                  <div>
+                    <label style={{fontSize:".73rem",fontWeight:700,color:"#166534",display:"block",marginBottom:3}}>
+                      Select WhatsApp Broadcast Template:
+                    </label>
+                    <select
+                      value={kbForm.attachedWhatsAppTplId || ""}
+                      onChange={e => setKbForm({ ...kbForm, attachedWhatsAppTplId: e.target.value })}
+                      style={{width:"100%",padding:"8px 10px",borderRadius:6,border:"1px solid #86EFAC",fontSize:".8rem",fontWeight:700,background:"white",boxSizing:"border-box",color:"#0F172A"}}
+                    >
+                      <option value="">💬 No WhatsApp Template (Standard Text Reply Only)</option>
+                      <option value="tpl_edu_appeal">🎓 Education Felicitation Donation Appeal (Bank of Baroda QR)</option>
+                      <option value="tpl_general_donation">💰 General Community Donation & QR Pay</option>
+                      <option value="tpl_meeting_notice">📢 CWC Committee Meeting & Gathering Notice</option>
+                      <option value="tpl_donor_summary">📊 Live Vibhag Donation Collection Summary</option>
+                      {(C.whatsappBroadcastTemplates || []).map(t => (
+                        <option key={t.id} value={t.id}>
+                          📱 {t.name || t.id} (Custom Template)
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+
+                {kbForm.attachedWhatsAppTplId && (
+                  <div style={{fontSize:".72rem",color:"#15803D",lineHeight:1.4}}>
+                    ℹ️ When users ask <strong>{kbForm.cmd || "this question"}</strong>, the chatbot response will include <strong>📋 Copy for WhatsApp</strong> and <strong>🟢 Share on WhatsApp</strong> buttons formatted with the connected template.
+                  </div>
+                )}
+              </div>
+
+              {/* ── Connect Interactive Form & Target Storage Destination ── */}
+              <div style={{background:"#F0FDF4",border:"1.5px solid #86EFAC",borderRadius:10,padding:"14px 16px",display:"flex",flexDirection:"column",gap:12}}>
+                <div style={{fontSize:".82rem",fontWeight:800,color:"#166534",display:"flex",alignItems:"center",gap:6}}>
+                  <span>📝</span> Connect Interactive Form (Displays in Chatbot Conversation):
+                </div>
+
+                <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit, minmax(200px, 1fr))",gap:12}}>
+                  {/* Form Selector */}
+                  <div>
+                    <label style={{fontSize:".73rem",fontWeight:700,color:"#166534",display:"block",marginBottom:3}}>
+                      Select Form from Form Builder:
+                    </label>
+                    <select
+                      value={kbForm.attachedFormId || ""}
+                      onChange={e => {
+                        const formId = e.target.value;
+                        const isDon = formId === "builtin_offline_donation";
+                        setKbForm({
+                          ...kbForm,
+                          attachedFormId: formId,
+                          storageDestination: isDon ? "donations" : (kbForm.storageDestination || "registrations")
+                        });
+                      }}
+                      style={{width:"100%",padding:"8px 10px",borderRadius:6,border:"1px solid #86EFAC",fontSize:".8rem",fontWeight:700,background:"white",boxSizing:"border-box",color:"#0F172A"}}
+                    >
+                      <option value="">💬 No Form (Text & Links Answer Only)</option>
+                      <option value="builtin_offline_donation">💰 Built-in Offline Donation Entry Form</option>
+                      {(C.forms || []).map(f => (
+                        <option key={f.id} value={f.id}>
+                          📝 {f.name || f.id} (Custom Event Form - {Array.isArray(f.fields) ? f.fields.length : 0} fields)
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  {/* Target Storage Destination */}
+                  {kbForm.attachedFormId && (
+                    <div>
+                      <label style={{fontSize:".73rem",fontWeight:700,color:"#166534",display:"block",marginBottom:3}}>
+                        Target Storage Destination:
+                      </label>
+                      <select
+                        value={kbForm.storageDestination || "donations"}
+                        onChange={e => setKbForm({ ...kbForm, storageDestination: e.target.value })}
+                        style={{width:"100%",padding:"8px 10px",borderRadius:6,border:"1px solid #86EFAC",fontSize:".8rem",fontWeight:700,background:"white",boxSizing:"border-box",color:"#15803D"}}
+                      >
+                        <option value="donations">💰 Donations Collection (donations)</option>
+                        <option value="registrations">📥 Registrations Collection (registrations)</option>
+                        <option value="volunteers">👥 Volunteers Collection (volunteers)</option>
+                      </select>
+                    </div>
+                  )}
+
+                  {/* Role / Access Requirement */}
+                  <div>
+                    <label style={{fontSize:".73rem",fontWeight:700,color:"#166534",display:"block",marginBottom:3}}>
+                      Who Can Use This Form / Command:
+                    </label>
+                    <select
+                      value={kbForm.roleAccess || (kbForm.adminOnly ? "vibhag_admin" : "public")}
+                      onChange={e => setKbForm({ ...kbForm, roleAccess: e.target.value, adminOnly: e.target.value !== "public" })}
+                      style={{width:"100%",padding:"8px 10px",borderRadius:6,border:"1px solid #86EFAC",fontSize:".8rem",fontWeight:700,background:"white",boxSizing:"border-box",color:"#1E293B"}}
+                    >
+                      <option value="public">🌐 Public (All Visitors & Applicants)</option>
+                      <option value="donation_collector">💰 Donation Collectors & Super Admins Only</option>
+                      <option value="vibhag_admin">📍 Vibhag Admins & Super Admins Only</option>
+                      <option value="super_admin">🛡️ Super Admin Only</option>
+                    </select>
+                  </div>
+                </div>
+
+                {kbForm.attachedFormId && (
+                  <div style={{fontSize:".72rem",color:"#15803D",lineHeight:1.4}}>
+                    ℹ️ When users trigger <strong>{kbForm.cmd || "this command"}</strong>, the chatbot will display the complete interactive form in a card and save submitted data directly into <strong>{kbForm.storageDestination === "donations" ? "Donations" : kbForm.storageDestination === "registrations" ? "Registrations" : "Volunteers"}</strong>.
+                  </div>
+                )}
+              </div>
+
               <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",paddingTop:4}}>
                 <label style={{display:"flex",alignItems:"center",gap:8,fontSize:".8rem",color:"#475569",cursor:"pointer",fontWeight:600}}>
                   <input
@@ -17241,7 +17637,7 @@ function ChatbotAccessManager({ C, setC, auth }) {
                     boxShadow:"0 2px 8px rgba(37,99,235,0.25)"
                   }}
                 >
-                  {editingKbId ? "💾 Save Changes" : "+ Add Slash Command"}
+                  {editingKbId ? "💾 Save Changes & Form Connection" : "+ Add Slash Command & Form Connection"}
                 </button>
               </div>
             </form>
@@ -17249,25 +17645,251 @@ function ChatbotAccessManager({ C, setC, auth }) {
 
           {/* Knowledge Base Table */}
           <div style={{background:"white",borderRadius:12,border:"1px solid #E2E8F0",overflow:"hidden",boxShadow:"0 2px 8px rgba(0,0,0,0.04)"}}>
-            <div style={{padding:"14px 18px",background:"#F8FAFC",borderBottom:"1px solid #E2E8F0",fontWeight:700,fontSize:".88rem",color:"#0F172A",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-              <span>Configured Questions & Slash Commands ({kbList.length})</span>
-              <span style={{fontSize:".75rem",color:"#64748B"}}>Toggle Hide/Unhide with one click</span>
+            <div style={{padding:"14px 18px",background:"#F8FAFC",borderBottom:"1px solid #E2E8F0",fontWeight:700,fontSize:".88rem",color:"#0F172A",display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:10}}>
+              <div style={{display:"flex",alignItems:"center",gap:10}}>
+                <span>Configured Questions & Slash Commands ({filteredKbList.length}{filteredKbList.length !== kbList.length ? ` of ${kbList.length}` : ""})</span>
+                {(cmdColFilter !== "all" || titleColFilter !== "all" || answerColFilter !== "all" || statusColFilter !== "all") && (
+                  <span style={{background:"#FEF3C7",color:"#92400E",fontSize:".72rem",padding:"2px 8px",borderRadius:12,fontWeight:800}}>
+                    Filtered
+                  </span>
+                )}
+              </div>
+              <div style={{display:"flex",gap:8,alignItems:"center"}}>
+                {(cmdColFilter !== "all" || titleColFilter !== "all" || answerColFilter !== "all" || statusColFilter !== "all") && (
+                  <button
+                    type="button"
+                    onClick={() => { setCmdColFilter("all"); setTitleColFilter("all"); setAnswerColFilter("all"); setStatusColFilter("all"); }}
+                    style={{background:"#EF4444",color:"white",border:"none",borderRadius:6,padding:"4px 10px",fontSize:".74rem",fontWeight:800,cursor:"pointer",display:"flex",alignItems:"center",gap:4}}
+                  >
+                    <span>✕</span> Reset All Column Filters
+                  </button>
+                )}
+                <span style={{fontSize:".75rem",color:"#64748B"}}>Toggle Hide/Unhide with one click</span>
+              </div>
             </div>
 
             <div style={{overflowX:"auto"}}>
               <table style={{width:"100%",borderCollapse:"collapse",fontSize:".85rem"}}>
                 <thead>
                   <tr style={{background:"#1E293B",color:"white"}}>
-                    <th style={{padding:"11px 16px",textAlign:"left",width:140}}>Command (/)</th>
-                    <th style={{padding:"11px 16px",textAlign:"left",width:240}}>Question / Title</th>
-                    <th style={{padding:"11px 16px",textAlign:"left"}}>Answer Preview</th>
-                    <th style={{padding:"11px 16px",textAlign:"center",width:130}}>Status (Hide/Unhide)</th>
-                    <th style={{padding:"11px 16px",textAlign:"right",width:140}}>Actions</th>
+                    {/* 1. Command Dropdown Filter */}
+                    <th style={{padding:"10px 8px",textAlign:"center",width:75,verticalAlign:"top"}}>
+                      <div style={{display:"flex",flexDirection:"column",gap:5,alignItems:"center"}}>
+                        <span style={{fontWeight:800,fontSize:".8rem",color:"#38BDF8"}}># Order</span>
+                        <span style={{fontSize:".68rem",color:"#94A3B8"}}>▲ / ▼</span>
+                      </div>
+                    </th>
+                    <th style={{padding:"10px 12px",textAlign:"left",width:180,verticalAlign:"top"}}>
+                      <div style={{display:"flex",flexDirection:"column",gap:5}}>
+                        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+                          <span style={{fontWeight:800,fontSize:".82rem"}}>Command (/)</span>
+                          <span style={{fontSize:".72rem",color:"#38BDF8"}}>▼</span>
+                        </div>
+                        <select
+                          value={cmdColFilter}
+                          onChange={e=>setCmdColFilter(e.target.value)}
+                          style={{
+                            width:"100%",
+                            padding:"6px 8px",
+                            borderRadius:6,
+                            border: cmdColFilter !== "all" ? "1.5px solid #F59E0B" : "1.5px solid #38BDF8",
+                            background:"#0F172A",
+                            color:"#FFFFFF",
+                            fontSize:".75rem",
+                            fontWeight:700,
+                            boxSizing:"border-box",
+                            cursor:"pointer",
+                            outline:"none"
+                          }}
+                        >
+                          <option value="all" style={{background:"#0F172A",color:"white"}}>📂 All Commands ({kbList.length})</option>
+                          {uniqueCmds.map(cmd => (
+                            <option key={cmd} value={cmd} style={{background:"#0F172A",color:"white"}}>
+                              {cmd}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                    </th>
+
+                    {/* 2. Question / Title Dropdown Filter */}
+                    <th style={{padding:"10px 12px",textAlign:"left",width:240,verticalAlign:"top"}}>
+                      <div style={{display:"flex",flexDirection:"column",gap:5}}>
+                        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+                          <span style={{fontWeight:800,fontSize:".82rem"}}>Question / Title</span>
+                          <span style={{fontSize:".72rem",color:"#38BDF8"}}>▼</span>
+                        </div>
+                        <select
+                          value={titleColFilter}
+                          onChange={e=>setTitleColFilter(e.target.value)}
+                          style={{
+                            width:"100%",
+                            padding:"6px 8px",
+                            borderRadius:6,
+                            border: titleColFilter !== "all" ? "1.5px solid #F59E0B" : "1.5px solid #38BDF8",
+                            background:"#0F172A",
+                            color:"#FFFFFF",
+                            fontSize:".75rem",
+                            fontWeight:700,
+                            boxSizing:"border-box",
+                            cursor:"pointer",
+                            outline:"none"
+                          }}
+                        >
+                          <option value="all" style={{background:"#0F172A",color:"white"}}>📂 All Titles ({uniqueTitles.length})</option>
+                          {uniqueTitles.map(title => (
+                            <option key={title} value={title} style={{background:"#0F172A",color:"white"}}>
+                              {title}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                    </th>
+
+                    {/* 3. Answer / Attached Type Dropdown Filter */}
+                    <th style={{padding:"10px 12px",textAlign:"left",verticalAlign:"top"}}>
+                      <div style={{display:"flex",flexDirection:"column",gap:5}}>
+                        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+                          <span style={{fontWeight:800,fontSize:".82rem"}}>Answer / Connection</span>
+                          <span style={{fontSize:".72rem",color:"#38BDF8"}}>▼</span>
+                        </div>
+                        <select
+                          value={answerColFilter}
+                          onChange={e=>setAnswerColFilter(e.target.value)}
+                          style={{
+                            width:"100%",
+                            padding:"6px 8px",
+                            borderRadius:6,
+                            border: answerColFilter !== "all" ? "1.5px solid #F59E0B" : "1.5px solid #38BDF8",
+                            background:"#0F172A",
+                            color:"#FFFFFF",
+                            fontSize:".75rem",
+                            fontWeight:700,
+                            boxSizing:"border-box",
+                            cursor:"pointer",
+                            outline:"none"
+                          }}
+                        >
+                          <option value="all" style={{background:"#0F172A",color:"white"}}>📂 All Connection Types</option>
+                          <option value="form" style={{background:"#0F172A",color:"white"}}>📝 With Attached Interactive Form</option>
+                          <option value="whatsapp" style={{background:"#0F172A",color:"white"}}>📱 With Attached WhatsApp Template</option>
+                          <option value="text_only" style={{background:"#0F172A",color:"white"}}>💬 Standard Text Reply Only</option>
+                        </select>
+                      </div>
+                    </th>
+
+                    {/* 4. Status & Role Dropdown Filter */}
+                    <th style={{padding:"10px 12px",textAlign:"center",width:150,verticalAlign:"top"}}>
+                      <div style={{display:"flex",flexDirection:"column",gap:5}}>
+                        <div style={{display:"flex",justifyContent:"center",alignItems:"center",gap:4}}>
+                          <span style={{fontWeight:800,fontSize:".82rem"}}>Status & Role</span>
+                          <span style={{fontSize:".72rem",color:"#38BDF8"}}>▼</span>
+                        </div>
+                        <select
+                          value={statusColFilter}
+                          onChange={e=>setStatusColFilter(e.target.value)}
+                          style={{
+                            width:"100%",
+                            padding:"6px 8px",
+                            borderRadius:6,
+                            border: statusColFilter !== "all" ? "1.5px solid #F59E0B" : "1.5px solid #38BDF8",
+                            background:"#0F172A",
+                            color:"#FFFFFF",
+                            fontSize:".75rem",
+                            fontWeight:700,
+                            boxSizing:"border-box",
+                            cursor:"pointer",
+                            outline:"none"
+                          }}
+                        >
+                          <option value="all" style={{background:"#0F172A",color:"white"}}>📂 All Statuses</option>
+                          <option value="visible" style={{background:"#0F172A",color:"white"}}>🟢 Visible Only</option>
+                          <option value="hidden" style={{background:"#0F172A",color:"white"}}>🙈 Hidden Only</option>
+                          <option value="public" style={{background:"#0F172A",color:"white"}}>🌐 Public Access</option>
+                          <option value="donation_collector" style={{background:"#0F172A",color:"white"}}>✍️ Donation Collector Only</option>
+                          <option value="admin" style={{background:"#0F172A",color:"white"}}>🛡️ Admin Only</option>
+                        </select>
+                      </div>
+                    </th>
+
+                    {/* 5. Actions & Reset Button */}
+                    <th style={{padding:"10px 12px",textAlign:"right",width:130,verticalAlign:"top"}}>
+                      <div style={{display:"flex",flexDirection:"column",gap:5,alignItems:"flex-end"}}>
+                        <span style={{fontWeight:800,fontSize:".82rem"}}>Actions</span>
+                        {(cmdColFilter !== "all" || titleColFilter !== "all" || answerColFilter !== "all" || statusColFilter !== "all") ? (
+                          <button
+                            type="button"
+                            onClick={() => { setCmdColFilter("all"); setTitleColFilter("all"); setAnswerColFilter("all"); setStatusColFilter("all"); }}
+                            style={{
+                              background:"#EF4444",
+                              color:"white",
+                              border:"none",
+                              borderRadius:4,
+                              padding:"4px 8px",
+                              fontSize:".7rem",
+                              fontWeight:800,
+                              cursor:"pointer",
+                              boxShadow:"0 1px 3px rgba(239,68,68,0.3)"
+                            }}
+                          >
+                            Reset ✕
+                          </button>
+                        ) : (
+                          <span style={{fontSize:".7rem",color:"#94A3B8"}}>Edit / Delete</span>
+                        )}
+                      </div>
+                    </th>
                   </tr>
                 </thead>
                 <tbody>
-                  {kbList.map((item, idx) => (
+                  {filteredKbList.length === 0 ? (
+                    <tr>
+                      <td colSpan={5} style={{padding:"30px 20px",textAlign:"center",color:"#64748B",fontSize:".85rem"}}>
+                        🔍 No questions or slash commands match the active column filters.
+                        <br />
+                        <button
+                          type="button"
+                          onClick={() => { setCmdColFilter("all"); setTitleColFilter("all"); setAnswerColFilter("all"); setStatusColFilter("all"); }}
+                          style={{marginTop:8,background:"#2563EB",color:"white",border:"none",borderRadius:6,padding:"6px 14px",fontSize:".75rem",fontWeight:700,cursor:"pointer"}}
+                        >
+                          Reset Filters
+                        </button>
+                      </td>
+                    </tr>
+                  ) : filteredKbList.map((item, idx) => (
                     <tr key={item.id || idx} style={{borderBottom:"1px solid #F1F5F9",background:item.enabled ? (idx%2===1?"#F8FAFC":"white") : "#FFFBEB"}}>
+                      {/* Order Controls */}
+                      <td style={{padding:"10px 6px",textAlign:"center"}}>
+                        <div style={{display:"flex",alignItems:"center",justifyContent:"center",gap:4}}>
+                          <div style={{display:"flex",flexDirection:"column",gap:2}}>
+                            <button
+                              type="button"
+                              onClick={() => moveKbOrder(item.id, "up")}
+                              disabled={idx === 0}
+                              style={{background:"#F1F5F9",border:"1px solid #CBD5E1",borderRadius:3,padding:"1px 4px",fontSize:".62rem",cursor:idx===0?"default":"pointer",opacity:idx===0?0.3:1}}
+                              title="Move Up"
+                            >
+                              ▲
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => moveKbOrder(item.id, "down")}
+                              disabled={idx === filteredKbList.length - 1}
+                              style={{background:"#F1F5F9",border:"1px solid #CBD5E1",borderRadius:3,padding:"1px 4px",fontSize:".62rem",cursor:idx===filteredKbList.length-1?"default":"pointer",opacity:idx===filteredKbList.length-1?0.3:1}}
+                              title="Move Down"
+                            >
+                              ▼
+                            </button>
+                          </div>
+                          <input
+                            type="number"
+                            value={item.order || (idx + 1)}
+                            onChange={e => updateKbOrderDirect(item.id, e.target.value)}
+                            style={{width:36,padding:"3px 2px",textAlign:"center",borderRadius:4,border:"1px solid #93C5FD",fontSize:".78rem",fontWeight:800,background:"#EFF6FF",color:"#1D4ED8"}}
+                            title="Direct Order Number (1, 2, 3...)"
+                          />
+                        </div>
+                      </td>
                       <td style={{padding:"12px 16px",fontWeight:800,fontFamily:"monospace",color:"#2563EB",fontSize:".9rem"}}>
                         <span style={{marginRight:6}}>{item.icon || "❓"}</span>
                         {item.cmd}
@@ -17275,11 +17897,53 @@ function ChatbotAccessManager({ C, setC, auth }) {
                       <td style={{padding:"12px 16px",fontWeight:700,color:"#0F172A"}}>
                         {item.title}
                         {item.adminOnly && (
-                          <div style={{fontSize:".68rem",color:"#B45309",fontWeight:800,marginTop:2}}>{lockLabel}</div>
+                          <div style={{fontSize:".68rem",color:"#B45309",fontWeight:800,marginTop:2}}>{item.roleAccess === "donation_collector" ? "🔒 Donation Collector Only" : "🔒 Admin Only"}</div>
                         )}
                       </td>
-                      <td style={{padding:"12px 16px",color:"#475569",fontSize:".8rem",lineHeight:1.4,maxWidth:320,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>
-                        {item.answer}
+                      <td style={{padding:"10px 14px",color:"#334155",fontSize:".8rem",lineHeight:1.4,maxWidth:340}}>
+                        <div style={{display:"flex",flexDirection:"column",gap:4}}>
+                          {/* Live System Feature Badge */}
+                          <div style={{display:"flex",alignItems:"center",gap:5,flexWrap:"wrap"}}>
+                            {item.id === "kb_donationsummary" && (
+                              <span style={{background:"#EFF6FF",color:"#1D4ED8",padding:"2px 7px",borderRadius:4,fontSize:".68rem",fontWeight:800,border:"1px solid #BFDBFE"}}>
+                                📊 Aggregate Vibhag Metrics Card
+                              </span>
+                            )}
+                            {item.id === "kb_donerlist" && (
+                              <span style={{background:"#FEF3C7",color:"#92400E",padding:"2px 7px",borderRadius:4,fontSize:".68rem",fontWeight:800,border:"1px solid #FDE68A"}}>
+                                📋 Person-wise Donor Table & Broadcast
+                              </span>
+                            )}
+                            {item.id === "kb_all" && (
+                              <span style={{background:"#DCFCE7",color:"#15803D",padding:"2px 7px",borderRadius:4,fontSize:".68rem",fontWeight:800,border:"1px solid #BBF7D0"}}>
+                                📈 Live Registrations Table
+                              </span>
+                            )}
+                            {item.id === "kb_pending" && (
+                              <span style={{background:"#FEF3C7",color:"#B45309",padding:"2px 7px",borderRadius:4,fontSize:".68rem",fontWeight:800,border:"1px solid #FED7AA"}}>
+                                ⏳ Live Pending Applications
+                              </span>
+                            )}
+                            {item.id === "kb_approved" && (
+                              <span style={{background:"#DCFCE7",color:"#15803D",padding:"2px 7px",borderRadius:4,fontSize:".68rem",fontWeight:800,border:"1px solid #BBF7D0"}}>
+                                🟢 Live Approved Applications
+                              </span>
+                            )}
+                            {item.id === "kb_donation_update" && (
+                              <span style={{background:"#F0FDF4",color:"#166534",padding:"2px 7px",borderRadius:4,fontSize:".68rem",fontWeight:800,border:"1px solid #86EFAC"}}>
+                                ✍️ Offline Cash/Cheque Entry Form
+                              </span>
+                            )}
+                            {item.attachedWhatsAppTplId && (
+                              <span style={{background:"#DCFCE7",color:"#15803D",padding:"1px 5px",borderRadius:4,fontSize:".65rem",fontWeight:700}}>
+                                📲 WhatsApp
+                              </span>
+                            )}
+                          </div>
+                          <div style={{color:"#475569",fontSize:".76rem",lineHeight:1.35}}>
+                            {item.answer}
+                          </div>
+                        </div>
                       </td>
                       <td style={{padding:"12px 16px",textAlign:"center"}}>
                         <button
@@ -17327,6 +17991,572 @@ function ChatbotAccessManager({ C, setC, auth }) {
           </div>
         </div>
       )}
+    
+
+                  {/* ── SUB-TAB 5: WhatsApp Templates & QR Standee ── */}
+      {activeTab === "whatsapp" && (() => {
+        const DEFAULT_TEMPLATES = [
+          {
+            id: "tpl_edu_appeal",
+            name: "🎓 Education Felicitation Donation Appeal (Default)",
+            header: ".  🌷 || મુંબઈ મેઘવાળ પંચાયત || 🌷\n         [NGO]\n   •••• સેન્ટ્રલ વર્કિંગ કમિટી ••••\n☸~~~~~~~~~~~~~~~~~☸",
+            appeal: "સુજ્ઞ જ્ઞાતિજનો વિદ્યાર્થી ને પ્રોત્સાહિત કરવા અને તેમનું મનોબળ વધારવા આયોજિત શૈક્ષણિક કાર્યક્રમ વિદ્યાર્થી ગુણગૌરવ પુરસ્કાર માટે દાન ના પ્રવાહ ની અપેક્ષા છે તેથી આપ પણ આપની ઈચ્છા અનુસાર દાન આપી શકો છો.\nહાલમાં આવેલું દાન અને દાતા ઓના નામ નીચે પ્રમાણે છે.",
+            rowPattern: "₹ {AMOUNT}/- {NAME}",
+            totalLabel: "💰 *કુલ દાન રકમ: ₹{TOTAL}* ({COUNT} દાતાઓ)",
+            signatory: "લિ. વિનોદભાઈ મકવાણા / સેન્ટ્રલ વર્કિંગ કમિટી",
+            qrHeader: "💳 *GPay / BHIM QR સ્કેનર & Direct Pay:*",
+            upiId: "mumba98697331@barodampay",
+            donateLink: "https://mmp-cwc.com/donate/",
+            imageSource: "standee",
+            gpayScannerUrl: "./mmp_bhim_qr.png"
+          },
+          {
+            id: "tpl_general_donation",
+            name: "💰 General Community Donation & QR Pay",
+            header: ".  🌷 || મુંબઈ મેઘવાળ પંચાયત || 🌷\n         [NGO]\n   •••• સેન્ટ્રલ વર્કિંગ કમિટી ••••\n☸~~~~~~~~~~~~~~~~~☸",
+            appeal: "જય ભીમ / નમસ્તે જ્ઞાતિજનો, સંસ્થા ના વિવિધ સામાજિક તથા વિકાસ કાર્યો માટે આપનું સ્વૈચ્છિક દાન આવકાર્ય છે.",
+            rowPattern: "₹ {AMOUNT}/- {NAME}",
+            totalLabel: "💰 *કુલ દાન રકમ: ₹{TOTAL}*",
+            signatory: "સેન્ટ્રલ વર્કિંગ કમિટી, મુંબઈ મેઘવાળ પંચાયત",
+            qrHeader: "💳 *Bank of Baroda BHIM UPI / GPay સ્કેનર:*",
+            upiId: "mumba98697331@barodampay",
+            donateLink: "https://mmp-cwc.com/donate/",
+            imageSource: "standee",
+            gpayScannerUrl: "./mmp_bhim_qr.png"
+          },
+          {
+            id: "tpl_meeting_notice",
+            name: "📢 CWC Committee Meeting Notice",
+            header: ".  🌷 || મુંબઈ મેઘવાળ પંચાયત || 🌷\n   •••• સેન્ટ્રલ વર્કિંગ કમિટી ••••\n☸~~~~~~~~~~~~~~~~~☸",
+            appeal: "સર્વે હોદ્દેદારો તથા કારોબારી સભ્યો ને જણાવવાનું કે આગામી મિટિંગ નું આયોજન કરેલ છે. આપની ઉપસ્થિતિ અનિવાર્ય છે.",
+            rowPattern: "• {NAME} ({VIBHAG})",
+            totalLabel: "👥 *કુલ સભ્યો:* {COUNT}",
+            signatory: "લિ. સેન્ટ્રલ વર્કિંગ કમિટી",
+            qrHeader: "",
+            upiId: "mumba98697331@barodampay",
+            donateLink: "https://mmp-cwc.com/",
+            imageSource: "logo",
+            gpayScannerUrl: "./mc_logo.jpg"
+          },
+          {
+            id: "tpl_donor_summary",
+            name: "📊 Live Vibhag Donation Collection Summary",
+            header: ".  🌷 || મુંબઈ મેઘવાળ પંચાયત || 🌷\n   •••• સેન્ટ્રલ વર્કિંગ કમિટી ••••\n☸~~~~~~~~~~~~~~~~~☸",
+            appeal: "વિભાગ વાર આવેલ દાન ની લાઈવ વિગત નીચે મુજબ છે:",
+            rowPattern: "• *{VIBHAG}*: ₹{AMOUNT} ({COUNT} દાતાઓ)",
+            totalLabel: "💰 *સર્વ વિભાગ કુલ રકમ: ₹{TOTAL}*",
+            signatory: "લિ. વિનોદભાઈ મકવાણા / સેન્ટ્રલ વર્કિંગ કમિટી",
+            qrHeader: "💳 *GPay / BHIM QR સ્કેનર & Direct Pay:*",
+            upiId: "mumba98697331@barodampay",
+            donateLink: "https://mmp-cwc.com/donate/",
+            imageSource: "standee",
+            gpayScannerUrl: "./mmp_bhim_qr.png"
+          }
+        ];
+
+        const savedTpls = Array.isArray(C.whatsappBroadcastTemplates) && C.whatsappBroadcastTemplates.length > 0
+          ? C.whatsappBroadcastTemplates
+          : DEFAULT_TEMPLATES;
+
+        const activeTplId = selectedWhatsAppTplId || savedTpls[0].id;
+        const curTpl = savedTpls.find(t => t.id === activeTplId) || savedTpls[0];
+
+        const updateCurTpl = (field, val) => {
+          const updatedList = savedTpls.map(t => {
+            if (t.id === curTpl.id) {
+              return { ...t, [field]: val };
+            }
+            return t;
+          });
+          const legacyObj = curTpl.id === "tpl_edu_appeal" || curTpl.id === savedTpls[0].id
+            ? { ...C.whatsappTemplates, [field === "header" ? "gujaratiHeader" : field === "appeal" ? "gujaratiAppeal" : field === "signatory" ? "gujaratiSignatory" : field]: val }
+            : (C.whatsappTemplates || {});
+          setC({ ...C, whatsappBroadcastTemplates: updatedList, whatsappTemplates: legacyObj });
+        };
+
+        const handleCreateNewTemplate = () => {
+          const name = prompt("Enter a name for your new WhatsApp Message Template (e.g. Medical Aid Appeal):");
+          if (!name || !name.trim()) return;
+          const newId = "tpl_" + Date.now();
+          const newTpl = {
+            id: newId,
+            name: name.trim(),
+            header: ".  🌷 || મુંબઈ મેઘવાળ પંચાયત || 🌷\n         [NGO]\n   •••• સેન્ટ્રલ વર્કિંગ કમિટી ••••\n☸~~~~~~~~~~~~~~~~~☸",
+            appeal: "સુજ્ઞ જ્ઞાતિજનો, " + name.trim() + " અંતર્ગત આપનું સ્વૈચ્છિક દાન આવકાર્ય છે.",
+            rowPattern: "₹ {AMOUNT}/- {NAME}",
+            totalLabel: "💰 *કુલ દાન રકમ: ₹{TOTAL}* ({COUNT} દાતાઓ)",
+            signatory: "લિ. વિનોદભાઈ મકવાણા / સેન્ટ્રલ વર્કિંગ કમિટી",
+            qrHeader: "💳 *GPay / BHIM QR સ્કેનર & Direct Pay:*",
+            upiId: "mumba98697331@barodampay",
+            donateLink: "https://mmp-cwc.com/donate/",
+            imageSource: "standee",
+            gpayScannerUrl: "./mmp_bhim_qr.png"
+          };
+          const updated = [...savedTpls, newTpl];
+          setC({ ...C, whatsappBroadcastTemplates: updated });
+          setSelectedWhatsAppTplId(newId);
+        };
+
+        const handleDeleteTemplate = (idToDelete) => {
+          if (savedTpls.length <= 1) {
+            alert("At least one WhatsApp Template must remain in the system.");
+            return;
+          }
+          if (!confirm("Are you sure you want to delete this WhatsApp Template?")) return;
+          const filtered = savedTpls.filter(t => t.id !== idToDelete);
+          setC({ ...C, whatsappBroadcastTemplates: filtered });
+          setSelectedWhatsAppTplId(filtered[0].id);
+        };
+
+        return (
+          <div style={{background:"white",borderRadius:12,border:"1px solid #E2E8F0",padding:24,boxShadow:"0 2px 8px rgba(0,0,0,0.04)"}}>
+            
+            {/* Header Title & Template Selector Bar */}
+            <div style={{background:"linear-gradient(135deg, #F0FDF4, #DCFCE7)",border:"1.5px solid #86EFAC",borderRadius:12,padding:16,marginBottom:20}}>
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:12,marginBottom:12}}>
+                <div>
+                  <h3 style={{fontSize:"1.15rem",fontWeight:800,color:"#166534",margin:"0 0 4px 0",display:"flex",alignItems:"center",gap:8}}>
+                    <span>📱</span> WhatsApp Message Templates Manager
+                  </h3>
+                  <p style={{fontSize:".82rem",color:"#15803D",margin:0}}>
+                    Create, customize, and name multiple broadcast message templates. Connect them to any Chatbot Question or Slash Command.
+                  </p>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={handleCreateNewTemplate}
+                  style={{
+                    padding: "9px 18px",
+                    background: "linear-gradient(135deg, #15803D, #166534)",
+                    color: "white",
+                    border: "none",
+                    borderRadius: 8,
+                    fontWeight: 800,
+                    fontSize: ".85rem",
+                    cursor: "pointer",
+                    boxShadow: "0 2px 6px rgba(22,101,52,0.3)",
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 6
+                  }}
+                >
+                  <span>➕</span> Create New WhatsApp Template
+                </button>
+              </div>
+
+              {/* Template Switcher Dropdown */}
+              <div style={{display:"flex",gap:10,alignItems:"center",flexWrap:"wrap",background:"white",padding:10,borderRadius:8,border:"1px solid #86EFAC"}}>
+                <label style={{fontSize:".82rem",fontWeight:800,color:"#166534",whiteSpace:"nowrap"}}>
+                  📂 Select Template to Edit:
+                </label>
+
+                <select
+                  value={curTpl.id}
+                  onChange={e => setSelectedWhatsAppTplId(e.target.value)}
+                  style={{
+                    flex: 1,
+                    minWidth: 260,
+                    padding: "8px 12px",
+                    borderRadius: 6,
+                    border: "1.5px solid #166534",
+                    fontSize: ".85rem",
+                    fontWeight: 700,
+                    color: "#0F172A",
+                    background: "#F8FAFC"
+                  }}
+                >
+                  {savedTpls.map(t => (
+                    <option key={t.id} value={t.id}>
+                      {t.name || t.id}
+                    </option>
+                  ))}
+                </select>
+
+                <button
+                  type="button"
+                  onClick={() => handleDeleteTemplate(curTpl.id)}
+                  style={{
+                    padding: "8px 12px",
+                    background: "#FEE2E2",
+                    color: "#DC2626",
+                    border: "1px solid #FCA5A5",
+                    borderRadius: 6,
+                    fontSize: ".78rem",
+                    fontWeight: 700,
+                    cursor: "pointer"
+                  }}
+                >
+                  🗑️ Delete Template
+                </button>
+              </div>
+            </div>
+
+            <div style={{display:"flex",flexDirection:"column",gap:16}}>
+              
+              {/* Template Name & Identifier */}
+              <div style={{background:"#F8FAFC",border:"1px solid #CBD5E1",borderRadius:8,padding:14}}>
+                <label style={{display:"block",fontSize:".8rem",fontWeight:800,color:"#0F172A",marginBottom:4}}>
+                  🏷️ Template Name / Title (Appears in Question Dropdowns):
+                </label>
+                <input
+                  type="text"
+                  value={curTpl.name || ""}
+                  onChange={e => updateCurTpl("name", e.target.value)}
+                  placeholder="e.g. 🎓 Education Felicitation Donation Appeal"
+                  style={{width:"100%",padding:"10px 12px",borderRadius:8,border:"1px solid #CBD5E1",fontSize:".88rem",fontWeight:700,boxSizing:"border-box",background:"white"}}
+                />
+              </div>
+
+              {/* ── Section Inclusion / Visibility Toggles ── */}
+              <div style={{background:"#F0FDF4",border:"1.5px solid #86EFAC",borderRadius:10,padding:14}}>
+                <div style={{fontSize:".82rem",fontWeight:800,color:"#166534",marginBottom:8,display:"flex",alignItems:"center",gap:6}}>
+                  <span>⚙️</span> Choose Which Sections to Include in this WhatsApp Template:
+                </div>
+                <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit, minmax(220px, 1fr))",gap:10,fontSize:".78rem",color:"#1E293B"}}>
+                  <label style={{display:"flex",alignItems:"center",gap:6,cursor:"pointer",fontWeight:600}}>
+                    <input
+                      type="checkbox"
+                      checked={curTpl.includeHeader !== false}
+                      onChange={e => updateCurTpl("includeHeader", e.target.checked)}
+                    />
+                    1. Header Banner Text
+                  </label>
+                  <label style={{display:"flex",alignItems:"center",gap:6,cursor:"pointer",fontWeight:600}}>
+                    <input
+                      type="checkbox"
+                      checked={curTpl.includeAppeal !== false}
+                      onChange={e => updateCurTpl("includeAppeal", e.target.checked)}
+                    />
+                    2. Appeal / Body Text
+                  </label>
+                  <label style={{display:"flex",alignItems:"center",gap:6,cursor:"pointer",fontWeight:600}}>
+                    <input
+                      type="checkbox"
+                      checked={curTpl.includeList !== false}
+                      onChange={e => updateCurTpl("includeList", e.target.checked)}
+                    />
+                    3. Dynamic Rows / List
+                  </label>
+                  <label style={{display:"flex",alignItems:"center",gap:6,cursor:"pointer",fontWeight:600}}>
+                    <input
+                      type="checkbox"
+                      checked={curTpl.includeTotal !== false}
+                      onChange={e => updateCurTpl("includeTotal", e.target.checked)}
+                    />
+                    4. Total Collection Line
+                  </label>
+                  <label style={{display:"flex",alignItems:"center",gap:6,cursor:"pointer",fontWeight:600}}>
+                    <input
+                      type="checkbox"
+                      checked={curTpl.includeFooter !== false}
+                      onChange={e => updateCurTpl("includeFooter", e.target.checked)}
+                    />
+                    5. Signatory / Footer Paragraph
+                  </label>
+                  <label style={{display:"flex",alignItems:"center",gap:6,cursor:"pointer",fontWeight:700,color:curTpl.includeGPay ? "#15803D" : "#475569"}}>
+                    <input
+                      type="checkbox"
+                      checked={curTpl.includeGPay === true}
+                      onChange={e => updateCurTpl("includeGPay", e.target.checked)}
+                    />
+                    6. GPay / UPI QR & Donate Link
+                  </label>
+                </div>
+              </div>
+
+              {/* 1. Header Banner */}
+              <div>
+                <label style={{display:"block",fontSize:".8rem",fontWeight:700,color:"#334155",marginBottom:4}}>
+                  1. Header Banner Text:
+                </label>
+                <textarea
+                  rows={4}
+                  value={curTpl.header !== undefined ? curTpl.header : ".  🌷 || મુંબઈ મેઘવાળ પંચાયત || 🌷\n         [NGO]\n   •••• સેન્ટ્રલ વર્કિંગ કમિટી ••••\n☸~~~~~~~~~~~~~~~~~☸"}
+                  onChange={e => updateCurTpl("header", e.target.value)}
+                  style={{width:"100%",padding:"10px 12px",borderRadius:8,border:"1px solid #CBD5E1",fontSize:".85rem",fontFamily:"inherit",boxSizing:"border-box"}}
+                />
+              </div>
+
+              {/* 2. Appeal Body Text */}
+              <div>
+                <label style={{display:"block",fontSize:".8rem",fontWeight:700,color:"#334155",marginBottom:4}}>
+                  2. Appeal Body Text (Gujarati):
+                </label>
+                <textarea
+                  rows={4}
+                  value={curTpl.appeal !== undefined ? curTpl.appeal : ""}
+                  onChange={e => updateCurTpl("appeal", e.target.value)}
+                  style={{width:"100%",padding:"10px 12px",borderRadius:8,border:"1px solid #CBD5E1",fontSize:".85rem",fontFamily:"inherit",boxSizing:"border-box"}}
+                />
+              </div>
+
+              {/* 3. Numbered Row Pattern & Total Label */}
+              <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit, minmax(240px, 1fr))",gap:14}}>
+                <div>
+                  <label style={{display:"block",fontSize:".8rem",fontWeight:700,color:"#334155",marginBottom:4}}>
+                    3. Numbered Row Format (Placeholders: <code>{'{AMOUNT}'}</code>, <code>{'{NAME}'}</code>, <code>{'{INDEX}'}</code>, <code>{'{VIBHAG}'}</code>):
+                  </label>
+                  <input
+                    type="text"
+                    value={curTpl.rowPattern || "₹ {AMOUNT}/- {NAME}"}
+                    onChange={e => updateCurTpl("rowPattern", e.target.value)}
+                    style={{width:"100%",padding:"10px 12px",borderRadius:8,border:"1px solid #CBD5E1",fontSize:".85rem",boxSizing:"border-box"}}
+                  />
+                </div>
+
+                <div>
+                  <label style={{display:"block",fontSize:".8rem",fontWeight:700,color:"#334155",marginBottom:4}}>
+                    4. Total Collection Line Format (Placeholders: <code>{'{TOTAL}'}</code>, <code>{'{COUNT}'}</code>):
+                  </label>
+                  <input
+                    type="text"
+                    value={curTpl.totalLabel || "💰 *કુલ દાન રકમ: ₹{TOTAL}* ({COUNT} દાતાઓ)"}
+                    onChange={e => updateCurTpl("totalLabel", e.target.value)}
+                    style={{width:"100%",padding:"10px 12px",borderRadius:8,border:"1px solid #CBD5E1",fontSize:".85rem",boxSizing:"border-box"}}
+                  />
+                </div>
+              </div>
+
+              {/* 5. Signatory Footer (Multi-line Paragraph Option) */}
+              <div>
+                <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:4}}>
+                  <label style={{fontSize:".8rem",fontWeight:700,color:"#334155"}}>
+                    5. Signatory / Footer Signature (Paragraph & Multi-line Support):
+                  </label>
+                  <span style={{fontSize:".7rem",color:"#64748B"}}>Press Enter for new paragraph / line</span>
+                </div>
+                <textarea
+                  rows={4}
+                  value={curTpl.signatory !== undefined ? curTpl.signatory : "લિ. વિનોદભાઈ મકવાણા / સેન્ટ્રલ વર્કિંગ કમિટી"}
+                  onChange={e => updateCurTpl("signatory", e.target.value)}
+                  placeholder="Enter multi-line footer note, instructions, contact details, signatory names..."
+                  style={{width:"100%",padding:"10px 12px",borderRadius:8,border:"1px solid #CBD5E1",fontSize:".85rem",fontFamily:"inherit",boxSizing:"border-box",lineHeight:1.5}}
+                />
+              </div>
+
+              {/* 6. QR Code Scanner, Banner Image & UPI ID Settings */}
+              <div style={{background:"#F0FDF4",border:"1.5px solid #86EFAC",borderRadius:10,padding:16,marginTop:4}}>
+                <div style={{fontWeight:800,fontSize:".88rem",color:"#166534",marginBottom:10,display:"flex",alignItems:"center",gap:6}}>
+                  <span>📸</span> 6. QR Code Image / Banner Image & Bank of Baroda UPI Settings:
+                </div>
+
+                {/* Image Source Selector & Uploader */}
+                <div style={{background:"white",padding:12,borderRadius:8,border:"1px solid #BBF7D0",marginBottom:12}}>
+                  <label style={{display:"block",fontSize:".78rem",fontWeight:700,color:"#166534",marginBottom:6}}>
+                    Select Banner / WhatsApp Preview Image Source for this Template:
+                  </label>
+
+                  <div style={{display:"flex",gap:10,flexWrap:"wrap",alignItems:"center",marginBottom:10}}>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        updateCurTpl("gpayScannerUrl", "./mmp_bhim_qr.png");
+                        updateCurTpl("imageSource", "standee");
+                      }}
+                      style={{
+                        padding:"6px 12px",
+                        borderRadius:6,
+                        fontSize:".75rem",
+                        fontWeight:700,
+                        cursor:"pointer",
+                        border: (!curTpl.imageSource || curTpl.imageSource === "standee") ? "1.5px solid #166534" : "1px solid #CBD5E1",
+                        background: (!curTpl.imageSource || curTpl.imageSource === "standee") ? "#DCFCE7" : "#F8FAFC",
+                        color: (!curTpl.imageSource || curTpl.imageSource === "standee") ? "#15803D" : "#475569"
+                      }}
+                    >
+                      🏦 Bank of Baroda QR Standee
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        updateCurTpl("gpayScannerUrl", "./mc_logo.jpg");
+                        updateCurTpl("imageSource", "logo");
+                      }}
+                      style={{
+                        padding:"6px 12px",
+                        borderRadius:6,
+                        fontSize:".75rem",
+                        fontWeight:700,
+                        cursor:"pointer",
+                        border: curTpl.imageSource === "logo" ? "1.5px solid #166534" : "1px solid #CBD5E1",
+                        background: curTpl.imageSource === "logo" ? "#DCFCE7" : "#F8FAFC",
+                        color: curTpl.imageSource === "logo" ? "#15803D" : "#475569"
+                      }}
+                    >
+                      🏛️ Trust / Site Logo
+                    </button>
+
+                    <label style={{
+                      padding:"6px 14px",
+                      background:"linear-gradient(135deg, #15803D, #166534)",
+                      color:"white",
+                      borderRadius:6,
+                      fontSize:".75rem",
+                      fontWeight:800,
+                      cursor:"pointer",
+                      display:"flex",
+                      alignItems:"center",
+                      gap:6,
+                      boxShadow:"0 2px 6px rgba(22,101,52,0.25)"
+                    }}>
+                      <span>📤 Upload Custom QR / Banner Image</span>
+                      <input
+                        type="file"
+                        accept="image/*"
+                        style={{display:"none"}}
+                        onChange={async (e) => {
+                          const file = e.target.files[0];
+                          if (!file) return;
+                          try {
+                            const url = await fbUploadLogo(file, auth?.idToken);
+                            updateCurTpl("gpayScannerUrl", url);
+                            updateCurTpl("imageSource", "custom");
+                            alert("✅ Image successfully uploaded for this template!");
+                          } catch(err) {
+                            alert("Upload failed: " + err.message);
+                          }
+                        }}
+                      />
+                    </label>
+                  </div>
+
+                  <div style={{display:"flex",gap:8,alignItems:"center"}}>
+                    <input
+                      type="text"
+                      value={curTpl.gpayScannerUrl || "./mmp_bhim_qr.png"}
+                      onChange={e => {
+                        updateCurTpl("gpayScannerUrl", e.target.value);
+                        updateCurTpl("imageSource", "custom");
+                      }}
+                      placeholder="Image URL (e.g. ./mmp_bhim_qr.png or https://...)"
+                      style={{flex:1,padding:"7px 10px",borderRadius:6,border:"1px solid #CBD5E1",fontSize:".78rem",boxSizing:"border-box",background:"#FFF"}}
+                    />
+                  </div>
+                </div>
+
+                <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit, minmax(220px, 1fr))",gap:12,marginBottom:12}}>
+                  <div>
+                    <label style={{display:"block",fontSize:".75rem",fontWeight:700,color:"#166534",marginBottom:3}}>
+                      QR Section Header:
+                    </label>
+                    <input
+                      type="text"
+                      value={curTpl.qrHeader !== undefined ? curTpl.qrHeader : "💳 *GPay / BHIM QR સ્કેનર & Direct Pay:*"}
+                      onChange={e => updateCurTpl("qrHeader", e.target.value)}
+                      style={{width:"100%",padding:"8px 10px",borderRadius:6,border:"1px solid #86EFAC",fontSize:".8rem",boxSizing:"border-box",background:"white"}}
+                    />
+                  </div>
+
+                  <div>
+                    <label style={{display:"block",fontSize:".75rem",fontWeight:700,color:"#166534",marginBottom:3}}>
+                      Official UPI ID (VPA):
+                    </label>
+                    <input
+                      type="text"
+                      value={curTpl.upiId || "mumba98697331@barodampay"}
+                      onChange={e => updateCurTpl("upiId", e.target.value)}
+                      style={{width:"100%",padding:"8px 10px",borderRadius:6,border:"1px solid #86EFAC",fontSize:".8rem",fontWeight:700,boxSizing:"border-box",background:"white",color:"#2563EB"}}
+                    />
+                  </div>
+
+                  <div>
+                    <label style={{display:"block",fontSize:".75rem",fontWeight:700,color:"#166534",marginBottom:3}}>
+                      Donate QR Webpage Link:
+                    </label>
+                    <input
+                      type="text"
+                      value={curTpl.donateLink || "https://mmp-cwc.com/donate/"}
+                      onChange={e => updateCurTpl("donateLink", e.target.value)}
+                      style={{width:"100%",padding:"8px 10px",borderRadius:6,border:"1px solid #86EFAC",fontSize:".8rem",boxSizing:"border-box",background:"white"}}
+                    />
+                  </div>
+                </div>
+
+                {/* Active Image Thumbnail & Details */}
+                <div style={{display:"flex",gap:16,alignItems:"center",flexWrap:"wrap",background:"white",padding:12,borderRadius:8,border:"1px solid #BBF7D0"}}>
+                  <img
+                    src={curTpl.gpayScannerUrl || "./mmp_bhim_qr.png"}
+                    alt="Active QR / Banner Preview"
+                    style={{width:90,height:120,objectFit:"contain",borderRadius:6,border:"1.5px solid #86EFAC",background:"white"}}
+                    onError={e => { e.target.src = "./mmp_bhim_qr.png"; }}
+                  />
+                  <div style={{flex:1,fontSize:".78rem",color:"#1E293B",lineHeight:1.6}}>
+                    <div>Active Image: <strong>{curTpl.imageSource === "logo" ? "🏛️ Trust Logo" : curTpl.imageSource === "custom" ? "🖼️ Custom Uploaded Image" : "🏦 Bank of Baroda QR Standee"}</strong></div>
+                    <div>Merchant Name: <strong>MUMBAI MEGHWAL PANCHAYAT</strong></div>
+                    <div>UPI VPA: <strong style={{color:"#2563EB"}}>{curTpl.upiId || "mumba98697331@barodampay"}</strong></div>
+                    <div style={{fontSize:".72rem",color:"#15803D"}}>✅ Linked with automated WhatsApp OpenGraph preview & Donate landing page</div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Live Message Preview Card */}
+              <div style={{background:"#F8FAFC",border:"1px solid #CBD5E1",borderRadius:10,padding:16}}>
+                <div style={{fontSize:".78rem",fontWeight:800,color:"#475569",textTransform:"uppercase",marginBottom:8,display:"flex",alignItems:"center",gap:6}}>
+                  <span>👁️</span> Live Preview for "{curTpl.name || curTpl.id}":
+                </div>
+                <div style={{background:"#ECE5DD",borderRadius:8,padding:12,fontFamily:"monospace",fontSize:".8rem",lineHeight:1.6,color:"#111827",whiteSpace:"pre-wrap",border:"1px solid #D1D5DB"}}>
+                  {(() => {
+                    const parts = [];
+                    if (curTpl.includeGPay === true) {
+                      parts.push("💳 *દાન QR સ્કેનર:* " + (curTpl.donateLink || "https://mmp-cwc.com/donate/"));
+                    }
+                    if (curTpl.includeHeader !== false) {
+                      parts.push(curTpl.header || ".  🌷 || મુંબઈ મેઘવાળ પંચાયત || 🌷\n         [NGO]\n   •••• સેન્ટ્રલ વર્કિંગ કમિટી ••••\n☸~~~~~~~~~~~~~~~~~☸");
+                    }
+                    if (curTpl.includeAppeal !== false && curTpl.appeal) {
+                      parts.push(curTpl.appeal);
+                    }
+                    if (curTpl.includeList !== false) {
+                      const row1 = (curTpl.rowPattern || "₹ {AMOUNT}/- {NAME}").replace("{AMOUNT}", "5,000").replace("{NAME}", "દાતા ૧ (10 MAHALAXMI)").replace("{VIBHAG}", "10 MAHALAXMI");
+                      const row2 = (curTpl.rowPattern || "₹ {AMOUNT}/- {NAME}").replace("{AMOUNT}", "2,500").replace("{NAME}", "દાતા ૨ (65 KALWA)").replace("{VIBHAG}", "65 KALWA");
+                      parts.push("•••••••••••••••••••••••••••••\n" + row1 + "\n" + row2 + "\n•••••••••••••••••••••••••••••");
+                    }
+                    if (curTpl.includeTotal !== false) {
+                      parts.push((curTpl.totalLabel || "💰 *કુલ દાન રકમ: ₹{TOTAL}* ({COUNT} દાતાઓ)").replace("{TOTAL}", "7,500").replace("{COUNT}", "2"));
+                    }
+                    if (curTpl.includeFooter !== false && curTpl.signatory) {
+                      parts.push(curTpl.signatory);
+                    }
+                    if (curTpl.includeGPay === true) {
+                      parts.push((curTpl.qrHeader || "💳 *GPay / BHIM QR સ્કેનર & Direct Pay:*") + "\n🔗 " + (curTpl.donateLink || "https://mmp-cwc.com/donate/") + "\n📲 UPI ID: " + (curTpl.upiId || "mumba98697331@barodampay"));
+                    }
+                    parts.push("🌐 પોર્ટલ: https://www.mmp-cwc.com");
+                    return parts.join("\n\n");
+                  })()}
+                </div>
+              </div>
+
+              <button
+                type="button"
+                onClick={async () => {
+                  try {
+                    await fbSave(C, auth?.idToken);
+                    alert("✅ All WhatsApp Templates, Headers, Footers & QR Settings saved successfully to database!");
+                  } catch(err) {
+                    alert("Save failed: " + err.message);
+                  }
+                }}
+                style={{
+                  padding: "12px 24px",
+                  background: "linear-gradient(135deg, #15803D, #166534)",
+                  color: "white",
+                  border: "none",
+                  borderRadius: 8,
+                  fontWeight: 800,
+                  fontSize: ".9rem",
+                  cursor: "pointer",
+                  boxShadow: "0 2px 8px rgba(22,101,52,0.3)"
+                }}
+              >
+                💾 Save All WhatsApp Templates & Settings to Database
+              </button>
+            </div>
+          </div>
+        );
+      })()}
+
     </div>
   );
 }
@@ -23421,6 +24651,12 @@ function AdminInviteLetters({ mob, C, setC, auth }) {
   const [directorySearch, setDirectorySearch] = useState("");
   const [expandedCardGroups, setExpandedCardGroups] = useState({});
   const [showImportContactGroupModal, setShowImportContactGroupModal] = useState(false);
+  const [showImportDonorsModal, setShowImportDonorsModal] = useState(false);
+  const [donorImportSearch, setDonorImportSearch] = useState("");
+  const [selectedDonorIds, setSelectedDonorIds] = useState([]);
+  const [allDonationsList, setAllDonationsList] = useState([]);
+  const [loadingDonations, setLoadingDonations] = useState(false);
+  const [importingDonors, setImportingDonors] = useState(false);
   const [selectedContactGroup, setSelectedContactGroup] = useState("All");
   const [selectedGroupsToImport, setSelectedGroupsToImport] = useState([]);
   const [importingContactGroups, setImportingContactGroups] = useState(false);
@@ -23452,14 +24688,49 @@ function AdminInviteLetters({ mob, C, setC, auth }) {
 
   const globalGuests = regs.filter(r => r.isGlobalGuest === true);
 
-  const inviteEvents = C.events || [];
+  const customEvents = C.events || [];
+  const defaultDonorWorkspace = {
+    id: "ev_donor_data",
+    title: "💰 Donor Data",
+    isInternalOnly: true,
+    isDonorWorkspace: true,
+    hideFromPublicWebsite: true,
+    issueInviteLetters: true,
+    date: "Ongoing",
+    month: "2026",
+    location: "Trust Central Office",
+    tag: "Donation Records",
+    color: "#F0FDF4",
+    targetProgram: "Donor Data"
+  };
+  const hasDonorWs = customEvents.some(e => e.isDonorWorkspace);
+  const inviteEvents = hasDonorWs ? customEvents : [...customEvents, defaultDonorWorkspace];
 
   const activeEvent = inviteEvents.find(e => e.id === selectedEventId) || {};
 
+  const isDonorWs = Boolean(activeEvent?.isDonorWorkspace || String(activeEvent?.title || "").toLowerCase().includes("donor"));
   const availableDocTemplates = [
-    { id: 'invite', name: 'Official Invite Letter', icon: '💌', bgUrl: activeEvent?.inviteBgUrl, targetSection: 'invites', isDefault: true },
-    ...(activeEvent?.issueCertificates ? [{ id: 'cert', name: 'Certificate Pass', icon: '🎓', bgUrl: activeEvent?.certBgUrl, targetSection: 'awards' }] : []),
-    ...(activeEvent?.pdfTemplates || []).map(t => ({ id: t.id, name: t.name, icon: '🎟️', bgUrl: t.bgUrl, targetSection: t.targetSection || 'invites', customTpl: t }))
+    { 
+      id: 'invite', 
+      name: isDonorWs ? 'Official Thank You Letter' : 'Official Invite Letter', 
+      icon: isDonorWs ? '💌' : '💌', 
+      bgUrl: activeEvent?.inviteBgUrl, 
+      targetSection: 'invites', 
+      isDefault: true 
+    },
+    ...(isDonorWs ? [
+      { id: 'cert', name: 'Official 80G Receipt PDF', icon: '🧾', bgUrl: activeEvent?.certBgUrl, targetSection: 'invites' }
+    ] : (activeEvent?.issueCertificates ? [
+      { id: 'cert', name: 'Certificate Pass', icon: '🎓', bgUrl: activeEvent?.certBgUrl, targetSection: 'awards' }
+    ] : [])),
+    ...(activeEvent?.pdfTemplates || []).map(t => ({ 
+      id: t.id, 
+      name: t.name, 
+      icon: t.name?.toLowerCase().includes('certificate') ? '🎖️' : t.name?.toLowerCase().includes('receipt') ? '🧾' : '🎟️', 
+      bgUrl: t.bgUrl, 
+      targetSection: t.targetSection || 'invites', 
+      customTpl: t 
+    }))
   ];
   const currentDocTpl = availableDocTemplates.find(d => d.id === activeDocType) || availableDocTemplates[0];
 
@@ -23484,12 +24755,23 @@ function AdminInviteLetters({ mob, C, setC, auth }) {
 
   const inviteRegs = regs.filter(r => {
     if (!selectedEventId) return false;
+    const ev = inviteEvents.find(e => e.id === selectedEventId);
+    if (!ev) return false;
+
+    // For Donor Workspaces, include verified donors or imported donor entries
+    if (ev.isDonorWorkspace) {
+      if (r.isDonor) return r.eventId === ev.id || r.eventName === ev.title || !r.eventId;
+      if (r.Status === "Approved" || r.status === "Approved") {
+        let evName = r.eventName || r.eventTitle || r.eventId;
+        return r.eventId === ev.id || evName === ev.title || evName === ev.titleGu;
+      }
+      return false;
+    }
+
     // Only Approved registrations or special/committee guests
     if (r.Status !== "Approved" && r.status !== "Approved" && !r.isSpecialGuest) return false;
     // Exclude the raw global directory pool entry itself
     if (r.isGlobalGuest) return false;
-    const ev = inviteEvents.find(e => e.id === selectedEventId);
-    if (!ev) return false;
     let evName = r.eventName || r.eventTitle || r.eventId;
     return r.eventId === ev.id || evName === ev.title || evName === ev.titleGu;
   });
@@ -24832,6 +26114,39 @@ This cannot be undone.`)) return;
             <button onClick={() => setShowWorkspaceTplModal(true)} style={{padding:"8px 16px",borderRadius:8,fontSize:".85rem",fontWeight:700,display:"flex",alignItems:"center",gap:6,background:"#F0FDF4",border:"1px solid #86EFAC",color:"#15803D",cursor:"pointer",boxShadow:"0 2px 8px rgba(21,128,61,0.15)",whiteSpace:"nowrap"}}>
               📝 Workspace WhatsApp Templates ({((activeEvent?.whatsAppTemplates && activeEvent.whatsAppTemplates.length > 0) ? activeEvent.whatsAppTemplates.length : 3)})
             </button>
+            <button 
+              onClick={async () => {
+                setLoadingDonations(true);
+                setShowImportDonorsModal(true);
+                try {
+                  const token = auth?.idToken || localStorage.getItem("trustPublicAuthToken") || "";
+                  const dons = await fbFetchDonations(token);
+                  setAllDonationsList(dons || []);
+                } catch(e) {
+                  console.error(e);
+                } finally {
+                  setLoadingDonations(false);
+                }
+              }} 
+              style={{
+                padding:"8px 16px",
+                borderRadius:8,
+                fontSize:".85rem",
+                fontWeight:800,
+                display:"flex",
+                alignItems:"center",
+                gap:6,
+                background:"linear-gradient(135deg, #15803D, #166534)",
+                color:"white",
+                border:"none",
+                cursor:"pointer",
+                boxShadow:"0 2px 8px rgba(22,101,52,0.2)",
+                whiteSpace:"nowrap"
+              }}
+              title="Import verified donors from Donations database"
+            >
+              <span>💰</span> Import Donors ({activeEvent?.isDonorWorkspace ? "Live Sync" : "From DB"})
+            </button>
             <button onClick={() => setShowImportContactGroupModal(true)} style={{padding:"8px 16px",borderRadius:8,fontSize:".85rem",fontWeight:800,display:"flex",alignItems:"center",gap:6,background:"linear-gradient(135deg, #0D4B5E, #135D74)",color:"white",border:"none",cursor:"pointer",boxShadow:"0 2px 8px rgba(13,75,94,0.2)",whiteSpace:"nowrap"}}>
               <span>👥</span> Import Contact Group ({Array.from(new Set(globalGuests.map(g => g.Group || g.Category || g.Vibhag || "General Committee"))).length})
             </button>
@@ -25171,12 +26486,17 @@ This cannot be undone.`)) return;
                   fontColor: "#000000"
                 };
                 const updatedTpls = [...(activeEvent.pdfTemplates || []), newTpl];
-                const updatedEvents = (C.events || []).map(e => (e.id === activeEvent.id || e.title === activeEvent.title) ? { ...e, pdfTemplates: updatedTpls } : e);
+                const currentEvents = C.events || [];
+                const eventExists = currentEvents.some(e => e.id === activeEvent.id || e.title === activeEvent.title);
+                const updatedTargetEvent = { ...activeEvent, pdfTemplates: updatedTpls };
+                const updatedEvents = eventExists 
+                  ? currentEvents.map(e => (e.id === activeEvent.id || e.title === activeEvent.title) ? updatedTargetEvent : e)
+                  : [...currentEvents, updatedTargetEvent];
                 const updatedC = { ...C, events: updatedEvents };
                 if (setC) setC(updatedC);
                 fbSave(updatedC, auth?.idToken);
                 setActiveDocType(tplId);
-                alert(`Created "${cleanName}"! You can configure its background image in Content Editor -> Events.`);
+                alert(`✅ Created new template "${cleanName}" successfully!`);
               }
             }}
             style={{
@@ -25711,6 +27031,206 @@ This cannot be undone.`)) return;
               >
                 💾 Save Template
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      
+      {/* ── 💰 Import Donors from Donations Database Modal ── */}
+      {showImportDonorsModal && (
+        <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.6)",zIndex:99999,display:"flex",alignItems:"center",justifyContent:"center",padding:16}} onClick={()=>setShowImportDonorsModal(false)}>
+          <div style={{background:"white",borderRadius:16,padding:mob?18:24,width:"100%",maxWidth:800,maxHeight:"90vh",overflowY:"auto",boxShadow:"0 25px 50px rgba(0,0,0,0.3)",display:"flex",flexDirection:"column",gap:14}} onClick={e=>e.stopPropagation()}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",borderBottom:"1.5px solid #E2E8F0",paddingBottom:10}}>
+              <div>
+                <h2 style={{fontFamily:"'Playfair Display',serif",color:"#166534",margin:0,fontSize:"1.25rem",display:"flex",alignItems:"center",gap:8}}>
+                  <span>💰</span> Import Verified Donors into "{activeEvent.title}"
+                </h2>
+                <p style={{fontSize:".8rem",color:"#475569",margin:"3px 0 0 0"}}>
+                  Select donors to generate Thank You Letters, 80G Receipts, and WhatsApp broadcasts.
+                </p>
+              </div>
+              <button onClick={()=>setShowImportDonorsModal(false)} style={{background:"#F1F5F9",border:"none",borderRadius:"50%",width:32,height:32,cursor:"pointer",fontWeight:800,fontSize:"1.1rem",color:"#475569"}}>✕</button>
+            </div>
+
+            {/* Filter and Search Bar */}
+            <div style={{display:"flex",gap:10,alignItems:"center",flexWrap:"wrap",background:"#F8FAFC",padding:"10px 12px",borderRadius:8,border:"1px solid #CBD5E1"}}>
+              <input
+                type="text"
+                placeholder="🔍 Search by donor name, receipt #, vibhag, program..."
+                value={donorImportSearch}
+                onChange={e=>setDonorImportSearch(e.target.value)}
+                style={{flex:1,minWidth:220,padding:"7px 12px",borderRadius:6,border:"1px solid #CBD5E1",fontSize:".82rem",boxSizing:"border-box"}}
+              />
+              <button
+                type="button"
+                onClick={() => {
+                  const filtered = allDonationsList.filter(d => {
+                    if (!donorImportSearch.trim()) return true;
+                    const q = donorImportSearch.toLowerCase();
+                    return Object.values(d).some(v => String(v).toLowerCase().includes(q));
+                  });
+                  setSelectedDonorIds(filtered.map(d => d._docId || d.id));
+                }}
+                style={{padding:"6px 12px",background:"white",border:"1px solid #86EFAC",borderRadius:6,color:"#15803D",fontSize:".75rem",fontWeight:700,cursor:"pointer"}}
+              >
+                ✓ Select All
+              </button>
+              <button
+                type="button"
+                onClick={() => setSelectedDonorIds([])}
+                style={{padding:"6px 10px",background:"white",border:"1px solid #CBD5E1",borderRadius:6,color:"#64748B",fontSize:".75rem",fontWeight:700,cursor:"pointer"}}
+              >
+                Deselect
+              </button>
+            </div>
+
+            {/* Donors List Table */}
+            {loadingDonations ? (
+              <div style={{textAlign:"center",padding:30,color:"#64748B"}}>⏳ Fetching donations database...</div>
+            ) : (
+              <div style={{maxHeight:"45vh",overflowY:"auto",border:"1px solid #E2E8F0",borderRadius:8}}>
+                <table style={{width:"100%",borderCollapse:"collapse",fontSize:".78rem"}}>
+                  <thead>
+                    <tr style={{background:"#F8FAFC",borderBottom:"1px solid #E2E8F0",textAlign:"left",color:"#475569"}}>
+                      <th style={{padding:"8px 10px",width:40}}>Select</th>
+                      <th style={{padding:"8px 10px"}}>Donor Name</th>
+                      <th style={{padding:"8px 10px"}}>Amount (₹)</th>
+                      <th style={{padding:"8px 10px"}}>Receipt #</th>
+                      <th style={{padding:"8px 10px"}}>Date</th>
+                      <th style={{padding:"8px 10px"}}>Vibhag</th>
+                      <th style={{padding:"8px 10px"}}>Program</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {allDonationsList
+                      .filter(d => {
+                        if (!donorImportSearch.trim()) return true;
+                        const q = donorImportSearch.toLowerCase();
+                        return Object.values(d).some(v => String(v).toLowerCase().includes(q));
+                      })
+                      .map(d => {
+                        const targetId = d._docId || d.id;
+                        const isSelected = selectedDonorIds.includes(targetId);
+                        const isAlreadyIn = regs.some(r => r.donationId === targetId && r.eventId === selectedEventId);
+
+                        return (
+                          <tr key={targetId} style={{borderBottom:"1px solid #F1F5F9",background:isSelected?"#F0FDF4":"white"}}>
+                            <td style={{padding:"8px 10px",textAlign:"center"}}>
+                              <input
+                                type="checkbox"
+                                checked={isSelected}
+                                onChange={() => {
+                                  setSelectedDonorIds(prev =>
+                                    prev.includes(targetId) ? prev.filter(x => x !== targetId) : [...prev, targetId]
+                                  );
+                                }}
+                              />
+                            </td>
+                            <td style={{padding:"8px 10px",fontWeight:700,color:"#0F172A"}}>
+                              {d.name}
+                              {d.nameGu && <span style={{display:"block",fontSize:".7rem",color:"#15803D",fontWeight:600}}>{d.nameGu}</span>}
+                              {isAlreadyIn && <span style={{fontSize:".62rem",background:"#DCFCE7",color:"#166534",padding:"1px 4px",borderRadius:4,marginLeft:4}}>In Workspace</span>}
+                            </td>
+                            <td style={{padding:"8px 10px",fontWeight:800,color:"#15803D"}}>₹{Number(d.amount).toLocaleString('en-IN')}</td>
+                            <td style={{padding:"8px 10px",fontFamily:"monospace"}}>{d.receiptNo || d.internalReceiptNo || d.id}</td>
+                            <td style={{padding:"8px 10px",color:"#64748B"}}>{d.date}</td>
+                            <td style={{padding:"8px 10px"}}>{d.vibhag || "General"}</td>
+                            <td style={{padding:"8px 10px",fontSize:".72rem",color:"#475569"}}>{d.purpose || d.program || "-"}</td>
+                          </tr>
+                        );
+                      })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+
+            {/* Modal Bottom Action Bar */}
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",borderTop:"1px solid #E2E8F0",paddingTop:10}}>
+              <span style={{fontSize:".8rem",color:"#475569"}}>
+                <strong>{selectedDonorIds.length}</strong> donor(s) selected
+              </span>
+              <div style={{display:"flex",gap:8}}>
+                <button
+                  type="button"
+                  onClick={()=>setShowImportDonorsModal(false)}
+                  style={{padding:"8px 14px",background:"#F1F5F9",color:"#475569",border:"1px solid #CBD5E1",borderRadius:6,fontSize:".8rem",fontWeight:700,cursor:"pointer"}}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  disabled={selectedDonorIds.length === 0 || importingDonors}
+                  onClick={async () => {
+                    setImportingDonors(true);
+                    try {
+                      const selectedDons = allDonationsList.filter(d => selectedDonorIds.includes(d._docId || d.id));
+                      let importedCount = 0;
+
+                      for (const d of selectedDons) {
+                        const targetId = d._docId || d.id;
+                        const existing = regs.find(r => r.donationId === targetId && r.eventId === selectedEventId);
+                        if (existing) continue;
+
+                        const newRegEntry = {
+                          "Full Name": d.name,
+                          "Donor Name": d.name,
+                          name: d.name,
+                          nameGu: d.nameGu || "",
+                          "Mobile Number": d.phone || d.mobile || "",
+                          mobile: d.phone || d.mobile || "",
+                          "Amount": d.amount,
+                          amount: d.amount,
+                          "Receipt Number": d.receiptNo || d.internalReceiptNo || d.id,
+                          receiptNo: d.receiptNo || d.internalReceiptNo || d.id,
+                          "Date": d.date,
+                          date: d.date,
+                          "Vibhag": d.vibhag || "General",
+                          vibhag: d.vibhag || "General",
+                          "PAN": d.pan || "",
+                          pan: d.pan || "",
+                          "Program": d.purpose || d.program || activeEvent.title,
+                          "Transaction ID": d.receiptNo || `DON-${targetId.slice(-6)}`,
+                          transactionId: d.receiptNo || `DON-${targetId.slice(-6)}`,
+                          Status: "Approved",
+                          status: "Approved",
+                          eventId: selectedEventId,
+                          eventName: activeEvent.title,
+                          isDonor: true,
+                          donationId: targetId,
+                          isSpecialGuest: true
+                        };
+
+                        const savedRes = await fbSubmitRegistration(newRegEntry, auth?.idToken);
+                        newRegEntry.id = savedRes?.name ? savedRes.name.split("/").pop() : `reg_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`;
+                        setRegs(prev => [newRegEntry, ...prev]);
+                        importedCount++;
+                      }
+
+                      alert(`✅ Successfully imported ${importedCount} donor(s) into "${activeEvent.title}"!`);
+                      setShowImportDonorsModal(false);
+                      setSelectedDonorIds([]);
+                    } catch(err) {
+                      alert("Import failed: " + err.message);
+                    } finally {
+                      setImportingDonors(false);
+                    }
+                  }}
+                  style={{
+                    padding:"8px 18px",
+                    background: selectedDonorIds.length > 0 ? "linear-gradient(135deg, #15803D, #166534)" : "#CBD5E1",
+                    color:"white",
+                    border:"none",
+                    borderRadius:6,
+                    fontSize:".82rem",
+                    fontWeight:800,
+                    cursor: (selectedDonorIds.length > 0 && !importingDonors) ? "pointer" : "not-allowed",
+                    boxShadow: selectedDonorIds.length > 0 ? "0 2px 6px rgba(22,101,52,0.3)" : "none"
+                  }}
+                >
+                  {importingDonors ? "Importing..." : `📥 Import ${selectedDonorIds.length} Donors`}
+                </button>
+              </div>
             </div>
           </div>
         </div>
@@ -26587,26 +28107,63 @@ const getChatbotPortalUrl = () => {
   return "https://www.mmp-cwc.com";
 };
 
-const generateVibhagSummaryWhatsAppText = (summaryData) => {
+const generateVibhagSummaryWhatsAppText = (summaryData, C) => {
   if (!summaryData) return "";
-  const { total, approved, pending, rejected, vibhagList } = summaryData;
+  const { total, approved, pending, rejected, vibhagList, scopeTitle } = summaryData;
   const now = new Date();
   const dateStr = now.toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" });
   const timeStr = now.toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit" });
 
-  let text = "🏛️ *MUMBAI MEGHWAL PANCHAYAT*\n";
-  text += "🎓 *Education Felicitation 2026 — Executive Summary*\n";
-  text += `📅 *Date:* ${dateStr}  ⏱️ *Time:* ${timeStr}\n`;
-  text += "━━━━━━━━━━━━━━━━━━━━━━━━━━━\n";
-  text += `📊 *Overall:* Total: *${total}* │ ⏳ Pending: *${pending}* │ 🟢 Approved: *${approved}* │ 🔴 Rejected: *${rejected}*\n`;
-  text += "━━━━━━━━━━━━━━━━━━━━━━━━━━━\n";
-  
+  const customTpls = C?.whatsappBroadcastTemplates || [];
+  const foundTpl = summaryData?.tplId ? customTpls.find(t => t.id === summaryData.tplId || t.name === summaryData.tplId) : null;
+
+  const defaultHeader = ".  🌷 || મુંબઈ મેઘવાળ પંચાયત || 🌷\n         [NGO]\n   •••• સેન્ટ્રલ વર્કિંગ કમિટી ••••\n☸~~~~~~~~~~~~~~~~~☸";
+  const header = (foundTpl?.header !== undefined ? foundTpl.header : defaultHeader).trim();
+  const appeal = (foundTpl?.appeal !== undefined ? foundTpl.appeal : "").trim();
+  const signatory = (foundTpl?.signatory !== undefined ? foundTpl.signatory : "").trim();
+  const upiId = foundTpl?.upiId || C?.whatsappTemplates?.upiId || "mumba98697331@barodampay";
+  const donateUrl = (typeof window !== "undefined" && window.location.hostname.includes("github.io"))
+    ? "https://pradeepparmar902.github.io/MY_Community_Website/donate/"
+    : "https://mmp-cwc.com/donate/";
+  const targetDonateUrl = foundTpl?.donateLink || C?.whatsappTemplates?.donateLink || donateUrl;
+  const qrHeader = foundTpl?.qrHeader || "💳 *GPay / BHIM QR સ્કેનર & Direct Pay:*";
+  const portalUrl = (typeof window !== "undefined" && window.location.hostname.includes("github.io"))
+    ? "https://pradeepparmar902.github.io/MY_Community_Website/"
+    : "https://mmp-cwc.com";
+
+  let parts = [];
+
+  // GPay Top preview if enabled
+  if (foundTpl?.includeGPay === true) {
+    parts.push(`💳 *દાન QR સ્કેનર:* ${targetDonateUrl}`);
+  }
+
+  // 1. Header Banner
+  if (!foundTpl || foundTpl.includeHeader !== false) {
+    if (header) parts.push(header);
+  }
+
+  // 2. Appeal / Custom Message Text
+  if (foundTpl && foundTpl.includeAppeal !== false && appeal) {
+    parts.push(appeal);
+  }
+
+  // Summary Metrics Section (KPIs and Vibhag Table)
+  let metricsText = "";
+  if (!foundTpl || foundTpl.includeAppeal === false || !appeal) {
+    metricsText += `🎓 *${scopeTitle || "Education Felicitation 2026 — Executive Summary"}*\n`;
+  }
+  metricsText += `📅 *Date:* ${dateStr}  ⏱️ *Time:* ${timeStr}\n`;
+  metricsText += "━━━━━━━━━━━━━━━━━━━━━━━━━━━\n";
+  metricsText += `📊 *Overall:* Total: *${total}* │ ⏳ Pending: *${pending}* │ 🟢 Approved: *${approved}* │ 🔴 Rejected: *${rejected}*\n`;
+  metricsText += "━━━━━━━━━━━━━━━━━━━━━━━━━━━";
+
   if (vibhagList && vibhagList.length > 0) {
-    text += "📍 *VIBHAG-WISE BREAKDOWN:*\n";
-    text += "_(T: Total │ P: Pending │ A: Approved │ R: Rejected)_\n";
-    text += "```\n";
-    text += "#  Vibhag          T  P  A  R\n";
-    text += "── ────────────── ── ── ── ──\n";
+    metricsText += "\n📍 *VIBHAG-WISE BREAKDOWN:*\n";
+    metricsText += "_(T: Total │ P: Pending │ A: Approved │ R: Rejected)_\n";
+    metricsText += "```\n";
+    metricsText += "#  Vibhag          T  P  A  R\n";
+    metricsText += "── ────────────── ── ── ── ──\n";
 
     let sumTot = 0, sumPen = 0, sumApp = 0, sumRej = 0;
     vibhagList.forEach(([vName, vStat], idx) => {
@@ -26620,21 +28177,36 @@ const generateVibhagSummaryWhatsAppText = (summaryData) => {
       sumPen += vStat.pending;
       sumApp += vStat.approved;
       sumRej += (vStat.rejected || 0);
-      text += `${numStr} ${cleanV} ${tStr} ${pStr} ${aStr} ${rStr}\n`;
+      metricsText += `${numStr} ${cleanV} ${tStr} ${pStr} ${aStr} ${rStr}\n`;
     });
 
-    text += "── ────────────── ── ── ── ──\n";
+    metricsText += "── ────────────── ── ── ── ──\n";
     const totT = String(sumTot).padStart(2, " ");
     const totP = String(sumPen).padStart(2, " ");
     const totA = String(sumApp).padStart(2, " ");
     const totR = String(sumRej).padStart(2, " ");
-    text += `   TOTAL          ${totT} ${totP} ${totA} ${totR}\n`;
-    text += "```\n";
+    metricsText += `   TOTAL          ${totT} ${totP} ${totA} ${totR}\n`;
+    metricsText += "```";
   }
 
-  text += "━━━━━━━━━━━━━━━━━━━━━━━━━━━\n";
-  text += `🌐 *Live Portal:* ${getChatbotPortalUrl()}/`;
-  return text;
+  parts.push(metricsText);
+
+  // 5. Signatory / Footer Paragraph
+  if (!foundTpl || foundTpl.includeFooter !== false) {
+    if (signatory) parts.push(signatory);
+  }
+
+  // 6. GPay / QR info if enabled
+  if (foundTpl?.includeGPay === true) {
+    parts.push(qrHeader + "\n" + `🔗 ${targetDonateUrl}\n` + `📲 UPI ID: ${upiId}`);
+  }
+
+  // Portal link
+  if (!foundTpl || foundTpl.includePortalLink !== false) {
+    parts.push(`🌐 *Live Portal:* ${portalUrl}`);
+  }
+
+  return parts.join("\n\n");
 };
 
 const generateApplicationWhatsAppText = (app) => {
@@ -26865,13 +28437,13 @@ function ApplicationRecordCard({ app, onAction }) {
 }
 
 // ── Vibhag Analytics Dashboard Card ─────────────────────────────────────────────────────
-function VibhagSummaryCard({ summaryData }) {
+function VibhagSummaryCard({ summaryData, C }) {
   const [copied, setCopied] = useState(false);
   if (!summaryData) return null;
   const { total, approved, pending, rejected, vibhagList, scopeTitle } = summaryData;
 
   const handleCopyWhatsApp = () => {
-    const text = generateVibhagSummaryWhatsAppText(summaryData);
+    const text = generateVibhagSummaryWhatsAppText(summaryData, C);
     navigator.clipboard.writeText(text).then(() => {
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
@@ -26881,7 +28453,7 @@ function VibhagSummaryCard({ summaryData }) {
   };
 
   const handleShareWhatsApp = () => {
-    const text = generateVibhagSummaryWhatsAppText(summaryData);
+    const text = generateVibhagSummaryWhatsAppText(summaryData, C);
     const url = `https://api.whatsapp.com/send?text=${encodeURIComponent(text)}`;
     window.open(url, "_blank");
   };
@@ -27011,26 +28583,17 @@ function VibhagSummaryCard({ summaryData }) {
 }
 
 // ── Offline Donation Chatbot UI Components ──────────────────────────────────────
-function OfflineDonationEntryCard({ initialData, onSubmit }) {
+function OfflineDonationEntryCard({ initialData, onSubmit, C }) {
   const [name, setName] = useState("");
   const [date, setDate] = useState(initialData?.initialDate || new Date().toISOString().split('T')[0]);
   const [amount, setAmount] = useState("");
   const [purpose, setPurpose] = useState(initialData?.defaultPurpose || "Education Felicitation 2026");
-  const [vibhag, setVibhag] = useState(initialData?.defaultVibhag || "10 MAHALAXMI");
+  const vibhagOptions = extractVibhagList(C);
+  const [vibhag, setVibhag] = useState(initialData?.defaultVibhag || vibhagOptions[0] || "10 MAHALAXMI");
   const [eventCode, setEventCode] = useState(initialData?.defaultEventCode || "EDU26");
   const [receiptNo, setReceiptNo] = useState("");
   const [submitting, setSubmitting] = useState(false);
-
-  const VIBHAG_OPTIONS_DON = [
-    "10 MAHALAXMI",
-    "15 RAMDEV NAGAR",
-    "2 WALPAKHADI",
-    "22 LOWER PAREL",
-    "30 PRATKISHA NAGAR",
-    "55 BHAYANDER",
-    "65 KALWA",
-    "Outside Mumbai / General"
-  ];
+  const VIBHAG_OPTIONS_DON = vibhagOptions;
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -27132,8 +28695,154 @@ function OfflineDonationSuccessCard({ donation }) {
   );
 }
 
-function DonationSummaryCard({ summaryData, onAction }) {
+
+function WhatsAppBroadcastCard({ cardData, C }) {
+  const [copied, setCopied] = useState(false);
+  const tpls = C?.whatsappTemplates || {};
+  const customTpls = C?.whatsappBroadcastTemplates || [];
+  const foundTpl = customTpls.find(t => t.id === cardData.tplId);
+
+  const getBroadcastMessage = () => {
+    const donateUrl = (typeof window !== "undefined" && window.location.hostname.includes("github.io"))
+      ? "https://pradeepparmar902.github.io/MY_Community_Website/donate/"
+      : "https://mmp-cwc.com/donate/";
+    const portalUrl = (typeof window !== "undefined" && window.location.hostname.includes("github.io"))
+      ? "https://pradeepparmar902.github.io/MY_Community_Website/"
+      : "https://mmp-cwc.com";
+
+    const targetDonateUrl = foundTpl?.donateLink || tpls.donateLink || donateUrl;
+    const upi = foundTpl?.upiId || tpls.upiId || "mumba98697331@barodampay";
+    const header = foundTpl?.header || tpls.gujaratiHeader || ".  🌷 || મુંબઈ મેઘવાળ પંચાયત || 🌷\n         [NGO]\n   •••• સેન્ટ્રલ વર્કિંગ કમિટી ••••\n☸~~~~~~~~~~~~~~~~~☸";
+    const appeal = foundTpl?.appeal || cardData.answer || tpls.gujaratiAppeal || "";
+    const signatory = foundTpl?.signatory || tpls.gujaratiSignatory || "લિ. વિનોદભાઈ મકવાણા / સેન્ટ્રલ વર્કિંગ કમિટી";
+    const qrHeader = foundTpl?.qrHeader || tpls.qrHeader || "💳 *GPay / BHIM QR સ્કેનર & Direct Pay:*";
+
+    const parts = [];
+    if (foundTpl?.includeGPay === true) {
+      parts.push(`💳 *દાન QR સ્કેનર:* ${targetDonateUrl}`);
+    }
+    if (foundTpl?.includeHeader !== false && header.trim()) {
+      parts.push(header.trim());
+    }
+    if (foundTpl?.includeAppeal !== false && appeal.trim()) {
+      parts.push(appeal.trim());
+    }
+    if (foundTpl?.includeFooter !== false && signatory.trim()) {
+      parts.push(signatory.trim());
+    }
+    if (foundTpl?.includeGPay === true) {
+      parts.push(qrHeader + "\n" + `🔗 ${targetDonateUrl}\n` + `📲 UPI ID: ${upi}`);
+    }
+    parts.push(`🌐 પોર્ટલ: ${portalUrl}`);
+    return parts.join("\n\n");
+  };
+
+  const handleCopy = () => {
+    navigator.clipboard.writeText(getBroadcastMessage());
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2500);
+  };
+
+  const handleShare = () => {
+    const msg = getBroadcastMessage();
+    window.open(`https://api.whatsapp.com/send?text=${encodeURIComponent(msg)}`, '_blank');
+  };
+
+  return (
+    <div style={{marginTop:8,paddingTop:8,borderTop:"1px solid #E2E8F0",display:"flex",gap:6,alignItems:"center"}}>
+      <button
+        onClick={handleCopy}
+        style={{
+          flex: 1,
+          padding: "7px 10px",
+          background: copied ? "#DCFCE7" : "white",
+          color: copied ? "#15803D" : "#334155",
+          border: `1px solid ${copied ? "#86EFAC" : "#CBD5E1"}`,
+          borderRadius: 6,
+          fontSize: ".75rem",
+          fontWeight: 700,
+          cursor: "pointer",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          gap: 4
+        }}
+      >
+        <span>{copied ? "✅" : "📋"}</span>
+        <span>{copied ? "Copied!" : "Copy for WhatsApp"}</span>
+      </button>
+
+      <button
+        onClick={handleShare}
+        style={{
+          flex: 1,
+          padding: "7px 12px",
+          background: "#25D366",
+          color: "white",
+          border: "none",
+          borderRadius: 6,
+          fontSize: ".75rem",
+          fontWeight: 700,
+          cursor: "pointer",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          gap: 4,
+          boxShadow: "0 2px 6px rgba(37,211,102,0.25)"
+        }}
+      >
+        <span>🟢</span>
+        <span>Share on WhatsApp</span>
+      </button>
+    </div>
+  );
+}
+
+function DonationSummaryCard({ summaryData, onAction, C }) {
   const { totalAmount, totalCount, onlineAmount, onlineCount, offlineAmount, offlineCount, vibhagBreakdown } = summaryData;
+  const [copied, setCopied] = useState(false);
+
+  const getFormattedSummaryText = () => {
+    const donateUrl = (typeof window !== "undefined" && window.location.hostname.includes("github.io"))
+      ? "https://pradeepparmar902.github.io/MY_Community_Website/donate/"
+      : "https://mmp-cwc.com/donate/";
+    const portalUrl = (typeof window !== "undefined" && window.location.hostname.includes("github.io"))
+      ? "https://pradeepparmar902.github.io/MY_Community_Website/"
+      : "https://mmp-cwc.com";
+
+    const qrLink = C?.whatsappTemplates?.donateLink || donateUrl;
+    const upi = C?.whatsappTemplates?.upiId || "mumba98697331@barodampay";
+
+    let msg = `💳 *QR સ્કેનર & Direct Pay:* ${qrLink}\n`;
+    msg += `📊 *MMP Donations & Collection Summary*\n`;
+    msg += `━━━━━━━━━━━━━━━━━━━━━\n`;
+    msg += `💰 *Total Collections:* ₹${totalAmount.toLocaleString('en-IN')}\n`;
+    msg += `👥 *Total Donors:* ${totalCount}\n`;
+    msg += `🟢 *Online (Razorpay):* ₹${onlineAmount.toLocaleString('en-IN')} (${onlineCount} txns)\n`;
+    msg += `🟠 *Offline / Manual:* ₹${offlineAmount.toLocaleString('en-IN')} (${offlineCount} entries)\n`;
+    msg += `━━━━━━━━━━━━━━━━━━━━━\n`;
+    msg += `📍 *Vibhag Breakdown:*\n`;
+
+    (vibhagBreakdown || []).forEach(([vName, vData]) => {
+      msg += `• *${vName}*: ₹${vData.total.toLocaleString('en-IN')} (${vData.count} donors)\n`;
+    });
+
+    msg += `\n📲 *UPI ID:* ${upi}\n`;
+    msg += `🌐 *Live Portal:* ${portalUrl}`;
+    return msg;
+  };
+
+  const handleCopyWhatsApp = () => {
+    navigator.clipboard.writeText(getFormattedSummaryText());
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2500);
+  };
+
+  const handleShareWhatsApp = () => {
+    const msg = getFormattedSummaryText();
+    const url = `https://api.whatsapp.com/send?text=${encodeURIComponent(msg)}`;
+    window.open(url, '_blank');
+  };
 
   return (
     <div style={{background:"white",border:"1.5px solid #CBD5E1",borderRadius:12,padding:14,marginTop:6,boxShadow:"0 4px 12px rgba(0,0,0,0.05)"}}>
@@ -27195,12 +28904,197 @@ function DonationSummaryCard({ summaryData, onAction }) {
           ➕ Add Offline
         </button>
       </div>
+
+      {/* WhatsApp Sharing Bar */}
+      <div style={{marginTop:10,paddingTop:8,borderTop:"1px solid #F1F5F9",display:"flex",gap:6,alignItems:"center"}}>
+        <button
+          onClick={handleCopyWhatsApp}
+          style={{
+            flex: 1,
+            padding: "8px 10px",
+            background: copied ? "#DCFCE7" : "white",
+            color: copied ? "#15803D" : "#475569",
+            border: `1px solid ${copied ? "#86EFAC" : "#CBD5E1"}`,
+            borderRadius: 6,
+            fontSize: ".75rem",
+            fontWeight: 700,
+            cursor: "pointer",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            gap: 4
+          }}
+          title="Copy formatted summary text for WhatsApp"
+        >
+          <span>{copied ? "✅" : "📋"}</span>
+          <span>{copied ? "Copied!" : "Copy for WhatsApp"}</span>
+        </button>
+
+        <button
+          onClick={handleShareWhatsApp}
+          style={{
+            flex: 1,
+            padding: "8px 12px",
+            background: "#25D366",
+            color: "white",
+            border: "none",
+            borderRadius: 6,
+            fontSize: ".75rem",
+            fontWeight: 700,
+            cursor: "pointer",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            gap: 4,
+            boxShadow: "0 2px 6px rgba(37,211,102,0.25)"
+          }}
+          title="Share summary directly to WhatsApp"
+        >
+          <span>🟢</span>
+          <span>Share on WhatsApp</span>
+        </button>
+      </div>
     </div>
   );
 }
 
-function DonorListCard({ donorData, auth, onRefresh }) {
+
+// ── Robust English to Gujarati Name & Vibhag Transliteration Engine ────────────
+const GUJARATI_KNOWN_WORDS = {
+  // Common Names & Surnames
+  "pradeep": "પ્રદીપ", "pradip": "પ્રદીપ", "parmar": "પરમાર",
+  "jeram": "જેરામ", "jairam": "જયરામ", "mulji": "મૂલજી", "solanki": "સોલંકી",
+  "ravikumar": "રવિકુમાર", "ravi": "રવિ", "punjalal": "પુંજાલાલ", "punja": "પુંજા", "dharia": "ધારિયા", "dhariya": "ધારિયા",
+  "vinod": "વિનોદ", "vinodbhai": "વિનોદભાઈ", "makwana": "મકવાણા", "makawana": "મકવાણા",
+  "prakash": "પ્રકાશ", "gohil": "ગોહિલ", "vasant": "વસંત", "padava": "પડવા", "padva": "પડવા",
+  "keshav": "કેશવ", "wagh": "વાઘ", "vagh": "વાઘ", "ashwin": "અશ્વિન", "kataria": "કટારીયા", "katariya": "કટારીયા",
+  "samiksha": "સમીક્ષા", "chudasama": "ચુડાસમા", "dinesh": "દિનેશ", "sondarva": "સોંદરવા",
+  "khushi": "ખુશી", "jogadiya": "જોગડીયા", "jogadia": "જોગડીયા", "ramesh": "રમેશ", "suresh": "સુરેશ",
+  "mahesh": "મહેશ", "kamlesh": "કમલેશ", "hitesh": "હિતેશ", "rajesh": "રાજેશ", "mukesh": "મુકેશ",
+  "bharat": "ભરત", "bharatbhai": "ભરતભાઈ", "kishor": "કિશોર", "kishorbhai": "કિશોરભાઈ",
+  "naresh": "નરેશ", "haresh": "હરેશ", "paresh": "પરેશ", "jagdish": "જગદીશ", "manoj": "મનોજ",
+  "sanjay": "સંજય", "ajay": "અજય", "vijay": "વિજય", "anil": "અનિલ", "sunil": "સુનીલ",
+  "chetan": "ચેતન", "ketan": "કેતન", "bhupendra": "ભૂપેન્દ્ર", "narendra": "નરેન્દ્ર", "jitendra": "જીતેન્દ્ર",
+  "mahima": "મહિમા", "priya": "પ્રિયા", "pooja": "પૂજા", "puja": "પૂજા", "neha": "નેહા", "hetal": "હેતલ",
+  "bhavna": "ભાવના", "rekha": "રેખા", "geeta": "ગીતા", "gita": "ગીતા", "meena": "મીના", "mina": "મીના",
+  "chavda": "ચાવડા", "rathod": "રાઠોડ", "chauhan": "ચૌહાણ", "maru": "મારુ", "baraiya": "બારૈયા",
+  "vanza": "વાંઝા", "vaja": "વાજા", "dabhi": "ડાભી", "purabia": "પૂરબીયા", "purabiya": "પૂરબીયા",
+  "bhati": "ભાટી", "jadav": "જાદવ", "pandya": "પંડ્યા", "shah": "શાહ", "mehta": "મહેતા", "patel": "પટેલ",
+  
+  // Vibhags & Locations
+  "mahalaxmi": "મહાલક્ષ્મી", "nehru nagar": "નેહરુ નગર", "nehru": "નેહરુ", "nagar": "નગર",
+  "walpakhadi": "વાલપાખાડી", "lower parel": "લોઅર પરેલ", "parel": "પરેલ", "pratiksha nagar": "પ્રતીક્ષા નગર",
+  "pratkishanagar": "પ્રતીક્ષા નગર", "pratkishanagar": "પ્રતીક્ષા નગર", "pratkish": "પ્રતીક્ષા",
+  "bhayander": "ભાઈંદર", "bhayandar": "ભાઈંદર", "kalwa": "કલવા", "kurla": "કુર્લા", "ghatkopar": "ઘાટકોપર",
+  "chembur": "ચેમ્બુર", "sion": "સાયન", "dadar": "દાદર", "bandra": "વાંદ્રા", "andheri": "અંધેરી", "borivali": "બોરીવલી",
+  "outside mumbai": "મુંબઈ બહાર", "general": "સામાન્ય", "mumbai": "મુંબઈ"
+};
+
+const transliterateEnglishToGujaratiPhonetic = (text) => {
+  if (!text) return "";
+  const str = String(text).trim();
+
+  // If already contains Gujarati characters, return as-is
+  if (/[\u0A80-\u0AFF]/.test(str)) return str;
+
+  // Split into tokens by spaces and punctuation while preserving delimiters
+  const tokens = str.split(/([\s,()\-\/]+)/);
+
+  const convertedTokens = tokens.map(token => {
+    if (!token || /^[\s,()\-\/]+$/.test(token)) return token;
+
+    const lower = token.toLowerCase();
+    if (GUJARATI_KNOWN_WORDS[lower]) {
+      return GUJARATI_KNOWN_WORDS[lower];
+    }
+
+    // Number conversion (e.g. 10 -> ૧૦, 33 -> ૩૩)
+    if (/^\d+$/.test(token)) {
+      const gujDigits = ['૦', '૧', '૨', '૩', '૪', '૫', '૬', '૭', '૮', '૯'];
+      return token.split('').map(d => gujDigits[parseInt(d, 10)] || d).join('');
+    }
+
+    // Algorithmic phonetic transliteration fallback
+    let s = lower;
+    const rules = [
+      // Multi-char matches
+      { re: /ch/g, val: 'ચ' }, { re: /chh/g, val: 'છ' }, { re: /kh/g, val: 'ખ' }, { re: /gh/g, val: 'ઘ' },
+      { re: /jh/g, val: 'ઝ' }, { re: /th/g, val: 'થ' }, { re: /dh/g, val: 'ધ' }, { re: /bh/g, val: 'ભ' },
+      { re: /ph/g, val: 'ફ' }, { re: /sh/g, val: 'શ' }, { re: /shh/g, val: 'ષ' },
+      // Vowels & diphthongs
+      { re: /aa/g, val: 'ા' }, { re: /ee/g, val: 'ી' }, { re: /oo/g, val: 'ૂ' }, { re: /ai/g, val: 'ૈ' }, { re: /au/g, val: 'ૌ' },
+      // Single consonants
+      { re: /k/g, val: 'ક' }, { re: /g/g, val: 'ગ' }, { re: /j/g, val: 'જ' }, { re: /t/g, val: 'ત' },
+      { re: /d/g, val: 'દ' }, { re: /n/g, val: 'ન' }, { re: /p/g, val: 'પ' }, { re: /f/g, val: 'ફ' },
+      { re: /b/g, val: 'બ' }, { re: /m/g, val: 'મ' }, { re: /y/g, val: 'ય' }, { re: /r/g, val: 'ર' },
+      { re: /l/g, val: 'લ' }, { re: /v/g, val: 'વ' }, { re: /w/g, val: 'વ' }, { re: /s/g, val: 'સ' },
+      { re: /h/g, val: 'હ' }, { re: /z/g, val: 'ઝ' },
+      // Vowel signs
+      { re: /a/g, val: 'ા' }, { re: /i/g, val: 'િ' }, { re: /u/g, val: 'ુ' }, { re: /e/g, val: 'ે' }, { re: /o/g, val: 'ો' }
+    ];
+
+    let res = "";
+    let i = 0;
+    while (i < s.length) {
+      let matched = false;
+      // Try 3-char, 2-char, 1-char
+      for (const len of [3, 2, 1]) {
+        if (i + len <= s.length) {
+          const sub = s.slice(i, i + len);
+          for (const rule of rules) {
+            if (rule.re.source === sub) {
+              res += rule.val;
+              i += len;
+              matched = true;
+              break;
+            }
+          }
+          if (matched) break;
+        }
+      }
+      if (!matched) {
+        res += s[i];
+        i++;
+      }
+    }
+    return res;
+  });
+
+  return convertedTokens.join('');
+};
+
+function DonorListCard({ donorData, auth, onRefresh, C }) {
   const [filterText, setFilterText] = useState("");
+  const [copied, setCopied] = useState(false);
+  const [exportFormat, setExportFormat] = useState("gujarati");
+  const [includeVibhag, setIncludeVibhag] = useState(true);
+  const [includeReceipt, setIncludeReceipt] = useState(false);
+  const [includeGPay, setIncludeGPay] = useState(true);
+  const [translateNamesGu, setTranslateNamesGu] = useState(true);
+  const [showTemplateEditor, setShowTemplateEditor] = useState(false);
+  const [savingTemplate, setSavingTemplate] = useState(false);
+
+  // Edit Donation Modal State
+  const [editingDonation, setEditingDonation] = useState(null);
+  const [savingEdit, setSavingEdit] = useState(false);
+  const [editFormData, setEditFormData] = useState({
+    name: "",
+    nameGu: "",
+    amount: "",
+    date: "",
+    vibhag: "",
+    vibhagGu: "",
+    purpose: "",
+    eventCode: "",
+    receiptNo: "",
+    paymentMode: "",
+    status: "",
+    pan: "",
+    phone: "",
+    email: "",
+    remarks: ""
+  });
+
   const donors = donorData.donors || [];
 
   const filtered = donors.filter(d => {
@@ -27213,6 +29107,154 @@ function DonorListCard({ donorData, auth, onRefresh }) {
       (d.purpose || d.program || "").toLowerCase().includes(q)
     );
   });
+
+  const tpls = C?.whatsappTemplates || {};
+  const [customHeader, setCustomHeader] = useState(tpls.gujaratiHeader !== undefined ? tpls.gujaratiHeader : `.  🌷 || મુંબઈ મેઘવાળ પંચાયત || 🌷\n         [NGO]\n   •••• સેન્ટ્રલ વર્કિંગ કમિટી ••••\n☸~~~~~~~~~~~~~~~~~☸`);
+  const [customAppeal, setCustomAppeal] = useState(tpls.gujaratiAppeal !== undefined ? tpls.gujaratiAppeal : "સુજ્ઞ જ્ઞાતિજનો વિદ્યાર્થી ને પ્રોત્સાહિત કરવા અને તેમનું મનોબળ વધારવા આયોજિત શૈક્ષણિક કાર્યક્રમ વિદ્યાર્થી ગુણગૌરવ પુરસ્કાર માટે દાન ના પ્રવાહ ની અપેક્ષા છે તેથી આપ પણ આપની ઈચ્છા અનુસાર દાન આપી શકો છો.\nહાલમાં આવેલું દાન અને દાતા ઓના નામ નીચે પ્રમાણે છે.");
+  const [customRowPattern, setCustomRowPattern] = useState(tpls.rowPattern || "₹ {AMOUNT}/- {NAME}");
+  const [customSignatory, setCustomSignatory] = useState(tpls.gujaratiSignatory !== undefined ? tpls.gujaratiSignatory : "લિ. વિનોદભાઈ મકવાણા / સેન્ટ્રલ વર્કિંગ કમિટી");
+  const [customQrHeader, setCustomQrHeader] = useState(tpls.qrHeader || "💳 *GPay / BHIM QR સ્કેનર & Direct Pay:*");
+  const [customUpiId, setCustomUpiId] = useState(tpls.upiId || "mumba98697331@barodampay");
+
+  const handleSaveTemplate = async () => {
+    setSavingTemplate(true);
+    try {
+      const updatedTpls = {
+        ...tpls,
+        gujaratiHeader: customHeader,
+        gujaratiAppeal: customAppeal,
+        rowPattern: customRowPattern,
+        gujaratiSignatory: customSignatory,
+        qrHeader: customQrHeader,
+        upiId: customUpiId
+      };
+      if (C) {
+        C.whatsappTemplates = updatedTpls;
+        await fbSave(C, auth?.idToken);
+      }
+      alert("✅ WhatsApp Template saved successfully to database!");
+      setShowTemplateEditor(false);
+    } catch(err) {
+      alert("Failed to save template: " + err.message);
+    } finally {
+      setSavingTemplate(false);
+    }
+  };
+
+  const getFormattedDonorListText = () => {
+    const totalAmt = Number(donorData.totalAmount || 0).toLocaleString('en-IN');
+    const count = filtered.length;
+
+    const donateUrl = (typeof window !== "undefined" && window.location.hostname.includes("github.io"))
+      ? "https://pradeepparmar902.github.io/MY_Community_Website/donate/"
+      : "https://mmp-cwc.com/donate/";
+    const portalUrl = (typeof window !== "undefined" && window.location.hostname.includes("github.io"))
+      ? "https://pradeepparmar902.github.io/MY_Community_Website/"
+      : "https://mmp-cwc.com";
+
+    if (exportFormat === "gujarati") {
+      const header = tpls.gujaratiHeader !== undefined ? tpls.gujaratiHeader : `.  🌷 || મુંબઈ મેઘવાળ પંચાયત || 🌷\n         [NGO]\n   •••• સેન્ટ્રલ વર્કિંગ કમિટી ••••\n☸~~~~~~~~~~~~~~~~~☸`;
+      const appeal = tpls.gujaratiAppeal !== undefined ? tpls.gujaratiAppeal : "સુજ્ઞ જ્ઞાતિજનો વિદ્યાર્થી ને પ્રોત્સાહિત કરવા અને તેમનું મનોબળ વધારવા આયોજિત શૈક્ષણિક કાર્યક્રમ વિદ્યાર્થી ગુણગૌરવ પુરસ્કાર માટે દાન ના પ્રવાહ ની અપેક્ષા છે તેથી આપ પણ આપની ઈચ્છા અનુસાર દાન આપી શકો છો.\nહાલમાં આવેલું દાન અને દાતા ઓના નામ નીચે પ્રમાણે છે.";
+      const signatory = tpls.gujaratiSignatory !== undefined ? tpls.gujaratiSignatory : "લિ. વિનોદભાઈ મકવાણા / સેન્ટ્રલ વર્કિંગ કમિટી";
+      const rowPattern = tpls.rowPattern || "₹ {AMOUNT}/- {NAME}";
+      const totalPattern = tpls.totalLabel || "💰 *કુલ દાન રકમ: ₹{TOTAL}* ({COUNT} દાતાઓ)";
+      const qrHeader = tpls.qrHeader || "💳 *GPay / BHIM QR સ્કેનર & Direct Pay:*";
+      const upiId = tpls.upiId || "mumba98697331@barodampay";
+      const targetDonateUrl = tpls.donateLink || donateUrl;
+
+      // Ensure Donate QR Link is at the top so WhatsApp ALWAYS generates the Bank of Baroda QR Standee Preview
+      let msg = `💳 *દાન QR સ્કેનર:* ${targetDonateUrl}\n\n`;
+      msg += header + "\n\n" + appeal + "\n•••••••••••••••••••••••••••••\n";
+
+      filtered.forEach((d, idx) => {
+        const amt = Number(d.amount).toLocaleString('en-IN');
+        const donorName = (translateNamesGu ? transliterateEnglishToGujaratiPhonetic(d.name) : d.name) || d.name;
+        let line = rowPattern.replace("{AMOUNT}", amt).replace("{NAME}", donorName).replace("{INDEX}", String(idx + 1));
+        if (!line.includes(donorName)) line = `₹ ${amt}/- ${donorName}`;
+
+        const extras = [];
+        if (includeVibhag && d.vibhag && d.vibhag !== "General") {
+          const vibhagText = translateNamesGu ? transliterateEnglishToGujaratiPhonetic(d.vibhag) : d.vibhag;
+          extras.push(vibhagText);
+        }
+        if (includeReceipt && (d.receiptNo || d.internalReceiptNo || d.id)) extras.push(`Receipt: ${d.receiptNo || d.internalReceiptNo || d.id}`);
+        if (extras.length > 0) line += ` (${extras.join(", ")})`;
+        msg += line + "\n";
+      });
+
+      msg += "•••••••••••••••••••••••••••••\n";
+      const totalLine = totalPattern.replace("{TOTAL}", totalAmt).replace("{COUNT}", String(count));
+      msg += totalLine + "\n";
+      if (signatory) msg += signatory + "\n";
+
+      if (includeGPay) {
+        msg += "\n" + qrHeader + "\n";
+        msg += `🔗 ${targetDonateUrl}\n`;
+        msg += `📲 UPI ID: ${upiId}\n\n`;
+      }
+      msg += `🌐 પોર્ટલ: ${portalUrl}`;
+      return msg;
+    }
+
+    if (exportFormat === "single_line") {
+      let msg = `📋 *MMP Community Donor Registry Summary*\n`;
+      msg += `💰 *Total Collections:* ₹${totalAmt} (${count} Donors)\n`;
+      msg += `━━━━━━━━━━━━━━━━━━━━━\n`;
+
+      filtered.forEach((d, idx) => {
+        const amt = Number(d.amount).toLocaleString('en-IN');
+        let line = `${idx + 1}. ₹${amt}/- ${d.name}`;
+        const extras = [];
+        if (includeVibhag && d.vibhag && d.vibhag !== "General") extras.push(d.vibhag);
+        if (includeReceipt && (d.receiptNo || d.internalReceiptNo || d.id)) extras.push(d.receiptNo || d.internalReceiptNo || d.id);
+        if (extras.length > 0) line += ` (${extras.join(", ")})`;
+        msg += line + "\n";
+      });
+
+      msg += `━━━━━━━━━━━━━━━━━━━━━\n`;
+      if (includeGPay) {
+        msg += `💳 *GPay / BHIM QR Scanner & Direct Pay:*\n`;
+        msg += `🔗 ${donateUrl}\n`;
+        msg += `📲 UPI ID: mumba98697331@barodampay\n\n`;
+      }
+      msg += `🌐 *View Live on Portal:* ${portalUrl}`;
+      return msg;
+    }
+
+    let msg = `📋 *MMP Community Donor Registry Summary*\n`;
+    msg += `━━━━━━━━━━━━━━━━━━━━━\n`;
+    msg += `💰 *Total Collections:* ₹${totalAmt}\n`;
+    msg += `👥 *Total Donors Recorded:* ${count}\n`;
+    msg += `━━━━━━━━━━━━━━━━━━━━━\n\n`;
+
+    filtered.forEach((d, idx) => {
+      const isOff = d.isOffline || d.paymentMode === "Offline" || String(d.paymentMethod || "").toLowerCase().includes("offline");
+      msg += `${idx + 1}. *${d.name}* — ₹${Number(d.amount).toLocaleString('en-IN')}\n`;
+      if (includeVibhag) msg += `   📍 Vibhag: ${d.vibhag || "General"} | 📅 ${d.date}\n`;
+      if (includeReceipt) msg += `   🧾 Receipt: ${d.receiptNo || d.internalReceiptNo || d.id} (${isOff ? "Offline" : "Online"})\n`;
+      msg += "\n";
+    });
+
+    if (includeGPay) {
+      msg += `💳 *GPay / BHIM QR Scanner & Direct Pay:*\n`;
+      msg += `🔗 ${donateUrl}\n`;
+      msg += `📲 UPI ID: mumba98697331@barodampay\n\n`;
+    }
+    msg += `🌐 *View Live on Portal:* ${portalUrl}`;
+    return msg;
+  };
+
+  const handleCopyWhatsApp = () => {
+    navigator.clipboard.writeText(getFormattedDonorListText());
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2500);
+  };
+
+  const handleShareWhatsApp = () => {
+    const msg = getFormattedDonorListText();
+    const url = `https://api.whatsapp.com/send?text=${encodeURIComponent(msg)}`;
+    window.open(url, '_blank');
+  };
 
   return (
     <div style={{background:"white",border:"1.5px solid #CBD5E1",borderRadius:12,padding:12,marginTop:6}}>
@@ -27229,7 +29271,7 @@ function DonorListCard({ donorData, auth, onRefresh }) {
         style={{width:"100%",padding:"6px 10px",borderRadius:6,border:"1px solid #CBD5E1",fontSize:".75rem",boxSizing:"border-box",marginBottom:8}}
       />
 
-      <div style={{maxHeight:260,overflowY:"auto",display:"flex",flexDirection:"column",gap:6}}>
+      <div style={{maxHeight:220,overflowY:"auto",display:"flex",flexDirection:"column",gap:6}}>
         {filtered.map((d, di) => {
           const isOff = d.isOffline || d.paymentMode === "Offline" || String(d.paymentMethod || "").toLowerCase().includes("offline");
           return (
@@ -27238,6 +29280,33 @@ function DonorListCard({ donorData, auth, onRefresh }) {
                 <div style={{fontWeight:800,color:"#0F172A"}}>{di + 1}. {d.name}</div>
                 <div style={{display:"flex",alignItems:"center",gap:6}}>
                   <span style={{fontWeight:800,color:"#15803D",fontSize:".82rem"}}>₹{Number(d.amount).toLocaleString('en-IN')}</span>
+                  <button
+                    onClick={() => {
+                      const customWordDict = C?.gujaratiWordDictionary || {};
+                      setEditingDonation(d);
+                      setEditFormData({
+                        name: d.name || "",
+                        nameGu: d.nameGu || transliterateEnglishToGujaratiPhonetic(d.name || "", customWordDict),
+                        amount: d.amount || "",
+                        date: d.date || new Date().toISOString().split('T')[0],
+                        vibhag: d.vibhag || "10 MAHALAXMI",
+                        vibhagGu: d.vibhagGu || (String(d.vibhag || "").toLowerCase().includes("outside") ? "મુંબઈ બહાર / સામાન્ય" : transliterateEnglishToGujaratiPhonetic(d.vibhag || "", customWordDict)),
+                        purpose: d.purpose || d.program || "Education Felicitation 2026",
+                        eventCode: d.eventCode || "EDU26",
+                        receiptNo: d.receiptNo || d.internalReceiptNo || d.id || "",
+                        paymentMode: d.paymentMode || (d.isOffline ? "Offline" : "Online"),
+                        status: d.status || "Verified",
+                        pan: d.pan || "",
+                        phone: d.phone || "",
+                        email: d.email || "",
+                        remarks: d.remarks || d.Remarks || ""
+                      });
+                    }}
+                    style={{background:"#EFF6FF",border:"1px solid #BFDBFE",color:"#1D4ED8",fontSize:".68rem",padding:"2px 6px",borderRadius:4,cursor:"pointer",fontWeight:700,display:"flex",alignItems:"center",gap:2}}
+                    title="Edit complete record & Gujarati translation"
+                  >
+                    ✏️ Edit
+                  </button>
                   <button
                     onClick={async (e) => {
                       e.stopPropagation();
@@ -27268,11 +29337,743 @@ function DonorListCard({ donorData, auth, onRefresh }) {
           );
         })}
       </div>
+
+      <div style={{marginTop:10,paddingTop:8,borderTop:"1px solid #E2E8F0",display:"flex",flexDirection:"column",gap:8}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:4}}>
+          <div style={{display:"flex",gap:4,flexWrap:"wrap",alignItems:"center"}}>
+            <span style={{fontSize:".7rem",fontWeight:700,color:"#475569",marginRight:2}}>Format:</span>
+            <button
+              onClick={() => setExportFormat("gujarati")}
+              style={{
+                padding:"3px 7px",
+                borderRadius:4,
+                fontSize:".68rem",
+                fontWeight:700,
+                cursor:"pointer",
+                border: exportFormat === "gujarati" ? "1px solid #166534" : "1px solid #CBD5E1",
+                background: exportFormat === "gujarati" ? "#DCFCE7" : "white",
+                color: exportFormat === "gujarati" ? "#15803D" : "#475569"
+              }}
+            >
+              📜 ગુજરાતી (1-Line)
+            </button>
+            <button
+              onClick={() => setExportFormat("single_line")}
+              style={{
+                padding:"3px 7px",
+                borderRadius:4,
+                fontSize:".68rem",
+                fontWeight:700,
+                cursor:"pointer",
+                border: exportFormat === "single_line" ? "1px solid #1D4ED8" : "1px solid #CBD5E1",
+                background: exportFormat === "single_line" ? "#EFF6FF" : "white",
+                color: exportFormat === "single_line" ? "#1D4ED8" : "#475569"
+              }}
+            >
+              ⚡ Compact (1-Line)
+            </button>
+            <button
+              onClick={() => setExportFormat("detailed")}
+              style={{
+                padding:"3px 7px",
+                borderRadius:4,
+                fontSize:".68rem",
+                fontWeight:700,
+                cursor:"pointer",
+                border: exportFormat === "detailed" ? "1px solid #7C3AED" : "1px solid #CBD5E1",
+                background: exportFormat === "detailed" ? "#F5F3FF" : "white",
+                color: exportFormat === "detailed" ? "#7C3AED" : "#475569"
+              }}
+            >
+              📝 Detailed
+            </button>
+          </div>
+
+          <button
+            onClick={() => setShowTemplateEditor(!showTemplateEditor)}
+            style={{
+              padding:"3px 8px",
+              borderRadius:4,
+              fontSize:".68rem",
+              fontWeight:700,
+              cursor:"pointer",
+              border:"1px solid #CBD5E1",
+              background:"#F8FAFC",
+              color:"#0F172A",
+              display:"flex",
+              alignItems:"center",
+              gap:3
+            }}
+            title="Edit WhatsApp Message Template"
+          >
+            <span>⚙️</span>
+            <span>{showTemplateEditor ? "Close Template" : "Edit Template"}</span>
+          </button>
+        </div>
+
+        {showTemplateEditor && (
+          <div style={{background:"#F8FAFC",border:"1.5px solid #CBD5E1",borderRadius:8,padding:10,fontSize:".75rem",display:"flex",flexDirection:"column",gap:8}}>
+            <div style={{fontWeight:800,color:"#15803D",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+              <span>📱 Customize WhatsApp Template Text</span>
+              <span style={{fontSize:".65rem",color:"#64748B"}}>Saves to Database</span>
+            </div>
+
+            <div>
+              <label style={{display:"block",fontSize:".68rem",color:"#475569",fontWeight:700,marginBottom:2}}>Header Banner:</label>
+              <textarea
+                rows={3}
+                value={customHeader}
+                onChange={e=>setCustomHeader(e.target.value)}
+                style={{width:"100%",padding:"6px 8px",borderRadius:6,border:"1px solid #CBD5E1",fontSize:".72rem",boxSizing:"border-box"}}
+              />
+            </div>
+
+            <div>
+              <label style={{display:"block",fontSize:".68rem",color:"#475569",fontWeight:700,marginBottom:2}}>Appeal Body Text:</label>
+              <textarea
+                rows={3}
+                value={customAppeal}
+                onChange={e=>setCustomAppeal(e.target.value)}
+                style={{width:"100%",padding:"6px 8px",borderRadius:6,border:"1px solid #CBD5E1",fontSize:".72rem",boxSizing:"border-box"}}
+              />
+            </div>
+
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
+              <div>
+                <label style={{display:"block",fontSize:".68rem",color:"#475569",fontWeight:700,marginBottom:2}}>Row Format ({'{AMOUNT}'}, {'{NAME}'}):</label>
+                <input
+                  type="text"
+                  value={customRowPattern}
+                  onChange={e=>setCustomRowPattern(e.target.value)}
+                  placeholder="₹ {AMOUNT}/- {NAME}"
+                  style={{width:"100%",padding:"6px 8px",borderRadius:6,border:"1px solid #CBD5E1",fontSize:".72rem",boxSizing:"border-box",background:"white"}}
+                />
+              </div>
+              <div>
+                <label style={{display:"block",fontSize:".68rem",color:"#475569",fontWeight:700,marginBottom:2}}>Signatory / Footer:</label>
+                <input
+                  type="text"
+                  value={customSignatory}
+                  onChange={e=>setCustomSignatory(e.target.value)}
+                  placeholder="લિ. વિનોદભાઈ મકવાણા"
+                  style={{width:"100%",padding:"6px 8px",borderRadius:6,border:"1px solid #CBD5E1",fontSize:".72rem",boxSizing:"border-box",background:"white"}}
+                />
+              </div>
+            </div>
+
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
+              <div>
+                <label style={{display:"block",fontSize:".68rem",color:"#475569",fontWeight:700,marginBottom:2}}>QR Scanner Header:</label>
+                <input
+                  type="text"
+                  value={customQrHeader || "💳 *GPay / BHIM QR સ્કેનર & Direct Pay:*"}
+                  onChange={e=>setCustomQrHeader(e.target.value)}
+                  style={{width:"100%",padding:"6px 8px",borderRadius:6,border:"1px solid #CBD5E1",fontSize:".72rem",boxSizing:"border-box",background:"white"}}
+                />
+              </div>
+              <div>
+                <label style={{display:"block",fontSize:".68rem",color:"#475569",fontWeight:700,marginBottom:2}}>UPI ID (VPA):</label>
+                <input
+                  type="text"
+                  value={customUpiId || "mumba98697331@barodampay"}
+                  onChange={e=>setCustomUpiId(e.target.value)}
+                  style={{width:"100%",padding:"6px 8px",borderRadius:6,border:"1px solid #CBD5E1",fontSize:".72rem",boxSizing:"border-box",background:"white",fontWeight:700,color:"#2563EB"}}
+                />
+              </div>
+            </div>
+
+            <div style={{display:"flex",justifyContent:"flex-end",gap:6}}>
+              <button
+                type="button"
+                onClick={handleSaveTemplate}
+                disabled={savingTemplate}
+                style={{padding:"6px 14px",background:"#15803D",color:"white",border:"none",borderRadius:6,fontSize:".75rem",fontWeight:800,cursor:"pointer"}}
+              >
+                {savingTemplate ? "Saving..." : "💾 Save Template"}
+              </button>
+            </div>
+          </div>
+        )}
+
+        <div style={{display:"flex",gap:12,alignItems:"center",flexWrap:"wrap",fontSize:".7rem",color:"#475569"}}>
+          <label style={{display:"flex",alignItems:"center",gap:4,cursor:"pointer"}}>
+            <input type="checkbox" checked={includeVibhag} onChange={e=>setIncludeVibhag(e.target.checked)} />
+            Include Vibhag
+          </label>
+          <label style={{display:"flex",alignItems:"center",gap:4,cursor:"pointer"}}>
+            <input type="checkbox" checked={includeReceipt} onChange={e=>setIncludeReceipt(e.target.checked)} />
+            Include Receipt #
+          </label>
+          <label style={{display:"flex",alignItems:"center",gap:4,cursor:"pointer"}}>
+            <input type="checkbox" checked={includeGPay} onChange={e=>setIncludeGPay(e.target.checked)} />
+            Include GPay & QR Link
+          </label>
+        </div>
+
+        <div style={{display:"flex",gap:6,alignItems:"center"}}>
+          <button
+            onClick={handleCopyWhatsApp}
+            style={{
+              flex: 1,
+              padding: "8px 10px",
+              background: copied ? "#DCFCE7" : "white",
+              color: copied ? "#15803D" : "#475569",
+              border: `1px solid ${copied ? "#86EFAC" : "#CBD5E1"}`,
+              borderRadius: 6,
+              fontSize: ".75rem",
+              fontWeight: 700,
+              cursor: "pointer",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              gap: 4
+            }}
+            title="Copy donor list to clipboard for WhatsApp"
+          >
+            <span>{copied ? "✅" : "📋"}</span>
+            <span>{copied ? "Copied!" : "Copy for WhatsApp"}</span>
+          </button>
+
+          <button
+            onClick={handleShareWhatsApp}
+            style={{
+              flex: 1,
+              padding: "8px 12px",
+              background: "#25D366",
+              color: "white",
+              border: "none",
+              borderRadius: 6,
+              fontSize: ".75rem",
+              fontWeight: 700,
+              cursor: "pointer",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              gap: 4,
+              boxShadow: "0 2px 6px rgba(37,211,102,0.25)"
+            }}
+            title="Share directly to WhatsApp"
+          >
+            <span>🟢</span>
+            <span>Share on WhatsApp</span>
+          </button>
+        </div>
+      </div>
+
+      {/* ── Modal: Edit Submitted Donation Record (All Fields & Gujarati Translation) ── */}
+      {editingDonation && (
+        <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.75)",zIndex:999999,display:"flex",alignItems:"center",justifyContent:"center",padding:16}} onClick={()=>setEditingDonation(null)}>
+          <div style={{background:"white",borderRadius:14,width:"100%",maxWidth:560,maxHeight:"92vh",display:"flex",flexDirection:"column",boxShadow:"0 25px 50px -12px rgba(0,0,0,0.5)",overflow:"hidden"}} onClick={e=>e.stopPropagation()}>
+            <div style={{padding:"14px 18px",background:"linear-gradient(135deg, #1E40AF, #1D4ED8)",color:"white",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+              <div style={{fontSize:".95rem",fontWeight:800,display:"flex",alignItems:"center",gap:6}}>
+                <span>✏️</span> Edit Complete Donation Record
+              </div>
+              <button type="button" onClick={()=>setEditingDonation(null)} style={{background:"none",border:"none",color:"white",fontSize:"1.3rem",cursor:"pointer"}}>✕</button>
+            </div>
+
+            <form
+              onSubmit={async (e) => {
+                e.preventDefault();
+                setSavingEdit(true);
+                try {
+                  const customWordDict = C?.gujaratiWordDictionary || {};
+                  const targetId = editingDonation._docId || editingDonation.id;
+                  const updatedRecord = {
+                    ...editingDonation,
+                    name: editFormData.name.trim(),
+                    nameGu: (editFormData.nameGu && editFormData.nameGu.trim()) ? editFormData.nameGu.trim() : transliterateEnglishToGujaratiPhonetic(editFormData.name.trim(), customWordDict),
+                    amount: parseFloat(editFormData.amount) || 0,
+                    date: editFormData.date,
+                    vibhag: editFormData.vibhag,
+                    vibhagGu: editFormData.vibhagGu,
+                    purpose: editFormData.purpose,
+                    program: editFormData.purpose,
+                    eventCode: editFormData.eventCode,
+                    receiptNo: editFormData.receiptNo,
+                    internalReceiptNo: editFormData.receiptNo,
+                    paymentMode: editFormData.paymentMode,
+                    paymentMethod: editFormData.paymentMode,
+                    status: editFormData.status,
+                    pan: editFormData.pan.trim().toUpperCase(),
+                    phone: editFormData.phone.trim(),
+                    email: editFormData.email.trim(),
+                    remarks: editFormData.remarks.trim()
+                  };
+
+                  Object.assign(editingDonation, updatedRecord);
+
+                  await fbUpdateDonation(targetId, updatedRecord, auth?.idToken);
+                  alert("✅ Donation record and Gujarati translation updated successfully!");
+                  setEditingDonation(null);
+                  if (onRefresh) onRefresh();
+                } catch(err) {
+                  alert("Failed to update donation: " + err.message);
+                } finally {
+                  setSavingEdit(false);
+                }
+              }}
+              style={{padding:18,overflowY:"auto",flex:1,display:"flex",flexDirection:"column",gap:12}}
+            >
+              {/* Names Section */}
+              <div style={{background:"#F8FAFC",border:"1.5px solid #CBD5E1",borderRadius:10,padding:12,display:"flex",flexDirection:"column",gap:10}}>
+                <div>
+                  <label style={{display:"block",fontSize:".74rem",fontWeight:700,color:"#1E293B",marginBottom:3,textAlign:"left"}}>Donor Full Name (English) *</label>
+                  <input
+                    type="text"
+                    value={editFormData.name}
+                    onChange={e => {
+                      const v = e.target.value;
+                      const customWordDict = C?.gujaratiWordDictionary || {};
+                      setEditFormData(prev => ({
+                        ...prev,
+                        name: v,
+                        nameGu: transliterateEnglishToGujaratiPhonetic(v, customWordDict)
+                      }));
+                    }}
+                    required
+                    style={{width:"100%",padding:"8px 10px",borderRadius:6,border:"1px solid #CBD5E1",fontSize:".88rem",boxSizing:"border-box",background:"white"}}
+                  />
+                </div>
+
+                <div>
+                  <label style={{display:"block",fontSize:".74rem",fontWeight:800,color:"#15803D",marginBottom:3,textAlign:"left"}}>દાતાનું પૂરું નામ (ગુજરાતી) *</label>
+                  <input
+                    type="text"
+                    value={editFormData.nameGu}
+                    onChange={e => setEditFormData({ ...editFormData, nameGu: e.target.value })}
+                    required
+                    style={{width:"100%",padding:"8px 10px",borderRadius:6,border:"1.5px solid #86EFAC",fontSize:".92rem",fontWeight:700,color:"#14532D",background:"#F0FDF4",boxSizing:"border-box"}}
+                    title="Directly correct any Gujarati letters here"
+                  />
+                </div>
+              </div>
+
+              {/* Amount and Date */}
+              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
+                <div>
+                  <label style={{display:"block",fontSize:".72rem",fontWeight:700,color:"#374151",marginBottom:3,textAlign:"left"}}>Amount (₹) *</label>
+                  <input
+                    type="number"
+                    min="1"
+                    value={editFormData.amount}
+                    onChange={e => setEditFormData({ ...editFormData, amount: e.target.value })}
+                    required
+                    style={{width:"100%",padding:"8px 10px",borderRadius:6,border:"1px solid #CBD5E1",fontSize:".88rem",fontWeight:700,color:"#15803D",boxSizing:"border-box"}}
+                  />
+                </div>
+                <div>
+                  <label style={{display:"block",fontSize:".72rem",fontWeight:700,color:"#374151",marginBottom:3,textAlign:"left"}}>Date *</label>
+                  <input
+                    type="date"
+                    value={editFormData.date}
+                    onChange={e => setEditFormData({ ...editFormData, date: e.target.value })}
+                    required
+                    style={{width:"100%",padding:"7px 10px",borderRadius:6,border:"1px solid #CBD5E1",fontSize:".82rem",boxSizing:"border-box"}}
+                  />
+                </div>
+              </div>
+
+              {/* Vibhag */}
+              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
+                <div>
+                  <label style={{display:"block",fontSize:".72rem",fontWeight:700,color:"#374151",marginBottom:3,textAlign:"left"}}>Vibhag (English)</label>
+                  <select
+                    value={editFormData.vibhag}
+                    onChange={e => {
+                      const v = e.target.value;
+                      const customWordDict = C?.gujaratiWordDictionary || {};
+                      const gu = v.toLowerCase().includes("outside") ? "મુંબઈ બહાર / સામાન્ય" : transliterateEnglishToGujaratiPhonetic(v, customWordDict);
+                      setEditFormData({ ...editFormData, vibhag: v, vibhagGu: gu });
+                    }}
+                    style={{width:"100%",padding:"8px 10px",borderRadius:6,border:"1px solid #CBD5E1",fontSize:".8rem",boxSizing:"border-box",background:"white"}}
+                  >
+                    {extractVibhagList(C).map(v => (
+                      <option key={v} value={v}>{v}</option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label style={{display:"block",fontSize:".72rem",fontWeight:800,color:"#15803D",marginBottom:3,textAlign:"left"}}>વિભાગ (ગુજરાતી)</label>
+                  <input
+                    type="text"
+                    value={editFormData.vibhagGu || ""}
+                    onChange={e => setEditFormData({ ...editFormData, vibhagGu: e.target.value })}
+                    style={{width:"100%",padding:"7px 10px",borderRadius:6,border:"1.5px solid #86EFAC",fontSize:".82rem",fontWeight:700,color:"#14532D",background:"#F0FDF4",boxSizing:"border-box"}}
+                  />
+                </div>
+              </div>
+
+              {/* Purpose & Receipt Number */}
+              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
+                <div>
+                  <label style={{display:"block",fontSize:".72rem",fontWeight:700,color:"#374151",marginBottom:3,textAlign:"left"}}>Purpose / Program</label>
+                  <input
+                    type="text"
+                    value={editFormData.purpose}
+                    onChange={e => setEditFormData({ ...editFormData, purpose: e.target.value })}
+                    style={{width:"100%",padding:"7px 10px",borderRadius:6,border:"1px solid #CBD5E1",fontSize:".82rem",boxSizing:"border-box"}}
+                  />
+                </div>
+                <div>
+                  <label style={{display:"block",fontSize:".72rem",fontWeight:700,color:"#374151",marginBottom:3,textAlign:"left"}}>Receipt Number</label>
+                  <input
+                    type="text"
+                    value={editFormData.receiptNo}
+                    onChange={e => setEditFormData({ ...editFormData, receiptNo: e.target.value })}
+                    style={{width:"100%",padding:"7px 10px",borderRadius:6,border:"1px solid #CBD5E1",fontSize:".82rem",boxSizing:"border-box"}}
+                  />
+                </div>
+              </div>
+
+              {/* Status and Mode */}
+              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
+                <div>
+                  <label style={{display:"block",fontSize:".72rem",fontWeight:700,color:"#374151",marginBottom:3,textAlign:"left"}}>Payment Mode</label>
+                  <select
+                    value={editFormData.paymentMode}
+                    onChange={e => setEditFormData({ ...editFormData, paymentMode: e.target.value })}
+                    style={{width:"100%",padding:"8px 10px",borderRadius:6,border:"1px solid #CBD5E1",fontSize:".8rem",boxSizing:"border-box",background:"white"}}
+                  >
+                    <option value="Offline">Offline / Cash / Cheque</option>
+                    <option value="Online">Online Payment Gateway</option>
+                  </select>
+                </div>
+                <div>
+                  <label style={{display:"block",fontSize:".72rem",fontWeight:700,color:"#374151",marginBottom:3,textAlign:"left"}}>Status</label>
+                  <select
+                    value={editFormData.status}
+                    onChange={e => setEditFormData({ ...editFormData, status: e.target.value })}
+                    style={{width:"100%",padding:"8px 10px",borderRadius:6,border:"1px solid #CBD5E1",fontSize:".8rem",boxSizing:"border-box",background:"white"}}
+                  >
+                    <option value="Verified">Verified</option>
+                    <option value="Pending">Pending</option>
+                    <option value="Rejected">Rejected</option>
+                  </select>
+                </div>
+              </div>
+
+              {/* PAN, Phone, Email */}
+              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
+                <div>
+                  <label style={{display:"block",fontSize:".72rem",fontWeight:700,color:"#374151",marginBottom:3,textAlign:"left"}}>PAN Number (80G)</label>
+                  <input
+                    type="text"
+                    value={editFormData.pan}
+                    onChange={e => setEditFormData({ ...editFormData, pan: e.target.value })}
+                    style={{width:"100%",padding:"7px 10px",borderRadius:6,border:"1px solid #CBD5E1",fontSize:".82rem",textTransform:"uppercase",boxSizing:"border-box"}}
+                  />
+                </div>
+                <div>
+                  <label style={{display:"block",fontSize:".72rem",fontWeight:700,color:"#374151",marginBottom:3,textAlign:"left"}}>Phone Number</label>
+                  <input
+                    type="tel"
+                    value={editFormData.phone}
+                    onChange={e => setEditFormData({ ...editFormData, phone: e.target.value })}
+                    style={{width:"100%",padding:"7px 10px",borderRadius:6,border:"1px solid #CBD5E1",fontSize:".82rem",boxSizing:"border-box"}}
+                  />
+                </div>
+              </div>
+
+              <div style={{display:"flex",justifyContent:"flex-end",gap:8,marginTop:10}}>
+                <button
+                  type="button"
+                  onClick={()=>setEditingDonation(null)}
+                  style={{padding:"8px 16px",background:"#F1F5F9",color:"#475569",border:"1px solid #CBD5E1",borderRadius:6,fontSize:".82rem",fontWeight:700,cursor:"pointer"}}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={savingEdit}
+                  style={{padding:"8px 20px",background:"linear-gradient(135deg, #166534, #15803D)",color:"white",border:"none",borderRadius:6,fontSize:".85rem",fontWeight:800,cursor:"pointer",boxShadow:"0 2px 4px rgba(22,101,52,0.3)"}}
+                >
+                  {savingEdit ? "Saving..." : "💾 Save Changes"}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
     </div>
   );
 }
 
-// ── Community AI & Registration Chatbot Widget ──────────────────────────────────────────
+function DynamicChatbotFormCard({ formDef, destination = "donations", introTitle, introText, initialData, C, auth, activeUser, onSubmitSuccess }) {
+  const [nameGu, setNameGu] = useState(initialData?.nameGu || "");
+  const [formData, setFormData] = useState(() => {
+    const init = {};
+    if (initialData) {
+      if (initialData.defaultVibhag) init["Vibhag"] = initialData.defaultVibhag;
+      if (initialData.defaultName) init["Full Name"] = initialData.defaultName;
+      if (initialData.defaultAmount) init["Amount"] = initialData.defaultAmount;
+      if (initialData.defaultPurpose) init["Purpose"] = initialData.defaultPurpose;
+    }
+    return init;
+  });
+  const [submitting, setSubmitting] = useState(false);
+  const [submittedResult, setSubmittedResult] = useState(null);
+
+  const vibhagList = extractVibhagList(C);
+  const fields = Array.isArray(formDef?.fields) && formDef.fields.length > 0 ? formDef.fields : null;
+
+  // If no custom fields, render fallback standard fields
+  const standardFields = [
+    { label: "Full Name", type: "text", required: true, placeholder: "Enter donor / applicant name" },
+    { label: "Mobile Number", type: "tel", required: true, placeholder: "10-digit mobile number" },
+    { label: "Date", type: "date", required: true, defaultValue: new Date().toISOString().split("T")[0] },
+    { label: "Amount", type: "number", required: destination === "donations", placeholder: "e.g. 5000" },
+    { label: "Vibhag", type: "select", required: true, options: vibhagList },
+    { label: "Purpose / Event Code", type: "text", placeholder: "e.g. Education Felicitation 2026" },
+    { label: "Internal Receipt Number", type: "text", placeholder: "e.g. R-1024" }
+  ];
+
+  const activeFields = fields || standardFields;
+
+  const handleFieldChange = (key, val) => {
+    setFormData(prev => ({ ...prev, [key]: val }));
+  };
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    setSubmitting(true);
+
+    try {
+      const idToken = auth?.idToken || localStorage.getItem("trustPublicAuthToken") || localStorage.getItem("globalAuthToken") || "";
+      const submitDate = formData["Date"] || formData["date"] || new Date().toISOString().split("T")[0];
+      const donorName = formData["Full Name"] || formData["name"] || formData["Name"] || formData["Donor Name"] || activeUser?.name || "Anonymous";
+      const userPhone = formData["Mobile Number"] || formData["mobile"] || formData["Phone Number"] || activeUser?.mobile || "";
+      const vibhagVal = formData["Vibhag"] || formData["vibhag"] || formData["MMP Vibhag"] || (vibhagList[0] || "10 MAHALAXMI");
+
+      if (destination === "donations") {
+        const amt = parseFloat(formData["Amount"] || formData["amount"] || 0);
+        const receiptNoVal = formData["Internal Receipt Number"] || formData["receiptNo"] || formData["Receipt No"] || "";
+        const purposeVal = formData["Purpose / Event Code"] || formData["Purpose"] || formData["purpose"] || formDef?.name || "Education Felicitation 2026";
+        const eventCodeVal = formData["Event Code"] || formData["eventCode"] || "EDU26";
+
+        const customWordDict = C?.gujaratiWordDictionary || {};
+        const finalGu = (nameGu && nameGu.trim()) ? nameGu.trim() : transliterateEnglishToGujaratiPhonetic(donorName, customWordDict);
+        const donRecord = {
+          name: donorName,
+          nameGu: finalGu,
+          mobile: userPhone,
+          amount: amt,
+          date: submitDate,
+          purpose: purposeVal,
+          vibhag: vibhagVal,
+          eventCode: eventCodeVal,
+          receiptNo: receiptNoVal,
+          internalReceiptNo: receiptNoVal,
+          paymentMode: "Offline",
+          paymentMethod: "Offline Collection",
+          status: "Verified",
+          isOffline: true,
+          recordedBy: activeUser?.name || "Admin",
+          recordedAt: new Date().toISOString(),
+          ...formData
+        };
+
+        const res = await fbSubmitDonation(donRecord, idToken);
+        donRecord.id = res?.name ? res.name.split("/").pop() : "OFF-" + Date.now().toString().slice(-6);
+        setSubmittedResult({ type: "donation", data: donRecord });
+        if (typeof window !== "undefined") window.dispatchEvent(new CustomEvent("donation_updated"));
+        if (onSubmitSuccess) onSubmitSuccess(donRecord);
+      } else if (destination === "registrations") {
+        const regRecord = {
+          eventId: formDef?.id || "edu_2026",
+          eventTitle: formDef?.name || "Education Felicitation 2026",
+          submitterMob: userPhone,
+          formData: {
+            "Full Name": donorName,
+            "Mobile Number": userPhone,
+            "Vibhag": vibhagVal,
+            ...formData
+          }
+        };
+
+        const res = await fbSubmitRegistration(regRecord, idToken);
+        const generatedId = res?.id || res?.["Transaction ID"] || regRecord["Transaction ID"] || "REG-OK";
+        setSubmittedResult({ type: "registration", data: { ...regRecord.formData, id: generatedId, transactionId: generatedId } });
+        if (typeof window !== "undefined") window.dispatchEvent(new CustomEvent("registration_updated"));
+        if (onSubmitSuccess) onSubmitSuccess(regRecord);
+      } else {
+        const volRecord = { ...formData, name: donorName, mobile: userPhone, status: "Pending" };
+        await fbSubmitVolunteer(volRecord);
+        setSubmittedResult({ type: "volunteer", data: volRecord });
+        if (onSubmitSuccess) onSubmitSuccess(volRecord);
+      }
+    } catch (err) {
+      alert("Submission failed: " + err.message);
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  if (submittedResult) {
+    if (submittedResult.type === "donation") {
+      return <OfflineDonationSuccessCard donation={submittedResult.data} />;
+    }
+    return (
+      <div style={{background:"#F0FDF4",border:"1.5px solid #86EFAC",borderRadius:10,padding:14,marginTop:6,boxShadow:"0 2px 8px rgba(34,197,94,0.15)"}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8,borderBottom:"1px solid #DCFCE7",paddingBottom:6}}>
+          <div style={{fontSize:".88rem",fontWeight:800,color:"#15803D"}}>🎉 Registration Submitted Successfully!</div>
+          <span style={{background:"#DCFCE7",color:"#166534",fontSize:".68rem",padding:"2px 7px",borderRadius:6,fontWeight:800}}>Saved to Registrations</span>
+        </div>
+        <div style={{fontSize:".8rem",color:"#1E293B",lineHeight:1.5}}>
+          <div>Transaction ID: <strong style={{color:"#2563EB",fontFamily:"monospace"}}>{submittedResult.data.transactionId || submittedResult.data.id}</strong></div>
+          <div>Name: <strong>{submittedResult.data["Full Name"] || submittedResult.data.name}</strong></div>
+          <div>Vibhag: <strong>{submittedResult.data["Vibhag"] || submittedResult.data.vibhag}</strong></div>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <form onSubmit={handleSubmit} style={{background:"#F8FAFC",border:"1.5px solid #CBD5E1",borderRadius:12,padding:14,marginTop:8,display:"flex",flexDirection:"column",gap:10}}>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",borderBottom:"1px solid #E2E8F0",paddingBottom:6}}>
+        <div style={{fontSize:".85rem",fontWeight:800,color:"#0F172A",display:"flex",alignItems:"center",gap:6}}>
+          <span>📝</span> {formDef?.name || introTitle || "Interactive Form"}
+        </div>
+        <span style={{
+          background: destination === "donations" ? "#FEF3C7" : "#EFF6FF",
+          color: destination === "donations" ? "#92400E" : "#1D4ED8",
+          fontSize: ".68rem",
+          padding: "2px 6px",
+          borderRadius: 4,
+          fontWeight: 800,
+          border: "1px solid " + (destination === "donations" ? "#FCD34D" : "#BFDBFE")
+        }}>
+          {destination === "donations" ? "💰 Offline Donation" : destination === "registrations" ? "📥 Event Registration" : "👥 Volunteer"}
+        </span>
+      </div>
+
+      {introText && (
+        <div style={{fontSize:".75rem",color:"#475569",lineHeight:1.4}}>
+          {introText}
+        </div>
+      )}
+
+      <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit, minmax(140px, 1fr))",gap:8}}>
+        {activeFields.map((field, idx) => {
+          const label = field.label || field.name || ("Field " + (idx + 1));
+          const type = (field.type || "text").toLowerCase();
+          const isReq = field.required !== false;
+          const val = formData[label] !== undefined ? formData[label] : (field.defaultValue || "");
+          const isVibhagField = label.toLowerCase().includes("vibhag");
+          const isNameField = (label.toLowerCase().includes("name") || label.toLowerCase().includes("donor")) && !label.toLowerCase().includes("vibhag") && !label.toLowerCase().includes("event") && !label.toLowerCase().includes("father") && !label.toLowerCase().includes("mother");
+
+          if (isNameField) {
+            return (
+              <div key={idx} style={{gridColumn: "1/-1",display:"flex",flexDirection:"column",gap:10,background:"#F8FAFC",border:"1.5px solid #CBD5E1",borderRadius:8,padding:12}}>
+                <div>
+                  <label style={{display:"block",fontSize:".74rem",fontWeight:700,color:"#1E293B",marginBottom:4,textAlign:"left",whiteSpace:"nowrap"}}>
+                    {label} (English) {isReq ? "*" : ""}
+                  </label>
+                  <input
+                    type="text"
+                    placeholder={field.placeholder || "Enter Full Name in English"}
+                    value={val}
+                    onChange={e => {
+                      const v = e.target.value;
+                      handleFieldChange(label, v);
+                      const customWordDict = C?.gujaratiWordDictionary || {};
+                      setNameGu(transliterateEnglishToGujaratiPhonetic(v, customWordDict));
+                    }}
+                    required={isReq}
+                    style={{width:"100%",padding:"8px 12px",borderRadius:6,border:"1px solid #94A3B8",fontSize:".88rem",boxSizing:"border-box",background:"white"}}
+                  />
+                </div>
+                <div>
+                  <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:4}}>
+                    <label style={{fontSize:".74rem",fontWeight:800,color:"#15803D",textAlign:"left",whiteSpace:"nowrap"}}>
+                      દાતાનું નામ (ગુજરાતી) *
+                    </label>
+                    <span style={{fontSize:".62rem",color:"#166534",background:"#DCFCE7",padding:"1px 6px",borderRadius:4,fontWeight:700}}>✏️ Edit if needed</span>
+                  </div>
+                  <input
+                    type="text"
+                    placeholder="દાતાનું ગુજરાતી નામ (e.g. પ્રદીપ પરમાર)"
+                    value={nameGu}
+                    onChange={e => setNameGu(e.target.value)}
+                    style={{width:"100%",padding:"8px 12px",borderRadius:6,border:"1.5px solid #86EFAC",fontSize:".9rem",fontWeight:700,color:"#14532D",background:"#F0FDF4",boxSizing:"border-box"}}
+                    title="Directly correct any Gujarati letters here"
+                  />
+                </div>
+              </div>
+            );
+          }
+
+          // 1. If field has its OWN explicit options from Form Builder, ALWAYS use them!
+          let fieldOpts = [];
+          if (Array.isArray(field.options) && field.options.length > 0) {
+            fieldOpts = field.options.map(opt => (typeof opt === "string" ? opt.trim() : (opt?.value || opt?.label || "").trim())).filter(Boolean);
+          } else if (typeof field.options === "string" && field.options.trim().length > 0) {
+            fieldOpts = field.options.split(",").map(opt => opt.trim()).filter(Boolean);
+          } else if (isVibhagField) {
+            fieldOpts = vibhagList;
+          }
+
+          if (type === "select" || fieldOpts.length > 0) {
+            return (
+              <div key={idx} style={{gridColumn: "1/-1"}}>
+                <label style={{display:"block",fontSize:".7rem",fontWeight:700,color:"#374151",marginBottom:2}}>
+                  {label} {isReq ? "*" : ""}
+                </label>
+                <select
+                  value={val || fieldOpts[0] || ""}
+                  onChange={e => handleFieldChange(label, e.target.value)}
+                  required={isReq}
+                  style={{width:"100%",padding:"6px 8px",borderRadius:6,border:"1px solid #CBD5E1",fontSize:".78rem",background:"white",boxSizing:"border-box",fontWeight:600}}
+                >
+                  {!isVibhagField && <option value="">-- Select {label} --</option>}
+                  {fieldOpts.map((optVal, oi) => (
+                    <option key={oi} value={optVal}>{optVal}</option>
+                  ))}
+                </select>
+              </div>
+            );
+          }
+
+          return (
+            <div key={idx} style={{gridColumn: (type === "address" || type === "textarea") ? "1/-1" : "auto"}}>
+              <label style={{display:"block",fontSize:".7rem",fontWeight:700,color:"#374151",marginBottom:2}}>
+                {label} {isReq ? "*" : ""}
+              </label>
+              <input
+                type={type === "number" ? "number" : type === "date" ? "date" : type === "tel" ? "tel" : type === "email" ? "email" : "text"}
+                value={val}
+                onChange={e => handleFieldChange(label, e.target.value)}
+                placeholder={field.placeholder || ("Enter " + label)}
+                required={isReq}
+                style={{width:"100%",padding:"6px 8px",borderRadius:6,border:"1px solid #CBD5E1",fontSize:".78rem",boxSizing:"border-box",background:"white"}}
+              />
+            </div>
+          );
+        })}
+      </div>
+
+      <button
+        type="submit"
+        disabled={submitting}
+        style={{
+          marginTop: 4,
+          padding: "9px",
+          borderRadius: 8,
+          border: "none",
+          background: destination === "donations" ? "linear-gradient(135deg, #15803D, #166534)" : "linear-gradient(135deg, #2563EB, #1D4ED8)",
+          color: "white",
+          fontSize: ".82rem",
+          fontWeight: 800,
+          cursor: submitting ? "wait" : "pointer",
+          boxShadow: "0 2px 6px rgba(0,0,0,0.15)"
+        }}
+      >
+        {submitting ? "Saving..." : ("💾 Submit & Save to " + (destination === "donations" ? "Donations" : destination === "registrations" ? "Registrations" : "Volunteers"))}
+      </button>
+    </form>
+  );
+}
+
 function CommunityChatbot({ C, auth, onShowLogin }) {
   if (C.chatbotEnabled === false) {
     return null;
@@ -27470,17 +30271,9 @@ function CommunityChatbot({ C, auth, onShowLogin }) {
       cmd: "/events",
       icon: "🎓",
       title: "Upcoming Education Felicitation 2026 events",
-      answer: "🎓 **Education Felicitation 2026 - Mumbai Meghwal Panchayat & Vidya Gohil Trust**\n\n• **Event**: Annual Student Education Felicitation 2026\n• **Eligibility**: Students scoring 50%+ in 10th, 12th, Degree, Diploma & Post-Graduation\n• **Registration Portal**: Online via website Events section\n• **Date**: 02-10-2026\n• **Venue**: Mumbai (To be officially announced soon)\n• **Required Documents**: Marksheet & Passport Photo\n\n• [Watch Registration Video](https://youtu.be/hg2dxZjDLfo)\n• [Visit Website Portal](https://www.mmp-cwc.com)",
+      answer: "🎓 **Education Felicitation 2026 - Mumbai Meghwal Panchayat & Vidya Gohil Trust**\n\n• **Event**: Annual Student Education Felicitation 2026\n• **Eligibility**: Students scoring 50%+ in 10th, 12th, Degree, Diploma & Post-Graduation\n• **Registration Portal**: Online via website Events section\n• **Venue & Date**: Mumbai (To be officially announced soon)\n• **Required Documents**: Marksheet & Passport Photo\n\nFor assistance with registration, contact your Vibhag Head.",
       enabled: true,
-      adminOnly: false
-    },
-    {
-      id: "kb_edu_committee",
-      cmd: "/edu_committee",
-      icon: "👥",
-      title: "Education Committee Members",
-      answer: "👥 **Education Felicitation 2026 Committee Members**:\n\n• **Pradeep Parmar** — Trustee / Lead Coordinator (+91 9820785209)\n• **Keshav Wagh** — Lower Parel Head (+91 9967821964)\n• **Ashwin Kataria** — Ramdev Nagar Head (+91 8082234187)\n• **Samiksha Chudasama** — Committee Member (+91 7977561920)\n• **Dinesh Sondarva** — Mahalaxmi Head (+91 8779227886)\n• **Khushi Jogadiya** — Pratiksha Nagar Head (+91 8591563577)",
-      enabled: true,
+      roleAccess: "public",
       adminOnly: false
     },
     {
@@ -27488,8 +30281,9 @@ function CommunityChatbot({ C, auth, onShowLogin }) {
       cmd: "/cwc_committee",
       icon: "🏛️",
       title: "CWC Committee Members",
-      answer: "🏛️ **Central Working Committee (CWC) Members**:\n\n• **President**: MMP Central Leadership\n• **General Secretary**: CWC Executive\n• **Treasurer / Financial Head**: Trust Executive\n• **Coordination Team**: Central Vibhag Team\n\n*(You can edit full member details & phone numbers in Admin Panel)*",
+      answer: "🏛️ **Central Working Committee (CWC) Members**:\n\n• **President**: Ravi Dharia - President MMP CWC\n• **General Secretary**: CWC Executive\n• **Treasurer / Financial Head**: Trust Executive\n• **Coordination Team**: Central Vibhag Team\n\n*(You can edit full member details & phone numbers in Admin Panel)*",
       enabled: true,
+      roleAccess: "public",
       adminOnly: false
     },
     {
@@ -27498,8 +30292,10 @@ function CommunityChatbot({ C, auth, onShowLogin }) {
       icon: "💰",
       title: "80G Tax Donations & Bank Details",
       answer: "💰 **Donations & 80G Tax Exemption**:\n\n• Vidya Gohil Charitable Trust offers **80G Tax Benefits** for all eligible donations under Indian Income Tax regulations.\n• You can donate online securely via Razorpay (UPI, Google Pay, PhonePe, Cards, NetBanking) on our **Donate** page.\n• Automated 80G tax receipts and 10BE acknowledgement certificates are provided.",
-      enabled: false, // Default hidden for MMP
-      adminOnly: false
+      enabled: true,
+      roleAccess: "public",
+      adminOnly: false,
+      attachedWhatsAppTplId: "tpl_general_donation"
     },
     {
       id: "kb_contact",
@@ -27508,113 +30304,169 @@ function CommunityChatbot({ C, auth, onShowLogin }) {
       title: "Trust Helpline & Office Contacts",
       answer: "📞 **Trust Office & Helpline Contacts**:\n\n• **Office**: Mumbai, Maharashtra\n• **Email**: info@mmp-cwc-new.com\n• **Helpline Mobile**: +91 9820785209 / +91 9967821964\n• **Timings**: 10:00 AM – 7:00 PM (Mon – Sat)",
       enabled: true,
+      roleAccess: "public",
       adminOnly: false
-    }
-  ];
-
-  const kbList = Array.isArray(C.chatbotKnowledgeBase) && C.chatbotKnowledgeBase.length > 0 ? C.chatbotKnowledgeBase : DEFAULT_KB;
-
-  // System Core Commands + Custom Knowledge Base Commands
-  const SYSTEM_COMMANDS = [
+    },
     {
+      id: "kb_check",
       cmd: "/check",
       icon: "🔍",
-      label: "Check My Application Status",
-      desc: "Look up your application status by logged-in mobile or Transaction ID",
-      action: "/check",
+      title: "Check Application Status",
+      answer: "🔍 **Check Application Status**:\n\nPlease enter your **Transaction ID (e.g. VG-7, EDU26-2)** or **Registered Mobile Number** to look up your live status.",
+      enabled: true,
+      roleAccess: "public",
       adminOnly: false
     },
     {
+      id: "kb_donation_update",
       cmd: "/donation update",
       icon: "✍️",
-      label: "Record Offline Donation",
-      desc: "Add offline donation (Restricted to Donation Collectors)",
-      action: "/donation update",
+      title: "Record Offline Donation",
+      answer: "✍️ **Record Offline Donation**:\n\nUse the interactive form below to record cash, cheque, or direct bank transfer donations with instant database syncing.",
+      enabled: true,
+      roleAccess: "donation_collector",
       adminOnly: true,
-      donationCollectorOnly: true
+      attachedFormId: "builtin_offline_donation",
+      storageDestination: "donations"
     },
     {
-      cmd: "/donner",
-      icon: "✍️",
-      label: "Record Offline Donation (/donner)",
-      desc: "Offline donation entry form (Donation Collectors only)",
-      action: "/donation update",
+      id: "kb_donationsummary",
+      cmd: "/donation summary",
+      icon: "📊",
+      title: "Donation Summary (Vibhag-wise Collections)",
+      answer: "📊 **Mumbai Meghwal Panchayat - Live Donation Collection Summary**:\n\nHere is the real-time breakdown of online & offline collections across all Vibhags:",
+      enabled: true,
+      roleAccess: "donation_collector",
       adminOnly: true,
-      donationCollectorOnly: true
+      attachedWhatsAppTplId: "tpl_donor_summary"
     },
     {
-      cmd: "/donation sumary",
-      icon: "💰",
-      label: "Donation Summary (Vibhag-wise)",
-      desc: "Total collections & Vibhag metrics (Donation Collectors only)",
-      action: "/donation sumary",
-      adminOnly: true,
-      donationCollectorOnly: true
-    },
-    {
+      id: "kb_donerlist",
       cmd: "/donerlist",
       icon: "📋",
-      label: "Donor List (Person-wise)",
-      desc: "Complete registry of donors (Donation Collectors only)",
-      action: "/donerlist",
+      title: "Donor Registry List & WhatsApp Broadcast",
+      answer: "📋 **Mumbai Meghwal Panchayat - Live Donor Registry**:\n\nHere is the verified list of donors contributing to the Education Felicitation & Trust programs:",
+      enabled: true,
+      roleAccess: "donation_collector",
       adminOnly: true,
-      donationCollectorOnly: true
+      attachedWhatsAppTplId: "tpl_edu_appeal"
     },
     {
+      id: "kb_all",
       cmd: "/all",
-      icon: "📊",
-      label: "Summary of ALL Entries",
-      desc: "Complete registration counts & metrics across ALL Vibhags",
-      action: "Summary data of all entry ALL",
+      icon: "📈",
+      title: "Summary of ALL Student Registrations",
+      answer: "📈 **All Registrations Summary**:\n\nLive counts and status metrics across all Vibhags and programs.",
+      enabled: true,
+      roleAccess: "vibhag_admin",
       adminOnly: true
     },
     {
+      id: "kb_vibhag",
       cmd: "/vibhag",
       icon: "📍",
-      label: "Summary by Vibhag #",
-      desc: "Choose a specific Vibhag (e.g. 15 RAMDEV NAGAR, 10 MAHALAXMI)",
-      hasSubmenu: true,
+      title: "Summary by Vibhag #",
+      answer: "📍 **Vibhag-wise Analytics**:\n\nSelect or enter a specific Vibhag (e.g. 10 MAHALAXMI, 15 RAMDEV NAGAR) to see localized registration data.",
+      enabled: true,
+      roleAccess: "vibhag_admin",
       adminOnly: true
     },
     {
+      id: "kb_pending",
       cmd: "/pending",
       icon: "⏳",
-      label: "Pending Review List",
-      desc: "Show registrations currently awaiting committee approval",
-      action: "Show all pending registrations",
+      title: "Pending Review Registrations",
+      answer: "⏳ **Pending Applications**:\n\nList of student registrations currently awaiting committee document verification.",
+      enabled: true,
+      roleAccess: "vibhag_admin",
       adminOnly: true
     },
     {
+      id: "kb_approved",
       cmd: "/approved",
       icon: "🟢",
-      label: "Approved List",
-      desc: "Show registrations verified & approved by committee",
-      action: "Show approved registrations",
+      title: "Approved Registrations List",
+      answer: "🟢 **Approved Applications**:\n\nList of verified and confirmed student applicants.",
+      enabled: true,
+      roleAccess: "vibhag_admin",
       adminOnly: true
     }
   ];
 
-  const DYNAMIC_KB_COMMANDS = kbList.filter(item => item.enabled !== false).map(item => ({
-    cmd: item.cmd,
-    icon: item.icon || "❓",
-    label: item.title,
-    desc: item.answer.slice(0, 65) + "...",
-    action: item.cmd,
-    adminOnly: Boolean(item.adminOnly)
-  }));
+  // Merge saved knowledge base by unique ID so edits, renames, and deletions persist 100% reliably
+  const rawKb = Array.isArray(C.chatbotKnowledgeBase) ? C.chatbotKnowledgeBase : [];
+  const kbMap = new Map();
+  DEFAULT_KB.forEach(item => kbMap.set(item.id, { ...item }));
 
-  const ALL_SLASH_COMMANDS = [
-    ...SYSTEM_COMMANDS,
-    ...DYNAMIC_KB_COMMANDS,
-    {
+  const SYSTEM_FIXED_CMDS = {
+    "kb_events": "/Edu_events",
+    "kb_edu_committee": "/Edu_committee",
+    "kb_edu_eligibility": "/Edu_eligibility",
+    "kb_all": "/Edu_all",
+    "kb_pending": "/Edu_pending",
+    "kb_approved": "/Edu_approved",
+    "kb_check": "/check",
+    "kb_vibhag": "/vibhag",
+    "kb_donationsummary": "/don_summary",
+    "kb_donerlist": "/don_list",
+    "kb_donation_update": "/don_entry",
+    "kb_donationupdate": "/don_entry",
+    "kb_donate": "/don_80g",
+    "kb_cwc_committee": "/cwc_committee",
+    "kb_contact": "/contact"
+  };
+
+  rawKb.forEach(item => {
+    if (item && item.id) {
+      const existing = kbMap.get(item.id) || {};
+      let correctCmd = item.cmd;
+      
+      // If a command was accidentally overwritten with a duplicate (e.g. /donner or /education)
+      const isDuplicateConflict = item.cmd === "/donner" || item.cmd === "/education" || item.cmd === "/Education";
+      if (SYSTEM_FIXED_CMDS[item.id] && (!item.cmd || isDuplicateConflict)) {
+        correctCmd = SYSTEM_FIXED_CMDS[item.id];
+      }
+      kbMap.set(item.id, { ...existing, ...item, cmd: correctCmd || existing.cmd });
+    } else if (item && item.cmd) {
+      const fallbackId = "kb_" + item.cmd.replace(/\W/g, "");
+      const existing = kbMap.get(fallbackId) || {};
+      kbMap.set(fallbackId, { id: fallbackId, ...existing, ...item });
+    }
+  });
+  const kbList = Array.from(kbMap.values());
+
+  // Unified, deduplicated slash commands derived directly from active Knowledge Base & Core System
+  const ALL_SLASH_COMMANDS = useMemo(() => {
+    const list = kbList.filter(item => item.enabled !== false).map(item => {
+      const cleanCmd = (item.cmd || "").trim();
+      const isVibhagMenu = cleanCmd === "/vibhag";
+      return {
+        cmd: cleanCmd,
+        order: item.order !== undefined && item.order !== null ? Number(item.order) : 999,
+        icon: item.icon || "❓",
+        label: item.title || cleanCmd,
+        desc: (item.answer || "").slice(0, 80) + "...",
+        action: cleanCmd,
+        hasSubmenu: isVibhagMenu,
+        adminOnly: item.roleAccess === "vibhag_admin" || item.roleAccess === "super_admin" || Boolean(item.adminOnly),
+        donationCollectorOnly: item.roleAccess === "donation_collector",
+        attachedFormId: item.attachedFormId,
+        attachedWhatsAppTplId: item.attachedWhatsAppTplId
+      };
+    }).sort((a, b) => (a.order || 999) - (b.order || 999));
+
+    list.push({
       cmd: "/help",
-      icon: "❓",
+      order: 9999,
+      icon: "⚡",
       label: "Commands & Capabilities Guide",
       desc: "View full list of questions this chatbot is capable of answering",
       action: "/help",
       adminOnly: false
-    }
-  ];
+    });
+
+    return list;
+  }, [kbList]);
 
   const [messages, setMessages] = useState([
     {
@@ -27698,15 +30550,16 @@ function CommunityChatbot({ C, auth, onShowLogin }) {
     return cleanList;
   };
 
-  const handleSendMessage = async (userText) => {
+  const handleSendMessage = async (userText, overrideDisplayText) => {
     const query = (userText || input).trim();
     if (!query) return;
+    const userDisplay = overrideDisplayText || query;
     setInput("");
     setShowSlashMenu(false);
     setSlashSubmenu(null);
 
     const newMsgId = "m_" + Date.now();
-    const userMsg = { id: newMsgId, sender: "user", text: query };
+    const userMsg = { id: newMsgId, sender: "user", text: userDisplay };
     setMessages(prev => [...prev, userMsg]);
     setLoading(true);
 
@@ -27770,66 +30623,38 @@ function CommunityChatbot({ C, auth, onShowLogin }) {
       return false;
     });
 
-    // ── Command 1: /donation update (Offline Donation Entry Flow) ──
-    if (qLower === "/donation update" || qLower === "donation update" || qLower === "/donner" || qLower === "donner" || qLower === "/donor" || qLower === "donor" || qLower === "/offline donation" || qLower === "offline donation" || qLower.startsWith("/donation update") || qLower.startsWith("/donner")) {
+    // ── Command 1: /don_entry & Interactive Form Connection ──
+    const isDonEntryTrigger = (
+      qLower === "/don_entry" || qLower === "don_entry" || qLower === "/don entry" ||
+      qLower === "/donation update" || qLower === "donation update" ||
+      qLower === "/donner" || qLower === "donner" || qLower === "/donor" || qLower === "donor" ||
+      qLower === "/offline donation" || qLower === "offline donation" ||
+      qLower.startsWith("/donation update") || qLower.startsWith("/don_entry") ||
+      (matchedKb && (matchedKb.attachedFormId || matchedKb.cmd === "/don_entry" || (matchedKb.title && matchedKb.title.toLowerCase().includes("offline donation"))))
+    );
+
+    if (isDonEntryTrigger) {
       if (!isDonationCollector) {
         botReply = `🔒 **Access Restricted: Donation Collector Role Required**\n\nRecording offline donations is strictly restricted to authorized **Donation Collectors** and **Super Admins**.\n\n• ℹ️ **Your Access**: Regular registration/vibhag committee members are not authorized for payment collections.\n• 👉 Please connect with Super Admin (+91 9820785209) to assign you the **Donation Collector** role.`;
       } else {
-        // Check if user provided parameters inline: e.g. Name: John, Amount: 5000...
-        const parseInline = (text) => {
-          const res = {};
-          const nameM = text.match(/name[:\s=]+([^,\n]+)/i);
-          const amtM = text.match(/amount[:\s=]+([^,\n]+)/i);
-          const dateM = text.match(/date[:\s=]+([^,\n]+)/i);
-          const purpM = text.match(/purpose[:\s=]+([^,\n]+)/i);
-          const vibM = text.match(/vibhag(?:\s*number)?[:\s=]+([^,\n]+)/i);
-          const evM = text.match(/event(?:\s*code)?[:\s=]+([^,\n]+)/i);
-          const rcpM = text.match(/(?:internal\s*)?receipt(?:\s*number)?[:\s=]+([^,\n]+)/i);
-          if (nameM) res.name = nameM[1].trim();
-          if (amtM) res.amount = amtM[1].trim().replace(/[^0-9.]/g, '');
-          if (dateM) res.date = dateM[1].trim();
-          if (purpM) res.purpose = purpM[1].trim();
-          if (vibM) res.vibhag = vibM[1].trim();
-          if (evM) res.eventCode = evM[1].trim();
-          if (rcpM) res.receiptNo = rcpM[1].trim();
-          return res;
-        };
+        const customFormId = matchedKb?.attachedFormId;
+        const attachedCustomForm = (customFormId && customFormId !== "builtin_offline_donation")
+          ? (C?.forms || []).find(f => (f.id === customFormId || f.name === customFormId || (f.name && customFormId && f.name.toLowerCase() === customFormId.toLowerCase())))
+          : null;
 
-        const inlineData = parseInline(query);
-        if (inlineData.name && inlineData.amount) {
-          // Direct inline submission!
-          try {
-            const donDate = inlineData.date || new Date().toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
-            const donRecord = {
-              name: inlineData.name,
-              amount: parseFloat(inlineData.amount) || 0,
-              date: donDate,
-              program: inlineData.purpose || "Education Felicitation 2026",
-              purpose: inlineData.purpose || "Education Felicitation 2026",
-              vibhag: inlineData.vibhag || (sessionVibhag !== "All Vibhags" ? sessionVibhag : "General"),
-              eventCode: inlineData.eventCode || "EDU26",
-              receiptNo: inlineData.receiptNo || `RCP-${Math.floor(1000 + Math.random() * 9000)}`,
-              internalReceiptNo: inlineData.receiptNo || `RCP-${Math.floor(1000 + Math.random() * 9000)}`,
-              paymentMode: "Offline",
-              paymentMethod: "Offline / Cash / Cheque",
-              status: "Verified",
-              isOffline: true,
-              id: `DON-OFF-${Math.floor(100000 + Math.random() * 900000)}`,
-              recordedBy: activeUser?.email || activeUser?.name || "Admin",
-              recordedAt: new Date().toISOString()
-            };
-
-            await fbSubmitDonation(donRecord, auth?.idToken);
-            botType = "offline_donation_success";
-            botReply = `✅ **Offline Donation Successfully Saved to Database!**`;
-            cardData = { donation: donRecord };
-          } catch (err) {
-            botReply = `❌ **Failed to save offline donation**: ${err.message}`;
-          }
+        if (attachedCustomForm) {
+          botType = "dynamic_form";
+          botReply = matchedKb?.answer || `✍️ **${attachedCustomForm.name}**\n\nPlease complete the interactive form below:`;
+          cardData = {
+            formDef: attachedCustomForm,
+            destination: matchedKb?.storageDestination || "donations",
+            introTitle: matchedKb?.title || attachedCustomForm.name,
+            introText: matchedKb?.answer
+          };
         } else {
-          // Render interactive form card
+          // Standard / Built-in Offline Donation Entry Form
           botType = "offline_donation_form";
-          botReply = `✍️ **Offline Donation Entry Form**\n\nPlease enter the offline donation details below. All fields will be stored directly into the official Donations database:`;
+          botReply = matchedKb?.answer || `✍️ **Offline Donation Entry Form**\n\nPlease enter the offline donation details below. All fields will be stored directly into the official Donations database:`;
           cardData = {
             initialDate: new Date().toISOString().split('T')[0],
             defaultVibhag: sessionVibhag && sessionVibhag !== "All Vibhags" ? sessionVibhag : "10 MAHALAXMI",
@@ -27838,7 +30663,7 @@ function CommunityChatbot({ C, auth, onShowLogin }) {
           };
         }
       }
-    } else if (qLower === "/donation sumary" || qLower === "/donation summary" || qLower === "donation sumary" || qLower === "donation summary" || qLower === "/donationsummary" || qLower === "/donationsumary") {
+    } else if (qLower === "/don_summary" || qLower === "don_summary" || qLower === "/don summary" || qLower === "/donation sumary" || qLower === "/donation summary" || qLower === "donation sumary" || qLower === "donation summary" || qLower === "/donationsummary" || qLower === "/donationsumary" || (matchedKb && (matchedKb.id === "kb_donationsummary" || matchedKb.title.toLowerCase().includes("donation summary")))) {
       if (!isDonationCollector) {
         botReply = `🔒 **Access Restricted: Donation Collector Role Required**\n\nDonation summaries and financial metrics are restricted to authorized **Donation Collectors** and **Super Admins**.\n\n• 👉 If you are an assigned Donation Collector, please enter your **10-digit Authorized Mobile Number** to unlock.`;
       } else {
@@ -27872,7 +30697,7 @@ function CommunityChatbot({ C, auth, onShowLogin }) {
           });
 
           botType = "donation_summary_card";
-          botReply = `💰 **Live Donation Summary (Vibhag-wise & Mode-wise)**:`;
+          botReply = (matchedKb && matchedKb.answer) ? matchedKb.answer : `💰 **Live Donation Summary (Vibhag-wise & Mode-wise)**:`;
           cardData = {
             totalAmount: totalAmt,
             totalCount: allDonations.length,
@@ -27880,13 +30705,14 @@ function CommunityChatbot({ C, auth, onShowLogin }) {
             onlineCount: onlineCount,
             offlineAmount: offlineAmt,
             offlineCount: offlineCount,
-            vibhagBreakdown: Object.entries(vibhagMap).sort((a, b) => b[1].total - a[1].total)
+            vibhagBreakdown: Object.entries(vibhagMap).sort((a, b) => b[1].total - a[1].total),
+            tplId: matchedKb?.attachedWhatsAppTplId || "tpl_donor_summary"
           };
         } catch (err) {
           botReply = `❌ **Failed to fetch donation summary**: ${err.message}`;
         }
       }
-    } else if (qLower === "/donerlist" || qLower === "/donorlist" || qLower === "/donnerlist" || qLower === "donerlist" || qLower === "donorlist" || qLower === "donnerlist" || qLower === "/donor list" || qLower === "donor list" || qLower === "/donner list") {
+    } else if (qLower === "/don_list" || qLower === "don_list" || qLower === "/don list" || qLower === "/donerlist" || qLower === "/donorlist" || qLower === "/donnerlist" || qLower === "donerlist" || qLower === "donorlist" || qLower === "donnerlist" || qLower === "/donor list" || qLower === "donor list" || qLower === "/donner list" || (matchedKb && (matchedKb.id === "kb_donerlist" || matchedKb.title.toLowerCase().includes("donor registry") || matchedKb.title.toLowerCase().includes("donor list")))) {
       if (!isDonationCollector) {
         botReply = `🔒 **Access Restricted: Donation Collector Role Required**\n\nDonor registries and person-wise collections are restricted to authorized **Donation Collectors** and **Super Admins**.\n\n• 👉 If you are an assigned Donation Collector, please enter your **10-digit Authorized Mobile Number** to unlock.`;
       } else {
@@ -27898,10 +30724,11 @@ function CommunityChatbot({ C, auth, onShowLogin }) {
             botReply = `📋 **No donation records found in the database.**`;
           } else {
             botType = "donor_list_card";
-            botReply = `📋 **Person-wise Donor Registry (${allDonations.length} Donors Recorded)**:`;
+            botReply = (matchedKb && matchedKb.answer) ? matchedKb.answer : `📋 **Person-wise Donor Registry (${allDonations.length} Donors Recorded)**:`;
             cardData = {
               donors: allDonations,
-              totalAmount: allDonations.reduce((sum, d) => sum + (parseFloat(d.amount) || 0), 0)
+              totalAmount: allDonations.reduce((sum, d) => sum + (parseFloat(d.amount) || 0), 0),
+              tplId: matchedKb?.attachedWhatsAppTplId || "tpl_edu_appeal"
             };
           }
         } catch (err) {
@@ -27936,12 +30763,133 @@ function CommunityChatbot({ C, auth, onShowLogin }) {
       } else {
         botReply = `🔐 **Please Log In to Check Your Application Status**\n\nFor security and privacy, please log in with your registered mobile number on the website.\n\n• 👉 **Option 1**: Log in using the **Login** button at top right.\n• 👉 **Option 2**: Type your **Transaction ID (e.g. VG-7, EDU26-2)** or **10-digit Mobile Number** directly below to verify.`;
       }
+    } else if (qLower === "/edu_all" || qLower === "edu_all" || qLower === "/edu all" || qLower === "edu all" || qLower === "/education all" || qLower === "education all" || qLower === "/education_all" || (matchedKb && (matchedKb.id === "kb_all" || matchedKb.cmd.includes("all") || matchedKb.title.toLowerCase().includes("summary of all")))) {
+      // ── Trigger Live ALL Summary Card ──
+      if (!isAnyAdmin) {
+        botReply = C.chatbotAdminRestrictedMsg || `🔒 **Access Restricted**\n\nRegistration summaries, Vibhag counts, and committee metrics are restricted to authorized Committee Admins.\n\n👉 If you are a Committee Admin, please enter your **10-digit Authorized Mobile Number** to unlock.`;
+      } else {
+        let approved = 0, pending = 0, rejected = 0;
+        const vibhagBreakMap = {};
+
+        currentRegs.forEach(r => {
+          const s = String(r.Status || r.status || "Pending").trim();
+          if (s === "Approved") approved++;
+          else if (s === "Disapproved" || s === "Rejected") rejected++;
+          else pending++;
+
+          const rV = String(r["Vibhag"] || r["vibhag"] || "10 MAHALAXMI").trim();
+          if (!vibhagBreakMap[rV]) vibhagBreakMap[rV] = { total: 0, approved: 0, pending: 0, rejected: 0 };
+          vibhagBreakMap[rV].total++;
+          if (s === "Approved") vibhagBreakMap[rV].approved++;
+          else if (s === "Disapproved" || s === "Rejected") vibhagBreakMap[rV].rejected++;
+          else vibhagBreakMap[rV].pending++;
+        });
+
+        const breakList = Object.entries(vibhagBreakMap).sort((a, b) => a[0].localeCompare(b[0]));
+
+        botType = "summary_card";
+        botReply = matchedKb.answer || `📊 **Live Registration Summary (All Vibhags)**:`;
+        cardData = {
+          total: currentRegs.length,
+          approved,
+          pending,
+          rejected,
+          scopeTitle: "All Vibhags Live Summary",
+          vibhagList: breakList,
+          apps: currentRegs,
+          tplId: matchedKb?.attachedWhatsAppTplId
+        };
+      }
+    } else if (qLower === "/edu_pending" || qLower === "edu_pending" || qLower === "/edu pending" || qLower === "/education pending" || qLower === "education pending" || qLower === "/education_pending" || (matchedKb && (matchedKb.id === "kb_pending" || matchedKb.cmd.includes("pending")))) {
+      // ── Trigger Live Pending Registrations List ──
+      if (!isAnyAdmin) {
+        botReply = `🔒 **Access Restricted**\n\nPending review lists are restricted to authorized Committee Admins.\n\n👉 If you are a Committee Admin, please enter your **10-digit Authorized Mobile Number** to unlock this list.`;
+      } else {
+        let pendingList = currentRegs.filter(r => {
+          const s = String(r.Status || r.status || "Pending").trim();
+          return s !== "Approved" && s !== "Disapproved" && s !== "Rejected";
+        });
+
+        if (userSessionScope === "vibhag" && sessionVibhag) {
+          const allowedVibs = sessionVibhag.split(",").map(s => s.trim().toLowerCase()).filter(Boolean);
+          pendingList = pendingList.filter(r => {
+            const v = String(r["Vibhag"] || r["vibhag"] || "").toLowerCase();
+            return allowedVibs.some(av => v.includes(av) || av.includes(v));
+          });
+        }
+
+        if (pendingList.length > 0) {
+          botType = "apps_list";
+          botReply = `⏳ **Found ${pendingList.length} Pending Review Applications${userSessionScope === "vibhag" ? ` (${sessionVibhag})` : ""}:**`;
+          cardData = { apps: pendingList };
+        } else {
+          botReply = `🎉 No pending applications found${userSessionScope === "vibhag" ? ` in ${sessionVibhag}` : ""}! All applications have been reviewed.`;
+        }
+      }
+    } else if (qLower === "/edu_approved" || qLower === "edu_approved" || qLower === "/edu approved" || qLower === "/education approved" || qLower === "education approved" || qLower === "/education_approved" || (matchedKb && (matchedKb.id === "kb_approved" || matchedKb.cmd.includes("approved")))) {
+      // ── Trigger Live Approved Registrations List ──
+      if (!isAnyAdmin) {
+        botReply = `🔒 **Access Restricted**\n\nApproved application registries are restricted to authorized Committee Admins.\n\n👉 If you are a Committee Admin, please enter your **10-digit Authorized Mobile Number** to unlock this list.`;
+      } else {
+        let approvedList = currentRegs.filter(r => String(r.Status || r.status || "").trim() === "Approved");
+        if (userSessionScope === "vibhag" && sessionVibhag) {
+          const allowedVibs = sessionVibhag.split(",").map(s => s.trim().toLowerCase()).filter(Boolean);
+          approvedList = approvedList.filter(r => {
+            const v = String(r["Vibhag"] || r["vibhag"] || "").toLowerCase();
+            return allowedVibs.some(av => v.includes(av) || av.includes(v));
+          });
+        }
+
+        if (approvedList.length > 0) {
+          botType = "apps_list";
+          botReply = `🟢 **Found ${approvedList.length} Approved Applications${userSessionScope === "vibhag" ? ` (${sessionVibhag})` : ""}:**`;
+          cardData = { apps: approvedList };
+        } else {
+          botReply = `ℹ️ No approved applications recorded yet${userSessionScope === "vibhag" ? ` in ${sessionVibhag}` : ""}.`;
+        }
+      }
     } else if (matchedKb) {
-      if (matchedKb.adminOnly && !isAnyAdmin) {
-        botReply = `🔒 **Access Restricted**\n\nThis question/data is restricted to authorized Committee Admins.\n\n👉 Please type your 10-digit Authorized Mobile Number to unlock.`;
+      const reqRole = matchedKb.roleAccess || (matchedKb.adminOnly ? "vibhag_admin" : "public");
+      const isPermitted = 
+        reqRole === "public" ||
+        (reqRole === "donation_collector" && isDonationCollector) ||
+        (reqRole === "vibhag_admin" && (isAnyAdmin || userSessionScope === "all")) ||
+        (reqRole === "super_admin" && userSessionScope === "all");
+
+      if (!isPermitted) {
+        botReply = `🔒 **Access Restricted**\n\nThis action / form is restricted to **${reqRole === "donation_collector" ? "Donation Collectors" : reqRole === "vibhag_admin" ? "Vibhag Admins" : "Super Admins"}**.\n\n👉 Please enter your authorized mobile number to unlock.`;
+      } else if (matchedKb.attachedFormId) {
+        const formDef = matchedKb.attachedFormId === "builtin_offline_donation"
+          ? { name: "Offline Donation Entry", id: "builtin_offline_donation" }
+          : ((C.forms || []).find(f => f.id === matchedKb.attachedFormId || f.name === matchedKb.attachedFormId) || { name: matchedKb.title, id: matchedKb.attachedFormId });
+
+        botType = "dynamic_form";
+        botReply = matchedKb.title ? `📝 **${matchedKb.title}**` : "Please fill out the form below:";
+        cardData = {
+          formDef,
+          destination: matchedKb.storageDestination || "donations",
+          introTitle: matchedKb.title,
+          introText: matchedKb.answer,
+          attachedWhatsAppTplId: matchedKb.attachedWhatsAppTplId
+        };
+      } else if (matchedKb.attachedWhatsAppTplId) {
+        botType = "whatsapp_broadcast_card";
+        botReply = matchedKb.answer;
+        cardData = {
+          tplId: matchedKb.attachedWhatsAppTplId,
+          title: matchedKb.title,
+          answer: matchedKb.answer
+        };
       } else {
         botReply = matchedKb.answer;
       }
+    // ── Topic Category Hubs (Group / Bucket Commands) ──
+    } else if (qLower === "/education" || qLower === "education" || qLower === "/edu" || qLower === "edu") {
+      botReply = `🎓 **Education Felicitation 2026 — Topic Hub**\n\nSelect any Education question or live report below:\n\n• 🎓 **/education events** — Event Venue, Date & Schedule\n• 📜 **/education eligibility** — Scoring & Eligibility (50%+)\n• 👥 **/education committee** — Education Committee Members 2026\n• 📈 **/all** (or /education all) — Live Registration Summary Table\n• ⏳ **/pending** — Student Applications Awaiting Review\n• 🟢 **/approved** — Verified Student List\n• 🔍 **/check** — Check Application Status by Txn ID / Mobile`;
+    } else if (qLower === "/donation" || qLower === "donation" || qLower === "/donations" || qLower === "donations" || qLower === "/doner" || qLower === "/donor") {
+      botReply = `💰 **Donations & Trust Funds — Topic Hub**\n\nSelect any Donation action or financial report below:\n\n• 📊 **/donation summary** — Live Vibhag-wise & Payment Breakdown\n• 📋 **/donerlist** — Verified Donor Registry & WhatsApp Broadcast\n• ✍️ **/donation update** — Record Cash, Cheque or Bank Donation\n• 🏦 **/donate** — 80G Tax Exemption & Bank QR Details`;
+    } else if (qLower === "/committee" || qLower === "committee" || qLower === "/cwc" || qLower === "cwc") {
+      botReply = `🏛️ **Committees & Leadership — Topic Hub**\n\nSelect any Committee inquiry below:\n\n• 🏛️ **/cwc_committee** — Central Working Committee (CWC) Members\n• 👥 **/education committee** — Education Committee Members 2026\n• 📍 **/vibhag** — Summary by Vibhag # & Assigned Coordinators\n• 📞 **/contact** — Trust Office & Helpline Contacts`;
     } else if (qLower === "/help" || qLower === "help" || qLower === "/commands" || qLower.includes("what can you do") || qLower.includes("capabilities")) {
       const activeCommands = ALL_SLASH_COMMANDS.filter(c => !c.adminOnly || isAnyAdmin);
       botReply = `🤖 **Chatbot Capabilities & Available Shortcuts**:\n\n` + 
@@ -28509,13 +31457,45 @@ function CommunityChatbot({ C, auth, onShowLogin }) {
                           </div>
                         )}
 
+                        {/* If Message has attached WhatsApp Broadcast Template */}
+                        {m.type === "whatsapp_broadcast_card" && m.cardData && (
+                          <WhatsAppBroadcastCard cardData={m.cardData} C={C} />
+                        )}
+
+                        {/* If Message has Dynamic Form from Form Builder */}
+                        {(m.type === "dynamic_form" || m.type === "dynamic_form_card") && m.cardData && (
+                          <DynamicChatbotFormCard
+                            formDef={m.cardData.formDef || m.cardData.form}
+                            destination={m.cardData.destination}
+                            introTitle={m.cardData.introTitle}
+                            introText={m.cardData.introText}
+                            initialData={{
+                              defaultVibhag: sessionVibhag && sessionVibhag !== "All Vibhags" ? sessionVibhag : "10 MAHALAXMI",
+                              defaultPurpose: "Education Felicitation 2026",
+                              defaultEventCode: "EDU26"
+                            }}
+                            C={C}
+                            auth={auth}
+                            activeUser={activeUser}
+                            onSubmitSuccess={(record) => {
+                              setMessages(prev => [...prev, {
+                                id: "m_form_saved_" + Date.now(),
+                                sender: "bot",
+                                text: `✅ **Entry recorded successfully in database!**`,
+                                type: "text",
+                                timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+                              }]);
+                            }}
+                          />
+                        )}
+
                         {/* If Message has Summary Card */}
                         {m.type === "summary_card" && m.cardData && (
-                          <VibhagSummaryCard summaryData={m.cardData} />
+                          <VibhagSummaryCard summaryData={m.cardData} C={C} />
                         )}
 
                         {/* If Message has Offline Donation Entry Form */}
-                        {m.type === "offline_donation_form" && m.cardData && (
+                        {(m.type === "offline_donation_form" || m.type === "offline_donation_card") && m.cardData && (
                           <OfflineDonationEntryCard
                             initialData={m.cardData}
                             onSubmit={async (formData) => {
@@ -28567,7 +31547,7 @@ function CommunityChatbot({ C, auth, onShowLogin }) {
 
                         {/* If Message has Donation Summary Card */}
                         {m.type === "donation_summary_card" && m.cardData && (
-                          <DonationSummaryCard summaryData={m.cardData} onAction={handleSendMessage} />
+                          <DonationSummaryCard summaryData={m.cardData} onAction={handleSendMessage} C={C} />
                         )}
 
                         {/* If Message has Donor List Card */}
@@ -28637,13 +31617,34 @@ function CommunityChatbot({ C, auth, onShowLogin }) {
                         <span style={{fontSize:".68rem",color:"#94A3B8"}}>Click to select</span>
                       </div>
                       {(() => {
-                        const filterKeyword = input.trim().startsWith("/") ? input.trim().slice(1).toLowerCase() : "";
+                        const rawInput = input.trim().toLowerCase();
+                        const isSlashSearch = rawInput.startsWith("/");
+                        const filterKeyword = isSlashSearch ? rawInput.slice(1).trim() : rawInput;
+
                         const displayedCommands = ALL_SLASH_COMMANDS.filter(sc => {
                           if (!filterKeyword) return true;
-                          const cmd = sc.cmd.toLowerCase().replace(/^\//, "");
+                          const cmd = (sc.cmd || "").toLowerCase().replace(/^\//, "");
                           const label = (sc.label || "").toLowerCase();
-                          const desc = (sc.desc || "").toLowerCase();
-                          return cmd.includes(filterKeyword) || label.includes(filterKeyword) || desc.includes(filterKeyword);
+
+                          // When searching via slash (/), match ONLY against command name and question title
+                          return cmd.includes(filterKeyword) || label.includes(filterKeyword);
+                        }).sort((a, b) => {
+                          if (!filterKeyword) return 0;
+                          const aCmd = (a.cmd || "").toLowerCase().replace(/^\//, "");
+                          const bCmd = (b.cmd || "").toLowerCase().replace(/^\//, "");
+                          const aLabel = (a.label || "").toLowerCase();
+                          const bLabel = (b.label || "").toLowerCase();
+
+                          const getScore = (c, l) => {
+                            if (c === filterKeyword) return 1000;
+                            if (c.startsWith(filterKeyword)) return 600;
+                            if (l.startsWith(filterKeyword)) return 400;
+                            if (c.includes(filterKeyword)) return 300;
+                            if (l.includes(filterKeyword)) return 200;
+                            return 0;
+                          };
+
+                          return getScore(bCmd, bLabel) - getScore(aCmd, aLabel);
                         });
 
                         if (displayedCommands.length === 0) {
@@ -28666,7 +31667,8 @@ function CommunityChatbot({ C, auth, onShowLogin }) {
                                 if (sc.hasSubmenu) {
                                   setSlashSubmenu("vibhags");
                                 } else {
-                                  handleSendMessage(sc.action);
+                                  const displayTitle = sc.label ? `${sc.icon || "❓"} ${sc.label}` : sc.cmd;
+                                  handleSendMessage(sc.action || sc.cmd, displayTitle);
                                 }
                               }}
                               style={{
