@@ -34,6 +34,21 @@ export const extractEventCodes = (config = {}) => {
   return Array.from(codes);
 };
 
+export const getRecordVibhag = (r) => {
+  if (!r || typeof r !== 'object') return 'Unspecified';
+  const val = r['Vibhag New'] || r['Vibhag'] || r.vibhag || r['vibhagNew'] || r['MMP Vibhag'] || r['Vibhag Name'] || r['વિભાગ'];
+  if (val && String(val).trim() && String(val).trim() !== '-' && String(val).trim().toLowerCase() !== 'unspecified' && String(val).trim().toLowerCase() !== 'blank') {
+    return String(val).trim();
+  }
+  for (const key of Object.keys(r)) {
+    if (key.toLowerCase().includes('vibhag') && r[key] && String(r[key]).trim() && String(r[key]).trim() !== '-' && String(r[key]).trim().toLowerCase() !== 'unspecified') {
+      return String(r[key]).trim();
+    }
+  }
+  return 'Unspecified';
+};
+
+
 
 const SearchableDropdown = ({ value, onChange, options, placeholder, required, isError }) => {
   const [open, setOpen] = useState(false);
@@ -7717,7 +7732,11 @@ function Overview({ mob, C, setC, auth }) {
     if (!r) return;
     Object.keys(r).forEach(k => {
       if (!ignoreKeys.includes(k) && !k.startsWith('_')) {
-        allKeysSet.add(k);
+        if (k.toLowerCase().replace(/\s+/g, '') === 'vibhagnew' || k === 'Vibhag New') {
+          allKeysSet.add('Vibhag');
+        } else {
+          allKeysSet.add(k);
+        }
       }
     });
   });
@@ -13959,7 +13978,7 @@ function UserEditRegistrationModal({ reg, onClose, onSave, authToken, C }) {
 }
 
 function UserDashboard({ C, globalProfile, globalAuthToken, onClose }) {
-  const cleanPhone = (num) => String(num || "").replace(/\D/g, "").slice(-10);
+const cleanPhone = (num) => String(num || "").replace(/\D/g, "").slice(-10);
 
   const [regs, setRegs] = useState([]);          // ALL registrations fetched
   const [myDonations, setMyDonations] = useState([]);
@@ -22278,6 +22297,7 @@ function AdminRegistrations({ mob, C, setC, auth }) {
       else if(colKey === "Unique") val = getDuplicateInfo(r).isDuplicate ? "Duplicate" : "Unique";
       else if(colKey === "Status") val = r['Status'] || "Pending";
       else if(colKey === "Updated By") val = r['Updated By'] || "-";
+      else if(colKey === "Vibhag" || colKey === "Vibhag New" || colKey.toLowerCase().includes("vibhag")) val = getRecordVibhag(r);
       else val = r[colKey] || "-";
       
       if (typeof val === 'string' && val.startsWith('http')) return;
@@ -22725,6 +22745,36 @@ function AdminRegistrations({ mob, C, setC, auth }) {
                 style={{padding:"6px 12px",borderRadius:6,fontSize:".8rem",fontWeight:600,display:"flex",alignItems:"center",gap:4,background:"#FFF4EC",color:"var(--sf)",border:"1px solid var(--sf)",cursor:"pointer",whiteSpace:"nowrap"}}
               >
                 🔢 Sequence Serial Txn IDs
+              </button>
+              <button
+                type="button"
+                onClick={async () => {
+                  if (!confirm(`Merge and unify "Vibhag New" and "Vibhag" across all ${regs.length} registrations in the database? This ensures 100% accurate summaries, chatbot metrics, and clean Excel exports.`)) return;
+                  setRefreshing(true);
+                  let fixedCount = 0;
+                  try {
+                    for (const r of regs) {
+                      const unifiedVibhag = getRecordVibhag(r);
+                      if (r['Vibhag'] !== unifiedVibhag || r['Vibhag New']) {
+                        const updated = { ...r, "Vibhag": unifiedVibhag, vibhag: unifiedVibhag };
+                        delete updated.id; delete updated._submittedAt;
+                        await fbUpdateRegistration(r.id, updated, auth?.idToken);
+                        fixedCount++;
+                      }
+                    }
+                    const fresh = await fbFetchRegistrations(auth?.idToken);
+                    setRegs(fresh || []);
+                    alert(`✅ Successfully unified Vibhag fields for ${fixedCount} registrations in database!`);
+                  } catch(err) {
+                    alert("Error merging Vibhag fields: " + err.message);
+                  } finally {
+                    setRefreshing(false);
+                  }
+                }}
+                style={{padding:"6px 12px",borderRadius:6,fontSize:".8rem",fontWeight:700,display:"flex",alignItems:"center",gap:4,background:"#F0FDF4",color:"#15803D",border:"1.5px solid #86EFAC",cursor:"pointer",whiteSpace:"nowrap"}}
+                title="Merge Vibhag and Vibhag New into single unified Vibhag in Firebase"
+              >
+                <span>🔄</span> Merge & Clean Vibhag Fields
               </button>
             </div>
           </div>
@@ -26570,7 +26620,7 @@ This cannot be undone.`)) return;
                   const formattedMobile = cleanMobile ? `+91 ${cleanMobile.slice(0, 5)} ${cleanMobile.slice(5)}` : "-";
                   const cleanPName = String(pName).replace(/\|/g, " ").replace(/\s+/g, " ").trim();
                   const txnId = r["Transaction ID"] || r.transactionId || r.id || "";
-                  const vibhag = r["Vibhag"] || r.vibhag || "";
+                  const vibhag = getRecordVibhag(r);
 
                   return (
                     <tr 
@@ -28215,7 +28265,7 @@ const generateApplicationWhatsAppText = (app) => {
   const displayName = rawName.replace(/\|/g, " ").replace(/\s+/g, " ").trim().toUpperCase();
   const txnId = String(app["Transaction ID"] || app.transactionId || app.txnId || app.id || "VG-ID").trim().toUpperCase();
   const status = String(app.Status || app.status || "Pending").trim();
-  const vibhag = String(app["Vibhag"] || "Unspecified").trim().toUpperCase();
+  const vibhag = getRecordVibhag(app).toUpperCase();
   const stream = String(app["Stream"] || "General").trim();
   const marksVal = app["% Obtained"] || app["%"];
   const marks = marksVal ? `${marksVal}%` : "-";
@@ -28324,7 +28374,7 @@ function ApplicationRecordCard({ app, onAction }) {
       <div style={{padding:"12px 14px",display:"grid",gridTemplateColumns:"1fr 1fr",gap:"8px 12px",fontSize:".78rem"}}>
         <div>
           <span style={{color:"#64748B",display:"block",fontSize:".7rem",fontWeight:600}}>VIBHAG</span>
-          <span style={{color:"#0F172A",fontWeight:700}}>{app["Vibhag"] || "Unspecified"}</span>
+          <span style={{color:"#0F172A",fontWeight:700}}>{getRecordVibhag(app)}</span>
         </div>
         <div>
           <span style={{color:"#64748B",display:"block",fontSize:".7rem",fontWeight:600}}>STREAM / CLASS</span>
@@ -30777,7 +30827,7 @@ function CommunityChatbot({ C, auth, onShowLogin }) {
           else if (s === "Disapproved" || s === "Rejected") rejected++;
           else pending++;
 
-          const rV = String(r["Vibhag"] || r["vibhag"] || "10 MAHALAXMI").trim();
+          const rV = getRecordVibhag(r) !== 'Unspecified' ? getRecordVibhag(r) : String(r["Vibhag"] || r["Vibhag New"] || r["vibhag"] || "10 MAHALAXMI").trim();
           if (!vibhagBreakMap[rV]) vibhagBreakMap[rV] = { total: 0, approved: 0, pending: 0, rejected: 0 };
           vibhagBreakMap[rV].total++;
           if (s === "Approved") vibhagBreakMap[rV].approved++;
@@ -30813,7 +30863,7 @@ function CommunityChatbot({ C, auth, onShowLogin }) {
         if (userSessionScope === "vibhag" && sessionVibhag) {
           const allowedVibs = sessionVibhag.split(",").map(s => s.trim().toLowerCase()).filter(Boolean);
           pendingList = pendingList.filter(r => {
-            const v = String(r["Vibhag"] || r["vibhag"] || "").toLowerCase();
+            const v = getRecordVibhag(r).toLowerCase();
             return allowedVibs.some(av => v.includes(av) || av.includes(v));
           });
         }
@@ -30835,7 +30885,7 @@ function CommunityChatbot({ C, auth, onShowLogin }) {
         if (userSessionScope === "vibhag" && sessionVibhag) {
           const allowedVibs = sessionVibhag.split(",").map(s => s.trim().toLowerCase()).filter(Boolean);
           approvedList = approvedList.filter(r => {
-            const v = String(r["Vibhag"] || r["vibhag"] || "").toLowerCase();
+            const v = getRecordVibhag(r).toLowerCase();
             return allowedVibs.some(av => v.includes(av) || av.includes(v));
           });
         }
@@ -30965,7 +31015,7 @@ function CommunityChatbot({ C, auth, onShowLogin }) {
         if (userSessionScope === "vibhag" && sessionVibhag) {
           const allowedVibs = sessionVibhag.split(",").map(s => s.trim().toLowerCase()).filter(Boolean);
           pendingList = pendingList.filter(r => {
-            const v = String(r["Vibhag"] || r["vibhag"] || "").toLowerCase();
+            const v = getRecordVibhag(r).toLowerCase();
             return allowedVibs.some(av => v.includes(av) || av.includes(v));
           });
         }
@@ -30986,7 +31036,7 @@ function CommunityChatbot({ C, auth, onShowLogin }) {
         if (userSessionScope === "vibhag" && sessionVibhag) {
           const allowedVibs = sessionVibhag.split(",").map(s => s.trim().toLowerCase()).filter(Boolean);
           approvedList = approvedList.filter(r => {
-            const v = String(r["Vibhag"] || r["vibhag"] || "").toLowerCase();
+            const v = getRecordVibhag(r).toLowerCase();
             return allowedVibs.some(av => v.includes(av) || av.includes(v));
           });
         }
@@ -31074,7 +31124,7 @@ function CommunityChatbot({ C, auth, onShowLogin }) {
               : allowedVibhags;
 
             const vibhagRegs = currentRegs.filter(r => {
-              const v = String(r["Vibhag"] || r["vibhag"] || r["MMP Vibhag"] || "").toLowerCase().trim();
+              const v = getRecordVibhag(r).toLowerCase().trim();
               return targetAllowedList.some(av => v.includes(av) || av.includes(v));
             });
 
@@ -31087,7 +31137,7 @@ function CommunityChatbot({ C, auth, onShowLogin }) {
               else if (s === "Disapproved" || s === "Rejected") rejected++;
               else pending++;
 
-              const rV = String(r["Vibhag"] || r["vibhag"] || "Assigned").trim();
+              const rV = getRecordVibhag(r) !== 'Unspecified' ? getRecordVibhag(r) : String(r["Vibhag"] || r["Vibhag New"] || r["vibhag"] || "Assigned").trim();
               if (!vibhagBreakMap[rV]) vibhagBreakMap[rV] = { total: 0, approved: 0, pending: 0, rejected: 0 };
               vibhagBreakMap[rV].total++;
               if (s === "Approved") vibhagBreakMap[rV].approved++;
@@ -31114,7 +31164,7 @@ function CommunityChatbot({ C, auth, onShowLogin }) {
         } else if (explicitlyMentionedVibhag) {
           const cleanTarget = explicitlyMentionedVibhag.toLowerCase().trim();
           const vibhagRegs = currentRegs.filter(r => {
-            const v = String(r["Vibhag"] || r["vibhag"] || r["MMP Vibhag"] || "").toLowerCase().trim();
+            const v = getRecordVibhag(r).toLowerCase().trim();
             return v.includes(cleanTarget) || cleanTarget.includes(v) || (v.split(" ")[1] && cleanTarget.includes(v.split(" ")[1]));
           });
 
