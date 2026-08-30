@@ -527,7 +527,14 @@ const fbFetchRegistrations = async (idToken) => {
       if (!flatData.eventName && flatData.eventTitle) flatData.eventName = flatData.eventTitle;
 
       const submittedAt = doc.fields.submittedAt?.timestampValue;
-      return { id: doc.name.split("/").pop(), ...flatData, _submittedAt: submittedAt };
+      const rec = { id: doc.name.split("/").pop(), ...flatData, _submittedAt: submittedAt };
+      const v = getRecordVibhag(rec);
+      rec["Vibhag"] = v;
+      rec.vibhag = v;
+      delete rec["Vibhag New"];
+      delete rec["vibhagNew"];
+      delete rec["Vibhag_New"];
+      return rec;
     } catch(e) { return null; }
   }).filter(Boolean).sort((a,b) => new Date(b._submittedAt || 0).getTime() - new Date(a._submittedAt || 0).getTime());
 };
@@ -22252,6 +22259,7 @@ function AdminRegistrations({ mob, C, setC, auth }) {
       else if(colKey === "Status") rVal = r['Status'] || "Pending";
       else if(colKey === "Transaction ID") rVal = r['Transaction ID'] || "-";
       else if(colKey === "Updated By") rVal = r['Updated By'] || "-";
+      else if(colKey === "Vibhag" || colKey === "Vibhag New" || colKey.toLowerCase().includes("vibhag")) rVal = getRecordVibhag(r);
       else rVal = r[colKey] || "-";
       
       if(!String(rVal).toLowerCase().includes(filterVal.toLowerCase())) return false;
@@ -22270,12 +22278,18 @@ function AdminRegistrations({ mob, C, setC, auth }) {
     if(!r) return;
     Object.keys(r).forEach(k => {
       if (!ignoreKeys.includes(k) && !k.startsWith('_')) {
-        allKeysSet.add(k);
+        const cleanK = k.trim();
+        const normK = cleanK.toLowerCase().replace(/[\s_-]+/g, '');
+        if (normK === 'vibhagnew' || cleanK === 'Vibhag New') {
+          allKeysSet.add('Vibhag');
+        } else {
+          allKeysSet.add(cleanK);
+        }
       }
     });
   });
   
-  let allKeys = Array.from(allKeysSet);
+  let allKeys = Array.from(allKeysSet).filter(k => k !== 'Vibhag New' && k.toLowerCase().replace(/[\s_-]+/g, '') !== 'vibhagnew');
   const priority = ["Full Name", "Name", "Mobile Number", "Mobile", "Phone", "Email Address", "Email"];
   allKeys.sort((a, b) => {
     const ia = priority.indexOf(a);
@@ -23136,7 +23150,9 @@ function AdminRegistrations({ mob, C, setC, auth }) {
                       {r['Updated By'] || "-"}
                     </td>
                     {allKeys.map(k => {
-                      let val = r[k] || "-";
+                      let val = (k === 'Vibhag' || k === 'Vibhag New' || k.toLowerCase().includes('vibhag')) 
+                        ? getRecordVibhag(r) 
+                        : (r[k] !== undefined && r[k] !== null && r[k] !== '' ? r[k] : "-");
                       if (typeof val === 'string' && val.startsWith('http')) {
                         const isDoc = val.match(/\.(pdf|doc|docx)/i);
                         if (isDoc) {
