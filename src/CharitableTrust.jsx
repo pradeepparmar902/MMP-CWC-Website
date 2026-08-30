@@ -30140,6 +30140,148 @@ function DynamicChatbotFormCard({ formDef, destination = "donations", introTitle
   );
 }
 
+
+// ── Interactive Question Buttons Grid Card Component ────────────────────────
+function QuestionButtonsCard({ onAction, isAnyAdmin, isDonationCollector, allCommands = [] }) {
+  const categories = [
+    {
+      title: "📊 Live Registrations & Analytics",
+      color: "#2563EB",
+      bg: "#EFF6FF",
+      border: "#BFDBFE",
+      items: [
+        { cmd: "/Educ_all", label: "All Entries Summary", icon: "📊", adminOnly: true },
+        { cmd: "/edu_pending", label: "Pending Applications", icon: "⏳", adminOnly: true },
+        { cmd: "/edu_approved", label: "Approved List", icon: "🟢", adminOnly: true },
+        { cmd: "/vibhag", label: "Vibhag-wise Breakdown", icon: "📍", adminOnly: true },
+        { cmd: "/status", label: "Check Application Status", icon: "🔍", adminOnly: false }
+      ]
+    },
+    {
+      title: "💰 Donations & Donor Registry",
+      color: "#15803D",
+      bg: "#F0FDF4",
+      border: "#BBF7D0",
+      items: [
+        { cmd: "/don_entry", label: "Offline Donation Entry Form", icon: "➕", collectorOnly: true },
+        { cmd: "/don_list", label: "Donor Registry & Broadcast", icon: "📋", adminOnly: true },
+        { cmd: "/donate", label: "Bank Account & QR Code", icon: "💳", adminOnly: false }
+      ]
+    },
+    {
+      title: "👥 Committee & Leadership",
+      color: "#7C3AED",
+      bg: "#F5F3FF",
+      border: "#DDD6FE",
+      items: [
+        { cmd: "/edu", label: "Education Committee", icon: "🎓", adminOnly: false },
+        { cmd: "/cwc", label: "CWC Committee Members", icon: "👥", adminOnly: false },
+        { cmd: "/trust", label: "About Trust & History", icon: "🏢", adminOnly: false },
+        { cmd: "/contact", label: "Office Contact & Timings", icon: "📞", adminOnly: false }
+      ]
+    },
+    {
+      title: "🗓️ Events & General Guidelines",
+      color: "#D97706",
+      bg: "#FFFBEB",
+      border: "#FDE68A",
+      items: [
+        { cmd: "/events", label: "Upcoming Community Events", icon: "🗓️", adminOnly: false },
+        { cmd: "/help", label: "Full Commands Guide", icon: "⚡", adminOnly: false }
+      ]
+    }
+  ];
+
+  return (
+    <div style={{
+      marginTop: 8,
+      padding: "12px",
+      background: "#FFFFFF",
+      borderRadius: 12,
+      border: "1.5px solid #E2E8F0",
+      boxShadow: "0 3px 12px rgba(0,0,0,0.05)",
+      display: "flex",
+      flexDirection: "column",
+      gap: 12
+    }}>
+      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",borderBottom:"1px solid #F1F5F9",paddingBottom:6}}>
+        <span style={{fontSize:".82rem",fontWeight:800,color:"#0F172A",display:"flex",alignItems:"center",gap:6}}>
+          <span>🔘</span> Interactive Question Buttons:
+        </span>
+        <span style={{fontSize:".7rem",color:"#64748B",fontWeight:600}}>Click any button below 👇</span>
+      </div>
+
+      {categories.map((cat, cIdx) => {
+        const visibleItems = cat.items.filter(item => {
+          if (item.adminOnly && !isAnyAdmin) return false;
+          if (item.collectorOnly && !isDonationCollector && !isAnyAdmin) return false;
+          return true;
+        });
+
+        if (visibleItems.length === 0) return null;
+
+        return (
+          <div key={cIdx} style={{
+            background: cat.bg,
+            border: `1px solid ${cat.border}`,
+            borderRadius: 10,
+            padding: "8px 10px"
+          }}>
+            <div style={{fontSize:".72rem",fontWeight:800,color:cat.color,textTransform:"uppercase",letterSpacing:0.5,marginBottom:6}}>
+              {cat.title}
+            </div>
+            <div style={{display:"flex",flexWrap:"wrap",gap:6}}>
+              {visibleItems.map((item, iIdx) => (
+                <button
+                  key={iIdx}
+                  type="button"
+                  onClick={() => {
+                    const displayTitle = `${item.icon} ${item.label}`;
+                    onAction(item.cmd, displayTitle);
+                  }}
+                  style={{
+                    background: "white",
+                    border: `1.5px solid ${cat.border}`,
+                    borderRadius: 8,
+                    padding: "6px 10px",
+                    fontSize: ".75rem",
+                    fontWeight: 700,
+                    color: "#1E293B",
+                    cursor: "pointer",
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: 5,
+                    boxShadow: "0 1px 3px rgba(0,0,0,0.06)",
+                    transition: "all 0.15s ease",
+                    whiteSpace: "nowrap"
+                  }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.background = cat.color;
+                    e.currentTarget.style.color = "white";
+                    e.currentTarget.style.borderColor = cat.color;
+                    e.currentTarget.style.transform = "translateY(-1px)";
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.background = "white";
+                    e.currentTarget.style.color = "#1E293B";
+                    e.currentTarget.style.borderColor = cat.border;
+                    e.currentTarget.style.transform = "none";
+                  }}
+                  title={`Execute ${item.cmd}`}
+                >
+                  <span>{item.icon}</span>
+                  <span>{item.label}</span>
+                  <span style={{fontSize:".65rem",opacity:0.65,fontWeight:600}}>({item.cmd})</span>
+                </button>
+              ))}
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 function CommunityChatbot({ C, auth, onShowLogin }) {
   if (C.chatbotEnabled === false) {
     return null;
@@ -30157,6 +30299,7 @@ function CommunityChatbot({ C, auth, onShowLogin }) {
   const [regs, setRegs] = useState([]);
   const [regsLoaded, setRegsLoaded] = useState(false);
   const [showSlashMenu, setShowSlashMenu] = useState(false);
+  const [slashViewMode, setSlashViewMode] = useState("buttons"); // "buttons" | "list"
   const [slashSubmenu, setSlashSubmenu] = useState(null); // null | "vibhags"
   const chatBottomRef = useRef(null);
 
@@ -30521,6 +30664,15 @@ function CommunityChatbot({ C, auth, onShowLogin }) {
       };
     }).sort((a, b) => (a.order || 999) - (b.order || 999));
 
+        list.push({
+      cmd: "/buttons",
+      order: 1,
+      icon: "🔘",
+      label: "Interactive Question Buttons",
+      desc: "Display clickable question and action buttons for 1-click answers",
+      action: "/buttons",
+      adminOnly: false
+    });
     list.push({
       cmd: "/help",
       order: 9999,
@@ -30629,9 +30781,24 @@ function CommunityChatbot({ C, auth, onShowLogin }) {
     setMessages(prev => [...prev, userMsg]);
     setLoading(true);
 
+    const qLower = query.toLowerCase();
+    if (qLower === "/button" || qLower === "/buttons" || qLower === "/quick" || qLower === "button" || qLower === "buttons" || qLower === "quick buttons") {
+      setLoading(false);
+      setMessages(prev => [
+        ...prev,
+        {
+          id: "m_b_" + Date.now(),
+          sender: "bot",
+          type: "question_buttons_card",
+          text: "Here are all available **Interactive Question Buttons**. Simply tap any button below to instantly receive the information:",
+          timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+        }
+      ]);
+      return;
+    }
+
     try {
       const currentRegs = await ensureRegistrations();
-    const qLower = query.toLowerCase();
     const cleanQuery = query.trim().toUpperCase().replace(/\s+/g, "");
     const cleanHyphen = cleanQuery.replace(/[^A-Z0-9]/g, "");
 
@@ -31452,9 +31619,17 @@ function CommunityChatbot({ C, auth, onShowLogin }) {
               <div style={{padding:"8px 12px",background:"#F8FAFC",borderBottom:"1px solid #E2E8F0",display:"flex",gap:6,alignItems:"center"}}>
                 <button
                   onClick={() => { setShowSlashMenu(!showSlashMenu); setSlashSubmenu(null); }}
-                  style={{fontSize:".75rem",background:"#1E293B",border:"none",borderRadius:12,padding:"5px 12px",color:"white",cursor:"pointer",fontWeight:700,boxShadow:"0 1px 3px rgba(0,0,0,0.15)",display:"flex",alignItems:"center",gap:4}}
+                  style={{fontSize:".75rem",background:"#1E293B",border:"none",borderRadius:12,padding:"5px 10px",color:"white",cursor:"pointer",fontWeight:700,boxShadow:"0 1px 3px rgba(0,0,0,0.15)",display:"flex",alignItems:"center",gap:4}}
+                  title="Open Question Commands Menu"
                 >
-                  <span>⚡</span> Questions / Shortcuts (/)
+                  <span>⚡</span> Questions (/)
+                </button>
+                <button
+                  onClick={() => handleSendMessage("/buttons")}
+                  style={{fontSize:".75rem",background:"#7C3AED",border:"none",borderRadius:12,padding:"5px 10px",color:"white",cursor:"pointer",fontWeight:700,boxShadow:"0 1px 4px rgba(124,58,237,0.25)",display:"flex",alignItems:"center",gap:4}}
+                  title="Display Clickable Question Buttons in Chat"
+                >
+                  <span>🔘</span> Buttons
                 </button>
                 
                 {isAnyAdmin && (
@@ -31521,6 +31696,16 @@ function CommunityChatbot({ C, auth, onShowLogin }) {
                               <ApplicationRecordCard key={aIdx} app={appItem} onAction={handleSendMessage} />
                             ))}
                           </div>
+                        )}
+
+                        {/* If Message has Question Buttons Card */}
+                        {m.type === "question_buttons_card" && (
+                          <QuestionButtonsCard
+                            onAction={handleSendMessage}
+                            isAnyAdmin={isAnyAdmin}
+                            isDonationCollector={isDonationCollector}
+                            allCommands={ALL_SLASH_COMMANDS}
+                          />
                         )}
 
                         {/* If Message has attached WhatsApp Broadcast Template */}
@@ -31676,11 +31861,26 @@ function CommunityChatbot({ C, auth, onShowLogin }) {
                     </div>
                   ) : (
                     <div>
-                      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"4px 8px",borderBottom:"1px solid #F1F5F9",marginBottom:4}}>
+                      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"4px 8px",borderBottom:"1px solid #F1F5F9",marginBottom:6}}>
                         <span style={{fontSize:".7rem",fontWeight:800,color:"#64748B",textTransform:"uppercase",letterSpacing:0.5}}>
-                          {input.trim().startsWith("/") && input.trim().length > 1 ? `Matching Commands for "${input}":` : "Question Shortcuts & Commands:"}
+                          {input.trim().startsWith("/") && input.trim().length > 1 ? `Matching for "${input}":` : "Question Shortcuts:"}
                         </span>
-                        <span style={{fontSize:".68rem",color:"#94A3B8"}}>Click to select</span>
+                        <div style={{display:"flex",gap:4,background:"#F1F5F9",padding:2,borderRadius:8}}>
+                          <button
+                            type="button"
+                            onClick={()=>setSlashViewMode("buttons")}
+                            style={{padding:"2px 8px",borderRadius:6,border:"none",fontSize:".68rem",fontWeight:700,background:slashViewMode==="buttons"?"#2563EB":"transparent",color:slashViewMode==="buttons"?"white":"#64748B",cursor:"pointer"}}
+                          >
+                            🔘 Buttons
+                          </button>
+                          <button
+                            type="button"
+                            onClick={()=>setSlashViewMode("list")}
+                            style={{padding:"2px 8px",borderRadius:6,border:"none",fontSize:".68rem",fontWeight:700,background:slashViewMode==="list"?"#2563EB":"transparent",color:slashViewMode==="list"?"white":"#64748B",cursor:"pointer"}}
+                          >
+                            📋 List
+                          </button>
+                        </div>
                       </div>
                       {(() => {
                         const rawInput = input.trim().toLowerCase();
@@ -31722,8 +31922,56 @@ function CommunityChatbot({ C, auth, onShowLogin }) {
                           );
                         }
 
+                        if (slashViewMode === "buttons") {
+                          return (
+                            <div style={{display:"flex",flexWrap:"wrap",gap:6,padding:"4px 2px"}}>
+                              {displayedCommands.map(sc => {
+                                const isLockedForUser = (sc.donationCollectorOnly && !isDonationCollector && !isAnyAdmin) || (sc.adminOnly && !isAnyAdmin);
+                                if (isLockedForUser) return null;
+
+                                return (
+                                  <button
+                                    key={sc.cmd}
+                                    type="button"
+                                    onClick={() => {
+                                      if (sc.hasSubmenu) {
+                                        setSlashSubmenu("vibhags");
+                                      } else {
+                                        const displayTitle = sc.label ? `${sc.icon || "❓"} ${sc.label}` : sc.cmd;
+                                        handleSendMessage(sc.action || sc.cmd, displayTitle);
+                                      }
+                                    }}
+                                    style={{
+                                      background: "#F8FAFC",
+                                      border: "1.5px solid #CBD5E1",
+                                      borderRadius: 8,
+                                      padding: "6px 10px",
+                                      fontSize: ".75rem",
+                                      fontWeight: 700,
+                                      color: "#1E293B",
+                                      cursor: "pointer",
+                                      display: "inline-flex",
+                                      alignItems: "center",
+                                      gap: 5,
+                                      boxShadow: "0 1px 3px rgba(0,0,0,0.04)",
+                                      transition: "all 0.15s ease",
+                                      whiteSpace: "nowrap"
+                                    }}
+                                    onMouseEnter={e=>{e.currentTarget.style.background="#EFF6FF";e.currentTarget.style.borderColor="#3B82F6";e.currentTarget.style.color="#1D4ED8";}}
+                                    onMouseLeave={e=>{e.currentTarget.style.background="#F8FAFC";e.currentTarget.style.borderColor="#CBD5E1";e.currentTarget.style.color="#1E293B";}}
+                                  >
+                                    <span>{sc.icon || "❓"}</span>
+                                    <span>{sc.label || sc.cmd}</span>
+                                    <span style={{fontSize:".65rem",color:"#64748B",fontWeight:600}}>({sc.cmd})</span>
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          );
+                        }
+
                         return displayedCommands.map(sc => {
-                          const isLockedForUser = (sc.donationCollectorOnly && !isDonationCollector) || (sc.adminOnly && !isAnyAdmin);
+                          const isLockedForUser = (sc.donationCollectorOnly && !isDonationCollector && !isAnyAdmin) || (sc.adminOnly && !isAnyAdmin);
   const lockLabel = sc.donationCollectorOnly ? "🔒 Donation Collector Only" : "🔒 Admin Only";
 
                           return (
