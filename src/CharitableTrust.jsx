@@ -8995,20 +8995,7 @@ function Donations({ mob, auth, C }) {
   };
 
 
-  const saveVerification = async (r, newStatus, newRemarks) => {
-    const updatedBy = auth?.email || "Admin";
-    setRegs(prev => prev.map(x => x.id === r.id ? { ...x, Status: newStatus, status: newStatus, Remarks: newRemarks, "Updated By": updatedBy } : x));
-    try {
-      const cleanData = { ...r, Status: newStatus, status: newStatus, Remarks: newRemarks, "Updated By": updatedBy };
-      delete cleanData.id; delete cleanData._submittedAt;
-      await fbUpdateRegistration(r.id, cleanData, auth?.idToken);
-      // Removed setViewing(null) here so modal can handle auto-advance
-    } catch (e) {
-      alert("Failed to save verification: " + e.message);
-      const d = await fbFetchRegistrations(auth?.idToken);
-      setRegs(d || []);
-    }
-  };
+
 
   const handleStatusChange = async (r, newStatus) => {
     try {
@@ -29133,7 +29120,7 @@ function DonorListCard({ donorData, auth, onRefresh, C }) {
   const [filterText, setFilterText] = useState("");
   const [copied, setCopied] = useState(false);
   const [exportFormat, setExportFormat] = useState("gujarati");
-  const [includeVibhag, setIncludeVibhag] = useState(true);
+  const [includeVibhag, setIncludeVibhag] = useState(false);
   const [includeReceipt, setIncludeReceipt] = useState(false);
   const [includeGPay, setIncludeGPay] = useState(true);
   const [translateNamesGu, setTranslateNamesGu] = useState(true);
@@ -29234,13 +29221,21 @@ function DonorListCard({ donorData, auth, onRefresh, C }) {
 
       filtered.forEach((d, idx) => {
         const amt = Number(d.amount).toLocaleString('en-IN');
-        const donorName = (translateNamesGu ? transliterateEnglishToGujaratiPhonetic(d.name) : d.name) || d.name;
+        const customWordDict = C?.gujaratiWordDictionary || {};
+        const savedGuName = (d.nameGu && d.nameGu.trim()) ? d.nameGu.trim() : (d.donorNameGu && d.donorNameGu.trim()) ? d.donorNameGu.trim() : "";
+        const donorName = (translateNamesGu 
+          ? (savedGuName || transliterateEnglishToGujaratiPhonetic(d.name || "", customWordDict))
+          : d.name) || d.name;
+        
         let line = rowPattern.replace("{AMOUNT}", amt).replace("{NAME}", donorName).replace("{INDEX}", String(idx + 1));
         if (!line.includes(donorName)) line = `₹ ${amt}/- ${donorName}`;
 
         const extras = [];
         if (includeVibhag && d.vibhag && d.vibhag !== "General") {
-          const vibhagText = translateNamesGu ? transliterateEnglishToGujaratiPhonetic(d.vibhag) : d.vibhag;
+          const savedGuVibhag = (d.vibhagGu && d.vibhagGu.trim()) ? d.vibhagGu.trim() : "";
+          const vibhagText = translateNamesGu 
+            ? (savedGuVibhag || transliterateEnglishToGujaratiPhonetic(d.vibhag || "", customWordDict))
+            : d.vibhag;
           extras.push(vibhagText);
         }
         if (includeReceipt && (d.receiptNo || d.internalReceiptNo || d.id)) extras.push(`Receipt: ${d.receiptNo || d.internalReceiptNo || d.id}`);
@@ -29343,7 +29338,14 @@ function DonorListCard({ donorData, auth, onRefresh, C }) {
           return (
             <div key={di} style={{background:"#F8FAFC",border:"1px solid #E2E8F0",borderRadius:8,padding:"8px 10px",fontSize:".76rem"}}>
               <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:2}}>
-                <div style={{fontWeight:800,color:"#0F172A"}}>{di + 1}. {d.name}</div>
+                <div style={{fontWeight:800,color:"#0F172A"}}>
+                  {di + 1}. {d.name}
+                  {(d.nameGu || d.donorNameGu) && (
+                    <span style={{display:"block",fontSize:".74rem",color:"#15803D",fontWeight:700,marginTop:2}}>
+                      {d.nameGu || d.donorNameGu}
+                    </span>
+                  )}
+                </div>
                 <div style={{display:"flex",alignItems:"center",gap:6}}>
                   <span style={{fontWeight:800,color:"#15803D",fontSize:".82rem"}}>₹{Number(d.amount).toLocaleString('en-IN')}</span>
                   <button
@@ -29648,6 +29650,7 @@ function DonorListCard({ donorData, auth, onRefresh, C }) {
                     ...editingDonation,
                     name: editFormData.name.trim(),
                     nameGu: (editFormData.nameGu && editFormData.nameGu.trim()) ? editFormData.nameGu.trim() : transliterateEnglishToGujaratiPhonetic(editFormData.name.trim(), customWordDict),
+                    donorNameGu: (editFormData.nameGu && editFormData.nameGu.trim()) ? editFormData.nameGu.trim() : transliterateEnglishToGujaratiPhonetic(editFormData.name.trim(), customWordDict),
                     amount: parseFloat(editFormData.amount) || 0,
                     date: editFormData.date,
                     vibhag: editFormData.vibhag,
