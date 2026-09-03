@@ -16045,7 +16045,9 @@ export const formatWhatsAppTemplateForContact = ({ tplString, reg, allRegs = [],
   const remarks = merged['Remarks'] || merged.remarks || 'Application under review';
 
   const chosenScope = eventScope || merged.targetEventId || "education2026";
-  const chosenVibhag = (vibhagScope && vibhagScope !== 'auto') ? vibhagScope : vibhag;
+  const chosenVibhag = (vibhagScope && vibhagScope !== 'auto') 
+    ? vibhagScope 
+    : (merged.vibhagScope === 'all' ? 'all' : (merged.vibhagScope || vibhag));
   const baseUrl = `${C?.whatsAppPortalUrl || "https://www.mmp-cwc.com/"}`.replace(/\/?$/, '');
   const certUrl = `${baseUrl}/?cert=${encodeURIComponent(txnId || "")}`;
   const inviteUrl = `${baseUrl}/?invite=${encodeURIComponent(txnId || "")}`;
@@ -16162,7 +16164,7 @@ export const formatWhatsAppTemplateForContact = ({ tplString, reg, allRegs = [],
     .replace(/\{EDU_TOTAL_STUDENTS_COUNT\}/g, eduStats.totalStudentsCount || 0);
 
   const monsoonStats = typeof generateEventScopedStats === 'function'
-    ? generateEventScopedStats(merged, 'Monsoon', allRegs)
+    ? generateEventScopedStats(merged, 'Monsoon', allRegs, chosenVibhag)
     : null;
   if (monsoonStats) {
     processed = processed
@@ -16173,6 +16175,27 @@ export const formatWhatsAppTemplateForContact = ({ tplString, reg, allRegs = [],
       .replace(/\{MONSOON_ALL_LIST\}/g, monsoonStats.allStudentsList || "")
       .replace(/\{MONSOON_TOTAL_COUNT\}/g, monsoonStats.totalStudentsCount || 0);
   }
+
+  // Universal Dynamic Placeholders: {EVENT_VIBHAG_LIST:Event Name}, {EVENT_SUMMARY:Event Name}, {EVENT_COUNT:Event Name}
+  processed = processed.replace(/\{EVENT_VIBHAG_LIST:([^}]+)\}/gi, (match, evNameArg) => {
+    const s = typeof generateEventScopedStats === 'function' ? generateEventScopedStats(merged, evNameArg.trim(), allRegs, chosenVibhag) : {};
+    return s.vibhagStudentList || "";
+  }).replace(/\{EVENT_VIBHAG_STUDENT_LIST:([^}]+)\}/gi, (match, evNameArg) => {
+    const s = typeof generateEventScopedStats === 'function' ? generateEventScopedStats(merged, evNameArg.trim(), allRegs, chosenVibhag) : {};
+    return s.vibhagStudentList || "";
+  }).replace(/\{EVENT_SUMMARY:([^}]+)\}/gi, (match, evNameArg) => {
+    const s = typeof generateEventScopedStats === 'function' ? generateEventScopedStats(merged, evNameArg.trim(), allRegs, chosenVibhag) : {};
+    return s.eventRegistrationSummary || "";
+  }).replace(/\{EVENT_VIBHAG_SUMMARY:([^}]+)\}/gi, (match, evNameArg) => {
+    const s = typeof generateEventScopedStats === 'function' ? generateEventScopedStats(merged, evNameArg.trim(), allRegs, chosenVibhag) : {};
+    return s.vibhagStudentSummary || "";
+  }).replace(/\{EVENT_ALL_LIST:([^}]+)\}/gi, (match, evNameArg) => {
+    const s = typeof generateEventScopedStats === 'function' ? generateEventScopedStats(merged, evNameArg.trim(), allRegs, chosenVibhag) : {};
+    return s.allStudentsList || "";
+  }).replace(/\{EVENT_COUNT:([^}]+)\}/gi, (match, evNameArg) => {
+    const s = typeof generateEventScopedStats === 'function' ? generateEventScopedStats(merged, evNameArg.trim(), allRegs, chosenVibhag) : {};
+    return s.totalStudentsCount || 0;
+  });
 
   return processed;
 };
@@ -20933,8 +20956,8 @@ export const generateEventScopedStats = (reg, eventKeyOrObj, allRegs = [], vibha
 
   // Resolve target geographic Vibhag for recipient
   const resolveRecipientVibhag = (r) => {
+    if (vibhagOverride === 'all' || r?.vibhagScope === 'all') return '';
     if (vibhagOverride && vibhagOverride !== 'auto') {
-      if (vibhagOverride === 'all') return '';
       return vibhagOverride;
     }
     if (!r) return "";
@@ -21042,20 +21065,29 @@ export const generateEventScopedStats = (reg, eventKeyOrObj, allRegs = [], vibha
       }).join('\n')
     : `📋 *All Registrations:* No registrations found for this event.`;
 
+  const isSpecific = Boolean(targetVibhag);
+  const effectiveTotalCount = isSpecific ? vibhagCount : totalCount;
+  const effectiveApprovedCount = isSpecific ? vibhagApproved : approvedCount;
+  const effectivePendingCount = isSpecific ? vibhagPending : pendingCount;
+  const effectiveSummary = isSpecific ? vibhagSummary : eventSummary;
+  const effectiveList = isSpecific ? vibhagList : allList;
+
   return {
     targetVibhag,
     distinctVibhags,
-    totalStudentsCount: String(totalCount),
-    approvedStudentsCount: String(approvedCount),
-    pendingStudentsCount: String(pendingCount),
+    isSpecificVibhag: isSpecific,
+    totalStudentsCount: String(effectiveTotalCount),
+    totalCount: String(effectiveTotalCount),
+    approvedStudentsCount: String(effectiveApprovedCount),
+    pendingStudentsCount: String(effectivePendingCount),
     vibhagStudentCount: String(vibhagCount),
     vibhagApprovedCount: String(vibhagApproved),
     vibhagPendingCount: String(vibhagPending),
-    vibhagStudentSummary: vibhagSummary,
-    eventRegistrationSummary: eventSummary,
-    vibhagStudentList: vibhagList,
-    allStudentsList: allList,
-    studentDetailsList: vibhagList
+    vibhagStudentSummary: isSpecific ? vibhagSummary : eventSummary,
+    eventRegistrationSummary: effectiveSummary,
+    vibhagStudentList: isSpecific ? vibhagList : allList,
+    allStudentsList: effectiveList,
+    studentDetailsList: effectiveList
   };
 };
 
@@ -22735,22 +22767,22 @@ function WhatsAppApplicantMessengerModal({ reg, onClose, C, auth, onLogSent, all
 
     // 3. Dynamic Universal Placeholder Evaluator: {EVENT_VIBHAG_LIST:Event Name} or {EVENT_SUMMARY:Event Name}
     processed = processed.replace(/\{EVENT_VIBHAG_LIST:([^}]+)\}/gi, (match, evNameArg) => {
-      const s = generateEventScopedStats(reg, evNameArg.trim(), allRegs);
+      const s = generateEventScopedStats(reg, evNameArg.trim(), allRegs, chosenVibhag);
       return s.vibhagStudentList;
     }).replace(/\{EVENT_VIBHAG_STUDENT_LIST:([^}]+)\}/gi, (match, evNameArg) => {
-      const s = generateEventScopedStats(reg, evNameArg.trim(), allRegs);
+      const s = generateEventScopedStats(reg, evNameArg.trim(), allRegs, chosenVibhag);
       return s.vibhagStudentList;
     }).replace(/\{EVENT_SUMMARY:([^}]+)\}/gi, (match, evNameArg) => {
-      const s = generateEventScopedStats(reg, evNameArg.trim(), allRegs);
+      const s = generateEventScopedStats(reg, evNameArg.trim(), allRegs, chosenVibhag);
       return s.eventRegistrationSummary;
     }).replace(/\{EVENT_VIBHAG_SUMMARY:([^}]+)\}/gi, (match, evNameArg) => {
-      const s = generateEventScopedStats(reg, evNameArg.trim(), allRegs);
+      const s = generateEventScopedStats(reg, evNameArg.trim(), allRegs, chosenVibhag);
       return s.vibhagStudentSummary;
     }).replace(/\{EVENT_ALL_LIST:([^}]+)\}/gi, (match, evNameArg) => {
-      const s = generateEventScopedStats(reg, evNameArg.trim(), allRegs);
+      const s = generateEventScopedStats(reg, evNameArg.trim(), allRegs, chosenVibhag);
       return s.allStudentsList;
     }).replace(/\{EVENT_COUNT:([^}]+)\}/gi, (match, evNameArg) => {
-      const s = generateEventScopedStats(reg, evNameArg.trim(), allRegs);
+      const s = generateEventScopedStats(reg, evNameArg.trim(), allRegs, chosenVibhag);
       return s.totalStudentsCount;
     });
 
