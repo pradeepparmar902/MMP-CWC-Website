@@ -21516,7 +21516,7 @@ function BulkWhatsAppBroadcastModal({ event, recipients = [], allRegs = [], C, a
         : (activeTemplate?.name || "Status Notice");
 
       if (typeof onLogSent === "function") {
-        try { onLogSent(r, msgType); } catch(e){}
+        try { onLogSent(r, msgType, msg); } catch(e){}
       }
 
       if (launchMode === "app") {
@@ -26399,14 +26399,36 @@ function AdminInviteLetters({ mob, C, setC, auth }) {
             ? `🟡 SENT TO WHATSAPP • PASS LINK NOT YET OPENED BY INVITEE`
             : `⚪ QUEUED (Ready to Dispatch)`;
 
-        // Find logged dispatch content
+        // Find logged dispatch content across localStorage and registration history
         const entry = loggedEntries.find(l => l.recipientTxnId === txnId || l.recipientMobile === String(mobile).replace(/\D/g, '').slice(-10));
-        const messageText = entry?.messageContent || c.lastWhatsAppContent || formatWhatsAppTemplateForContact({
-          tplString: "",
-          reg: { ...c, customDocId: (docTpl?.id !== 'invite' && docTpl?.id !== 'cert') ? docTpl?.id : null },
+        const logHistMsg = (Array.isArray(c.logHistory) ? c.logHistory.slice().reverse().find(l => l.messageContent && (l.type === 'whatsapp' || String(l.action).includes('WhatsApp')))?.messageContent : null);
+
+        // Retrieve active sub-workspace WhatsApp template text as reliable fallback
+        const wsTpls = activeEvent?.whatsAppTemplates || activeEvent?.whatsappTemplates || [];
+        const defaultWsTpl = wsTpls.find(t => t.isDefault) || wsTpls[0];
+        const templateStringToUse = docTpl?.customTpl?.whatsAppTemplateBody || 
+          docTpl?.customTpl?.templateText || 
+          defaultWsTpl?.body || 
+          defaultWsTpl?.text || 
+          defaultWsTpl?.template || 
+          activeEvent?.whatsAppTemplate || 
+          "";
+
+        const generatedMessageText = typeof formatWhatsAppTemplateForContact === 'function' ? formatWhatsAppTemplateForContact({
+          tplString: templateStringToUse,
+          reg: { 
+            ...c, 
+            customDocId: (docTpl?.id !== 'invite' && docTpl?.id !== 'cert') ? docTpl?.id : null,
+            vibhagScope: docTpl?.customTpl?.vibhagScope || "auto"
+          },
           allRegs: regs,
           C: C
-        });
+        }) : "";
+
+        const messageText = (entry?.messageContent && entry.messageContent.trim()) || 
+          (c.lastWhatsAppContent && c.lastWhatsAppContent.trim()) || 
+          (logHistMsg && logHistMsg.trim()) || 
+          generatedMessageText;
 
         const sentDate = entry?.timeFormatted || (c.lastWhatsAppAt ? new Date(c.lastWhatsAppAt).toLocaleString("en-IN", { dateStyle: "medium", timeStyle: "short" }) : "Not dispatched yet");
         const sender = entry?.sender || (c.lastWhatsAppAt ? (auth?.email || "Admin") : "N/A");
@@ -29563,8 +29585,9 @@ This cannot be undone.`)) return;
           allRegs={regs}
           recipientList={filteredRegs}
           onSelectReg={(nextR) => setSelectedWhatsAppReg(nextR)}
-          onLogSent={async (r, msgType) => {
+          onLogSent={async (r, msgType, sentMessageContent) => {
             const updatedBy = auth?.email || "Admin";
+            const messageBody = sentMessageContent || r.lastWhatsAppContent || "";
             const existingLogs = Array.isArray(r.logHistory) ? r.logHistory : [];
             const waLog = {
               timestamp: new Date().toISOString(),
@@ -29572,13 +29595,52 @@ This cannot be undone.`)) return;
               action: `WhatsApp Sent: ${msgType}`,
               type: "whatsapp",
               messageType: msgType,
+              messageContent: messageBody,
               remarks: `WhatsApp invitation pass (${msgType}) sent to applicant.`
             };
             const newLogs = [...existingLogs, waLog];
             const newCount = (r.whatsAppCount || 0) + 1;
-            setRegs(prev => prev.map(x => x.id === r.id ? { ...x, logHistory: newLogs, whatsAppCount: newCount, lastWhatsAppType: msgType, lastWhatsAppAt: waLog.timestamp } : x));
+            const updatedRegObj = { 
+              ...r, 
+              logHistory: newLogs, 
+              whatsAppCount: newCount, 
+              lastWhatsAppType: msgType, 
+              lastWhatsAppAt: waLog.timestamp,
+              lastWhatsAppContent: messageBody
+            };
+
+            setRegs(prev => prev.map(x => (x.id === r.id || (x['Transaction ID'] && x['Transaction ID'] === r['Transaction ID'])) ? { ...x, ...updatedRegObj } : x));
+
+            // Append to sub-workspace audit log in localStorage
             try {
-              const cleanData = { ...r, logHistory: newLogs, whatsAppCount: newCount, lastWhatsAppType: msgType, lastWhatsAppAt: waLog.timestamp };
+              const subAuditKey = `mmp_wa_audit_${activeEvent?.id || activeEvent?.title || 'default'}_${currentDocTpl?.id || 'invite'}`;
+              const prevAudit = JSON.parse(localStorage.getItem(subAuditKey) || "[]");
+              const nowObj = new Date();
+              const formattedTime = nowObj.toLocaleString("en-IN", { dateStyle: "medium", timeStyle: "short" });
+              const txn = r['Transaction ID'] || r.transactionId || r.id;
+              const mob = String(r['Mobile Number'] || r.phone || r.mobile || '').replace(/\D/g, '').slice(-10);
+
+              const newEntry = {
+                recipientName: r['Full Name'] || r.name || 'Invitee',
+                recipientMobile: mob,
+                recipientTxnId: txn,
+                vibhag: r.vibhag || r['Vibhag'] || 'General',
+                designation: r.Designation || r.designation || 'Member',
+                subWorkspace: currentDocTpl?.name || 'Sub-Workspace',
+                time: nowObj.toISOString(),
+                timeFormatted: formattedTime,
+                sender: updatedBy,
+                messageType: msgType,
+                messageContent: messageBody
+              };
+
+              const filteredAudit = prevAudit.filter(entry => entry.recipientTxnId !== txn);
+              filteredAudit.push(newEntry);
+              localStorage.setItem(subAuditKey, JSON.stringify(filteredAudit));
+            } catch(e) {}
+
+            try {
+              const cleanData = { ...updatedRegObj };
               delete cleanData.id; delete cleanData._submittedAt;
               await fbUpdateRegistration(r.id, cleanData, auth?.idToken);
             } catch(e){}
