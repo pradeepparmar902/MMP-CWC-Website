@@ -31862,9 +31862,10 @@ export const generateDonorPosterCanvas = (donation, templateImgUrl, customPositi
 
     // Default percentage positions if not customized
     const pos = {
-      name: { x: 42, y: 53.2, fontSize: 22, color: "#0B2545", visible: true, ...customPositions?.name },
-      amount: { x: 39.2, y: 62.8, fontSize: 22, color: "#FFFFFF", visible: true, ...customPositions?.amount },
-      acknowledgment: { x: 50, y: 81.2, fontSize: 13.5, color: "#334155", visible: true, ...customPositions?.acknowledgment },
+      name: { x: 42.5, y: 52.6, fontSize: 21, color: "#0A2540", visible: true, ...customPositions?.name },
+      nameGu: { x: 42.5, y: 55.2, fontSize: 18, color: "#064E3B", visible: true, ...customPositions?.nameGu },
+      amount: { x: 39.5, y: 63.8, fontSize: 23, color: "#0F172A", visible: true, ...customPositions?.amount },
+      acknowledgment: { x: 50, y: 81.2, fontSize: 13.5, color: "#1E293B", visible: true, ...customPositions?.acknowledgment },
       receiptDetails: { x: 50, y: 83.2, fontSize: 13.5, color: "#334155", visible: true, ...customPositions?.receiptDetails },
       date: { x: 60, y: 84.5, fontSize: 13, color: "#334155", visible: false, ...customPositions?.date },
       vibhag: { x: 30, y: 84.5, fontSize: 13, color: "#334155", visible: false, ...customPositions?.vibhag },
@@ -31876,45 +31877,80 @@ export const generateDonorPosterCanvas = (donation, templateImgUrl, customPositi
       try {
         ctx.drawImage(img, 0, 0, 994, 1024);
 
-        // 1. Donor Name
-        if (pos.name.visible !== false) {
-          const dName = String(donation.name || donation['Full Name'] || 'Respected Donor').trim();
-          const dNameGu = String(donation.nameGu || donation.donorNameGu || '').trim();
-          const displayName = dNameGu && dNameGu !== dName ? `${dName} (${dNameGu})` : dName;
+        const dName = String(donation.name || donation['Full Name'] || 'Respected Donor').trim().toUpperCase();
+        const dNameGuRaw = String(donation.nameGu || donation.donorNameGu || '').trim();
+        const dNameGu = (dNameGuRaw && dNameGuRaw.toLowerCase() !== dName.toLowerCase()) ? dNameGuRaw : '';
 
+        // 1. Donor Name - English (Line 1)
+        if (pos.name.visible !== false) {
           ctx.save();
-          ctx.fillStyle = pos.name.color || "#0B2545";
-          let fSize = Number(pos.name.fontSize) || 22;
-          if (displayName.length > 30) fSize = Math.max(15, fSize - 4);
+          let fSize = Number(pos.name.fontSize) || 21;
+          if (dName.length > 28) fSize = Math.max(15, fSize - 4);
           ctx.font = `bold ${fSize}px 'Playfair Display', Georgia, serif`;
           ctx.textAlign = "center";
           const px = (pos.name.x / 100) * 994;
           const py = (pos.name.y / 100) * 1024;
-          ctx.fillText(displayName, px, py);
+
+          // Crisp subtle white backing stroke for high contrast
+          ctx.strokeStyle = "rgba(255, 255, 255, 0.9)";
+          ctx.lineWidth = 3;
+          ctx.lineJoin = "round";
+          ctx.strokeText(dName, px, py);
+
+          ctx.fillStyle = pos.name.color || "#0A2540";
+          ctx.fillText(dName, px, py);
           ctx.restore();
         }
 
-        // 2. Donation Amount on golden INR banner
-        if (pos.amount.visible !== false) {
-          const amtStr = `₹ ${Number(donation.amount || 0).toLocaleString('en-IN')}/-`;
+        // 2. Donor Name - Gujarati (Line 2)
+        if (pos.nameGu.visible !== false && dNameGu) {
           ctx.save();
-          ctx.fillStyle = pos.amount.color || "#FFFFFF";
-          ctx.shadowColor = "rgba(0,0,0,0.5)";
-          ctx.shadowBlur = 4;
-          ctx.shadowOffsetX = 1;
-          ctx.shadowOffsetY = 1;
-          ctx.font = `bold ${Number(pos.amount.fontSize) || 22}px 'Montserrat', Arial, sans-serif`;
+          let fSizeGu = Number(pos.nameGu.fontSize) || 18;
+          if (dNameGu.length > 28) fSizeGu = Math.max(14, fSizeGu - 3);
+          ctx.font = `bold ${fSizeGu}px 'Noto Sans Gujarati', 'Shruti', 'Gujarati MT', sans-serif`;
+          ctx.textAlign = "center";
+
+          // If Gujarati position was not independently customized, sit right below English line
+          const pxGu = customPositions?.nameGu?.x ? (pos.nameGu.x / 100) * 994 : (pos.name.x / 100) * 994;
+          const pyGu = customPositions?.nameGu?.y ? (pos.nameGu.y / 100) * 1024 : ((pos.name.y / 100) * 1024) + 24;
+
+          const guDisplay = dNameGu.startsWith("(") ? dNameGu : `(${dNameGu})`;
+
+          ctx.strokeStyle = "rgba(255, 255, 255, 0.9)";
+          ctx.lineWidth = 2.5;
+          ctx.lineJoin = "round";
+          ctx.strokeText(guDisplay, pxGu, pyGu);
+
+          ctx.fillStyle = pos.nameGu.color || "#064E3B";
+          ctx.fillText(guDisplay, pxGu, pyGu);
+          ctx.restore();
+        }
+
+        // 3. Donation Amount on golden INR banner
+        if (pos.amount.visible !== false) {
+          const rawAmt = donation.amount !== undefined ? donation.amount : 0;
+          const amtStr = `₹ ${Number(rawAmt).toLocaleString('en-IN')}/-`;
+          ctx.save();
+          ctx.font = `bold ${Number(pos.amount.fontSize) || 23}px 'Montserrat', Arial, sans-serif`;
           ctx.textAlign = "center";
           const px = (pos.amount.x / 100) * 994;
           const py = (pos.amount.y / 100) * 1024;
+
+          // Crisp white backing stroke for bold contrast
+          ctx.strokeStyle = "rgba(255, 255, 255, 0.95)";
+          ctx.lineWidth = 3.5;
+          ctx.lineJoin = "round";
+          ctx.strokeText(amtStr, px, py);
+
+          ctx.fillStyle = pos.amount.color || "#0F172A";
           ctx.fillText(amtStr, px, py);
           ctx.restore();
         }
 
-        // 3. Acknowledgment details
+        // 4. Acknowledgment details
         if (pos.acknowledgment.visible !== false) {
           ctx.save();
-          ctx.fillStyle = pos.acknowledgment.color || "#334155";
+          ctx.fillStyle = pos.acknowledgment.color || "#1E293B";
           ctx.font = `italic ${Number(pos.acknowledgment.fontSize) || 13.5}px 'Montserrat', Arial, sans-serif`;
           ctx.textAlign = "center";
           const px = (pos.acknowledgment.x / 100) * 994;
@@ -31923,7 +31959,7 @@ export const generateDonorPosterCanvas = (donation, templateImgUrl, customPositi
           ctx.restore();
         }
 
-        // 4. Receipt details line
+        // 5. Receipt details line
         if (pos.receiptDetails.visible !== false) {
           const receiptNo = donation.receiptNo || donation.internalReceiptNo || donation.id || 'N/A';
           const vibhag = donation.vibhag || donation.Vibhag || 'General';
@@ -31966,15 +32002,17 @@ export const generateDonorPosterCanvas = (donation, templateImgUrl, customPositi
 export function DonorPosterVisualMapperModal({ C, auth, onClose, onSaveSuccess }) {
   const tplImgUrl = C?.donorPosterTemplateUrl || getAppreciationTemplateDefaultUrl();
   const defaultPositions = {
-    name: { x: 42, y: 53.2, fontSize: 22, color: "#0B2545", visible: true, label: "👤 Donor Name" },
-    amount: { x: 39.2, y: 62.8, fontSize: 22, color: "#FFFFFF", visible: true, label: "💰 Amount" },
-    acknowledgment: { x: 50, y: 81.2, fontSize: 13.5, color: "#334155", visible: true, label: "📜 Acknowledgment" },
+    name: { x: 42.5, y: 52.6, fontSize: 21, color: "#0A2540", visible: true, label: "👤 Name (English)" },
+    nameGu: { x: 42.5, y: 55.2, fontSize: 18, color: "#064E3B", visible: true, label: "🇮🇳 Name (ગુજરાતી)" },
+    amount: { x: 39.5, y: 63.8, fontSize: 23, color: "#0F172A", visible: true, label: "💰 Amount (INR)" },
+    acknowledgment: { x: 50, y: 81.2, fontSize: 13.5, color: "#1E293B", visible: true, label: "📜 Acknowledgment" },
     receiptDetails: { x: 50, y: 83.2, fontSize: 13.5, color: "#334155", visible: true, label: "🧾 Receipt Details" },
   };
 
   const [positions, setPositions] = useState(() => {
     return {
       name: { ...defaultPositions.name, ...C?.donorPosterPositions?.name },
+      nameGu: { ...defaultPositions.nameGu, ...C?.donorPosterPositions?.nameGu },
       amount: { ...defaultPositions.amount, ...C?.donorPosterPositions?.amount },
       acknowledgment: { ...defaultPositions.acknowledgment, ...C?.donorPosterPositions?.acknowledgment },
       receiptDetails: { ...defaultPositions.receiptDetails, ...C?.donorPosterPositions?.receiptDetails },
@@ -32032,7 +32070,7 @@ export function DonorPosterVisualMapperModal({ C, auth, onClose, onSaveSuccess }
   };
 
   const handleReset = () => {
-    if (!confirm("Reset all field positions to original defaults?")) return;
+    if (!confirm("Reset all field positions to optimal defaults?")) return;
     setPositions(defaultPositions);
   };
 
@@ -32040,7 +32078,7 @@ export function DonorPosterVisualMapperModal({ C, auth, onClose, onSaveSuccess }
 
   return (
     <div style={{position:"fixed",top:0,left:0,right:0,bottom:0,background:"rgba(15,23,42,0.8)",backdropFilter:"blur(4px)",zIndex:999999,display:"flex",alignItems:"center",justifyContent:"center",padding:12}}>
-      <div style={{background:"white",borderRadius:16,maxWidth:780,width:"100%",padding:18,boxShadow:"0 25px 50px rgba(0,0,0,0.35)",maxHeight:"94vh",display:"flex",flexDirection:"column",overflow:"hidden"}}>
+      <div style={{background:"white",borderRadius:16,maxWidth:820,width:"100%",padding:18,boxShadow:"0 25px 50px rgba(0,0,0,0.35)",maxHeight:"94vh",display:"flex",flexDirection:"column",overflow:"hidden"}}>
         
         {/* Header */}
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10,borderBottom:"1px solid #E2E8F0",paddingBottom:8}}>
@@ -32048,10 +32086,10 @@ export function DonorPosterVisualMapperModal({ C, auth, onClose, onSaveSuccess }
             <span style={{fontSize:"1.2rem"}}>🎯</span>
             <div>
               <h3 style={{margin:0,fontSize:"1rem",fontWeight:800,color:"#0F172A"}}>
-                Drag & Position Poster Fields
+                Drag & Position Poster Fields (2-Line Name & Amount)
               </h3>
               <p style={{margin:0,fontSize:".74rem",color:"#64748B"}}>
-                Drag the field tags anywhere on the certificate to align with your template blanks.
+                Drag English name, Gujarati name, and amount badges to position them accurately on certificate blanks.
               </p>
             </div>
           </div>
@@ -32107,11 +32145,11 @@ export function DonorPosterVisualMapperModal({ C, auth, onClose, onSaveSuccess }
                       left:`${p.x}%`,
                       top:`${p.y}%`,
                       transform:"translate(-50%, -50%)",
-                      background: isCurDragging ? "#EA580C" : isSelected ? "#2563EB" : "rgba(15, 23, 42, 0.88)",
+                      background: isCurDragging ? "#EA580C" : isSelected ? "#2563EB" : k === "nameGu" ? "#065F46" : "rgba(15, 23, 42, 0.9)",
                       color:"white",
                       padding:"3px 8px",
                       borderRadius:6,
-                      fontSize:".74rem",
+                      fontSize:".73rem",
                       fontWeight:800,
                       cursor: isCurDragging ? "grabbing" : "grab",
                       userSelect:"none",
@@ -32241,7 +32279,7 @@ export function DonorPosterVisualMapperModal({ C, auth, onClose, onSaveSuccess }
                 <label style={{fontSize:".7rem",color:"#475569"}}>Text Color:</label>
                 <input 
                   type="color" 
-                  value={activeField.color || "#0B2545"}
+                  value={activeField.color || (activeFieldKey === "amount" ? "#0F172A" : activeFieldKey === "nameGu" ? "#064E3B" : "#0A2540")}
                   onChange={e => {
                     const val = e.target.value;
                     setPositions(prev => ({
@@ -32251,6 +32289,7 @@ export function DonorPosterVisualMapperModal({ C, auth, onClose, onSaveSuccess }
                   }}
                   style={{width:34,height:26,cursor:"pointer",border:"none",borderRadius:4,background:"transparent"}}
                 />
+                <span style={{fontSize:".68rem",fontFamily:"monospace",color:"#64748B"}}>{activeField.color}</span>
               </div>
             </div>
 
