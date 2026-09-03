@@ -16057,6 +16057,12 @@ export const formatWhatsAppTemplateForContact = ({ tplString, reg, allRegs = [],
   const evDate = eventObj?.date ? `${eventObj.date} ${eventObj.month || ''}`.trim() : (merged.Date || merged.eventDate || "2026");
   const evVenue = eventObj?.location || merged.location || merged.venue || "Mumbai";
 
+  const _nowObj = new Date();
+  const _pad = (n) => String(n).padStart(2, '0');
+  const curDate = `${_pad(_nowObj.getDate())}-${_pad(_nowObj.getMonth() + 1)}-${_nowObj.getFullYear()}`;
+  const curTime = _nowObj.toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit", hour12: true });
+  const curDateTime = `${curDate}, ${curTime}`;
+
   let processed = (tplString || "")
     .replace(/\{PORTAL_NAME\}/g, portalName)
     .replace(/\{WEBSITE_NAME\}/g, portalName)
@@ -16065,6 +16071,15 @@ export const formatWhatsAppTemplateForContact = ({ tplString, reg, allRegs = [],
     .replace(/\{EVENT_NAME\}/g, evTitle)
     .replace(/\{EVENT_TITLE\}/g, evTitle)
     .replace(/\{EVENT\}/g, evTitle)
+    .replace(/\{CURRENT_DATE\}/g, curDate)
+    .replace(/\{TODAY_DATE\}/g, curDate)
+    .replace(/\{TODAY\}/g, curDate)
+    .replace(/\{CURRENT_TIME\}/g, curTime)
+    .replace(/\{TIME\}/g, curTime)
+    .replace(/\{NOW_TIME\}/g, curTime)
+    .replace(/\{CURRENT_DATETIME\}/g, curDateTime)
+    .replace(/\{DATE_TIME\}/g, curDateTime)
+    .replace(/\{NOW\}/g, curDateTime)
     .replace(/\{DATE\}/g, evDate)
     .replace(/\{EVENT_DATE\}/g, evDate)
     .replace(/\{VENUE\}/g, evVenue)
@@ -21229,6 +21244,15 @@ function BulkWhatsAppBroadcastModal({ event, recipients = [], allRegs = [], C, a
       .replace(/\{EVENT_NAME\}/g, evTitle)
       .replace(/\{EVENT_TITLE\}/g, evTitle)
       .replace(/\{EVENT\}/g, evTitle)
+      .replace(/\{CURRENT_DATE\}/g, curDate)
+      .replace(/\{TODAY_DATE\}/g, curDate)
+      .replace(/\{TODAY\}/g, curDate)
+      .replace(/\{CURRENT_TIME\}/g, curTime)
+      .replace(/\{TIME\}/g, curTime)
+      .replace(/\{NOW_TIME\}/g, curTime)
+      .replace(/\{CURRENT_DATETIME\}/g, curDateTime)
+      .replace(/\{DATE_TIME\}/g, curDateTime)
+      .replace(/\{NOW\}/g, curDateTime)
       .replace(/\{DATE\}/g, evDate)
       .replace(/\{EVENT_DATE\}/g, evDate)
       .replace(/\{VENUE\}/g, evVenue)
@@ -22105,7 +22129,23 @@ function WorkspaceWhatsAppTemplateModal({ event, C, setC, auth, onClose }) {
         { tag: "{MOBILE}", label: "📱 Recipient Mobile Number", desc: "Registered mobile number (+91...)" },
         { tag: "{EMAIL}", label: "✉️ Recipient Email", desc: "Registered email address" },
         { tag: "{ADDRESS}", label: "🏠 Address / Location", desc: "Recipient address" },
+        { tag: "{CURRENT_DATE}", label: "📅 Current Date", desc: "Today's date in DD-MM-YYYY format" },
+        { tag: "{CURRENT_TIME}", label: "⏰ Current Time", desc: "Live current time in 12-hour AM/PM format" },
+        { tag: "{CURRENT_DATETIME}", label: "🗓️ Current Date & Time", desc: "Live timestamp (DD-MM-YYYY, HH:mm AM/PM)" },
         { tag: "{REMARKS}", label: "📝 Committee Remarks", desc: "Verification remarks or instructions" }
+      ]
+    },
+    {
+      title: "📅 Live Current Date & Time",
+      color: "#0891B2",
+      bgColor: "#ECFEFF",
+      borderColor: "#A5F3FC",
+      icon: "📅",
+      vars: [
+        { tag: "{CURRENT_DATE}", label: "📅 Current Date (DD-MM-YYYY)", desc: "Today's live date (e.g. 03-09-2026)" },
+        { tag: "{CURRENT_TIME}", label: "⏰ Current Time (HH:mm AM/PM)", desc: "Live current time (e.g. 02:25 PM)" },
+        { tag: "{CURRENT_DATETIME}", label: "🗓️ Current Date & Time", desc: "Full timestamp (e.g. 03-09-2026, 02:25 PM)" },
+        { tag: "{TODAY}", label: "📅 Today Shortcut", desc: "Alias for today's date" }
       ]
     },
     {
@@ -22564,6 +22604,12 @@ function WhatsAppApplicantMessengerModal({ reg, onClose, C, auth, onLogSent, all
     const evTitle = eventObj?.title || reg.eventName || reg.eventTitle || reg.eventId || "Event";
     const evDate = eventObj?.date ? `${eventObj.date} ${eventObj.month || ''}`.trim() : (reg.Date || reg.eventDate || "2026");
     const evVenue = eventObj?.location || reg.location || reg.venue || "Mumbai";
+
+    const _mNowObj = new Date();
+    const _mPad = (n) => String(n).padStart(2, '0');
+    const curDate = `${_mPad(_mNowObj.getDate())}-${_mPad(_mNowObj.getMonth() + 1)}-${_mNowObj.getFullYear()}`;
+    const curTime = _mNowObj.toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit", hour12: true });
+    const curDateTime = `${curDate}, ${curTime}`;
 
     const rDesignation = String(reg['Designation'] || reg.designation || reg['Designation / Role'] || reg['Post'] || reg.role || reg['Designation (e.g. Trustee / Member)'] || '').trim();
     const contactNameVal = rContactNameArg || rawContactName || rName || "Member";
