@@ -31754,6 +31754,7 @@ function VibhagSummaryCard({ summaryData, C }) {
 // ── Offline Donation Chatbot UI Components ──────────────────────────────────────
 function OfflineDonationEntryCard({ initialData, onSubmit, C }) {
   const [name, setName] = useState("");
+  const [mobile, setMobile] = useState(initialData?.mobile || initialData?.phone || "");
   const [date, setDate] = useState(initialData?.initialDate || new Date().toISOString().split('T')[0]);
   const [amount, setAmount] = useState("");
   const [purpose, setPurpose] = useState(initialData?.defaultPurpose || "Education Felicitation 2026");
@@ -31771,7 +31772,7 @@ function OfflineDonationEntryCard({ initialData, onSubmit, C }) {
     if (!date) return alert("Please select Donation Date.");
 
     setSubmitting(true);
-    await onSubmit({ name, date, amount, purpose, vibhag, eventCode, receiptNo });
+    await onSubmit({ name, mobile, date, amount, purpose, vibhag, eventCode, receiptNo });
     setSubmitting(false);
   };
 
@@ -31785,6 +31786,11 @@ function OfflineDonationEntryCard({ initialData, onSubmit, C }) {
         <div style={{gridColumn:"1/-1"}}>
           <label style={{display:"block",fontSize:".7rem",fontWeight:700,color:"#374151",marginBottom:2}}>Name *</label>
           <input type="text" placeholder="Donor Full Name" value={name} onChange={e=>setName(e.target.value)} required style={{width:"100%",padding:"7px 9px",borderRadius:6,border:"1px solid #CBD5E1",fontSize:".82rem",boxSizing:"border-box",background:"white"}} />
+        </div>
+
+        <div style={{gridColumn:"1/-1"}}>
+          <label style={{display:"block",fontSize:".7rem",fontWeight:800,color:"#15803D",marginBottom:2}}>📱 WhatsApp Mobile Number</label>
+          <input type="tel" placeholder="10-digit WhatsApp number (e.g. 9820582546)" value={mobile} onChange={e=>setMobile(e.target.value)} style={{width:"100%",padding:"7px 9px",borderRadius:6,border:"1.5px solid #86EFAC",fontSize:".82rem",boxSizing:"border-box",background:"#F0FDF4",fontWeight:600}} />
         </div>
 
         <div>
@@ -32321,7 +32327,16 @@ function OfflineDonationSuccessCard({ donation, C, auth, onReload }) {
   const [posterUrl, setPosterUrl] = useState(null);
   const [generating, setGenerating] = useState(true);
   const [copied, setCopied] = useState(false);
+  const [copiedImage, setCopiedImage] = useState(false);
   const [showMapperModal, setShowMapperModal] = useState(false);
+  const [targetPhone, setTargetPhone] = useState(
+    donation.mobile || donation.phone || donation['Mobile Number'] || donation['Phone'] || donation['WhatsApp Number'] || ''
+  );
+
+  useEffect(() => {
+    const p = donation.mobile || donation.phone || donation['Mobile Number'] || donation['Phone'] || donation['WhatsApp Number'] || '';
+    if (p) setTargetPhone(p);
+  }, [donation]);
 
   const loadPoster = () => {
     setGenerating(true);
@@ -32384,9 +32399,41 @@ function OfflineDonationSuccessCard({ donation, C, auth, onReload }) {
     setTimeout(() => setCopied(false), 2000);
   };
 
-  const handleShareWhatsApp = () => {
+  const handleShareWhatsApp = async () => {
     const text = getThankYouWhatsAppMsg();
-    const cleanPhone = String(donation.phone || donation.mobile || '').replace(/\D/g, '').slice(-10);
+    const cleanPhone = String(targetPhone || donation.phone || donation.mobile || donation['Mobile Number'] || '').replace(/\D/g, '').slice(-10);
+
+    // 1. Try copying poster image to clipboard for instant Ctrl+V pasting in WhatsApp Web
+    if (posterUrl) {
+      try {
+        const res = await fetch(posterUrl);
+        const blob = await res.blob();
+        if (navigator.clipboard && navigator.clipboard.write) {
+          await navigator.clipboard.write([
+            new ClipboardItem({ 'image/png': blob })
+          ]);
+          setCopiedImage(true);
+          setTimeout(() => setCopiedImage(false), 5000);
+        }
+
+        // 2. On supported mobile browsers, trigger native share with image file attached
+        if (navigator.share && navigator.canShare) {
+          const file = new File([blob], `Certificate_${(donation.name || 'Donor').replace(/[^a-zA-Z0-9]/g, '_')}.png`, { type: 'image/png' });
+          if (navigator.canShare({ files: [file] })) {
+            await navigator.share({
+              files: [file],
+              title: "MMP Certificate of Appreciation",
+              text: text
+            });
+            return;
+          }
+        }
+      } catch(e) {
+        console.log("Clipboard / Share file notice:", e);
+      }
+    }
+
+    // 3. Launch WhatsApp directly to the donor's phone with pre-filled message
     const waUrl = cleanPhone 
       ? `https://api.whatsapp.com/send?phone=91${cleanPhone}&text=${encodeURIComponent(text)}`
       : `https://api.whatsapp.com/send?text=${encodeURIComponent(text)}`;
@@ -32406,6 +32453,7 @@ function OfflineDonationSuccessCard({ donation, C, auth, onReload }) {
         <div><span style={{color:"#64748B"}}>Date:</span> <strong>{donation.date}</strong></div>
         <div><span style={{color:"#64748B"}}>Vibhag:</span> <strong>{donation.vibhag}</strong></div>
         <div><span style={{color:"#64748B"}}>Receipt #:</span> <strong>{donation.receiptNo || donation.internalReceiptNo || donation.id}</strong></div>
+        <div><span style={{color:"#64748B"}}>WhatsApp:</span> <strong style={{color:"#15803D"}}>{targetPhone ? ("+91 " + String(targetPhone).replace(/\D/g,'').slice(-10)) : "Not provided"}</strong></div>
         <div><span style={{color:"#64748B"}}>Event Code:</span> <strong>{donation.eventCode || 'EDU26'}</strong></div>
       </div>
 
@@ -32426,7 +32474,7 @@ function OfflineDonationSuccessCard({ donation, C, auth, onReload }) {
             />
 
             {/* Action Buttons Bar */}
-            <div style={{display:"flex",gap:6,justifyContent:"center",flexWrap:"wrap"}}>
+            <div style={{display:"flex",gap:6,justifyContent:"center",flexWrap:"wrap",marginBottom:8}}>
               <button
                 type="button"
                 onClick={() => setShowMapperModal(true)}
@@ -32446,19 +32494,61 @@ function OfflineDonationSuccessCard({ donation, C, auth, onReload }) {
 
               <button
                 type="button"
-                onClick={handleShareWhatsApp}
-                style={{padding:"6px 12px",borderRadius:6,background:"#25D366",color:"white",border:"none",fontWeight:800,fontSize:".74rem",cursor:"pointer",display:"flex",alignItems:"center",gap:4}}
-              >
-                <span>💬</span> Share to WhatsApp
-              </button>
-
-              <button
-                type="button"
                 onClick={handleCopyText}
                 style={{padding:"6px 10px",borderRadius:6,background:"#F1F5F9",color:"#334155",border:"1px solid #CBD5E1",fontWeight:700,fontSize:".74rem",cursor:"pointer"}}
               >
-                {copied ? "✓ Copied!" : "📋 Copy"}
+                {copied ? "✓ Text Copied!" : "📋 Copy Message"}
               </button>
+            </div>
+
+            {/* Direct WhatsApp Recipient & Dispatch Bar */}
+            <div style={{background:"#F0FDF4",border:"1.5px solid #86EFAC",borderRadius:10,padding:"10px 12px",display:"flex",flexDirection:"column",gap:6,textAlign:"left"}}>
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+                <span style={{fontSize:".75rem",fontWeight:800,color:"#15803D",display:"flex",alignItems:"center",gap:5}}>
+                  <span>💬</span> Send to Donor's WhatsApp:
+                </span>
+                <span style={{fontSize:".68rem",fontWeight:700,color:targetPhone ? "#166534" : "#DC2626"}}>
+                  {targetPhone ? `+91 ${String(targetPhone).replace(/\D/g,'').slice(-10)}` : "Enter 10-digit number"}
+                </span>
+              </div>
+
+              <div style={{display:"flex",gap:6}}>
+                <input
+                  type="tel"
+                  placeholder="Enter 10-digit WhatsApp number"
+                  value={targetPhone}
+                  onChange={e => setTargetPhone(e.target.value)}
+                  style={{flex:1,padding:"7px 10px",borderRadius:6,border:"1px solid #CBD5E1",fontSize:".82rem",fontFamily:"inherit",fontWeight:700,background:"white"}}
+                />
+                <button
+                  type="button"
+                  onClick={handleShareWhatsApp}
+                  style={{
+                    padding:"7px 14px",
+                    borderRadius:6,
+                    background:"#25D366",
+                    color:"white",
+                    border:"none",
+                    fontWeight:800,
+                    fontSize:".78rem",
+                    cursor:"pointer",
+                    display:"flex",
+                    alignItems:"center",
+                    gap:5,
+                    boxShadow:"0 2px 6px rgba(37,211,102,0.35)",
+                    whiteSpace:"nowrap"
+                  }}
+                  title="Open WhatsApp chat with donor, prefill message, and copy poster image"
+                >
+                  <span>💬</span> Send to WhatsApp
+                </button>
+              </div>
+
+              {copiedImage && (
+                <div style={{fontSize:".72rem",color:"#15803D",fontWeight:800,textAlign:"center",background:"#DCFCE7",padding:"4px 8px",borderRadius:6}}>
+                  ✓ Poster image copied to clipboard! Just press <strong>Ctrl + V</strong> in WhatsApp to paste the certificate image.
+                </div>
+              )}
             </div>
           </div>
         ) : (
