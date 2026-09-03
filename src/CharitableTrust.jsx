@@ -21013,12 +21013,30 @@ export const generateEventScopedStats = (reg, eventKeyOrObj, allRegs = [], vibha
     if (r.deleted === true || r.deleted === "true" || r.isDeleted === true || r.isTrash === true || r.inTrash === true || r.status === "Deleted" || r.Status === "Deleted") return false;
     if (r.isGlobalGuest === true || r.isSpecialGuest === true || Boolean(r.globalGuestId) || r.formId === "global_guest_directory" || r.formId === "global_guest_directory_import") return false;
 
+    // Exclude guest passes, committee invites, and VIP passes
+    const txn = String(r['Transaction ID'] || r.transactionId || "").toUpperCase();
+    if (txn.startsWith("GST-") || txn.startsWith("GUEST-") || txn.startsWith("VIP-") || txn.startsWith("INV-") || txn.startsWith("PASS-")) {
+      return false;
+    }
+
+    // Exclude entries that are clearly workspace committee members or lack any student data
+    const hasStudentMarks = Boolean(r['Stream / Class'] || r['Stream'] || r['Course'] || r['% Obtained'] || r.percentage || r['Marks / Percentage'] || r['Standard'] || r.marksheet || r.studentName || r['Student Name'] || r['Candidate Name']);
+    if (r.isInviteMode || r.targetTemplateId || r.Designation || r.designation || r['Designation / Role']) {
+      if (!hasStudentMarks) return false;
+    }
+
+    // Must have a real valid name, not blank or literal Participant
+    const sNameCheck = String(r['Full Name'] || r['Participant Name'] || r['Student Name'] || r['Candidate Name'] || r.name || r.Name || r['Submitted By'] || '').trim();
+    if (!sNameCheck || sNameCheck.toLowerCase() === 'participant' || sNameCheck.toLowerCase() === 'unspecified' || sNameCheck === '-') {
+      return false;
+    }
+
     if (isEdu) {
+      const isEduTxn = txn.startsWith("VG-") || txn.startsWith("EDU");
+      const isEduForm = String(r.formId || '').toLowerCase().includes('edu') || String(r.formId || '').toLowerCase().includes('vidya');
       const evName = String(r.eventName || r.eventTitle || r.eventId || "").toLowerCase();
-      const isEduEv = evName.includes("education") || evName.includes("felicitation") || evName.includes("2026") || evName.includes("vidya") || evName.includes("student") || evName === "" || evName === "unknown event";
-      const isEduTxn = String(r['Transaction ID'] || r.transactionId || "").toUpperCase().startsWith("VG-") || String(r['Transaction ID'] || r.transactionId || "").toUpperCase().startsWith("EDU");
-      const hasStudentFields = Boolean(r['Stream / Class'] || r['Stream'] || r['Course'] || r['% Obtained'] || r.percentage || r['Marks / Percentage'] || r['Standard'] || r.marksheet || r.studentName || r['Student Name'] || r['Candidate Name']);
-      return isEduEv || isEduTxn || hasStudentFields;
+      const isRealEduStudent = isEduTxn || isEduForm || (hasStudentMarks && (evName.includes("education") || evName.includes("felicitation") || evName.includes("2026") || evName.includes("vidya") || evName === "" || evName === "unknown event"));
+      return isRealEduStudent;
     }
 
     const targetQuery = String(evQuery).toLowerCase().trim();
@@ -21138,7 +21156,7 @@ export const generateEventScopedStats = (reg, eventKeyOrObj, allRegs = [], vibha
 
   const vibhagList = vibhagRegs.length > 0
     ? `📋 *Registered List (${displayVibhagLabel} - ${vibhagCount}):*\n` + vibhagRegs.map((s, idx) => {
-        const sName = s['Full Name'] || s['Participant Name'] || s['Student Name'] || s.name || 'Participant';
+        const sName = String(s['Full Name'] || s['Student Name'] || s['Candidate Name'] || s['Participant Name'] || s.name || s.Name || s['Submitted By'] || 'Participant').replace(/\|/g, ' ').trim();
         const sStream = s['Stream / Class'] || s.Stream || s.Standard || s.Category || '';
         const sPct = s['% Obtained'] || s.percentage || s['Marks / Percentage'] || '';
         const detailStr = [sStream, sPct ? `${sPct}%` : ''].filter(Boolean).join(' - ');
@@ -21148,7 +21166,7 @@ export const generateEventScopedStats = (reg, eventKeyOrObj, allRegs = [], vibha
 
   const allList = scopedRegs.length > 0
     ? `📋 *All Registrations (${displayScopeName} - ${totalCount}):*\n` + scopedRegs.map((s, idx) => {
-        const sName = s['Full Name'] || s['Participant Name'] || s['Student Name'] || s.name || 'Participant';
+        const sName = String(s['Full Name'] || s['Student Name'] || s['Candidate Name'] || s['Participant Name'] || s.name || s.Name || s['Submitted By'] || 'Participant').replace(/\|/g, ' ').trim();
         const sv = typeof getRecordVibhag === 'function' ? getRecordVibhag(s) : (s['Vibhag New'] || s['Vibhag'] || s.vibhag || '');
         const sStream = s['Stream / Class'] || s.Stream || s.Standard || s.Category || '';
         return `${idx + 1}. *${sName}*${sStream ? ` (${sStream})` : ''}${sv && sv !== 'Unspecified' ? ` - ${sv}` : ''}`;
