@@ -32004,6 +32004,216 @@ export const generateDonorPosterCanvas = (donation, templateImgUrl, customPositi
   });
 };
 
+// ── Canvas-based Certificate + Ceremony Photo Merger ──
+export const generateMergedDonorPosterCanvas = (certificateDataUrl, photoDataUrl, layout = "side-by-side", donation = {}) => {
+  return new Promise((resolve, reject) => {
+    const certImg = new Image();
+    const photoImg = new Image();
+    let certLoaded = false;
+    let photoLoaded = false;
+
+    const tryRender = () => {
+      if (!certLoaded || !photoLoaded) return;
+      try {
+        const isStacked = layout === "stacked";
+        const canvas = document.createElement("canvas");
+
+        if (isStacked) {
+          // Portrait Stacked (Top: Certificate, Bottom: Photo)
+          canvas.width = 1024;
+          canvas.height = 1720;
+        } else {
+          // Landscape Side-by-Side (Left: Certificate, Right: Photo)
+          canvas.width = 1960;
+          canvas.height = 1100;
+        }
+
+        const ctx = canvas.getContext("2d");
+
+        // 1. Background gradient & gold frame
+        const bgGrad = ctx.createLinearGradient(0, 0, canvas.width, canvas.height);
+        bgGrad.addColorStop(0, "#0F172A");
+        bgGrad.addColorStop(0.5, "#1E293B");
+        bgGrad.addColorStop(1, "#0A192F");
+        ctx.fillStyle = bgGrad;
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+        // Gold border around entire poster
+        ctx.strokeStyle = "#D4AF37";
+        ctx.lineWidth = 6;
+        ctx.strokeRect(12, 12, canvas.width - 24, canvas.height - 24);
+
+        ctx.strokeStyle = "rgba(255, 215, 0, 0.4)";
+        ctx.lineWidth = 1.5;
+        ctx.strokeRect(18, 18, canvas.width - 36, canvas.height - 36);
+
+        // Top Banner Title
+        ctx.fillStyle = "#FDE047";
+        ctx.font = "bold 26px 'Playfair Display', Georgia, serif";
+        ctx.textAlign = "center";
+        const headerTitle = "MUMBAI MEGHWAL PANCHAYAT  •  DONOR FELICITATION CEREMONY";
+        ctx.fillText(headerTitle, canvas.width / 2, 48);
+
+        if (!isStacked) {
+          // ── Side-by-Side Mode ──
+          const certX = 35;
+          const certY = 68;
+          const certW = 920;
+          const certH = 948;
+
+          // Panel 1: Certificate
+          ctx.save();
+          ctx.shadowColor = "rgba(0,0,0,0.4)";
+          ctx.shadowBlur = 12;
+          ctx.drawImage(certImg, certX, certY, certW, certH);
+          ctx.strokeStyle = "#D4AF37";
+          ctx.lineWidth = 4;
+          ctx.strokeRect(certX, certY, certW, certH);
+          ctx.restore();
+
+          // Panel 2: Photo
+          const photoX = 990;
+          const photoY = 68;
+          const photoW = 935;
+          const photoH = 948;
+
+          // Compute aspect ratio covering for photo
+          ctx.save();
+          ctx.shadowColor = "rgba(0,0,0,0.4)";
+          ctx.shadowBlur = 12;
+
+          // Frame background
+          ctx.fillStyle = "#020617";
+          ctx.fillRect(photoX, photoY, photoW, photoH);
+
+          // Draw photo centered/contained with dark frame
+          const imgAspect = photoImg.width / photoImg.height;
+          const frameAspect = photoW / (photoH - 60);
+          let drawW = photoW;
+          let drawH = photoH - 60;
+          let offsetX = photoX;
+          let offsetY = photoY;
+
+          if (imgAspect > frameAspect) {
+            drawH = photoW / imgAspect;
+            offsetY = photoY + ((photoH - 60 - drawH) / 2);
+          } else {
+            drawW = (photoH - 60) * imgAspect;
+            offsetX = photoX + ((photoW - drawW) / 2);
+          }
+
+          ctx.drawImage(photoImg, offsetX, offsetY, drawW, drawH);
+
+          // Gold frame around photo
+          ctx.strokeStyle = "#D4AF37";
+          ctx.lineWidth = 4;
+          ctx.strokeRect(photoX, photoY, photoW, photoH);
+
+          // Photo Caption Bar
+          ctx.fillStyle = "rgba(15, 23, 42, 0.92)";
+          ctx.fillRect(photoX, photoY + photoH - 58, photoW, 58);
+          ctx.fillStyle = "#FFFFFF";
+          ctx.font = "bold 18px 'Montserrat', sans-serif";
+          ctx.textAlign = "center";
+          const donorLabel = donation.name ? `Donor: ${donation.name} (${donation.vibhag || 'General'})` : "Donation Felicitation & Handover";
+          ctx.fillText(donorLabel, photoX + (photoW / 2), photoY + photoH - 32);
+
+          ctx.fillStyle = "#94A3B8";
+          ctx.font = "italic 13px 'Montserrat', sans-serif";
+          ctx.fillText(`Contribution: ₹${Number(donation.amount || 0).toLocaleString('en-IN')}/-  •  Education Felicitation 2026`, photoX + (photoW / 2), photoY + photoH - 12);
+          ctx.restore();
+
+          // Bottom Footer Bar
+          ctx.fillStyle = "#CBD5E1";
+          ctx.font = "bold 14px 'Montserrat', sans-serif";
+          ctx.textAlign = "center";
+          ctx.fillText("CENTRAL WORKING COMMITTEE  •  EDUCATION ACTIVITY 2026  •  OFFICIAL COMMUNITY PORTAL", canvas.width / 2, 1060);
+
+        } else {
+          // ── Stacked Mode (Top/Bottom) ──
+          const certX = 35;
+          const certY = 65;
+          const certW = 954;
+          const certH = 980;
+
+          // Top: Certificate
+          ctx.save();
+          ctx.shadowColor = "rgba(0,0,0,0.4)";
+          ctx.shadowBlur = 10;
+          ctx.drawImage(certImg, certX, certY, certW, certH);
+          ctx.strokeStyle = "#D4AF37";
+          ctx.lineWidth = 4;
+          ctx.strokeRect(certX, certY, certW, certH);
+          ctx.restore();
+
+          // Bottom: Photo
+          const photoX = 35;
+          const photoY = 1065;
+          const photoW = 954;
+          const photoH = 590;
+
+          ctx.save();
+          ctx.fillStyle = "#020617";
+          ctx.fillRect(photoX, photoY, photoW, photoH);
+
+          const imgAspect = photoImg.width / photoImg.height;
+          const frameAspect = photoW / (photoH - 50);
+          let drawW = photoW;
+          let drawH = photoH - 50;
+          let offsetX = photoX;
+          let offsetY = photoY;
+
+          if (imgAspect > frameAspect) {
+            drawH = photoW / imgAspect;
+            offsetY = photoY + ((photoH - 50 - drawH) / 2);
+          } else {
+            drawW = (photoH - 50) * imgAspect;
+            offsetX = photoX + ((photoW - drawW) / 2);
+          }
+
+          ctx.drawImage(photoImg, offsetX, offsetY, drawW, drawH);
+          ctx.strokeStyle = "#D4AF37";
+          ctx.lineWidth = 4;
+          ctx.strokeRect(photoX, photoY, photoW, photoH);
+
+          // Caption
+          ctx.fillStyle = "rgba(15, 23, 42, 0.95)";
+          ctx.fillRect(photoX, photoY + photoH - 50, photoW, 50);
+          ctx.fillStyle = "#FFFFFF";
+          ctx.font = "bold 17px 'Montserrat', sans-serif";
+          ctx.textAlign = "center";
+          const donorLabel = donation.name ? `Felicitation Ceremony: ${donation.name} (${donation.vibhag || 'General'})` : "Donation Felicitation & Handover";
+          ctx.fillText(donorLabel, photoX + (photoW / 2), photoY + photoH - 26);
+          ctx.fillStyle = "#94A3B8";
+          ctx.font = "italic 13px 'Montserrat', sans-serif";
+          ctx.fillText(`Contribution: ₹${Number(donation.amount || 0).toLocaleString('en-IN')}/-  •  Education Felicitation 2026`, photoX + (photoW / 2), photoY + photoH - 9);
+          ctx.restore();
+
+          // Footer
+          ctx.fillStyle = "#CBD5E1";
+          ctx.font = "bold 14px 'Montserrat', sans-serif";
+          ctx.textAlign = "center";
+          ctx.fillText("CENTRAL WORKING COMMITTEE  •  EDUCATION ACTIVITY 2026", canvas.width / 2, 1690);
+        }
+
+        resolve(canvas.toDataURL("image/png"));
+      } catch(err) {
+        reject(err);
+      }
+    };
+
+    certImg.crossOrigin = "anonymous";
+    certImg.onload = () => { certLoaded = true; tryRender(); };
+    certImg.onerror = reject;
+    certImg.src = certificateDataUrl;
+
+    photoImg.crossOrigin = "anonymous";
+    photoImg.onload = () => { photoLoaded = true; tryRender(); };
+    photoImg.onerror = reject;
+    photoImg.src = photoDataUrl;
+  });
+};
+
 // ── Visual Drag & Drop Poster Designer Component ──
 export function DonorPosterVisualMapperModal({ C, auth, onClose, onSaveSuccess }) {
   const tplImgUrl = C?.donorPosterTemplateUrl || getAppreciationTemplateDefaultUrl();
@@ -32324,11 +32534,15 @@ export function DonorPosterVisualMapperModal({ C, auth, onClose, onSaveSuccess }
 }
 
 function OfflineDonationSuccessCard({ donation, C, auth, onReload }) {
+  const [baseCertUrl, setBaseCertUrl] = useState(null);
   const [posterUrl, setPosterUrl] = useState(null);
+  const [attachedPhotoUrl, setAttachedPhotoUrl] = useState(null);
+  const [mergeLayout, setMergeLayout] = useState("side-by-side");
   const [generating, setGenerating] = useState(true);
   const [copied, setCopied] = useState(false);
   const [copiedImage, setCopiedImage] = useState(false);
   const [showMapperModal, setShowMapperModal] = useState(false);
+  const photoInputRef = useRef(null);
   const [targetPhone, setTargetPhone] = useState(
     donation.mobile || donation.phone || donation['Mobile Number'] || donation['Phone'] || donation['WhatsApp Number'] || ''
   );
@@ -32338,40 +32552,46 @@ function OfflineDonationSuccessCard({ donation, C, auth, onReload }) {
     if (p) setTargetPhone(p);
   }, [donation]);
 
-  const loadPoster = () => {
+  const loadPoster = async () => {
     setGenerating(true);
-    const tplUrl = C?.donorPosterTemplateUrl || getAppreciationTemplateDefaultUrl();
-    generateDonorPosterCanvas(donation, tplUrl, C?.donorPosterPositions)
-      .then(url => {
-        setPosterUrl(url);
-        setGenerating(false);
-      })
-      .catch(err => {
-        console.warn("Poster generation error:", err);
-        setGenerating(false);
-      });
+    try {
+      const tplUrl = C?.donorPosterTemplateUrl || getAppreciationTemplateDefaultUrl();
+      const certUrl = await generateDonorPosterCanvas(donation, tplUrl, C?.donorPosterPositions);
+      setBaseCertUrl(certUrl);
+
+      if (attachedPhotoUrl) {
+        const mergedUrl = await generateMergedDonorPosterCanvas(certUrl, attachedPhotoUrl, mergeLayout, donation);
+        setPosterUrl(mergedUrl);
+      } else {
+        setPosterUrl(certUrl);
+      }
+    } catch(err) {
+      console.warn("Poster generation error:", err);
+    } finally {
+      setGenerating(false);
+    }
   };
 
   useEffect(() => {
     loadPoster();
-  }, [donation, C, C?.donorPosterPositions]);
+  }, [donation, C, C?.donorPosterPositions, attachedPhotoUrl, mergeLayout]);
 
-  useEffect(() => {
-    let isMounted = true;
-    const tplUrl = C?.donorPosterTemplateUrl || getAppreciationTemplateDefaultUrl();
-    generateDonorPosterCanvas(donation, tplUrl)
-      .then(url => {
-        if (isMounted) {
-          setPosterUrl(url);
-          setGenerating(false);
-        }
-      })
-      .catch(err => {
-        console.warn("Poster generation error:", err);
-        if (isMounted) setGenerating(false);
-      });
-    return () => { isMounted = false; };
-  }, [donation, C]);
+
+
+  const handleAttachPhotoUpload = (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (re) => {
+      setAttachedPhotoUrl(re.target.result);
+    };
+    reader.readAsDataURL(file);
+    e.target.value = "";
+  };
+
+  const handleRemoveAttachedPhoto = () => {
+    setAttachedPhotoUrl(null);
+  };
 
   const handleDownloadPoster = () => {
     if (!posterUrl) return;
@@ -32457,10 +32677,98 @@ function OfflineDonationSuccessCard({ donation, C, auth, onReload }) {
         <div><span style={{color:"#64748B"}}>Event Code:</span> <strong>{donation.eventCode || 'EDU26'}</strong></div>
       </div>
 
+      {/* Photo Import & Merger Bar */}
+      <div style={{marginTop:10,background:"#EFF6FF",border:"1.5px dashed #93C5FD",borderRadius:10,padding:"9px 12px",display:"flex",alignItems:"center",justifyContent:"space-between",flexWrap:"wrap",gap:8}}>
+        <div style={{display:"flex",alignItems:"center",gap:8}}>
+          <div style={{width:32,height:32,borderRadius:8,background:"#DBEAFE",display:"flex",alignItems:"center",justifyContent:"center",fontSize:"1.1rem"}}>
+            📸
+          </div>
+          <div>
+            <div style={{fontSize:".78rem",fontWeight:800,color:"#1E40AF",display:"flex",alignItems:"center",gap:6}}>
+              <span>{attachedPhotoUrl ? "✓ Handover Photo Attached & Merged" : "Attach Group / Handover Photo"}</span>
+              {attachedPhotoUrl && (
+                <span style={{background:"#10B981",color:"white",fontSize:".65rem",padding:"1px 6px",borderRadius:4,fontWeight:800}}>
+                  Merged Single Poster
+                </span>
+              )}
+            </div>
+            <div style={{fontSize:".68rem",color:"#64748B"}}>
+              {attachedPhotoUrl ? "Merged into a single poster for 1-click WhatsApp & download" : "Upload ceremony or physical certificate photo to merge with letter"}
+            </div>
+          </div>
+        </div>
+
+        <div style={{display:"flex",alignItems:"center",gap:6}}>
+          <input
+            type="file"
+            ref={photoInputRef}
+            accept="image/*"
+            style={{display:"none"}}
+            onChange={handleAttachPhotoUpload}
+          />
+          <button
+            type="button"
+            onClick={() => photoInputRef.current?.click()}
+            style={{padding:"6px 12px",borderRadius:6,background:"#2563EB",color:"white",border:"none",fontWeight:800,fontSize:".74rem",cursor:"pointer",display:"flex",alignItems:"center",gap:4,boxShadow:"0 2px 6px rgba(37,99,235,0.25)"}}
+          >
+            <span>{attachedPhotoUrl ? "🔄 Change Photo" : "➕ Upload Local Photo"}</span>
+          </button>
+          {attachedPhotoUrl && (
+            <button
+              type="button"
+              onClick={handleRemoveAttachedPhoto}
+              style={{padding:"6px 8px",borderRadius:6,background:"#FEE2E2",color:"#DC2626",border:"none",fontWeight:800,fontSize:".74rem",cursor:"pointer"}}
+              title="Remove attached photo and return to certificate only"
+            >
+              ✕
+            </button>
+          )}
+        </div>
+      </div>
+
+      {/* Merge Layout Switcher (when photo is attached) */}
+      {attachedPhotoUrl && (
+        <div style={{marginTop:6,display:"flex",alignItems:"center",justifyContent:"center",gap:8,background:"#F1F5F9",padding:"5px 10px",borderRadius:8}}>
+          <span style={{fontSize:".7rem",fontWeight:700,color:"#475569"}}>Poster Layout:</span>
+          <button
+            type="button"
+            onClick={() => setMergeLayout("side-by-side")}
+            style={{
+              padding:"3px 8px",
+              borderRadius:5,
+              fontSize:".68rem",
+              fontWeight:800,
+              cursor:"pointer",
+              background: mergeLayout === "side-by-side" ? "#2563EB" : "white",
+              color: mergeLayout === "side-by-side" ? "white" : "#334155",
+              border: mergeLayout === "side-by-side" ? "1px solid #1D4ED8" : "1px solid #CBD5E1"
+            }}
+          >
+            ⬛⬛ Side-by-Side (Dual Frame)
+          </button>
+          <button
+            type="button"
+            onClick={() => setMergeLayout("stacked")}
+            style={{
+              padding:"3px 8px",
+              borderRadius:5,
+              fontSize:".68rem",
+              fontWeight:800,
+              cursor:"pointer",
+              background: mergeLayout === "stacked" ? "#2563EB" : "white",
+              color: mergeLayout === "stacked" ? "white" : "#334155",
+              border: mergeLayout === "stacked" ? "1px solid #1D4ED8" : "1px solid #CBD5E1"
+            }}
+          >
+            🟫 Stacked (Top & Bottom)
+          </button>
+        </div>
+      )}
+
       {/* Generated Appreciation Poster Preview */}
-      <div style={{marginTop:10,background:"#F8FAFC",borderRadius:8,padding:10,border:"1px solid #E2E8F0",textAlign:"center"}}>
+      <div style={{marginTop:8,background:"#F8FAFC",borderRadius:8,padding:10,border:"1px solid #E2E8F0",textAlign:"center"}}>
         <div style={{fontSize:".75rem",fontWeight:800,color:"#0F172A",marginBottom:6,display:"flex",alignItems:"center",justifyContent:"center",gap:6}}>
-          <span>📜</span> Certificate of Appreciation Poster Generated:
+          <span>📜</span> {attachedPhotoUrl ? "Single Merged Poster (Certificate + Handover Photo):" : "Certificate of Appreciation Poster Generated:"}
         </div>
 
         {generating ? (
