@@ -31850,7 +31850,7 @@ export const getAppreciationTemplateDefaultUrl = () => {
 };
 
 // ── Canvas-based Donor Appreciation Poster Generator ──
-export const generateDonorPosterCanvas = (donation, templateImgUrl) => {
+export const generateDonorPosterCanvas = (donation, templateImgUrl, customPositions) => {
   return new Promise((resolve, reject) => {
     const canvas = document.createElement("canvas");
     canvas.width = 994;
@@ -31860,55 +31860,84 @@ export const generateDonorPosterCanvas = (donation, templateImgUrl) => {
     const activeTpl = templateImgUrl || getAppreciationTemplateDefaultUrl();
     const defaultTpl = getAppreciationTemplateDefaultUrl();
 
+    // Default percentage positions if not customized
+    const pos = {
+      name: { x: 42, y: 53.2, fontSize: 22, color: "#0B2545", visible: true, ...customPositions?.name },
+      amount: { x: 39.2, y: 62.8, fontSize: 22, color: "#FFFFFF", visible: true, ...customPositions?.amount },
+      acknowledgment: { x: 50, y: 81.2, fontSize: 13.5, color: "#334155", visible: true, ...customPositions?.acknowledgment },
+      receiptDetails: { x: 50, y: 83.2, fontSize: 13.5, color: "#334155", visible: true, ...customPositions?.receiptDetails },
+      date: { x: 60, y: 84.5, fontSize: 13, color: "#334155", visible: false, ...customPositions?.date },
+      vibhag: { x: 30, y: 84.5, fontSize: 13, color: "#334155", visible: false, ...customPositions?.vibhag },
+    };
+
     const img = new Image();
     img.crossOrigin = "anonymous";
     img.onload = () => {
       try {
-        // 1. Draw base certificate background
         ctx.drawImage(img, 0, 0, 994, 1024);
 
-        // 2. Donor Name on MR. line
-        const dName = String(donation.name || donation['Full Name'] || 'Respected Donor').trim();
-        const dNameGu = String(donation.nameGu || donation.donorNameGu || '').trim();
-        const displayName = dNameGu && dNameGu !== dName ? `${dName} (${dNameGu})` : dName;
+        // 1. Donor Name
+        if (pos.name.visible !== false) {
+          const dName = String(donation.name || donation['Full Name'] || 'Respected Donor').trim();
+          const dNameGu = String(donation.nameGu || donation.donorNameGu || '').trim();
+          const displayName = dNameGu && dNameGu !== dName ? `${dName} (${dNameGu})` : dName;
 
-        ctx.save();
-        ctx.fillStyle = "#0B2545"; // Deep navy
-        let fontSize = 24;
-        if (displayName.length > 32) fontSize = 17;
-        else if (displayName.length > 22) fontSize = 20;
-        ctx.font = `bold ${fontSize}px 'Playfair Display', Georgia, serif`;
-        ctx.textAlign = "center";
-        ctx.fillText(displayName, 415, 532);
-        ctx.restore();
+          ctx.save();
+          ctx.fillStyle = pos.name.color || "#0B2545";
+          let fSize = Number(pos.name.fontSize) || 22;
+          if (displayName.length > 30) fSize = Math.max(15, fSize - 4);
+          ctx.font = `bold ${fSize}px 'Playfair Display', Georgia, serif`;
+          ctx.textAlign = "center";
+          const px = (pos.name.x / 100) * 994;
+          const py = (pos.name.y / 100) * 1024;
+          ctx.fillText(displayName, px, py);
+          ctx.restore();
+        }
 
-        // 3. Donation Amount on golden INR banner
-        const amtStr = `₹ ${Number(donation.amount || 0).toLocaleString('en-IN')}/-`;
-        ctx.save();
-        ctx.fillStyle = "#FFFFFF";
-        ctx.shadowColor = "rgba(0,0,0,0.5)";
-        ctx.shadowBlur = 4;
-        ctx.shadowOffsetX = 1;
-        ctx.shadowOffsetY = 1;
-        ctx.font = "bold 22px 'Montserrat', Arial, sans-serif";
-        ctx.textAlign = "center";
-        ctx.fillText(amtStr, 385, 626);
-        ctx.restore();
+        // 2. Donation Amount on golden INR banner
+        if (pos.amount.visible !== false) {
+          const amtStr = `₹ ${Number(donation.amount || 0).toLocaleString('en-IN')}/-`;
+          ctx.save();
+          ctx.fillStyle = pos.amount.color || "#FFFFFF";
+          ctx.shadowColor = "rgba(0,0,0,0.5)";
+          ctx.shadowBlur = 4;
+          ctx.shadowOffsetX = 1;
+          ctx.shadowOffsetY = 1;
+          ctx.font = `bold ${Number(pos.amount.fontSize) || 22}px 'Montserrat', Arial, sans-serif`;
+          ctx.textAlign = "center";
+          const px = (pos.amount.x / 100) * 994;
+          const py = (pos.amount.y / 100) * 1024;
+          ctx.fillText(amtStr, px, py);
+          ctx.restore();
+        }
 
-        // 4. Donor Acknowledgment details
-        const receiptNo = donation.receiptNo || donation.internalReceiptNo || donation.id || 'N/A';
-        const vibhag = donation.vibhag || donation.Vibhag || 'General';
-        const dateStr = donation.date || new Date().toISOString().split('T')[0];
+        // 3. Acknowledgment details
+        if (pos.acknowledgment.visible !== false) {
+          ctx.save();
+          ctx.fillStyle = pos.acknowledgment.color || "#334155";
+          ctx.font = `italic ${Number(pos.acknowledgment.fontSize) || 13.5}px 'Montserrat', Arial, sans-serif`;
+          ctx.textAlign = "center";
+          const px = (pos.acknowledgment.x / 100) * 994;
+          const py = (pos.acknowledgment.y / 100) * 1024;
+          ctx.fillText("Presented with heartfelt gratitude for supporting the Education Activity 2026.", px, py);
+          ctx.restore();
+        }
 
-        ctx.save();
-        ctx.fillStyle = "#334155";
-        ctx.font = "italic 13.5px 'Montserrat', Arial, sans-serif";
-        ctx.textAlign = "center";
-        const ackLine1 = "Presented with heartfelt gratitude for supporting the Education Activity 2026.";
-        const ackLine2 = `Receipt #: ${receiptNo}   •   Vibhag: ${vibhag}   •   Date: ${dateStr}`;
-        ctx.fillText(ackLine1, 497, 814);
-        ctx.fillText(ackLine2, 497, 834);
-        ctx.restore();
+        // 4. Receipt details line
+        if (pos.receiptDetails.visible !== false) {
+          const receiptNo = donation.receiptNo || donation.internalReceiptNo || donation.id || 'N/A';
+          const vibhag = donation.vibhag || donation.Vibhag || 'General';
+          const dateStr = donation.date || new Date().toISOString().split('T')[0];
+
+          ctx.save();
+          ctx.fillStyle = pos.receiptDetails.color || "#334155";
+          ctx.font = `italic ${Number(pos.receiptDetails.fontSize) || 13.5}px 'Montserrat', Arial, sans-serif`;
+          ctx.textAlign = "center";
+          const px = (pos.receiptDetails.x / 100) * 994;
+          const py = (pos.receiptDetails.y / 100) * 1024;
+          ctx.fillText(`Receipt #: ${receiptNo}   •   Vibhag: ${vibhag}   •   Date: ${dateStr}`, px, py);
+          ctx.restore();
+        }
 
         resolve(canvas.toDataURL("image/png"));
       } catch(err) {
@@ -31916,7 +31945,6 @@ export const generateDonorPosterCanvas = (donation, templateImgUrl) => {
       }
     };
     img.onerror = () => {
-      // If custom template fails to load, fallback to default asset
       if (activeTpl !== defaultTpl) {
         const fallbackImg = new Image();
         fallbackImg.crossOrigin = "anonymous";
@@ -31934,10 +31962,345 @@ export const generateDonorPosterCanvas = (donation, templateImgUrl) => {
   });
 };
 
-function OfflineDonationSuccessCard({ donation, C }) {
+// ── Visual Drag & Drop Poster Designer Component ──
+export function DonorPosterVisualMapperModal({ C, auth, onClose, onSaveSuccess }) {
+  const tplImgUrl = C?.donorPosterTemplateUrl || getAppreciationTemplateDefaultUrl();
+  const defaultPositions = {
+    name: { x: 42, y: 53.2, fontSize: 22, color: "#0B2545", visible: true, label: "👤 Donor Name" },
+    amount: { x: 39.2, y: 62.8, fontSize: 22, color: "#FFFFFF", visible: true, label: "💰 Amount" },
+    acknowledgment: { x: 50, y: 81.2, fontSize: 13.5, color: "#334155", visible: true, label: "📜 Acknowledgment" },
+    receiptDetails: { x: 50, y: 83.2, fontSize: 13.5, color: "#334155", visible: true, label: "🧾 Receipt Details" },
+  };
+
+  const [positions, setPositions] = useState(() => {
+    return {
+      name: { ...defaultPositions.name, ...C?.donorPosterPositions?.name },
+      amount: { ...defaultPositions.amount, ...C?.donorPosterPositions?.amount },
+      acknowledgment: { ...defaultPositions.acknowledgment, ...C?.donorPosterPositions?.acknowledgment },
+      receiptDetails: { ...defaultPositions.receiptDetails, ...C?.donorPosterPositions?.receiptDetails },
+    };
+  });
+
+  const [activeFieldKey, setActiveFieldKey] = useState("name");
+  const [dragging, setDragging] = useState(null);
+  const [saving, setSaving] = useState(false);
+  const containerRef = useRef(null);
+
+  const handlePointerDown = (e, key) => {
+    e.preventDefault();
+    e.stopPropagation();
+    e.target.setPointerCapture(e.pointerId);
+    setDragging(key);
+    setActiveFieldKey(key);
+  };
+
+  const handlePointerMove = (e) => {
+    if (!dragging || !containerRef.current) return;
+    const rect = containerRef.current.getBoundingClientRect();
+    let x = ((e.clientX - rect.left) / rect.width) * 100;
+    let y = ((e.clientY - rect.top) / rect.height) * 100;
+    x = Math.max(2, Math.min(98, x));
+    y = Math.max(2, Math.min(98, y));
+    setPositions(prev => ({
+      ...prev,
+      [dragging]: { ...prev[dragging], x: Number(x.toFixed(1)), y: Number(y.toFixed(1)) }
+    }));
+  };
+
+  const handlePointerUp = (e) => {
+    if (dragging) {
+      try { e.target.releasePointerCapture(e.pointerId); } catch(err){}
+      setDragging(null);
+    }
+  };
+
+  const handleSave = async () => {
+    setSaving(true);
+    try {
+      if (C) {
+        C.donorPosterPositions = positions;
+        await fbSave(C, auth?.idToken);
+      }
+      alert("✅ Appreciation poster field positions saved successfully!");
+      if (onSaveSuccess) onSaveSuccess(positions);
+      if (onClose) onClose();
+    } catch(err) {
+      alert("Save failed: " + err.message);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleReset = () => {
+    if (!confirm("Reset all field positions to original defaults?")) return;
+    setPositions(defaultPositions);
+  };
+
+  const activeField = positions[activeFieldKey] || positions.name;
+
+  return (
+    <div style={{position:"fixed",top:0,left:0,right:0,bottom:0,background:"rgba(15,23,42,0.8)",backdropFilter:"blur(4px)",zIndex:999999,display:"flex",alignItems:"center",justifyContent:"center",padding:12}}>
+      <div style={{background:"white",borderRadius:16,maxWidth:780,width:"100%",padding:18,boxShadow:"0 25px 50px rgba(0,0,0,0.35)",maxHeight:"94vh",display:"flex",flexDirection:"column",overflow:"hidden"}}>
+        
+        {/* Header */}
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10,borderBottom:"1px solid #E2E8F0",paddingBottom:8}}>
+          <div style={{display:"flex",alignItems:"center",gap:8}}>
+            <span style={{fontSize:"1.2rem"}}>🎯</span>
+            <div>
+              <h3 style={{margin:0,fontSize:"1rem",fontWeight:800,color:"#0F172A"}}>
+                Drag & Position Poster Fields
+              </h3>
+              <p style={{margin:0,fontSize:".74rem",color:"#64748B"}}>
+                Drag the field tags anywhere on the certificate to align with your template blanks.
+              </p>
+            </div>
+          </div>
+          <button 
+            onClick={onClose}
+            style={{background:"#F1F5F9",border:"none",borderRadius:"50%",width:30,height:30,cursor:"pointer",fontWeight:800,fontSize:".9rem",color:"#475569"}}
+          >
+            ✕
+          </button>
+        </div>
+
+        {/* Content Body: Left Visual Canvas, Right Controls */}
+        <div style={{display:"flex",gap:14,flex:1,overflowY:"auto",flexDirection:typeof window !== "undefined" && window.innerWidth < 640 ? "column" : "row"}}>
+          
+          {/* Interactive Drag Canvas */}
+          <div style={{flex:1.4,display:"flex",flexDirection:"column",alignItems:"center"}}>
+            <div 
+              ref={containerRef}
+              onPointerMove={handlePointerMove}
+              onPointerUp={handlePointerUp}
+              onPointerLeave={handlePointerUp}
+              style={{
+                position:"relative",
+                width:"100%",
+                maxWidth:420,
+                borderRadius:10,
+                overflow:"hidden",
+                border:"2px dashed #93C5FD",
+                boxShadow:"0 4px 12px rgba(0,0,0,0.12)",
+                touchAction:"none",
+                userSelect:"none",
+                background:"#F8FAFC"
+              }}
+            >
+              <img 
+                src={tplImgUrl} 
+                alt="Appreciation Poster Template" 
+                style={{width:"100%",display:"block",pointerEvents:"none"}} 
+              />
+
+              {/* Draggable Field Tags */}
+              {Object.entries(positions).map(([k, p]) => {
+                if (p.visible === false) return null;
+                const isSelected = activeFieldKey === k;
+                const isCurDragging = dragging === k;
+
+                return (
+                  <div
+                    key={k}
+                    onPointerDown={(e) => handlePointerDown(e, k)}
+                    style={{
+                      position:"absolute",
+                      left:`${p.x}%`,
+                      top:`${p.y}%`,
+                      transform:"translate(-50%, -50%)",
+                      background: isCurDragging ? "#EA580C" : isSelected ? "#2563EB" : "rgba(15, 23, 42, 0.88)",
+                      color:"white",
+                      padding:"3px 8px",
+                      borderRadius:6,
+                      fontSize:".74rem",
+                      fontWeight:800,
+                      cursor: isCurDragging ? "grabbing" : "grab",
+                      userSelect:"none",
+                      whiteSpace:"nowrap",
+                      zIndex: isCurDragging ? 20 : isSelected ? 15 : 5,
+                      border: isSelected ? "2px solid #FFFFFF" : "1px solid rgba(255,255,255,0.4)",
+                      boxShadow:"0 3px 10px rgba(0,0,0,0.35)",
+                      display:"flex",
+                      alignItems:"center",
+                      gap:4
+                    }}
+                    title="Click to select or drag to move"
+                  >
+                    <span>⠿</span>
+                    <span>{p.label || k}</span>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Right Controls Panel */}
+          <div style={{flex:1,display:"flex",flexDirection:"column",gap:10,background:"#F8FAFC",borderRadius:10,padding:12,border:"1px solid #E2E8F0"}}>
+            <div style={{fontSize:".82rem",fontWeight:800,color:"#0F172A"}}>
+              Active Field Settings:
+            </div>
+
+            {/* Field Selector Tabs */}
+            <div style={{display:"flex",flexWrap:"wrap",gap:4}}>
+              {Object.entries(positions).map(([k, p]) => (
+                <button
+                  key={k}
+                  type="button"
+                  onClick={() => setActiveFieldKey(k)}
+                  style={{
+                    padding:"4px 8px",
+                    borderRadius:6,
+                    fontSize:".72rem",
+                    fontWeight:700,
+                    cursor:"pointer",
+                    background: activeFieldKey === k ? "#2563EB" : "white",
+                    color: activeFieldKey === k ? "white" : "#334155",
+                    border: activeFieldKey === k ? "1px solid #1D4ED8" : "1px solid #CBD5E1"
+                  }}
+                >
+                  {p.label || k}
+                </button>
+              ))}
+            </div>
+
+            {/* Selected Field Coordinates & Styling */}
+            <div style={{background:"white",borderRadius:8,padding:10,border:"1px solid #E2E8F0",display:"flex",flexDirection:"column",gap:8}}>
+              <div style={{fontSize:".76rem",fontWeight:800,color:"#1E40AF"}}>
+                Editing: {activeField.label || activeFieldKey}
+              </div>
+
+              {/* X & Y Sliders */}
+              <div>
+                <div style={{display:"flex",justifyContent:"space-between",fontSize:".7rem",color:"#475569",marginBottom:2}}>
+                  <span>Horizontal (X):</span>
+                  <strong>{activeField.x}%</strong>
+                </div>
+                <input 
+                  type="range" 
+                  min="2" 
+                  max="98" 
+                  step="0.5" 
+                  value={activeField.x}
+                  onChange={e => {
+                    const val = parseFloat(e.target.value);
+                    setPositions(prev => ({
+                      ...prev,
+                      [activeFieldKey]: { ...prev[activeFieldKey], x: val }
+                    }));
+                  }}
+                  style={{width:"100%"}}
+                />
+              </div>
+
+              <div>
+                <div style={{display:"flex",justifyContent:"space-between",fontSize:".7rem",color:"#475569",marginBottom:2}}>
+                  <span>Vertical (Y):</span>
+                  <strong>{activeField.y}%</strong>
+                </div>
+                <input 
+                  type="range" 
+                  min="2" 
+                  max="98" 
+                  step="0.5" 
+                  value={activeField.y}
+                  onChange={e => {
+                    const val = parseFloat(e.target.value);
+                    setPositions(prev => ({
+                      ...prev,
+                      [activeFieldKey]: { ...prev[activeFieldKey], y: val }
+                    }));
+                  }}
+                  style={{width:"100%"}}
+                />
+              </div>
+
+              {/* Font Size */}
+              <div>
+                <div style={{display:"flex",justifyContent:"space-between",fontSize:".7rem",color:"#475569",marginBottom:2}}>
+                  <span>Font Size:</span>
+                  <strong>{activeField.fontSize || 22}px</strong>
+                </div>
+                <input 
+                  type="range" 
+                  min="10" 
+                  max="36" 
+                  step="1" 
+                  value={activeField.fontSize || 22}
+                  onChange={e => {
+                    const val = parseInt(e.target.value);
+                    setPositions(prev => ({
+                      ...prev,
+                      [activeFieldKey]: { ...prev[activeFieldKey], fontSize: val }
+                    }));
+                  }}
+                  style={{width:"100%"}}
+                />
+              </div>
+
+              {/* Color Picker */}
+              <div style={{display:"flex",alignItems:"center",gap:8}}>
+                <label style={{fontSize:".7rem",color:"#475569"}}>Text Color:</label>
+                <input 
+                  type="color" 
+                  value={activeField.color || "#0B2545"}
+                  onChange={e => {
+                    const val = e.target.value;
+                    setPositions(prev => ({
+                      ...prev,
+                      [activeFieldKey]: { ...prev[activeFieldKey], color: val }
+                    }));
+                  }}
+                  style={{width:34,height:26,cursor:"pointer",border:"none",borderRadius:4,background:"transparent"}}
+                />
+              </div>
+            </div>
+
+            <div style={{display:"flex",gap:6,marginTop:"auto"}}>
+              <button
+                type="button"
+                onClick={handleReset}
+                style={{padding:"8px 10px",borderRadius:6,background:"#F1F5F9",color:"#475569",border:"1px solid #CBD5E1",fontWeight:700,fontSize:".74rem",cursor:"pointer"}}
+              >
+                ↺ Reset Defaults
+              </button>
+              <button
+                type="button"
+                disabled={saving}
+                onClick={handleSave}
+                style={{flex:1,padding:"8px 12px",borderRadius:6,background:"#15803D",color:"white",border:"none",fontWeight:800,fontSize:".78rem",cursor:saving?"wait":"pointer",boxShadow:"0 2px 6px rgba(21,128,61,0.3)"}}
+              >
+                {saving ? "Saving..." : "💾 Save & Apply"}
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function OfflineDonationSuccessCard({ donation, C, auth, onReload }) {
   const [posterUrl, setPosterUrl] = useState(null);
   const [generating, setGenerating] = useState(true);
   const [copied, setCopied] = useState(false);
+  const [showMapperModal, setShowMapperModal] = useState(false);
+
+  const loadPoster = () => {
+    setGenerating(true);
+    const tplUrl = C?.donorPosterTemplateUrl || getAppreciationTemplateDefaultUrl();
+    generateDonorPosterCanvas(donation, tplUrl, C?.donorPosterPositions)
+      .then(url => {
+        setPosterUrl(url);
+        setGenerating(false);
+      })
+      .catch(err => {
+        console.warn("Poster generation error:", err);
+        setGenerating(false);
+      });
+  };
+
+  useEffect(() => {
+    loadPoster();
+  }, [donation, C, C?.donorPosterPositions]);
 
   useEffect(() => {
     let isMounted = true;
@@ -32027,6 +32390,15 @@ function OfflineDonationSuccessCard({ donation, C }) {
             <div style={{display:"flex",gap:6,justifyContent:"center",flexWrap:"wrap"}}>
               <button
                 type="button"
+                onClick={() => setShowMapperModal(true)}
+                style={{padding:"6px 10px",borderRadius:6,background:"#EFF6FF",color:"#1D4ED8",border:"1px solid #BFDBFE",fontWeight:800,fontSize:".74rem",cursor:"pointer",display:"flex",alignItems:"center",gap:4}}
+                title="Drag and position donor name and amount to match your poster lines"
+              >
+                <span>🎯</span> Adjust Positions
+              </button>
+
+              <button
+                type="button"
                 onClick={handleDownloadPoster}
                 style={{padding:"6px 12px",borderRadius:6,background:"#0D4B5E",color:"white",border:"none",fontWeight:800,fontSize:".74rem",cursor:"pointer",display:"flex",alignItems:"center",gap:4}}
               >
@@ -32054,6 +32426,17 @@ function OfflineDonationSuccessCard({ donation, C }) {
           <div style={{fontSize:".72rem",color:"#94A3B8"}}>Certificate preview unavailable</div>
         )}
       </div>
+      {showMapperModal && (
+        <DonorPosterVisualMapperModal
+          C={C}
+          auth={auth}
+          onClose={() => setShowMapperModal(false)}
+          onSaveSuccess={() => {
+            loadPoster();
+            if (onReload) onReload();
+          }}
+        />
+      )}
     </div>
   );
 }
@@ -32441,6 +32824,7 @@ function DonorListCard({ donorData, auth, onRefresh, C }) {
   const [editingDonation, setEditingDonation] = useState(null);
   const [activePosterDonor, setActivePosterDonor] = useState(null);
   const [showPosterTplUploadModal, setShowPosterTplUploadModal] = useState(false);
+  const [showPosterMapperModal, setShowPosterMapperModal] = useState(false);
   const [uploadingPosterTpl, setUploadingPosterTpl] = useState(false);
   const posterTplInputRef = useRef(null);
   const [savingEdit, setSavingEdit] = useState(false);
@@ -32640,6 +33024,14 @@ function DonorListCard({ donorData, auth, onRefresh, C }) {
         <div style={{display:"flex",alignItems:"center",gap:6}}>
           <button
             type="button"
+            onClick={() => setShowPosterMapperModal(true)}
+            style={{padding:"3px 8px",borderRadius:5,background:"#EFF6FF",border:"1px solid #93C5FD",color:"#1D4ED8",fontSize:".68rem",fontWeight:800,cursor:"pointer",display:"flex",alignItems:"center",gap:3}}
+            title="Drag and drop variables to position Name & Amount on poster"
+          >
+            <span>🎯</span> Adjust Positions
+          </button>
+          <button
+            type="button"
             onClick={() => setShowPosterTplUploadModal(true)}
             style={{padding:"3px 8px",borderRadius:5,background:"#F0FDF4",border:"1px solid #86EFAC",color:"#15803D",fontSize:".68rem",fontWeight:800,cursor:"pointer",display:"flex",alignItems:"center",gap:3}}
             title="Upload or change Appreciation Certificate background template"
@@ -32829,7 +33221,7 @@ function DonorListCard({ donorData, auth, onRefresh, C }) {
               </button>
             </div>
 
-            <OfflineDonationSuccessCard donation={activePosterDonor} C={C} />
+            <OfflineDonationSuccessCard donation={activePosterDonor} C={C} auth={auth} onReload={onRefresh} />
 
             <div style={{marginTop:12,display:"flex",justifyContent:"flex-end"}}>
               <button
@@ -32842,6 +33234,17 @@ function DonorListCard({ donorData, auth, onRefresh, C }) {
             </div>
           </div>
         </div>
+      )}
+
+      {showPosterMapperModal && (
+        <DonorPosterVisualMapperModal
+          C={C}
+          auth={auth}
+          onClose={() => setShowPosterMapperModal(false)}
+          onSaveSuccess={() => {
+            if (onRefresh) onRefresh();
+          }}
+        />
       )}
 
       {/* Template Upload Modal */}
