@@ -22626,7 +22626,11 @@ function WhatsAppApplicantMessengerModal({ reg, onClose, C, auth, onLogSent, all
 
   const formatTemplateString = (tplString, rName, rMobile, rTxn, rVibhag, rStream, rPct, rRemarks, rContactNameArg, eventScopeOverride, vibhagOverrideArg) => {
     const chosenScope = eventScopeOverride || activeModalEvent || "education2026";
-    const chosenVibhag = vibhagOverrideArg || activeModalVibhag || "auto";
+    let chosenVibhag = vibhagOverrideArg || activeModalVibhag || "auto";
+    if (chosenVibhag === 'auto') {
+      const recV = rVibhag || reg?.['Vibhag New'] || reg?.['Vibhag'] || reg?.vibhag || "";
+      if (recV && recV !== 'All Vibhags') chosenVibhag = recV;
+    }
     const baseUrl = `${C.whatsAppPortalUrl || "https://www.mmp-cwc.com/"}`.replace(/\/?$/, '');
     const certUrl = `${baseUrl}/?cert=${encodeURIComponent(rTxn || "")}`;
     const inviteUrl = `${baseUrl}/?invite=${encodeURIComponent(rTxn || "")}`;
@@ -22836,9 +22840,15 @@ function WhatsAppApplicantMessengerModal({ reg, onClose, C, auth, onLogSent, all
     const freshRemarks = reg['Remarks'] || reg.remarks || 'Application under review';
     const freshName = String(reg['Full Name'] || reg['Submitted By'] || reg['Participant Name'] || reg.name || 'Applicant').replace(/\|/g, ' ').trim();
     const freshTxn = reg['Transaction ID'] || reg.transactionId || reg.id || 'N/A';
-    const freshVibhag = reg['Vibhag'] || reg.vibhag || reg['MMP Vibhag'] || 'All Vibhags';
+    const freshVibhag = reg['Vibhag New'] || reg['Vibhag'] || reg.vibhag || reg['MMP Vibhag'] || 'All Vibhags';
     const freshStream = reg['Stream / Class'] || reg['Stream'] || reg['Course'] || 'N/A';
     const freshPct = reg['% Obtained'] || reg.percentage || reg['Marks / Percentage'] || 'N/A';
+
+    // 🌟 Re-sync Vibhag & Event scope for the newly selected recipient
+    const newVibhag = reg?.vibhagScope === "all" ? "all" : (freshVibhag !== 'All Vibhags' ? freshVibhag : "auto");
+    const newEvent = reg?.targetEventId || reg?.activeDocTpl?.customTpl?.targetEventId || eventObj?.targetEventId || "education2026";
+    setActiveModalVibhag(newVibhag);
+    setActiveModalEvent(newEvent);
 
     if (reg.isInviteMode) {
       const activeDef = workspaceTemplates.find(t => t.isDefault) || workspaceTemplates[0];
@@ -22846,7 +22856,7 @@ function WhatsAppApplicantMessengerModal({ reg, onClose, C, auth, onLogSent, all
       setSelectedTplId(targetId);
       const chosen = workspaceTemplates.find(t => t.id === targetId) || activeDef;
       if (chosen) {
-        setCustomMessage(formatTemplateString(chosen.text, freshName, freshMobile, freshTxn, freshVibhag, freshStream, freshPct, freshRemarks));
+        setCustomMessage(formatTemplateString(chosen.text, freshName, freshMobile, freshTxn, freshVibhag, freshStream, freshPct, freshRemarks, null, newEvent, newVibhag));
       }
     } else {
       setCustomMessage(buildTemplateForStatus(freshStatus, freshName, freshMobile, freshTxn, freshVibhag, freshStream, freshPct, freshRemarks));
