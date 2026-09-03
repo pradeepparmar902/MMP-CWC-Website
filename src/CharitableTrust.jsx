@@ -519,7 +519,7 @@ const fbFetchRegistrations = async (idToken) => {
   }
   const data = await res.json();
   if (!data.documents) return [];
-  return data.documents.map(doc => {
+  const list = data.documents.map(doc => {
     try {
       const parsed = JSON.parse(doc.fields.data.stringValue);
       let flatData = parsed.formData ? { ...parsed, ...parsed.formData } : parsed;
@@ -537,6 +537,12 @@ const fbFetchRegistrations = async (idToken) => {
       return rec;
     } catch(e) { return null; }
   }).filter(Boolean).sort((a,b) => new Date(b._submittedAt || 0).getTime() - new Date(a._submittedAt || 0).getTime());
+
+  if (typeof window !== 'undefined' && list.length > 0) {
+    window.__MMP_REGS_CACHE__ = list;
+    window.__MMP_ALL_REGS_RAW__ = list;
+  }
+  return list;
 };
 
 const fbDeleteDonation = async (docId, idToken) => {
@@ -7531,6 +7537,14 @@ function Overview({ mob, C, setC, auth }) {
   
   // Registration overview states
   const [regs, setRegs] = useState([]);
+
+  useEffect(() => {
+    if (typeof window !== 'undefined' && Array.isArray(regs) && regs.length > 0) {
+      window.__MMP_ALL_REGS_RAW__ = regs;
+      window.__MMP_REGS_CACHE__ = regs;
+      window.__MMP_INVITE_REGS__ = regs;
+    }
+  }, [regs]);
   const [loadingRegs, setLoadingRegs] = useState(true);
   const [defaultOverviewForm, setDefaultOverviewForm] = useState(() => {
     return C.defaultOverviewForm || localStorage.getItem("defaultOverviewForm") || "Education felicitation 2026";
@@ -15752,6 +15766,671 @@ function MultiVibhagDropdown({ selectedVibhags = [], onChange, allVibhags = [], 
   );
 }
 
+// ── Shared Sub-Workspace & WhatsApp Dispatcher Utilities ──
+export const getEventWhatsAppTemplates = (eventObj, C = {}) => {
+  const defaultWorkspaceTemplates = [
+    {
+      id: "tpl_student_pass",
+      name: "Official Student Invitation & Entry Pass",
+      isDefault: false,
+      text: C?.whatsAppTplInvite || `🏛️ *MUMBAI MEGHWAL PANCHAYAT*\n🏆 *Education Felicitation 2026 - Official Invitation*\n═══════════════════════\nNamaste *{STUDENT_NAME}*,\n\nWe are pleased to invite you and your family as our esteemed guests of honor to the *Annual Student Education Felicitation 2026*.\n\n📋 *Invitation Pass Details:*\n• *Transaction / Pass ID:* {TXN_ID}\n• *Invitee Name:* {STUDENT_NAME}\n• *Vibhag:* {VIBHAG}\n• *Stream / Class:* {STREAM}\n\n📅 *Event Date:* 02-10-2026 (Friday)\n⏰ *Reporting Time:* 09:30 AM\n📍 *Venue:* Mumbai, Maharashtra\n\n👉 *View & Download Official PDF Invitation Letter & Pass:*\n{INVITE_PDF_LINK}\n\nPlease show this digital pass or downloaded invitation letter at the registration desk upon arrival.\n\nWarm regards,\n*Central Working Committee (CWC) & Education Board*\n*Mumbai Meghwal Panchayat & Vidya Gohil Trust*\n📞 Committee Helpline: {HELPLINE_PHONES}`
+    },
+    {
+      id: "tpl_vip_guest",
+      name: "VIP / Special Dignitary Invitation",
+      isDefault: false,
+      text: `🏛️ *MUMBAI MEGHWAL PANCHAYAT*\n🌟 *Special Dignitary Invitation - Education Felicitation 2026*\n═══════════════════════\nRespected *{STUDENT_NAME}* Ji,\n\nOn behalf of Mumbai Meghwal Panchayat & Vidya Gohil Charitable Trust, we cordially request the honor of your esteemed presence as our *Special Guest of Honor* at our upcoming Annual Education Felicitation Ceremony.\n\n📅 *Event Date:* 02-10-2026 (Friday)\n⏰ *Reporting Time:* 09:30 AM\n📍 *Venue:* Mumbai, Maharashtra\n\n👉 *View Official Digital Invitation Pass:*\n{INVITE_PDF_LINK}\n\nWe look forward to welcoming you and celebrating together.\n\nWarm regards,\n*President & Central Working Committee (CWC)*\n📞 Helpline: {HELPLINE_PHONES}`
+    },
+    {
+      id: "tpl_event_reminder",
+      name: "Event Reminder & Reporting Time Notice",
+      isDefault: false,
+      text: `🏛️ *MUMBAI MEGHWAL PANCHAYAT*\n⏰ *Gentle Reminder: Education Felicitation 2026*\n═══════════════════════\nNamaste *{STUDENT_NAME}*,\n\nThis is a gentle reminder that the *Annual Student Education Felicitation Ceremony* is scheduled for *02-10-2026 (Friday)*.\n\n• *Invitee Name:* {STUDENT_NAME}\n• *Pass / Txn ID:* {TXN_ID}\n• *Reporting Time:* 09:30 AM Sharp\n• *Venue:* Mumbai, Maharashtra\n\n👉 *Open Your Digital Pass on Mobile:*\n{INVITE_PDF_LINK}\n\nPlease carry your digital pass on your phone for smooth verification at the venue.\n\nWarm regards,\n*Event Management Team*`
+    },
+    {
+      id: "tpl_meeting_invite",
+      name: "Education Committee meeting invite",
+      isDefault: false,
+      text: `🏛️ *MUMBAI MEGHWAL PANCHAYAT*\n📢 *Education Committee Meeting Notice*\n═══════════════════════\nRespected Committee Member,\n\nA crucial meeting of the *Education Committee & Central Working Committee* has been scheduled.\n\n📅 Date: Upcoming Sunday\n⏰ Time: 10:30 AM\n📍 Venue: Head Office / Community Hall\n\nAgenda:\n1. Student registration status & verification review\n2. Vibhag-wise pass distribution planning\n3. Event day responsibilities\n\nKindly make it convenient to attend on time.\n\nWarm regards,\n*Education Board & CWC*`
+    },
+    {
+      id: "tpl_vibhag_update",
+      name: "Vibhag Wise Update information",
+      isDefault: true,
+      text: `🏛️ *MUMBAI MEGHWAL PANCHAYAT*\n🏆 *Education Committee*\n═══════════════════════\nNamaste *{MEMBER_NAME}*,\n\nHere is the latest student update for your Vibhag:\n\n{VIBHAG_STUDENT_LIST}\n\n👉 *Invitation Pass:* {PASS_LINK}\n\n📞 Helpline: {HELPLINE_PHONES}`
+    }
+  ];
+
+  const rawTpls = eventObj?.whatsAppTemplates || eventObj?.whatsappTemplates || [];
+  if (!Array.isArray(rawTpls) || rawTpls.length === 0) {
+    return defaultWorkspaceTemplates;
+  }
+
+  const result = [...rawTpls];
+  for (const def of defaultWorkspaceTemplates) {
+    if (!result.some(t => t.id === def.id || t.name === def.name || String(t.name).toLowerCase() === String(def.name).toLowerCase())) {
+      result.push(def);
+    }
+  }
+  return result;
+};
+
+export const getSubworkspaceContactsList = ({ eventId, subWorkspaceId = "invite", allRegs = [], C = {} }) => {
+  // Pool resolution with fallback to global window caches & localStorage backup
+  let sourcePool = Array.isArray(allRegs) && allRegs.length > 0 ? allRegs : [];
+  if (typeof window !== 'undefined') {
+    if (Array.isArray(window.__MMP_INVITE_REGS__) && window.__MMP_INVITE_REGS__.length > sourcePool.length) {
+      sourcePool = window.__MMP_INVITE_REGS__;
+    } else if (Array.isArray(window.__MMP_ALL_REGS_RAW__) && window.__MMP_ALL_REGS_RAW__.length > sourcePool.length) {
+      sourcePool = window.__MMP_ALL_REGS_RAW__;
+    } else if (Array.isArray(window.__MMP_REGS_CACHE__) && window.__MMP_REGS_CACHE__.length > sourcePool.length) {
+      sourcePool = window.__MMP_REGS_CACHE__;
+    }
+  }
+  if (sourcePool.length === 0 && typeof localStorage !== 'undefined') {
+    try {
+      const cached = JSON.parse(localStorage.getItem("mmp_cached_registrations") || "[]");
+      if (Array.isArray(cached) && cached.length > 0) {
+        sourcePool = cached;
+      }
+    } catch(e) {}
+  }
+  if (sourcePool.length === 0) return [];
+
+  const customEvents = C?.events || [];
+  const defaultDonorWorkspace = {
+    id: "ev_donor_data",
+    title: "💰 Donor Data",
+    isInternalOnly: true,
+    isDonorWorkspace: true
+  };
+  const hasDonorWs = customEvents.some(e => e.isDonorWorkspace);
+  const inviteEvents = hasDonorWs ? customEvents : [...customEvents, defaultDonorWorkspace];
+
+  // 1. Resolve event: by eventId, OR by finding which event contains this subWorkspace template!
+  let ev = null;
+  if (eventId && eventId !== "undefined") {
+    ev = inviteEvents.find(e => 
+      (e.id && e.id !== "undefined" && e.id === eventId) || 
+      (e.title && e.title === eventId) ||
+      (e.title && String(e.title).toLowerCase() === String(eventId).toLowerCase()) ||
+      (e.id && e.id !== "undefined" && String(e.id).toLowerCase() === String(eventId).toLowerCase())
+    );
+  }
+  if (!ev && subWorkspaceId && subWorkspaceId !== 'invite' && subWorkspaceId !== 'cert') {
+    ev = inviteEvents.find(e => 
+      (e.pdfTemplates || []).some(t => t.id === subWorkspaceId || t.name === subWorkspaceId)
+    );
+  }
+  if (!ev) {
+    ev = inviteEvents.find(e => e.title && String(e.title).toLowerCase().includes("education")) || inviteEvents[0];
+  }
+  if (!ev) return [];
+
+  const customTpls = ev.pdfTemplates || [];
+  const activeTplObj = customTpls.find(t => 
+    t.id === subWorkspaceId || 
+    t.name === subWorkspaceId || 
+    (subWorkspaceId && String(t.id).toLowerCase() === String(subWorkspaceId).toLowerCase()) || 
+    (subWorkspaceId && String(t.name).toLowerCase() === String(subWorkspaceId).toLowerCase())
+  );
+  const activeDocId = activeTplObj?.id || subWorkspaceId || "invite";
+
+  // Global guests directory entries
+  const globalGuests = sourcePool.filter(r => r && (r.isGlobalGuest === true || r.formId === "global_guest_directory"));
+
+  const resolveGroups = (contact) => {
+    if (!contact) return ["General Committee"];
+    let masterGroups = [];
+    const gId = contact.globalGuestId || contact.id;
+    if (gId && globalGuests.length > 0) {
+      const masterG = globalGuests.find(g => 
+        g.id === gId || 
+        g.id === `GUEST_${gId}` || 
+        (gId && String(g.id).replace(/\D/g, '') === String(gId).replace(/\D/g, '') && String(gId).replace(/\D/g, '').length >= 4)
+      );
+      if (masterG) {
+        if (Array.isArray(masterG.groups) && masterG.groups.length > 0) masterGroups = masterG.groups;
+        else if (Array.isArray(masterG.Groups) && masterG.Groups.length > 0) masterGroups = masterG.Groups;
+        else if (masterG.Group || masterG.Category) {
+          masterGroups = String(masterG.Group || masterG.Category).split(/[,/|;]+/).map(s => s.trim()).filter(Boolean);
+        }
+      }
+    }
+    let ownGroups = [];
+    if (Array.isArray(contact.groups) && contact.groups.length > 0) ownGroups = contact.groups.map(s => String(s).trim()).filter(Boolean);
+    else if (Array.isArray(contact.Groups) && contact.Groups.length > 0) ownGroups = contact.Groups.map(s => String(s).trim()).filter(Boolean);
+    else {
+      const raw = contact.Group || contact.group || contact.Category || contact.category || contact.Team || contact.team || contact.Designation || contact.designation || contact.Vibhag || "";
+      if (raw && typeof raw === 'string') {
+        ownGroups = raw.split(/[,/|;]+/).map(s => s.trim()).filter(Boolean);
+      }
+    }
+    if (masterGroups.length === 0 && globalGuests.length > 0) {
+      const cName = String(contact['Full Name'] || contact['Participant Name'] || contact.Name || contact.name || '').trim().toLowerCase();
+      if (cName) {
+        const masterByName = globalGuests.find(g => {
+          const gName = String(g['Full Name'] || g.Name || g.name || '').trim().toLowerCase();
+          return gName && (gName === cName || gName.includes(cName) || cName.includes(gName));
+        });
+        if (masterByName) {
+          if (Array.isArray(masterByName.groups) && masterByName.groups.length > 0) masterGroups = masterByName.groups;
+          else if (Array.isArray(masterByName.Groups) && masterByName.Groups.length > 0) masterGroups = masterByName.Groups;
+          else if (masterByName.Group || masterByName.Category) {
+            masterGroups = String(masterByName.Group || masterByName.Category).split(/[,/|;]+/).map(s => s.trim()).filter(Boolean);
+          }
+        }
+      }
+    }
+    const combined = Array.from(new Set([...ownGroups, ...masterGroups])).filter(Boolean);
+    return combined.length > 0 ? combined : ["General Committee"];
+  };
+
+  const baseMatched = sourcePool.filter(r => {
+    if (!r) return false;
+    if (r.deleted === true || r.deleted === "true" || r.isDeleted === true || r.deletedGuest === true || r.isTrash === true || r.inTrash === true || r.status === "Deleted" || r.Status === "Deleted") return false;
+
+    // Exclude the raw global directory master pool entry itself from being an event invitee
+    if (r.isGlobalGuest === true || r.formId === "global_guest_directory") return false;
+
+    // Donor Workspaces
+    if (ev.isDonorWorkspace) {
+      if (r.isDonor) return r.eventId === ev.id || r.eventName === ev.title || !r.eventId;
+      if (r.Status === "Approved" || r.status === "Approved") {
+        let evName = r.eventName || r.eventTitle || r.eventId;
+        return r.eventId === ev.id || evName === ev.title || evName === ev.titleGu;
+      }
+      return false;
+    }
+
+    // Must be an Approved registration, or a special/committee guest entry
+    const isSpecialOrApproved = r.Status === "Approved" || r.status === "Approved" || r.isSpecialGuest === true || Boolean(r.globalGuestId) || String(r['Transaction ID'] || r.transactionId || r.id || '').startsWith('GST-');
+    if (!isSpecialOrApproved) return false;
+
+    // Check workspace event membership
+    let evName = String(r.eventName || r.eventTitle || r.eventId || '').trim().toLowerCase();
+    let rEvId = String(r.eventId || '').trim().toLowerCase();
+    const evTitleClean = String(ev.title || '').trim().toLowerCase();
+    const evIdClean = (ev.id && ev.id !== "undefined") ? String(ev.id).trim().toLowerCase() : "";
+
+    const matchesEvent = !eventId ||
+      (evTitleClean && (evName === evTitleClean || evName.includes(evTitleClean) || evTitleClean.includes(evName))) ||
+      (evIdClean && (rEvId === evIdClean || evName === evIdClean)) ||
+      (r.targetTemplateId && (r.targetTemplateId === activeDocId || (activeTplObj?.name && r.targetTemplateId === activeTplObj.name))) ||
+      (Array.isArray(r.assignedDocTypes) && (r.assignedDocTypes.includes(activeDocId) || (activeTplObj?.name && r.assignedDocTypes.includes(activeTplObj.name))));
+    if (!matchesEvent) return false;
+
+    // ── Template / Sub-Workspace Contact Isolation ──
+    if (activeDocId !== "invite" && activeDocId !== "cert") {
+      const targetAudienceMode = activeTplObj?.targetAudience || "assigned"; // "assigned" | "group" | "all" | "event"
+      if (targetAudienceMode === "all" || targetAudienceMode === "event") return true;
+
+      // 1. Direct template assignment
+      const isAssigned = r.targetTemplateId === activeDocId || 
+        (activeTplObj?.id && r.targetTemplateId === activeTplObj.id) || 
+        (activeTplObj?.name && r.targetTemplateId === activeTplObj.name) || 
+        (Array.isArray(r.assignedDocTypes) && (
+          r.assignedDocTypes.includes(activeDocId) || 
+          (activeTplObj?.id && r.assignedDocTypes.includes(activeTplObj.id)) || 
+          (activeTplObj?.name && r.assignedDocTypes.includes(activeTplObj.name))
+        ));
+      if (isAssigned) return true;
+
+      // 2. Group audience mode: match targetGroup or template name
+      const targetGroupName = String(activeTplObj?.targetGroup || activeTplObj?.name || "").trim().toLowerCase();
+      const rGroups = resolveGroups(r).map(g => String(g).trim().toLowerCase());
+      if (targetGroupName) {
+        if (rGroups.some(g => g === targetGroupName || g.includes(targetGroupName) || targetGroupName.includes(g))) return true;
+      }
+
+      // 3. Check if contact record text mentions targetGroup or template name
+      const rText = JSON.stringify(r).toLowerCase();
+      if (targetGroupName && rText.includes(targetGroupName)) return true;
+
+      return false;
+    }
+
+    if (activeDocId === "invite") {
+      if (r.targetTemplateId && r.targetTemplateId !== "invite" && r.targetTemplateId !== "cert") {
+        if (!Array.isArray(r.assignedDocTypes) || !r.assignedDocTypes.includes("invite")) {
+          return false;
+        }
+      }
+    }
+
+    return true;
+  });
+
+  return baseMatched;
+};
+
+export const formatWhatsAppTemplateForContact = ({ tplString, reg, allRegs = [], C = {}, eventScope = null, vibhagScope = null }) => {
+  if (!tplString || !reg) return "";
+
+  // Merge with master global guest profile if needed
+  const globalGuests = Array.isArray(allRegs) ? allRegs.filter(r => r && (r.isGlobalGuest === true || r.formId === "global_guest_directory")) : [];
+  let master = null;
+  if (reg.globalGuestId) {
+    master = globalGuests.find(x => x.id === reg.globalGuestId || x.id === `GUEST_${reg.globalGuestId}`);
+  }
+  if (!master && reg.id) {
+    master = globalGuests.find(x => x.id === reg.id || x.globalGuestId === reg.id);
+  }
+  const merged = master ? { ...master, ...reg } : { ...reg };
+
+  const rawParticipantName = String(merged['Participant Name'] || merged['Full Name'] || merged['Student Name'] || merged['Candidate Name'] || merged['Name'] || merged.name || merged['Submitted By'] || 'Participant').replace(/\|/g, ' ').replace(/\s+/g, ' ').trim();
+  const rawContactName = String(merged['Submitted By'] || merged['Contact User Name'] || merged['Contact Person'] || merged['Contact Name'] || merged['Submitter Name'] || merged['Full Name'] || 'Member').replace(/\|/g, ' ').replace(/\s+/g, ' ').trim();
+  const rawMobile = String(merged['Mobile Number'] || merged.Mobile || merged.mobile || merged.submitterMob || merged['Alternate Mobile Number'] || merged.phone || '').replace(/\D/g, '').slice(-10);
+  const txnId = merged['Transaction ID'] || merged.transactionId || merged.id || 'N/A';
+  const vibhag = merged['Vibhag'] || merged.vibhag || merged['MMP Vibhag'] || merged['Vibhag New'] || (master ? (master.vibhag || master['Vibhag']) : 'All Vibhags');
+  const designation = String(merged['Designation'] || merged.designation || merged['Designation / Role'] || merged['Post'] || merged.role || (master ? (master.Designation || master.designation) : '') || '').trim();
+  
+  // Resolve contact groups
+  let groupsArr = [];
+  if (Array.isArray(merged.groups) && merged.groups.length > 0) groupsArr = merged.groups;
+  else if (Array.isArray(merged.Groups) && merged.Groups.length > 0) groupsArr = merged.Groups;
+  else if (merged.group || merged.Group || merged.category || merged.Category) {
+    groupsArr = String(merged.group || merged.Group || merged.category || merged.Category).split(/[,/|;]+/).map(s => s.trim()).filter(Boolean);
+  } else if (master) {
+    if (Array.isArray(master.groups) && master.groups.length > 0) groupsArr = master.groups;
+    else if (master.group || master.Group) groupsArr = String(master.group || master.Group).split(/[,/|;]+/).map(s => s.trim()).filter(Boolean);
+  }
+  const contactGroup = groupsArr.length > 0 ? groupsArr.join(", ") : (merged.vibhag || merged.Vibhag || "General Committee");
+  const email = merged['Email Address'] || merged.Email || merged.email || (master ? master.email : "") || "";
+  const address = merged.Address || merged.address || (master ? master.address : "") || "";
+  const subWsName = merged.activeDocTpl?.name || merged.customDocName || "Official Pass";
+
+  const stream = merged['Stream / Class'] || merged['Stream'] || merged['Course'] || 'N/A';
+  const percentage = merged['% Obtained'] || merged.percentage || merged['Marks / Percentage'] || 'N/A';
+  const remarks = merged['Remarks'] || merged.remarks || 'Application under review';
+
+  const chosenScope = eventScope || merged.targetEventId || "education2026";
+  const chosenVibhag = (vibhagScope && vibhagScope !== 'auto') ? vibhagScope : vibhag;
+  const baseUrl = `${C?.whatsAppPortalUrl || "https://www.mmp-cwc.com/"}`.replace(/\/?$/, '');
+  const certUrl = `${baseUrl}/?cert=${encodeURIComponent(txnId || "")}`;
+  const inviteUrl = `${baseUrl}/?invite=${encodeURIComponent(txnId || "")}`;
+  const docUrl = merged.customDocId ? `${baseUrl}/?doc=${encodeURIComponent(merged.customDocId)}&pass=${encodeURIComponent(txnId || "")}` : null;
+  const portalName = C?.trust?.name || "Mumbai Meghwal Panchayat & Vidya Gohil Trust";
+
+  const eventObj = (C?.events || []).find(e => e.id === merged.eventId || e.title === merged.eventName || e.title === merged.eventTitle);
+  const evTitle = eventObj?.title || merged.eventName || merged.eventTitle || merged.eventId || "Event";
+  const evDate = eventObj?.date ? `${eventObj.date} ${eventObj.month || ''}`.trim() : (merged.Date || merged.eventDate || "2026");
+  const evVenue = eventObj?.location || merged.location || merged.venue || "Mumbai";
+
+  let processed = (tplString || "")
+    .replace(/\{PORTAL_NAME\}/g, portalName)
+    .replace(/\{WEBSITE_NAME\}/g, portalName)
+    .replace(/\{TRUST_NAME\}/g, portalName)
+    .replace(/\{PORTAL_TITLE\}/g, portalName)
+    .replace(/\{EVENT_NAME\}/g, evTitle)
+    .replace(/\{EVENT_TITLE\}/g, evTitle)
+    .replace(/\{EVENT\}/g, evTitle)
+    .replace(/\{DATE\}/g, evDate)
+    .replace(/\{EVENT_DATE\}/g, evDate)
+    .replace(/\{VENUE\}/g, evVenue)
+    .replace(/\{LOCATION\}/g, evVenue)
+    .replace(/\{CONTACT_GROUP\}/g, contactGroup)
+    .replace(/\{GROUP\}/g, contactGroup)
+    .replace(/\{GROUPS\}/g, contactGroup)
+    .replace(/\{COMMITTEE_GROUP\}/g, contactGroup)
+    .replace(/\{DESIGNATION\}/g, designation)
+    .replace(/\{ROLE\}/g, designation)
+    .replace(/\{INVITEE_NAME\}/g, rawParticipantName)
+    .replace(/\{INVITEE\}/g, rawParticipantName)
+    .replace(/\{CONTACT_USER_NAME\}/g, rawContactName)
+    .replace(/\{CONTACT_NAME\}/g, rawContactName)
+    .replace(/\{CONTACT_PERSON\}/g, rawContactName)
+    .replace(/\{SUBMITTER_NAME\}/g, rawContactName)
+    .replace(/\{PARTICIPANT_NAME\}/g, rawParticipantName)
+    .replace(/\{PARTICIPATER_NAME\}/g, rawParticipantName)
+    .replace(/\{MEMBER_NAME\}/g, rawParticipantName)
+    .replace(/\{STUDENT_NAME\}/g, rawParticipantName)
+    .replace(/\{USER_NAME\}/g, rawContactName)
+    .replace(/\{NAME\}/g, rawParticipantName)
+    .replace(/\{TXN_ID\}/g, txnId || "N/A")
+    .replace(/\{PASS_ID\}/g, txnId || "N/A")
+    .replace(/\{ENTRY_PASS_ID\}/g, txnId || "N/A")
+    .replace(/\{VIBHAG\}/g, vibhag || "All Vibhags")
+    .replace(/\{VIBHAG_NAME\}/g, vibhag || "All Vibhags")
+    .replace(/\{SUB_WORKSPACE_NAME\}/g, subWsName)
+    .replace(/\{TEMPLATE_NAME\}/g, subWsName)
+    .replace(/\{EMAIL\}/g, email)
+    .replace(/\{ADDRESS\}/g, address)
+    .replace(/\{PHONE\}/g, rawMobile || "")
+    .replace(/\{STREAM\}/g, stream || "N/A")
+    .replace(/\{PERCENTAGE\}/g, percentage || "N/A")
+    .replace(/\{REMARKS\}/g, remarks || "Application under review")
+    .replace(/\{MOBILE\}/g, rawMobile || "")
+    .replace(/\{CERTIFICATE_LINK\}/g, certUrl)
+    .replace(/\{CERTIFICATE_URL\}/g, certUrl)
+    .replace(/\{INVITE_PDF_LINK\}/g, inviteUrl)
+    .replace(/\{INVITE_LINK\}/g, inviteUrl)
+    .replace(/\{PASS_LINK\}/g, docUrl || inviteUrl)
+    .replace(/\{PORTAL_URL\}/g, baseUrl)
+    .replace(/\{WEBSITE_URL\}/g, baseUrl)
+    .replace(/\{WEBSITE_HOME\}/g, baseUrl)
+    .replace(/\{HELPLINE_PHONES\}/g, C?.whatsAppHelpline || C?.trust?.phone || "+91 9820785209 / +91 9967821964")
+    .replace(/\{ADMIN_MOBILE\}/g, C?.whatsAppHelpline || C?.trust?.phone || "+91 9820785209");
+
+  const activeTargetScope = (chosenScope && chosenScope !== 'current') ? chosenScope : 'education2026';
+  const activeScopeStats = typeof generateEventScopedStats === 'function'
+    ? generateEventScopedStats(merged, activeTargetScope, allRegs, chosenVibhag)
+    : {};
+  const eduStats = typeof generateEventScopedStats === 'function'
+    ? generateEventScopedStats(merged, 'education2026', allRegs, chosenVibhag)
+    : activeScopeStats;
+
+  processed = processed
+    .replace(/\{TOTAL_STUDENTS_COUNT\}/g, activeScopeStats.totalStudentsCount || 0)
+    .replace(/\{TOTAL_REGISTRATIONS\}/g, activeScopeStats.totalStudentsCount || 0)
+    .replace(/\{TOTAL_COUNT\}/g, activeScopeStats.totalStudentsCount || 0)
+    .replace(/\{APPROVED_STUDENTS_COUNT\}/g, activeScopeStats.approvedStudentsCount || 0)
+    .replace(/\{APPROVED_COUNT\}/g, activeScopeStats.approvedStudentsCount || 0)
+    .replace(/\{PENDING_STUDENTS_COUNT\}/g, activeScopeStats.pendingStudentsCount || 0)
+    .replace(/\{PENDING_COUNT\}/g, activeScopeStats.pendingStudentsCount || 0)
+    .replace(/\{VIBHAG_STUDENT_COUNT\}/g, activeScopeStats.vibhagStudentCount || 0)
+    .replace(/\{VIBHAG_APPROVED_COUNT\}/g, activeScopeStats.vibhagApprovedCount || 0)
+    .replace(/\{VIBHAG_STUDENT_SUMMARY\}/g, activeScopeStats.vibhagStudentSummary || "")
+    .replace(/\{EVENT_STUDENT_SUMMARY\}/g, activeScopeStats.eventRegistrationSummary || "")
+    .replace(/\{EVENT_REGISTRATION_SUMMARY\}/g, activeScopeStats.eventRegistrationSummary || "")
+    .replace(/\{REGISTRATION_STATS\}/g, activeScopeStats.eventRegistrationSummary || "")
+    .replace(/\{VIBHAG_STUDENT_LIST\}/g, activeScopeStats.vibhagStudentList || "")
+    .replace(/\{STUDENT_LIST\}/g, activeScopeStats.vibhagStudentList || "")
+    .replace(/\{STUDENT_DETAILS_LIST\}/g, activeScopeStats.studentDetailsList || "")
+    .replace(/\{DETAILED_STUDENT_LIST\}/g, activeScopeStats.studentDetailsList || "")
+    .replace(/\{ALL_STUDENTS_LIST\}/g, activeScopeStats.allStudentsList || "")
+    .replace(/\{EDU_VIBHAG_STUDENT_LIST\}/g, eduStats.vibhagStudentList || "")
+    .replace(/\{EDU2026_VIBHAG_STUDENT_LIST\}/g, eduStats.vibhagStudentList || "")
+    .replace(/\{EDUCATION_2026_VIBHAG_STUDENT_LIST\}/g, eduStats.vibhagStudentList || "")
+    .replace(/\{EDU_VIBHAG_STUDENT_SUMMARY\}/g, eduStats.vibhagStudentSummary || "")
+    .replace(/\{EDU_ALL_STUDENTS_LIST\}/g, eduStats.allStudentsList || "")
+    .replace(/\{EDU_TOTAL_STUDENTS_COUNT\}/g, eduStats.totalStudentsCount || 0);
+
+  const monsoonStats = typeof generateEventScopedStats === 'function'
+    ? generateEventScopedStats(merged, 'Monsoon', allRegs)
+    : null;
+  if (monsoonStats) {
+    processed = processed
+      .replace(/\{MONSOON_VIBHAG_STUDENT_LIST\}/g, monsoonStats.vibhagStudentList || "")
+      .replace(/\{MONSOON_STUDENT_LIST\}/g, monsoonStats.vibhagStudentList || "")
+      .replace(/\{MONSOON_VIBHAG_LIST\}/g, monsoonStats.vibhagStudentList || "")
+      .replace(/\{MONSOON_VIBHAG_SUMMARY\}/g, monsoonStats.vibhagStudentSummary || "")
+      .replace(/\{MONSOON_ALL_LIST\}/g, monsoonStats.allStudentsList || "")
+      .replace(/\{MONSOON_TOTAL_COUNT\}/g, monsoonStats.totalStudentsCount || 0);
+  }
+
+  return processed;
+};
+
+// ── Interactive Frontend Chatbot WhatsApp Dispatcher Card ──
+function ChatbotWhatsAppDispatcherCard({ dispatchData, C, allRegs }) {
+  const { items = [], subWorkspaceName, kbTitle, attachedWhatsAppTplId, eventId, subWorkspaceId } = dispatchData || {};
+  const [currentIndex, setCurrentIndex] = useState(0);
+  const [copied, setCopied] = useState(false);
+  const [sendSuccess, setSendSuccess] = useState(false);
+
+  if (!Array.isArray(items) || items.length === 0) {
+    return (
+      <div style={{background:"white",borderRadius:12,border:"1.5px solid #CBD5E1",padding:"16px",marginTop:8,fontSize:".85rem",color:"#64748B",textAlign:"center"}}>
+        ℹ️ No invitees found in <strong>{subWorkspaceName || "this sub-workspace"}</strong>.
+      </div>
+    );
+  }
+
+  const curItem = items[currentIndex] || items[0];
+  const totalCount = items.length;
+
+  const rawParticipantName = curItem.name || curItem['Full Name'] || 'Member';
+  const rawMobile = String(curItem.mobile || curItem['Mobile Number'] || curItem.phone || '').replace(/\D/g, '').slice(-10);
+  const formattedMobile = rawMobile ? `+91 ${rawMobile.slice(0, 5)} ${rawMobile.slice(5)}` : "No Mobile";
+  const vibhag = curItem.vibhag || curItem['Vibhag'] || 'General';
+  const txnId = curItem.txnId || curItem['Transaction ID'] || curItem.id || 'N/A';
+  const messageText = curItem.formattedMessage || "";
+
+  const handleCopy = () => {
+    navigator.clipboard.writeText(messageText);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+
+  const handleSendWhatsApp = () => {
+    if (!rawMobile || rawMobile.length < 10) {
+      alert("Invalid mobile number for recipient: " + rawParticipantName);
+      return;
+    }
+    const cleanMob = `91${rawMobile}`;
+    const waUrl = `https://wa.me/${cleanMob}?text=${encodeURIComponent(messageText)}`;
+    window.open(waUrl, '_blank');
+    setSendSuccess(true);
+    setTimeout(() => setSendSuccess(false), 2500);
+  };
+
+  const handleSendAndNext = () => {
+    handleSendWhatsApp();
+    if (currentIndex < totalCount - 1) {
+      setTimeout(() => {
+        setCurrentIndex(prev => prev + 1);
+      }, 500);
+    }
+  };
+
+  return (
+    <div style={{
+      marginTop: 8,
+      background: "#FFFFFF",
+      borderRadius: 14,
+      border: "1.5px solid #BBF7D0",
+      boxShadow: "0 4px 14px rgba(0,0,0,0.06)",
+      overflow: "hidden",
+      display: "flex",
+      flexDirection: "column"
+    }}>
+      {/* Header Banner */}
+      <div style={{
+        background: "linear-gradient(135deg, #15803D, #166534)",
+        color: "white",
+        padding: "10px 14px",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "space-between",
+        gap: 8
+      }}>
+        <div style={{display:"flex",alignItems:"center",gap:8,minWidth:0}}>
+          <span style={{fontSize:"1.1rem"}}>💌</span>
+          <div style={{fontSize:".84rem",fontWeight:800,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>
+            {kbTitle || subWorkspaceName || "WhatsApp Pass Dispatcher"}
+          </div>
+        </div>
+        <div style={{
+          background: "rgba(255,255,255,0.22)",
+          padding: "3px 10px",
+          borderRadius: 20,
+          fontSize: ".75rem",
+          fontWeight: 800,
+          whiteSpace: "nowrap"
+        }}>
+          {currentIndex + 1} of {totalCount}
+        </div>
+      </div>
+
+      {/* Invitee Details Badge */}
+      <div style={{
+        padding: "12px 14px",
+        background: "#F8FAFC",
+        borderBottom: "1px solid #E2E8F0",
+        display: "flex",
+        flexDirection: "column",
+        gap: 6
+      }}>
+        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",flexWrap:"wrap",gap:6}}>
+          <div style={{fontSize:".92rem",fontWeight:800,color:"#0F172A"}}>
+            {rawParticipantName}
+          </div>
+          <div style={{
+            background: "#DCFCE7",
+            color: "#166534",
+            padding: "2px 8px",
+            borderRadius: 6,
+            fontSize: ".72rem",
+            fontWeight: 800,
+            border: "1px solid #BBF7D0"
+          }}>
+            {txnId}
+          </div>
+        </div>
+
+        <div style={{display:"flex",alignItems:"center",gap:10,fontSize:".76rem",color:"#475569",flexWrap:"wrap"}}>
+          <span style={{display:"flex",alignItems:"center",gap:4,fontWeight:700}}>
+            <span>📱</span> {formattedMobile}
+          </span>
+          <span style={{display:"flex",alignItems:"center",gap:4,fontWeight:700,color:"#15803D"}}>
+            <span>📍</span> {vibhag}
+          </span>
+        </div>
+      </div>
+
+      {/* Message Preview Box */}
+      <div style={{padding: "12px 14px",display:"flex",flexDirection:"column",gap:6}}>
+        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between"}}>
+          <span style={{fontSize:".72rem",fontWeight:800,color:"#64748B",textTransform:"uppercase",letterSpacing:0.5}}>
+            💬 WhatsApp Message Preview:
+          </span>
+          <button
+            type="button"
+            onClick={handleCopy}
+            style={{
+              background: "none",
+              border: "none",
+              color: copied ? "#15803D" : "#2563EB",
+              fontSize: ".72rem",
+              fontWeight: 800,
+              cursor: "pointer",
+              padding: 0
+            }}
+          >
+            {copied ? "✅ Copied!" : "📋 Copy"}
+          </button>
+        </div>
+
+        <div style={{
+          background: "#FAFDF7",
+          border: "1px solid #E2E8F0",
+          borderRadius: 8,
+          padding: "10px 12px",
+          fontSize: ".75rem",
+          lineHeight: 1.45,
+          color: "#1E293B",
+          maxHeight: 180,
+          overflowY: "auto",
+          whiteSpace: "pre-wrap",
+          fontFamily: "monospace"
+        }}>
+          {messageText}
+        </div>
+      </div>
+
+      {/* Footer Navigation & Actions */}
+      <div style={{
+        padding: "10px 14px",
+        background: "#F8FAFC",
+        borderTop: "1px solid #E2E8F0",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "space-between",
+        gap: 8,
+        flexWrap: "wrap"
+      }}>
+        {/* Prev / Next Pagination */}
+        <div style={{display:"flex",alignItems:"center",gap:6}}>
+          <button
+            type="button"
+            disabled={currentIndex === 0}
+            onClick={() => setCurrentIndex(prev => Math.max(0, prev - 1))}
+            style={{
+              padding: "6px 10px",
+              borderRadius: 6,
+              border: "1px solid #CBD5E1",
+              background: currentIndex === 0 ? "#F1F5F9" : "white",
+              color: currentIndex === 0 ? "#94A3B8" : "#334155",
+              fontSize: ".74rem",
+              fontWeight: 700,
+              cursor: currentIndex === 0 ? "not-allowed" : "pointer"
+            }}
+          >
+            ◀ Prev
+          </button>
+          <button
+            type="button"
+            disabled={currentIndex >= totalCount - 1}
+            onClick={() => setCurrentIndex(prev => Math.min(totalCount - 1, prev + 1))}
+            style={{
+              padding: "6px 10px",
+              borderRadius: 6,
+              border: "1px solid #CBD5E1",
+              background: currentIndex >= totalCount - 1 ? "#F1F5F9" : "white",
+              color: currentIndex >= totalCount - 1 ? "#94A3B8" : "#334155",
+              fontSize: ".74rem",
+              fontWeight: 700,
+              cursor: currentIndex >= totalCount - 1 ? "not-allowed" : "pointer"
+            }}
+          >
+            Next ▶ ({currentIndex + 1}/{totalCount})
+          </button>
+        </div>
+
+        {/* Action Buttons */}
+        <div style={{display:"flex",alignItems:"center",gap:6}}>
+          <button
+            type="button"
+            onClick={handleSendWhatsApp}
+            style={{
+              padding: "7px 12px",
+              borderRadius: 6,
+              border: "none",
+              background: sendSuccess ? "#15803D" : "#25D366",
+              color: "white",
+              fontSize: ".78rem",
+              fontWeight: 800,
+              cursor: "pointer",
+              display: "inline-flex",
+              alignItems: "center",
+              gap: 5,
+              boxShadow: "0 2px 6px rgba(37,211,102,0.3)"
+            }}
+          >
+            <span>{sendSuccess ? "✅ Sent" : "🟢 Send"}</span>
+          </button>
+
+          {currentIndex < totalCount - 1 && (
+            <button
+              type="button"
+              onClick={handleSendAndNext}
+              style={{
+                padding: "7px 12px",
+                borderRadius: 6,
+                border: "none",
+                background: "#0F766E",
+                color: "white",
+                fontSize: ".78rem",
+                fontWeight: 800,
+                cursor: "pointer",
+                display: "inline-flex",
+                alignItems: "center",
+                gap: 5,
+                boxShadow: "0 2px 6px rgba(15,118,110,0.3)"
+              }}
+              title="Send to current contact and advance to next contact"
+            >
+              <span>Send & Next ➔</span>
+            </button>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+// ── End Shared Sub-Workspace Utilities ──
+
 function ChatbotAccessManager({ C, setC, auth }) {
   const [activeTab, setActiveTab] = useState("users"); // "users" | "kb"
   const [accessScope, setAccessScope] = useState("individual"); // Default to "individual" (Mobile/Txn only)
@@ -15995,7 +16674,8 @@ function ChatbotAccessManager({ C, setC, auth }) {
     attachedFormId: "",
     storageDestination: "donations",
     roleAccess: "public",
-    attachedWhatsAppTplId: ""
+    attachedWhatsAppTplId: "",
+    targetEventIds: ["all"]
   });
 
   const VIBHAG_LIST = [
@@ -16101,6 +16781,11 @@ function ChatbotAccessManager({ C, setC, auth }) {
           });
         });
 
+        if (typeof window !== 'undefined' && Array.isArray(regsList) && regsList.length > 0) {
+          window.__MMP_ALL_REGS_RAW__ = regsList;
+          window.__MMP_REGS_CACHE__ = regsList;
+          window.__MMP_INVITE_REGS__ = regsList;
+        }
         setAllRegisteredUsers(Array.from(map.values()));
       } catch (e) {
         console.error("Failed to load registered users for chatbot:", e);
@@ -16263,7 +16948,11 @@ function ChatbotAccessManager({ C, setC, auth }) {
         adminOnly: kbForm.roleAccess !== "public",
         attachedWhatsAppTplId: kbForm.attachedWhatsAppTplId || "",
         attachedFormId: kbForm.attachedFormId || "",
-        storageDestination: kbForm.storageDestination || "donations"
+        storageDestination: kbForm.storageDestination || "donations",
+        connectedEventId: kbForm.connectedEventId || "",
+        connectedSubWorkspaceId: kbForm.connectedSubWorkspaceId || "",
+        connectedSubWorkspaceName: kbForm.connectedSubWorkspaceName || "",
+        targetEventIds: (Array.isArray(kbForm.targetEventIds) && kbForm.targetEventIds.length > 0) ? kbForm.targetEventIds : ["all"]
       } : item);
     } else {
       const newEntry = {
@@ -16276,7 +16965,8 @@ function ChatbotAccessManager({ C, setC, auth }) {
         adminOnly: kbForm.roleAccess !== "public",
         attachedWhatsAppTplId: kbForm.attachedWhatsAppTplId || "",
         attachedFormId: kbForm.attachedFormId || "",
-        storageDestination: kbForm.storageDestination || "donations"
+        storageDestination: kbForm.storageDestination || "donations",
+        targetEventIds: (Array.isArray(kbForm.targetEventIds) && kbForm.targetEventIds.length > 0) ? kbForm.targetEventIds : ["all"]
       };
       updated = [...kbList, newEntry];
     }
@@ -17511,6 +18201,200 @@ function ChatbotAccessManager({ C, setC, auth }) {
                 />
               </div>
 
+              {/* ── Connect / Filter Target Event(s) ── */}
+              <div style={{background:"#F0F9FF",border:"1.5px solid #BAE6FD",borderRadius:10,padding:"14px 16px",display:"flex",flexDirection:"column",gap:10}}>
+                <div style={{fontSize:".82rem",fontWeight:800,color:"#0369A1",display:"flex",alignItems:"center",gap:6}}>
+                  <span>🎯</span> Connect / Filter Specific Event(s) Data (Select one or more events to filter chatbot answers):
+                </div>
+
+                <div style={{display:"flex",flexDirection:"column",gap:8}}>
+                  <div style={{fontSize:".74rem",color:"#0284C7",fontWeight:600}}>
+                    When a user asks this question or executes this slash command, the chatbot response will query and filter data strictly for the selected event(s):
+                  </div>
+
+                  {/* Event Checkboxes */}
+                  <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"}}>
+                    <label style={{display:"inline-flex",alignItems:"center",gap:6,background:"white",padding:"6px 12px",borderRadius:6,border: (!kbForm.targetEventIds || kbForm.targetEventIds.length === 0 || kbForm.targetEventIds.includes('all')) ? "1.5px solid #0284C7" : "1px solid #CBD5E1",fontSize:".78rem",fontWeight:800,cursor:"pointer",color: (!kbForm.targetEventIds || kbForm.targetEventIds.length === 0 || kbForm.targetEventIds.includes('all')) ? "#0369A1" : "#475569"}}>
+                      <input
+                        type="checkbox"
+                        checked={!kbForm.targetEventIds || kbForm.targetEventIds.length === 0 || kbForm.targetEventIds.includes('all')}
+                        onChange={(e) => {
+                          if (e.target.checked) {
+                            setKbForm({ ...kbForm, targetEventIds: ['all'] });
+                          } else {
+                            setKbForm({ ...kbForm, targetEventIds: [] });
+                          }
+                        }}
+                        style={{cursor:"pointer",accentColor:"#0284C7"}}
+                      />
+                      <span>🌐 All Events Combined</span>
+                    </label>
+
+                    {(C.events || []).map(evItem => {
+                      const evKey = evItem.id || evItem.title;
+                      const isSelected = Array.isArray(kbForm.targetEventIds) && kbForm.targetEventIds.includes(evKey);
+                      return (
+                        <label key={evKey} style={{display:"inline-flex",alignItems:"center",gap:6,background: isSelected ? "#E0F2FE" : "white",padding:"6px 12px",borderRadius:6,border: isSelected ? "1.5px solid #0284C7" : "1px solid #CBD5E1",fontSize:".78rem",fontWeight:700,cursor:"pointer",color: isSelected ? "#0369A1" : "#334155"}}>
+                          <input
+                            type="checkbox"
+                            checked={isSelected}
+                            onChange={(e) => {
+                              const cur = Array.isArray(kbForm.targetEventIds) ? kbForm.targetEventIds.filter(x => x !== 'all') : [];
+                              let updated = [];
+                              if (e.target.checked) {
+                                updated = [...cur, evKey];
+                              } else {
+                                updated = cur.filter(x => x !== evKey);
+                              }
+                              if (updated.length === 0) updated = ['all'];
+                              setKbForm({ ...kbForm, targetEventIds: updated });
+                            }}
+                            style={{cursor:"pointer",accentColor:"#0284C7"}}
+                          />
+                          <span>📌 {evItem.title || evItem.id}</span>
+                        </label>
+                      );
+                    })}
+                  </div>
+                </div>
+              </div>
+
+                            {/* ── Connect Sub-Workspace & WhatsApp Pass Dispatcher ── */}
+              <div style={{background:"#FDF2F8",border:"1.5px solid #F472B6",borderRadius:10,padding:"14px 16px",display:"flex",flexDirection:"column",gap:10}}>
+                <div style={{fontSize:".82rem",fontWeight:800,color:"#9D174D",display:"flex",alignItems:"center",gap:6}}>
+                  <span>💌</span> Connect Sub-Workspace & WhatsApp Dispatcher (Send Passes & Updates from Frontend Chatbot):
+                </div>
+
+                <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit, minmax(280px, 1fr))",gap:12}}>
+                  {/* Sub-Workspace Selector */}
+                  <div>
+                    <label style={{fontSize:".73rem",fontWeight:700,color:"#9D174D",display:"block",marginBottom:3}}>
+                      1. Select Sub-Workspace / Pass Template:
+                    </label>
+                    <select
+                      value={(kbForm.connectedEventId && kbForm.connectedSubWorkspaceId) ? `${kbForm.connectedEventId}:::${kbForm.connectedSubWorkspaceId}` : ""}
+                      onChange={e => {
+                        const val = e.target.value;
+                        if (!val) {
+                          setKbForm({ ...kbForm, connectedEventId: "", connectedSubWorkspaceId: "", connectedSubWorkspaceName: "" });
+                          return;
+                        }
+                        const [rawEvId, docId] = val.split(":::");
+                        const evObj = (C.events || []).find(ev => 
+                          (ev.id && ev.id !== "undefined" && ev.id === rawEvId) || 
+                          (ev.title === rawEvId) ||
+                          ((ev.pdfTemplates || []).some(t => t.id === docId || t.name === docId))
+                        );
+                        const evId = (evObj?.id && evObj.id !== "undefined") ? evObj.id : (evObj?.title || rawEvId);
+                        let docName = "Official Invite Letter";
+                        if (docId === 'cert') docName = "Certificate / Receipt";
+                        else if (docId && evObj?.pdfTemplates) {
+                          const t = evObj.pdfTemplates.find(x => x.id === docId);
+                          if (t) docName = t.name;
+                        }
+                        const fullDisplayName = `${evObj?.title || evId} > ${docName}`;
+                        setKbForm({
+                          ...kbForm,
+                          connectedEventId: evId,
+                          connectedSubWorkspaceId: docId,
+                          connectedSubWorkspaceName: fullDisplayName
+                        });
+                      }}
+                      style={{width:"100%",padding:"9px 12px",borderRadius:8,border:"1.5px solid #DB2777",fontSize:".84rem",fontWeight:800,background:"white",boxSizing:"border-box",color:"#9D174D",cursor:"pointer"}}
+                    >
+                      <option value="">-- No Sub-Workspace (Standard Text Answer Only) --</option>
+                      {(C.events || []).map(evItem => {
+                        const evId = (evItem.id && evItem.id !== "undefined") ? evItem.id : (evItem.title || "Education Committee");
+                        const evTitle = evItem.title || evItem.id;
+                        const customTpls = evItem.pdfTemplates || [];
+                        return (
+                          <optgroup key={evId} label={`📁 ${evTitle} Workspace`}>
+                            <option value={`${evId}:::invite`}>
+                              {`💌 ${evTitle} ➔ Official Invite Letter`}
+                            </option>
+                            <option value={`${evId}:::cert`}>
+                              {`🎓 ${evTitle} ➔ Certificate / 80G Receipt`}
+                            </option>
+                            {customTpls.map(t => (
+                              <option key={t.id} value={`${evId}:::${t.id}`}>
+                                {`🎟️ ${evTitle} ➔ ${t.name} (Custom Pass / Sub-Workspace)`}
+                              </option>
+                            ))}
+                          </optgroup>
+                        );
+                      })}
+                    </select>
+                  </div>
+
+                  {/* Target WhatsApp Message Template */}
+                  {kbForm.connectedSubWorkspaceId && (() => {
+                    const selectedEv = (C.events || []).find(e => e.id === kbForm.connectedEventId || e.title === kbForm.connectedEventId);
+                    const associatedTpls = typeof getEventWhatsAppTemplates === 'function' ? getEventWhatsAppTemplates(selectedEv, C) : (selectedEv?.whatsAppTemplates || []);
+                    return (
+                      <div>
+                        <label style={{fontSize:".73rem",fontWeight:700,color:"#9D174D",display:"block",marginBottom:3}}>
+                          2. Select WhatsApp Message Template for Contacts:
+                        </label>
+                        <select
+                          value={kbForm.attachedWhatsAppTplId || ""}
+                          onChange={e => setKbForm({ ...kbForm, attachedWhatsAppTplId: e.target.value })}
+                          style={{width:"100%",padding:"9px 12px",borderRadius:8,border:"1.5px solid #F472B6",fontSize:".84rem",fontWeight:700,background:"white",boxSizing:"border-box",color:"#0F172A",cursor:"pointer"}}
+                        >
+                          <option value="">💌 Default Invitation Pass Message</option>
+
+                          {/* Associated Sub-Workspace WhatsApp Templates (Prioritized) */}
+                          {selectedEv && (
+                            <optgroup label={`📁 ${selectedEv.title || kbForm.connectedEventId} Associated Templates (${associatedTpls.length})`}>
+                              {associatedTpls.map(t => (
+                                <option key={t.id} value={t.id}>
+                                  {`📝 ${t.name} ${t.isDefault ? "(Default)" : ""}`}
+                                </option>
+                              ))}
+                            </optgroup>
+                          )}
+
+                          {/* Other Workspace WhatsApp Templates */}
+                          {(C.events || []).filter(ev => ev.id !== kbForm.connectedEventId && ev.title !== kbForm.connectedEventId).map(evItem => {
+                            const evTitle = evItem.title || evItem.id;
+                            const wsTpls = typeof getEventWhatsAppTemplates === 'function' ? getEventWhatsAppTemplates(evItem, C) : (evItem.whatsAppTemplates || []);
+                            if (!Array.isArray(wsTpls) || wsTpls.length === 0) return null;
+                            return (
+                              <optgroup key={evItem.id || evTitle} label={`📁 ${evTitle} WhatsApp Templates (${wsTpls.length})`}>
+                                {wsTpls.map(t => (
+                                  <option key={t.id} value={t.id}>
+                                    {`📝 ${evTitle} ➔ ${t.name} ${t.isDefault ? "(Default)" : ""}`}
+                                  </option>
+                                ))}
+                              </optgroup>
+                            );
+                          })}
+
+                          {/* Global Broadcast Templates */}
+                          <optgroup label="📢 Global Broadcast Templates">
+                            <option value="tpl_edu_appeal">🎓 Education Felicitation Donation Appeal</option>
+                            <option value="tpl_general_donation">💰 General Community Donation & QR Pay</option>
+                            <option value="tpl_meeting_notice">📢 CWC Committee Meeting Notice</option>
+                            <option value="tpl_donor_summary">📊 Live Vibhag Donation Collection Summary</option>
+                            {(C.whatsappBroadcastTemplates || []).map(t => (
+                              <option key={t.id} value={t.id}>
+                                {`📱 ${t.name || t.id} (Custom Broadcast Template)`}
+                              </option>
+                            ))}
+                          </optgroup>
+                        </select>
+                      </div>
+                    );
+                  })()}
+                </div>
+
+                {kbForm.connectedSubWorkspaceId && (
+                  <div style={{fontSize:".74rem",color:"#BE185D",lineHeight:1.4,background:"#FFF5F7",padding:"8px 12px",borderRadius:6,border:"1px solid #FCE7F3"}}>
+                    ✨ <strong>Connected Sub-Workspace</strong>: <strong>{kbForm.connectedSubWorkspaceName || kbForm.connectedSubWorkspaceId}</strong><br/>
+                    When users/admins run <strong>{kbForm.cmd || "this command"}</strong> in the frontend chatbot, the bot will load contacts strictly from this sub-workspace and provide 1-tap WhatsApp sending with all live variables filled!
+                  </div>
+                )}
+              </div>
+
               {/* ── Connect WhatsApp Broadcast Template ── */}
               <div style={{background:"#F0FDF4",border:"1.5px solid #86EFAC",borderRadius:10,padding:"14px 16px",display:"flex",flexDirection:"column",gap:10}}>
                 <div style={{fontSize:".82rem",fontWeight:800,color:"#166534",display:"flex",alignItems:"center",gap:6}}>
@@ -17534,9 +18418,24 @@ function ChatbotAccessManager({ C, setC, auth }) {
                       <option value="tpl_donor_summary">📊 Live Vibhag Donation Collection Summary</option>
                       {(C.whatsappBroadcastTemplates || []).map(t => (
                         <option key={t.id} value={t.id}>
-                          📱 {t.name || t.id} (Custom Template)
+                          {`📱 ${t.name || t.id} (Custom Template)`}
                         </option>
                       ))}
+
+                      {/* Sub-Workspace & Event WhatsApp Templates */}
+                      {(C.events || []).map(evItem => {
+                        const evTitle = evItem.title || evItem.id;
+                        const evTpls = typeof getEventWhatsAppTemplates === 'function' ? getEventWhatsAppTemplates(evItem, C) : (evItem.whatsAppTemplates || []);
+                        return (
+                          <optgroup key={`bcast_${evItem.id || evTitle}`} label={`📁 ${evTitle} Workspace Templates (${evTpls.length})`}>
+                            {evTpls.map(t => (
+                              <option key={`bcast_${t.id}`} value={t.id}>
+                                {`📝 ${evTitle} ➔ ${t.name} ${t.isDefault ? "(Default)" : ""}`}
+                              </option>
+                            ))}
+                          </optgroup>
+                        );
+                      })}
                     </select>
                   </div>
                 </div>
@@ -19973,7 +20872,183 @@ function VerificationModal({ viewing, setViewing, allRegs, saveVerification, C, 
 
 
 // ── Bulk / Broadcast WhatsApp Message Sender Modal ──────────────────────────────
-function BulkWhatsAppBroadcastModal({ event, recipients = [], C, auth, onLogSent, onClose }) {
+// ── WhatsApp Student Registration Summary & List Placeholders Helper ────────────────
+// Universal Per-Event Registration Data Generator Helper
+export const generateEventScopedStats = (reg, eventKeyOrObj, allRegs = [], vibhagOverride = null) => {
+  const evQuery = typeof eventKeyOrObj === 'string' ? eventKeyOrObj : (eventKeyOrObj?.id || eventKeyOrObj?.title || 'education2026');
+  const evTitle = typeof eventKeyOrObj === 'object' && eventKeyOrObj?.title ? eventKeyOrObj.title : evQuery;
+  const isEdu = evQuery === 'education2026' || (String(evQuery).toLowerCase().includes('education') && !String(evQuery).toLowerCase().includes('committee'));
+
+  // Filter registrations for this specific event query
+  const scopedRegs = (Array.isArray(allRegs) && allRegs.length > 0) ? allRegs.filter(r => {
+    if (!r || typeof r !== 'object') return false;
+    if (r.deleted === true || r.deleted === "true" || r.isDeleted === true || r.isTrash === true || r.inTrash === true || r.status === "Deleted" || r.Status === "Deleted") return false;
+    if (r.isGlobalGuest === true || r.isSpecialGuest === true || Boolean(r.globalGuestId) || r.formId === "global_guest_directory" || r.formId === "global_guest_directory_import") return false;
+
+    if (isEdu) {
+      const evName = String(r.eventName || r.eventTitle || r.eventId || "").toLowerCase();
+      const isEduEv = evName.includes("education") || evName.includes("felicitation") || evName.includes("2026") || evName.includes("vidya") || evName.includes("student") || evName === "" || evName === "unknown event";
+      const isEduTxn = String(r['Transaction ID'] || r.transactionId || "").toUpperCase().startsWith("VG-") || String(r['Transaction ID'] || r.transactionId || "").toUpperCase().startsWith("EDU");
+      const hasStudentFields = Boolean(r['Stream / Class'] || r['Stream'] || r['Course'] || r['% Obtained'] || r.percentage || r['Marks / Percentage'] || r['Standard'] || r.marksheet || r.studentName || r['Student Name'] || r['Candidate Name']);
+      return isEduEv || isEduTxn || hasStudentFields;
+    }
+
+    const targetQuery = String(evQuery).toLowerCase().trim();
+    if (targetQuery === 'all') return true;
+
+    const tokens = targetQuery.split(/[\s_/-]+/).filter(w => w.length > 2 && w !== 'event' && w !== 'program');
+    const combinedStr = `${r.eventId || ''} ${r.eventName || ''} ${r.eventTitle || ''} ${r.formId || ''} ${r.purpose || ''} ${r.program || ''} ${r['Purpose / Event Code'] || ''}`.toLowerCase();
+    
+    if (tokens.length > 0) {
+      return tokens.some(tok => combinedStr.includes(tok));
+    }
+    return combinedStr.includes(targetQuery);
+  }) : [];
+
+  const totalCount = scopedRegs.length;
+  const approvedCount = scopedRegs.filter(s => (s.Status === 'Approved' || s.status === 'Approved')).length;
+  const pendingCount = scopedRegs.filter(s => (!s.Status && !s.status) || s.Status === 'Pending' || s.status === 'Pending').length;
+  const needsInfoCount = scopedRegs.filter(s => s.Status === 'Needs Info' || s.status === 'Needs Info').length;
+
+  // Extract all known distinct Vibhag names from scoped student registrations
+  const distinctVibhags = Array.from(new Set(
+    scopedRegs.map(s => typeof getRecordVibhag === 'function' ? getRecordVibhag(s) : (s['Vibhag New'] || s['Vibhag'] || s.vibhag || ''))
+      .filter(v => v && v !== 'Unspecified' && v !== '-' && String(v).toLowerCase() !== 'blank')
+  ));
+
+  // Resolve target geographic Vibhag for recipient
+  const resolveRecipientVibhag = (r) => {
+    if (vibhagOverride && vibhagOverride !== 'auto') {
+      if (vibhagOverride === 'all') return '';
+      return vibhagOverride;
+    }
+    if (!r) return "";
+
+    // 1. Direct Vibhag field on recipient
+    const rawV = String(r['Vibhag New'] || r['Vibhag'] || r.vibhag || r['MMP Vibhag'] || r['Vibhag Name'] || r.assignedVibhag || r.selectedVibhag || "").trim();
+    if (rawV && rawV !== '-' && rawV.toLowerCase() !== 'unspecified' && rawV.toLowerCase() !== 'blank') {
+      const matchDirect = distinctVibhags.find(dv => 
+        dv.toLowerCase() === rawV.toLowerCase() || 
+        dv.toLowerCase().includes(rawV.toLowerCase()) || 
+        rawV.toLowerCase().includes(dv.toLowerCase())
+      );
+      if (matchDirect) return matchDirect;
+    }
+
+    // 2. Search across recipient's Name, Designation, Address, Remarks, Role, Leader Name
+    const recipientBio = `${r.Name || ''} ${r['Full Name'] || ''} ${r['Participant Name'] || ''} ${r.Designation || ''} ${r.designation || ''} ${r['Designation / Role'] || ''} ${r.Address || ''} ${r.address || ''} ${r.Remarks || ''} ${r.remarks || ''} ${r['Parent Leader Name'] || ''} ${r.role || ''}`.toLowerCase();
+
+    for (const dv of distinctVibhags) {
+      const dvClean = dv.replace(/^\d+[\s_-]*/, '').trim().toLowerCase(); // e.g. "mahalaxmi"
+      const dvNum = (dv.match(/^\d+/) || [])[0]; // e.g. "10"
+      
+      if (dvClean.length >= 4 && recipientBio.includes(dvClean)) {
+        return dv;
+      }
+      if (dvNum && (recipientBio.includes(`vibhag ${dvNum}`) || recipientBio.includes(`vibhag-${dvNum}`) || recipientBio.includes(`vibhag no ${dvNum}`) || recipientBio.includes(`vibhag no. ${dvNum}`))) {
+        return dv;
+      }
+    }
+
+    // 3. Fallback: if rawV exists and is not generic committee word, return rawV
+    const nonGeoKeywords = ['cwc', 'trustee', 'kalyan', 'special guest', 'dignitary', 'panchayat'];
+    if (rawV && !nonGeoKeywords.some(kw => rawV.toLowerCase() === kw)) {
+      return rawV;
+    }
+
+    return "";
+  };
+
+  const targetVibhag = resolveRecipientVibhag(reg);
+
+  const matchesTargetVibhag = (studentVibhag, target) => {
+    if (!target) return true;
+    const sv = String(studentVibhag || '').trim().toLowerCase();
+    const tv = String(target || '').trim().toLowerCase();
+    if (!sv || sv === 'unspecified') return false;
+    if (sv === tv || sv.includes(tv) || tv.includes(sv)) return true;
+
+    // Number matching (e.g. "10" in "10 MAHALAXMI")
+    const svNum = (sv.match(/^\d+/) || [])[0];
+    const tvNum = (tv.match(/^\d+/) || [])[0];
+    if (svNum && tvNum && svNum === tvNum) return true;
+
+    // Text matching without number
+    const svClean = sv.replace(/^\d+[\s_-]*/, '').trim();
+    const tvClean = tv.replace(/^\d+[\s_-]*/, '').trim();
+    if (svClean && tvClean && (svClean.includes(tvClean) || tvClean.includes(svClean))) return true;
+
+    return false;
+  };
+
+  const vibhagRegs = targetVibhag 
+    ? scopedRegs.filter(s => {
+        const sv = typeof getRecordVibhag === 'function' ? getRecordVibhag(s) : (s['Vibhag New'] || s['Vibhag'] || s.vibhag || '');
+        return matchesTargetVibhag(sv, targetVibhag);
+      })
+    : scopedRegs;
+
+  const vibhagCount = vibhagRegs.length;
+  const vibhagApproved = vibhagRegs.filter(s => (s.Status === 'Approved' || s.status === 'Approved')).length;
+  const vibhagPending = vibhagRegs.filter(s => (!s.Status && !s.status) || s.Status === 'Pending' || s.status === 'Pending').length;
+
+  const displayScopeName = isEdu ? "Education 2026" : evTitle;
+  const displayVibhagLabel = targetVibhag ? targetVibhag : `All ${displayScopeName} Registrations`;
+
+  // Stream breakdown
+  const streamMap = {};
+  vibhagRegs.forEach(s => {
+    const st = s['Stream / Class'] || s.Stream || s.Course || s.Standard || s.Category || s.category || 'General';
+    streamMap[st] = (streamMap[st] || 0) + 1;
+  });
+  const streamLines = Object.entries(streamMap).map(([st, count]) => `• ${st}: *${count}*`).join('\n');
+
+  const vibhagSummary = `📊 *Registration Summary (${displayVibhagLabel}):*\n• Total: *${vibhagCount}*\n• 🟢 Approved: *${vibhagApproved}* | ⏳ Pending: *${vibhagPending}*${streamLines ? `\n${streamLines}` : ''}`;
+  const eventSummary = targetVibhag
+    ? vibhagSummary
+    : `📊 *Event Registration Summary (${displayScopeName}):*\n• Total: *${totalCount}*\n• 🟢 Approved: *${approvedCount}* | ⏳ Pending: *${pendingCount}*${needsInfoCount > 0 ? ` | ⚠️ Needs Info: *${needsInfoCount}*` : ''}`;
+
+  const vibhagList = vibhagRegs.length > 0
+    ? `📋 *Registered List (${displayVibhagLabel} - ${vibhagCount}):*\n` + vibhagRegs.map((s, idx) => {
+        const sName = s['Full Name'] || s['Participant Name'] || s['Student Name'] || s.name || 'Participant';
+        const sStream = s['Stream / Class'] || s.Stream || s.Standard || s.Category || '';
+        const sPct = s['% Obtained'] || s.percentage || s['Marks / Percentage'] || '';
+        const detailStr = [sStream, sPct ? `${sPct}%` : ''].filter(Boolean).join(' - ');
+        return `${idx + 1}. *${sName}*${detailStr ? ` (${detailStr})` : ''}`;
+      }).join('\n')
+    : `📋 *Registered List (${displayVibhagLabel}):* No registrations found for this Vibhag.`;
+
+  const allList = scopedRegs.length > 0
+    ? `📋 *All Registrations (${displayScopeName} - ${totalCount}):*\n` + scopedRegs.map((s, idx) => {
+        const sName = s['Full Name'] || s['Participant Name'] || s['Student Name'] || s.name || 'Participant';
+        const sv = typeof getRecordVibhag === 'function' ? getRecordVibhag(s) : (s['Vibhag New'] || s['Vibhag'] || s.vibhag || '');
+        const sStream = s['Stream / Class'] || s.Stream || s.Standard || s.Category || '';
+        return `${idx + 1}. *${sName}*${sStream ? ` (${sStream})` : ''}${sv && sv !== 'Unspecified' ? ` - ${sv}` : ''}`;
+      }).join('\n')
+    : `📋 *All Registrations:* No registrations found for this event.`;
+
+  return {
+    targetVibhag,
+    distinctVibhags,
+    totalStudentsCount: String(totalCount),
+    approvedStudentsCount: String(approvedCount),
+    pendingStudentsCount: String(pendingCount),
+    vibhagStudentCount: String(vibhagCount),
+    vibhagApprovedCount: String(vibhagApproved),
+    vibhagPendingCount: String(vibhagPending),
+    vibhagStudentSummary: vibhagSummary,
+    eventRegistrationSummary: eventSummary,
+    vibhagStudentList: vibhagList,
+    allStudentsList: allList,
+    studentDetailsList: vibhagList
+  };
+};
+
+export const buildWhatsAppStudentSummaryPlaceholders = (reg, event, allRegs = []) => {
+  return generateEventScopedStats(reg, event || 'education2026', allRegs);
+};
+
+function BulkWhatsAppBroadcastModal({ event, recipients = [], allRegs = [], C, auth, onLogSent, onClose }) {
   if (!event || recipients.length === 0) return null;
 
   const countApproved = recipients.filter(r => (r['Status'] || r.status) === "Approved").length;
@@ -20190,6 +21265,78 @@ function BulkWhatsAppBroadcastModal({ event, recipients = [], C, auth, onLogSent
       .replace(/\{WEBSITE_HOME\}/g, baseUrl)
       .replace(/\{HELPLINE_PHONES\}/g, C.whatsAppHelpline || C.trust?.phone || "+91 9820785209 / +91 9967821964")
       .replace(/\{ADMIN_MOBILE\}/g, C.whatsAppHelpline || C.trust?.phone || "+91 9820785209");
+
+    const customTargetEventId = r?.activeDocTpl?.customTpl?.targetEventId || r?.targetEventId || event?.targetEventId;
+    const activeTargetScope = (customTargetEventId && customTargetEventId !== 'current') ? customTargetEventId : 'education2026';
+    const allPool = (Array.isArray(allRegs) && allRegs.length > 0) ? allRegs : recipients;
+
+    const stats = typeof generateEventScopedStats === 'function'
+      ? generateEventScopedStats(r, activeTargetScope, allPool)
+      : buildWhatsAppStudentSummaryPlaceholders(r, activeTargetScope, allPool);
+
+    const eduStats = typeof generateEventScopedStats === 'function'
+      ? generateEventScopedStats(r, 'education2026', allPool)
+      : stats;
+
+    processed = processed
+      .replace(/\{TOTAL_STUDENTS_COUNT\}/g, stats.totalStudentsCount)
+      .replace(/\{TOTAL_REGISTRATIONS\}/g, stats.totalStudentsCount)
+      .replace(/\{TOTAL_COUNT\}/g, stats.totalStudentsCount)
+      .replace(/\{APPROVED_STUDENTS_COUNT\}/g, stats.approvedStudentsCount)
+      .replace(/\{APPROVED_COUNT\}/g, stats.approvedStudentsCount)
+      .replace(/\{PENDING_STUDENTS_COUNT\}/g, stats.pendingStudentsCount)
+      .replace(/\{PENDING_COUNT\}/g, stats.pendingStudentsCount)
+      .replace(/\{VIBHAG_STUDENT_COUNT\}/g, stats.vibhagStudentCount)
+      .replace(/\{VIBHAG_APPROVED_COUNT\}/g, stats.vibhagApprovedCount)
+      .replace(/\{VIBHAG_STUDENT_SUMMARY\}/g, stats.vibhagStudentSummary)
+      .replace(/\{EVENT_STUDENT_SUMMARY\}/g, stats.eventRegistrationSummary)
+      .replace(/\{EVENT_REGISTRATION_SUMMARY\}/g, stats.eventRegistrationSummary)
+      .replace(/\{REGISTRATION_STATS\}/g, stats.eventRegistrationSummary)
+      .replace(/\{VIBHAG_STUDENT_LIST\}/g, stats.vibhagStudentList)
+      .replace(/\{STUDENT_LIST\}/g, stats.vibhagStudentList)
+      .replace(/\{STUDENT_DETAILS_LIST\}/g, stats.studentDetailsList)
+      .replace(/\{DETAILED_STUDENT_LIST\}/g, stats.studentDetailsList)
+      .replace(/\{ALL_STUDENTS_LIST\}/g, stats.allStudentsList)
+      // Dedicated Education 2026 shortcuts
+      .replace(/\{EDU_VIBHAG_STUDENT_LIST\}/g, eduStats.vibhagStudentList)
+      .replace(/\{EDU2026_VIBHAG_STUDENT_LIST\}/g, eduStats.vibhagStudentList)
+      .replace(/\{EDUCATION_2026_VIBHAG_STUDENT_LIST\}/g, eduStats.vibhagStudentList)
+      .replace(/\{EDU_VIBHAG_STUDENT_SUMMARY\}/g, eduStats.vibhagStudentSummary)
+      .replace(/\{EDU_ALL_STUDENTS_LIST\}/g, eduStats.allStudentsList)
+      .replace(/\{EDU_TOTAL_STUDENTS_COUNT\}/g, eduStats.totalStudentsCount);
+
+    const monsoonStats = typeof generateEventScopedStats === 'function'
+      ? generateEventScopedStats(r, 'Monsoon', allPool)
+      : null;
+    if (monsoonStats) {
+      processed = processed
+        .replace(/\{MONSOON_VIBHAG_STUDENT_LIST\}/g, monsoonStats.vibhagStudentList)
+        .replace(/\{MONSOON_STUDENT_LIST\}/g, monsoonStats.vibhagStudentList)
+        .replace(/\{MONSOON_VIBHAG_LIST\}/g, monsoonStats.vibhagStudentList)
+        .replace(/\{MONSOON_VIBHAG_SUMMARY\}/g, monsoonStats.vibhagStudentSummary)
+        .replace(/\{MONSOON_ALL_LIST\}/g, monsoonStats.allStudentsList)
+        .replace(/\{MONSOON_TOTAL_COUNT\}/g, monsoonStats.totalStudentsCount);
+    }
+
+    processed = processed.replace(/\{EVENT_VIBHAG_LIST:([^}]+)\}/gi, (match, evNameArg) => {
+      const s = generateEventScopedStats(r, evNameArg.trim(), allPool);
+      return s.vibhagStudentList;
+    }).replace(/\{EVENT_VIBHAG_STUDENT_LIST:([^}]+)\}/gi, (match, evNameArg) => {
+      const s = generateEventScopedStats(r, evNameArg.trim(), allPool);
+      return s.vibhagStudentList;
+    }).replace(/\{EVENT_SUMMARY:([^}]+)\}/gi, (match, evNameArg) => {
+      const s = generateEventScopedStats(r, evNameArg.trim(), allPool);
+      return s.eventRegistrationSummary;
+    }).replace(/\{EVENT_VIBHAG_SUMMARY:([^}]+)\}/gi, (match, evNameArg) => {
+      const s = generateEventScopedStats(r, evNameArg.trim(), allPool);
+      return s.vibhagStudentSummary;
+    }).replace(/\{EVENT_ALL_LIST:([^}]+)\}/gi, (match, evNameArg) => {
+      const s = generateEventScopedStats(r, evNameArg.trim(), allPool);
+      return s.allStudentsList;
+    }).replace(/\{EVENT_COUNT:([^}]+)\}/gi, (match, evNameArg) => {
+      const s = generateEventScopedStats(r, evNameArg.trim(), allPool);
+      return s.totalStudentsCount;
+    });
 
     return processed;
   };
@@ -20799,7 +21946,7 @@ function BulkWhatsAppBroadcastModal({ event, recipients = [], C, auth, onLogSent
   );
 }
 
-// ── Workspace-Specific Multi-Template Manager Modal ──────────────────────────────
+// ── Workspace-Specific Multi-Template Manager Modal (3-Panel Pro Editor) ─────────
 function WorkspaceWhatsAppTemplateModal({ event, C, setC, auth, onClose }) {
   if (!event) return null;
 
@@ -20821,6 +21968,12 @@ function WorkspaceWhatsAppTemplateModal({ event, C, setC, auth, onClose }) {
       name: "Event Reminder & Reporting Time Notice",
       isDefault: false,
       text: `🏛️ *MUMBAI MEGHWAL PANCHAYAT*\n⏰ *Gentle Reminder: Education Felicitation 2026*\n═══════════════════════\nNamaste *{STUDENT_NAME}*,\n\nThis is a gentle reminder that the *Annual Student Education Felicitation Ceremony* is scheduled for *02-10-2026 (Friday)*.\n\n• *Invitee Name:* {STUDENT_NAME}\n• *Pass / Txn ID:* {TXN_ID}\n• *Reporting Time:* 09:30 AM Sharp\n• *Venue:* Mumbai, Maharashtra\n\n👉 *Open Your Digital Pass on Mobile:*\n{INVITE_PDF_LINK}\n\nPlease carry your digital pass on your phone for smooth verification at the venue.\n\nWarm regards,\n*Event Management Team*`
+    },
+    {
+      id: "tpl_vibhag_student_report",
+      name: "Vibhag Student Registration Report & List",
+      isDefault: false,
+      text: `🏛️ *MUMBAI MEGHWAL PANCHAYAT*\n🏆 *{EVENT_NAME} - Student Registration Report*\n═══════════════════════\nRespected *{STUDENT_NAME}* (Vibhag Pramukh - *{VIBHAG}*),\n\nHere is the updated list and summary of students registered from your Vibhag for the upcoming *Annual Education Felicitation Ceremony*:\n\n{VIBHAG_STUDENT_SUMMARY}\n\n{VIBHAG_STUDENT_LIST}\n\n👉 *Manage & View Online Pass / Documents:*\n{PORTAL_URL}\n\nPlease review the list. If any eligible student from your Vibhag is missing, kindly assist them in completing registration at the earliest.\n\nWarm regards,\n*Central Working Committee (CWC) & Education Board*\n📞 Committee Helpline: {HELPLINE_PHONES}`
     }
   ];
 
@@ -20831,6 +21984,8 @@ function WorkspaceWhatsAppTemplateModal({ event, C, setC, auth, onClose }) {
   const [templates, setTemplates] = useState(JSON.parse(JSON.stringify(currentTemplates)));
   const [activeTplId, setActiveTplId] = useState(templates[0]?.id || "tpl_student_pass");
   const [saving, setSaving] = useState(false);
+  const [variableSearch, setVariableSearch] = useState("");
+  const textareaRef = useRef(null);
 
   const activeTpl = templates.find(t => t.id === activeTplId) || templates[0];
 
@@ -20898,46 +22053,171 @@ function WorkspaceWhatsAppTemplateModal({ event, C, setC, auth, onClose }) {
     }
   };
 
-  const insertPlaceholder = (ph) => {
+  const insertPlaceholderAtCursor = (ph) => {
     if (!activeTpl) return;
-    const cur = activeTpl.text || "";
-    handleUpdateActiveTpl("text", cur + ph);
+    const textarea = textareaRef.current;
+    if (textarea) {
+      const start = textarea.selectionStart || 0;
+      const end = textarea.selectionEnd || 0;
+      const cur = activeTpl.text || "";
+      const before = cur.substring(0, start);
+      const after = cur.substring(end);
+      const spacePrefix = (before.length > 0 && !before.endsWith(" ") && !before.endsWith("\n")) ? " " : "";
+      const spaceSuffix = (after.length > 0 && !after.startsWith(" ") && !after.startsWith("\n")) ? " " : "";
+      const inserted = spacePrefix + ph + spaceSuffix;
+      const updated = before + inserted + after;
+      handleUpdateActiveTpl("text", updated);
+      setTimeout(() => {
+        textarea.focus();
+        textarea.setSelectionRange(start + inserted.length, start + inserted.length);
+      }, 10);
+    } else {
+      const cur = activeTpl.text || "";
+      handleUpdateActiveTpl("text", cur + " " + ph);
+    }
   };
+
+  const handleDropOnTextarea = (e) => {
+    e.preventDefault();
+    const draggedText = e.dataTransfer.getData("text/plain");
+    if (!draggedText) return;
+    insertPlaceholderAtCursor(draggedText);
+  };
+
+  // Variable Palettes Configuration
+  const variableCategories = [
+    {
+      title: "👤 Participant, Contact & Group Details",
+      color: "#6D28D9",
+      bgColor: "#F5F3FF",
+      borderColor: "#C4B5FD",
+      icon: "👤",
+      vars: [
+        { tag: "{CONTACT_GROUP}", label: "👥 Contact Group / Committee", desc: "Assigned contact group (e.g. 'new vibhag', 'CWC Member', 'Trustee')" },
+        { tag: "{GROUP}", label: "🏷️ Group Name", desc: "Primary assigned group of recipient" },
+        { tag: "{INVITEE_NAME}", label: "👤 Invitee / Member Name", desc: "Full name of the invited participant or guest" },
+        { tag: "{STUDENT_NAME}", label: "🎓 Student / Invitee Name", desc: "Full name of the recipient" },
+        { tag: "{DESIGNATION}", label: "💼 Designation / Role", desc: "Guest designation (e.g. General Secretary, Trustee, Vibhag Pramukh)" },
+        { tag: "{VIBHAG}", label: "📍 Vibhag / Branch Name", desc: "Vibhag or area name (e.g. 15 RAMDEV NAGAR)" },
+        { tag: "{TXN_ID}", label: "🎫 Entry Pass / Transaction ID", desc: "Unique registration pass ID (e.g. GST-631028)" },
+        { tag: "{SUB_WORKSPACE_NAME}", label: "🎟️ Sub-Workspace / Template Name", desc: "Name of the pass/template (e.g. 'new vibhag')" },
+        { tag: "{PASS_LINK}", label: "🔗 1-Click Digital Pass Link", desc: "Direct personalized invitation pass URL" },
+        { tag: "{MOBILE}", label: "📱 Recipient Mobile Number", desc: "Registered mobile number (+91...)" },
+        { tag: "{EMAIL}", label: "✉️ Recipient Email", desc: "Registered email address" },
+        { tag: "{ADDRESS}", label: "🏠 Address / Location", desc: "Recipient address" },
+        { tag: "{REMARKS}", label: "📝 Committee Remarks", desc: "Verification remarks or instructions" }
+      ]
+    },
+    {
+      title: "🎓 Education 2026 Summaries & Lists",
+      color: "#15803D",
+      bgColor: "#F0FDF4",
+      borderColor: "#86EFAC",
+      icon: "🎓",
+      vars: [
+        { tag: "{VIBHAG_STUDENT_LIST}", label: "📋 Education Vibhag Student List", desc: "Numbered list of Education 2026 students from recipient's Vibhag" },
+        { tag: "{VIBHAG_STUDENT_SUMMARY}", label: "📊 Education Vibhag Summary", desc: "Education 2026 counts & stream breakdown for recipient's Vibhag" },
+        { tag: "{ALL_STUDENTS_LIST}", label: "👥 All Education 2026 Students", desc: "Complete list of all 73+ registered students in Education 2026" },
+        { tag: "{TOTAL_STUDENTS_COUNT}", label: "🔢 Education Total Count", desc: "Total count of registered students in Education 2026" },
+        { tag: "{EVENT_REGISTRATION_SUMMARY}", label: "📈 Education Stats Breakdown", desc: "Overall Education 2026 stats (Approved, Pending, Needs Info)" }
+      ]
+    },
+    {
+      title: "🌳 Monsoon Tree Plantation Summaries & Lists",
+      color: "#059669",
+      bgColor: "#ECFDF5",
+      borderColor: "#A7F3D0",
+      icon: "🌳",
+      vars: [
+        { tag: "{MONSOON_VIBHAG_STUDENT_LIST}", label: "📋 Monsoon Vibhag Participant List", desc: "Numbered list of Monsoon Tree participants from recipient's Vibhag" },
+        { tag: "{MONSOON_VIBHAG_SUMMARY}", label: "📊 Monsoon Vibhag Summary", desc: "Counts & breakdown for Monsoon Tree Plantation" },
+        { tag: "{MONSOON_ALL_LIST}", label: "👥 All Monsoon Registrations", desc: "Complete list of all participants in Monsoon Tree Plantation" },
+        { tag: "{MONSOON_TOTAL_COUNT}", label: "🔢 Monsoon Total Count", desc: "Total participant count in Monsoon Tree Plantation" }
+      ]
+    },
+    ...((C.events || []).filter(evItem => {
+      const t = String(evItem.title || evItem.id || '').toLowerCase();
+      return !t.includes('education') && !t.includes('monsoon') && !t.includes('committee');
+    }).map(otherEv => ({
+      title: `📌 ${otherEv.title || otherEv.id} Data`,
+      color: "#0284C7",
+      bgColor: "#F0F9FF",
+      borderColor: "#BAE6FD",
+      icon: "📌",
+      vars: [
+        { tag: `{EVENT_VIBHAG_LIST:${otherEv.title || otherEv.id}}`, label: `📋 ${otherEv.title || otherEv.id} Vibhag List`, desc: `Vibhag list for ${otherEv.title || otherEv.id}` },
+        { tag: `{EVENT_SUMMARY:${otherEv.title || otherEv.id}}`, label: `📊 ${otherEv.title || otherEv.id} Summary`, desc: `Summary stats for ${otherEv.title || otherEv.id}` },
+        { tag: `{EVENT_ALL_LIST:${otherEv.title || otherEv.id}}`, label: `👥 All ${otherEv.title || otherEv.id} Registrations`, desc: `All registrations for ${otherEv.title || otherEv.id}` }
+      ]
+    }))),
+    {
+      title: "🏛️ Event & Trust Info",
+      color: "#B45309",
+      bgColor: "#FFFBEB",
+      borderColor: "#FCD34D",
+      icon: "🏛️",
+      vars: [
+        { tag: "{EVENT_NAME}", label: "Event Title", desc: "Title of the workspace event" },
+        { tag: "{PORTAL_NAME}", label: "Trust / Portal Name", desc: "Mumbai Meghwal Panchayat" },
+        { tag: "{DATE}", label: "Event Date", desc: "Official date of the ceremony" },
+        { tag: "{VENUE}", label: "Venue Location", desc: "Event venue location" },
+        { tag: "{HELPLINE_PHONES}", label: "Helpline Phone Numbers", desc: "Committee helpline contact numbers" }
+      ]
+    },
+    {
+      title: "🔗 Digital Passes & Links",
+      color: "#1D4ED8",
+      bgColor: "#EFF6FF",
+      borderColor: "#93C5FD",
+      icon: "🔗",
+      vars: [
+        { tag: "{INVITE_PDF_LINK}", label: "Official PDF Invite Pass URL", desc: "Direct download link for invitation letter" },
+        { tag: "{CERTIFICATE_LINK}", label: "Official Certificate URL", desc: "Direct download link for certificate" },
+        { tag: "{PASS_LINK}", label: "Smart Digital Pass Link", desc: "Direct mobile pass URL" },
+        { tag: "{PORTAL_URL}", label: "Portal Website URL", desc: "Homepage link" }
+      ]
+    }
+  ];
+
+  const currentText = activeTpl?.text || "";
+  const charCount = currentText.length;
+  const wordCount = currentText.trim() ? currentText.trim().split(/\s+/).length : 0;
+  const lineCount = currentText ? currentText.split("\n").length : 0;
 
   return (
     <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.65)",zIndex:100003,display:"flex",alignItems:"center",justifyContent:"center",padding:16}} onClick={onClose}>
-      <div style={{background:"white",borderRadius:16,maxWidth:850,width:"100%",maxHeight:"90vh",display:"flex",flexDirection:"column",overflow:"hidden",boxShadow:"0 25px 50px -12px rgba(0,0,0,0.35)"}} onClick={e=>e.stopPropagation()}>
+      <div style={{background:"white",borderRadius:16,maxWidth:1320,width:"96vw",height:"90vh",maxHeight:"92vh",display:"flex",flexDirection:"column",overflow:"hidden",boxShadow:"0 25px 50px -12px rgba(0,0,0,0.4)"}} onClick={e=>e.stopPropagation()}>
         
         {/* Header */}
-        <div style={{padding:"18px 24px",background:"linear-gradient(135deg, #15803D, #166534)",color:"white",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+        <div style={{padding:"14px 22px",background:"linear-gradient(135deg, #15803D, #166534)",color:"white",display:"flex",justifyContent:"space-between",alignItems:"center",flexShrink:0}}>
           <div>
             <h3 style={{fontSize:"1.15rem",fontWeight:800,margin:0,display:"flex",alignItems:"center",gap:8}}>
-              <span>📝</span> WhatsApp Templates for: {event.title || "Workspace"}
+              <span>📝</span> WhatsApp Templates: {event.title || "Workspace"}
             </h3>
-            <div style={{fontSize:".8rem",opacity:0.9,marginTop:2}}>
-              Create and manage multiple customizable WhatsApp message templates specific to this event.
+            <div style={{fontSize:".78rem",opacity:0.9,marginTop:2}}>
+              Design rich WhatsApp messages with drag & drop variables, live student counts, and formatted reports.
             </div>
           </div>
           <button onClick={onClose} style={{background:"rgba(255,255,255,0.2)",border:"none",borderRadius:"50%",width:32,height:32,color:"white",cursor:"pointer",fontWeight:800}}>✕</button>
         </div>
 
-        {/* Body */}
-        <div style={{display:"flex",flex:1,overflow:"hidden"}}>
+        {/* 3-Panel Body */}
+        <div style={{display:"flex",flex:1,overflow:"hidden",background:"#F8FAFC"}}>
           
-          {/* Left: Templates List */}
-          <div style={{width:260,borderRight:"1px solid #E2E8F0",background:"#F8FAFC",display:"flex",flexDirection:"column"}}>
-            <div style={{padding:"12px 14px",borderBottom:"1px solid #E2E8F0",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-              <span style={{fontSize:".75rem",fontWeight:700,color:"#475569",textTransform:"uppercase"}}>Templates ({templates.length})</span>
+          {/* ── LEFT PANEL: Templates List (Width ~240px) ── */}
+          <div style={{width:240,borderRight:"1px solid #E2E8F0",background:"white",display:"flex",flexDirection:"column",flexShrink:0}}>
+            <div style={{padding:"12px 14px",borderBottom:"1px solid #E2E8F0",display:"flex",justifyContent:"space-between",alignItems:"center",background:"#F8FAFC"}}>
+              <span style={{fontSize:".75rem",fontWeight:800,color:"#475569",textTransform:"uppercase"}}>TEMPLATES ({templates.length})</span>
               <button
                 type="button"
                 onClick={handleAddNewTemplate}
-                style={{padding:"4px 8px",background:"#15803D",color:"white",border:"none",borderRadius:6,fontSize:".75rem",fontWeight:700,cursor:"pointer",display:"flex",alignItems:"center",gap:4}}
+                style={{padding:"4px 8px",background:"#15803D",color:"white",border:"none",borderRadius:6,fontSize:".74rem",fontWeight:800,cursor:"pointer",display:"flex",alignItems:"center",gap:4}}
               >
                 <span>+</span> Add New
               </button>
             </div>
 
-            <div style={{flex:1,overflowY:"auto",padding:8,display:"flex",flexDirection:"column",gap:6}}>
+            <div style={{flex:1,overflowY:"auto",padding:10,display:"flex",flexDirection:"column",gap:6}}>
               {templates.map(t => {
                 const isActive = t.id === activeTplId;
                 return (
@@ -20953,15 +22233,16 @@ function WorkspaceWhatsAppTemplateModal({ event, C, setC, auth, onClose }) {
                       display:"flex",
                       flexDirection:"column",
                       gap:4,
+                      boxShadow: isActive ? "0 2px 6px rgba(21,128,61,0.12)" : "none",
                       transition:"all 0.15s"
                     }}
                   >
-                    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+                    <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:4}}>
                       <span style={{fontSize:".82rem",fontWeight:700,color:isActive ? "#15803D" : "#0F172A",lineHeight:1.3}}>
                         {t.name}
                       </span>
                       {t.isDefault && (
-                        <span style={{background:"#DCFCE7",color:"#15803D",padding:"1px 6px",borderRadius:4,fontSize:".65rem",fontWeight:800}}>
+                        <span style={{background:"#DCFCE7",color:"#15803D",padding:"1px 5px",borderRadius:4,fontSize:".62rem",fontWeight:800,flexShrink:0}}>
                           Default
                         </span>
                       )}
@@ -20972,38 +22253,38 @@ function WorkspaceWhatsAppTemplateModal({ event, C, setC, auth, onClose }) {
             </div>
           </div>
 
-          {/* Right: Active Template Editor */}
+          {/* ── MIDDLE PANEL: Big Editor Area (Flex: 1) ── */}
           {activeTpl && (
-            <div style={{flex:1,padding:"20px 24px",overflowY:"auto",display:"flex",flexDirection:"column",gap:14}}>
+            <div style={{flex:1,padding:"16px 20px",display:"flex",flexDirection:"column",gap:10,overflowY:"auto",background:"white"}}>
               
-              {/* Template Name & Default Switch */}
-              <div style={{display:"flex",gap:12,alignItems:"flex-end",flexWrap:"wrap"}}>
+              {/* Template Controls Bar */}
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:12,flexWrap:"wrap",paddingBottom:10,borderBottom:"1px solid #F1F5F9"}}>
                 <div style={{flex:1,minWidth:220}}>
-                  <label style={{display:"block",fontSize:".75rem",fontWeight:700,color:"#475569",marginBottom:4}}>TEMPLATE NAME</label>
+                  <label style={{display:"block",fontSize:".72rem",fontWeight:800,color:"#64748B",textTransform:"uppercase",marginBottom:3}}>TEMPLATE NAME</label>
                   <input
                     type="text"
                     value={activeTpl.name}
                     onChange={e => handleUpdateActiveTpl("name", e.target.value)}
-                    style={{width:"100%",padding:"8px 12px",borderRadius:8,border:"1px solid #CBD5E1",fontSize:".88rem",fontWeight:600,boxSizing:"border-box"}}
+                    style={{width:"100%",padding:"7px 12px",borderRadius:8,border:"1.5px solid #CBD5E1",fontSize:".88rem",fontWeight:700,color:"#0F172A",boxSizing:"border-box"}}
                   />
                 </div>
 
-                <div style={{display:"flex",alignItems:"center",gap:10}}>
-                  <label style={{display:"flex",alignItems:"center",gap:6,cursor:"pointer",fontSize:".82rem",fontWeight:700,color:"#15803D",background:"#F0FDF4",padding:"8px 12px",borderRadius:8,border:"1px solid #BBF7D0"}}>
+                <div style={{display:"flex",alignItems:"center",gap:8,paddingTop:14}}>
+                  <label style={{display:"flex",alignItems:"center",gap:6,cursor:"pointer",fontSize:".8rem",fontWeight:700,color:"#15803D",background:"#F0FDF4",padding:"6px 12px",borderRadius:8,border:"1px solid #BBF7D0"}}>
                     <input
                       type="checkbox"
                       checked={activeTpl.isDefault || false}
                       onChange={e => handleUpdateActiveTpl("isDefault", e.target.checked)}
-                      style={{cursor:"pointer"}}
+                      style={{cursor:"pointer",accentColor:"#15803D"}}
                     />
-                    <span>Set as Default Template</span>
+                    <span>Set as Default</span>
                   </label>
 
                   {templates.length > 1 && !activeTpl.isDefault && (
                     <button
                       type="button"
                       onClick={() => handleDeleteTemplate(activeTpl.id)}
-                      style={{padding:"8px 12px",background:"#FEF2F2",border:"1px solid #FECACA",color:"#DC2626",borderRadius:8,fontSize:".8rem",fontWeight:700,cursor:"pointer"}}
+                      style={{padding:"6px 12px",background:"#FEF2F2",border:"1px solid #FECACA",color:"#DC2626",borderRadius:8,fontSize:".78rem",fontWeight:800,cursor:"pointer"}}
                       title="Delete this template"
                     >
                       🗑️ Delete
@@ -21012,137 +22293,202 @@ function WorkspaceWhatsAppTemplateModal({ event, C, setC, auth, onClose }) {
                 </div>
               </div>
 
-              {/* Placeholder Pills & URL Builder Helper */}
-              <div>
-                <div style={{fontSize:".75rem",fontWeight:700,color:"#475569",marginBottom:6}}>INSERT PERSONALIZED PLACEHOLDERS:</div>
-                <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:10}}>
-                  {[
-                    '{EVENT_NAME}',
-                    '{PORTAL_NAME}',
-                    '{CONTACT_USER_NAME}',
-                    '{PARTICIPANT_NAME}',
-                    '{DESIGNATION}',
-                    '{ROLE}',
-                    '{STUDENT_NAME}',
-                    '{TXN_ID}',
-                    '{DATE}',
-                    '{VENUE}',
-                    '{INVITE_PDF_LINK}',
-                    '{CERTIFICATE_LINK}',
-                    '{PORTAL_URL}',
-                    '{VIBHAG}',
-                    '{STREAM}',
-                    '{PERCENTAGE}',
-                    '{HELPLINE_PHONES}'
-                  ].map(ph => (
-                    <button
-                      key={ph}
-                      type="button"
-                      onClick={() => insertPlaceholder(' ' + ph)}
-                      style={{
-                        padding:"5px 10px",
-                        background: ph.includes('EVENT') ? "#FEF3C7" : (ph.includes('DESIGNATION') || ph.includes('ROLE')) ? "#F5F3FF" : ph.includes('CERTIFICATE') ? "#EFF6FF" : ph.includes('INVITE') ? "#F0FDF4" : "#F1F5F9",
-                        border: ph.includes('EVENT') ? "1.5px solid #F59E0B" : (ph.includes('DESIGNATION') || ph.includes('ROLE')) ? "1.5px solid #C4B5FD" : ph.includes('CERTIFICATE') ? "1px solid #93C5FD" : ph.includes('INVITE') ? "1px solid #86EFAC" : "1px solid #CBD5E1",
-                        color: ph.includes('EVENT') ? "#92400E" : (ph.includes('DESIGNATION') || ph.includes('ROLE')) ? "#6D28D9" : ph.includes('CERTIFICATE') ? "#1D4ED8" : ph.includes('INVITE') ? "#15803D" : "#334155",
-                        borderRadius:6,
-                        fontSize:".75rem",
-                        fontWeight:800,
-                        cursor:"pointer",
-                        boxShadow: ph.includes('EVENT') ? "0 1px 4px rgba(245,158,11,0.2)" : (ph.includes('DESIGNATION') || ph.includes('ROLE')) ? "0 1px 4px rgba(109,40,217,0.15)" : "none"
-                      }}
-                    >
-                      + {ph}
-                    </button>
-                  ))}
+              {/* Formatting Toolbar & Drag Tip */}
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:8,background:"#F8FAFC",padding:"6px 10px",borderRadius:8,border:"1px solid #E2E8F0"}}>
+                <div style={{display:"flex",alignItems:"center",gap:4}}>
+                  <span style={{fontSize:".72rem",fontWeight:800,color:"#64748B",marginRight:4}}>QUICK FORMAT:</span>
+                  <button type="button" onClick={() => insertPlaceholderAtCursor("*bold text*")} style={{padding:"2px 7px",borderRadius:4,border:"1px solid #CBD5E1",background:"white",fontSize:".75rem",fontWeight:800,cursor:"pointer"}} title="Bold (*)"><b>B</b></button>
+                  <button type="button" onClick={() => insertPlaceholderAtCursor("_italic text_")} style={{padding:"2px 7px",borderRadius:4,border:"1px solid #CBD5E1",background:"white",fontSize:".75rem",fontStyle:"italic",fontWeight:700,cursor:"pointer"}} title="Italic (_)"><i>I</i></button>
+                  <button type="button" onClick={() => insertPlaceholderAtCursor("~strike~")} style={{padding:"2px 7px",borderRadius:4,border:"1px solid #CBD5E1",background:"white",fontSize:".75rem",textDecoration:"line-through",fontWeight:700,cursor:"pointer"}} title="Strikethrough (~)">S</button>
+                  <button type="button" onClick={() => insertPlaceholderAtCursor("\n• ")} style={{padding:"2px 7px",borderRadius:4,border:"1px solid #CBD5E1",background:"white",fontSize:".75rem",fontWeight:700,cursor:"pointer"}} title="Bullet point">• Bullet</button>
+                  <button type="button" onClick={() => insertPlaceholderAtCursor("👉 ")} style={{padding:"2px 7px",borderRadius:4,border:"1px solid #CBD5E1",background:"white",fontSize:".75rem",fontWeight:700,cursor:"pointer"}} title="Arrow pointer">👉</button>
+                  <button type="button" onClick={() => insertPlaceholderAtCursor("🏛️ *MUMBAI MEGHWAL PANCHAYAT*\n")} style={{padding:"2px 7px",borderRadius:4,border:"1px solid #CBD5E1",background:"white",fontSize:".72rem",fontWeight:700,cursor:"pointer"}} title="Trust Header">🏛️ Header</button>
                 </div>
-
-                {/* Interactive Direct URL Builder & Copy Helper (Supports all Custom PDF Templates) */}
-                <div style={{background:"#F8FAFC",border:"1px solid #CBD5E1",borderRadius:8,padding:"10px 12px",display:"flex",flexDirection:"column",gap:8}}>
-                  <div style={{fontSize:".74rem",fontWeight:800,color:"#334155"}}>🔗 DIRECT URL GENERATOR HELPER:</div>
-                  <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,background:"white",padding:"6px 10px",borderRadius:6,border:"1px solid #E2E8F0"}}>
-                    <span style={{fontSize:".75rem",color:"#1E293B",fontFamily:"monospace",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>
-                      🎓 <strong>Certificate URL:</strong> https://www.mmp-cwc.com/?cert={'{TXN_ID}'}
-                    </span>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        insertPlaceholder(' https://www.mmp-cwc.com/?cert={TXN_ID}');
-                        alert("Inserted Certificate URL into template!");
-                      }}
-                      style={{padding:"3px 8px",background:"#2563EB",color:"white",border:"none",borderRadius:4,fontSize:".7rem",fontWeight:700,cursor:"pointer",whiteSpace:"nowrap"}}
-                    >
-                      + Insert in Template
-                    </button>
-                  </div>
-
-                  <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,background:"white",padding:"6px 10px",borderRadius:6,border:"1px solid #E2E8F0"}}>
-                    <span style={{fontSize:".75rem",color:"#1E293B",fontFamily:"monospace",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>
-                      💌 <strong>Invite Pass URL:</strong> https://www.mmp-cwc.com/?invite={'{TXN_ID}'}
-                    </span>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        insertPlaceholder(' https://www.mmp-cwc.com/?invite={TXN_ID}');
-                        alert("Inserted Invite Pass URL into template!");
-                      }}
-                      style={{padding:"3px 8px",background:"#15803D",color:"white",border:"none",borderRadius:4,fontSize:".7rem",fontWeight:700,cursor:"pointer",whiteSpace:"nowrap"}}
-                    >
-                      + Insert in Template
-                    </button>
-                  </div>
-
-                  {/* List each custom PDF template created for this event */}
-                  {(event?.pdfTemplates || []).map(tpl => {
-                    const customLink = `https://www.mmp-cwc.com/?doc=${tpl.id}&pass={TXN_ID}`;
-                    return (
-                      <div key={tpl.id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,background:"#F0FDF4",padding:"6px 10px",borderRadius:6,border:"1px solid #86EFAC"}}>
-                        <span style={{fontSize:".75rem",color:"#166534",fontFamily:"monospace",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>
-                          📄 <strong>${tpl.name}:</strong> ${customLink}
-                        </span>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            insertPlaceholder(` ${customLink}`);
-                            alert(`Inserted "${tpl.name}" URL into template!`);
-                          }}
-                          style={{padding:"3px 8px",background:"#15803D",color:"white",border:"none",borderRadius:4,fontSize:".7rem",fontWeight:700,cursor:"pointer",whiteSpace:"nowrap"}}
-                        >
-                          + Insert in Template
-                        </button>
-                      </div>
-                    );
-                  })}
+                <div style={{fontSize:".7rem",color:"#15803D",fontWeight:700,display:"flex",alignItems:"center",gap:4}}>
+                  <span>💡</span> Drag variables from the right panel into editor or click to insert!
                 </div>
               </div>
 
-              {/* Message Textarea */}
-              <div style={{flex:1,display:"flex",flexDirection:"column"}}>
-                <label style={{display:"block",fontSize:".75rem",fontWeight:700,color:"#475569",marginBottom:4}}>MESSAGE CONTENT (WHATSAPP FORMATTED)</label>
+              {/* Big Textarea Editor */}
+              <div style={{flex:1,display:"flex",flexDirection:"column",position:"relative",minHeight:280}}>
                 <textarea
+                  ref={textareaRef}
                   value={activeTpl.text || ""}
                   onChange={e => handleUpdateActiveTpl("text", e.target.value)}
-                  rows={12}
-                  style={{width:"100%",padding:"12px 14px",borderRadius:8,border:"1px solid #CBD5E1",fontSize:".85rem",lineHeight:1.5,fontFamily:"monospace",boxSizing:"border-box",background:"white",resize:"vertical"}}
+                  onDragOver={(e) => e.preventDefault()}
+                  onDrop={handleDropOnTextarea}
+                  placeholder="Compose your WhatsApp template here. Drag or click any variable on the right to insert..."
+                  style={{
+                    width:"100%",
+                    height:"100%",
+                    minHeight:320,
+                    padding:"14px 16px",
+                    borderRadius:10,
+                    border:"1.5px solid #CBD5E1",
+                    fontSize:".88rem",
+                    lineHeight:1.6,
+                    fontFamily:"Consolas, Monaco, monospace",
+                    boxSizing:"border-box",
+                    background:"#FAFDF7",
+                    color:"#0F172A",
+                    resize:"none",
+                    outline:"none"
+                  }}
                 />
+              </div>
+
+              {/* Editor Stats Bar */}
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",fontSize:".74rem",color:"#64748B",padding:"2px 4px"}}>
+                <div style={{display:"flex",gap:12}}>
+                  <span>Characters: <strong>{charCount}</strong></span>
+                  <span>Words: <strong>{wordCount}</strong></span>
+                  <span>Lines: <strong>{lineCount}</strong></span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    navigator.clipboard.writeText(activeTpl.text || "");
+                    alert("✅ Template text copied to clipboard!");
+                  }}
+                  style={{background:"none",border:"none",color:"#2563EB",cursor:"pointer",fontWeight:700,fontSize:".74rem",textDecoration:"underline"}}
+                >
+                  📋 Copy Text
+                </button>
               </div>
 
             </div>
           )}
 
+          {/* ── RIGHT PANEL: Variables & Dynamic Data Palette (Width ~340px) ── */}
+          <div style={{width:350,borderLeft:"1px solid #E2E8F0",background:"#F8FAFC",display:"flex",flexDirection:"column",flexShrink:0}}>
+            <div style={{padding:"12px 14px",borderBottom:"1px solid #E2E8F0",background:"white",display:"flex",flexDirection:"column",gap:8}}>
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+                <span style={{fontSize:".76rem",fontWeight:800,color:"#1E293B",display:"flex",alignItems:"center",gap:6}}>
+                  <span>🏷️</span> DYNAMIC VARIABLES PALETTE
+                </span>
+                <span style={{fontSize:".68rem",background:"#EFF6FF",color:"#2563EB",padding:"1px 6px",borderRadius:4,fontWeight:800}}>
+                  Drag or Click
+                </span>
+              </div>
+              <input
+                type="text"
+                placeholder="🔍 Search variables..."
+                value={variableSearch}
+                onChange={e => setVariableSearch(e.target.value)}
+                style={{width:"100%",padding:"5px 10px",borderRadius:6,border:"1px solid #CBD5E1",fontSize:".78rem",boxSizing:"border-box",background:"#FAFDF7"}}
+              />
+            </div>
+
+            <div style={{flex:1,overflowY:"auto",padding:10,display:"flex",flexDirection:"column",gap:12}}>
+              {variableCategories.map((cat, idx) => {
+                const filteredVars = cat.vars.filter(v => 
+                  !variableSearch.trim() || 
+                  v.tag.toLowerCase().includes(variableSearch.toLowerCase()) || 
+                  v.label.toLowerCase().includes(variableSearch.toLowerCase()) ||
+                  v.desc.toLowerCase().includes(variableSearch.toLowerCase())
+                );
+
+                if (filteredVars.length === 0) return null;
+
+                return (
+                  <div key={idx} style={{background:cat.bgColor,border:`1.5px solid ${cat.borderColor}`,borderRadius:10,padding:10,display:"flex",flexDirection:"column",gap:6}}>
+                    <div style={{fontSize:".74rem",fontWeight:800,color:cat.color,display:"flex",alignItems:"center",gap:4,textTransform:"uppercase"}}>
+                      <span>{cat.icon}</span> {cat.title}
+                    </div>
+
+                    <div style={{display:"flex",flexDirection:"column",gap:5}}>
+                      {filteredVars.map(v => (
+                        <div
+                          key={v.tag}
+                          draggable={true}
+                          onDragStart={(e) => e.dataTransfer.setData("text/plain", v.tag)}
+                          onClick={() => insertPlaceholderAtCursor(v.tag)}
+                          style={{
+                            background:"white",
+                            border:`1px solid ${cat.borderColor}`,
+                            borderRadius:6,
+                            padding:"6px 8px",
+                            cursor:"pointer",
+                            display:"flex",
+                            justifyContent:"space-between",
+                            alignItems:"center",
+                            gap:6,
+                            transition:"all 0.15s",
+                            boxShadow:"0 1px 2px rgba(0,0,0,0.03)"
+                          }}
+                          title={`Click or Drag to insert: ${v.tag}\n${v.desc}`}
+                        >
+                          <div style={{display:"flex",flexDirection:"column",gap:1,overflow:"hidden"}}>
+                            <span style={{fontSize:".74rem",fontWeight:800,color:cat.color,fontFamily:"monospace"}}>
+                              {v.tag}
+                            </span>
+                            <span style={{fontSize:".67rem",color:"#64748B",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>
+                              {v.label}
+                            </span>
+                          </div>
+                          <span style={{fontSize:".72rem",color:"#94A3B8",cursor:"grab",padding:"2px 4px",userSelect:"none"}}>
+                            ⋮⋮
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                );
+              })}
+
+              {/* Custom Event Templates Direct Links */}
+              {(event?.pdfTemplates || []).length > 0 && (
+                <div style={{background:"#F0FDF4",border:"1.5px solid #86EFAC",borderRadius:10,padding:10,display:"flex",flexDirection:"column",gap:6}}>
+                  <div style={{fontSize:".74rem",fontWeight:800,color:"#15803D",display:"flex",alignItems:"center",gap:4}}>
+                    <span>📑</span> SUB-WORKSPACE PASS LINKS
+                  </div>
+                  {(event?.pdfTemplates || []).map(tpl => {
+                    const customLink = `https://www.mmp-cwc.com/?doc=${tpl.id}&pass={TXN_ID}`;
+                    return (
+                      <div
+                        key={tpl.id}
+                        draggable={true}
+                        onDragStart={(e) => e.dataTransfer.setData("text/plain", customLink)}
+                        onClick={() => insertPlaceholderAtCursor(customLink)}
+                        style={{background:"white",border:"1px solid #86EFAC",borderRadius:6,padding:"6px 8px",cursor:"pointer",display:"flex",justifyContent:"space-between",alignItems:"center",gap:6}}
+                        title={`Click or Drag to insert link for "${tpl.name}"`}
+                      >
+                        <div style={{display:"flex",flexDirection:"column",gap:1}}>
+                          <span style={{fontSize:".73rem",fontWeight:800,color:"#166534"}}>
+                            📄 {tpl.name} Pass Link
+                          </span>
+                          <span style={{fontSize:".65rem",color:"#64748B",fontFamily:"monospace"}}>
+                            /?doc={tpl.id}&pass={'{TXN_ID}'}
+                          </span>
+                        </div>
+                        <span style={{fontSize:".72rem",color:"#94A3B8",cursor:"grab",userSelect:"none"}}>⋮⋮</span>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          </div>
+
         </div>
 
         {/* Footer */}
-        <div style={{padding:"14px 24px",background:"#F8FAFC",borderTop:"1px solid #E2E8F0",display:"flex",justifyContent:"flex-end",gap:10}}>
-          <button onClick={onClose} style={{padding:"8px 18px",borderRadius:8,background:"white",border:"1px solid #CBD5E1",fontSize:".85rem",cursor:"pointer",fontWeight:600}}>
-            Cancel
-          </button>
-          <button
-            onClick={handleSaveAll}
-            disabled={saving}
-            style={{padding:"8px 24px",borderRadius:8,background:"#15803D",color:"white",border:"none",fontSize:".85rem",fontWeight:700,cursor:saving ? "wait" : "pointer"}}
-          >
-            {saving ? "Saving Templates..." : "💾 Save Workspace Templates"}
-          </button>
+        <div style={{padding:"12px 22px",background:"#F8FAFC",borderTop:"1px solid #E2E8F0",display:"flex",justifyContent:"space-between",alignItems:"center",flexShrink:0}}>
+          <div style={{fontSize:".76rem",color:"#64748B"}}>
+            Editing template: <strong>{activeTpl?.name}</strong> {activeTpl?.isDefault ? "(Default)" : ""}
+          </div>
+          <div style={{display:"flex",gap:10}}>
+            <button onClick={onClose} style={{padding:"8px 18px",borderRadius:8,background:"white",border:"1px solid #CBD5E1",fontSize:".85rem",cursor:"pointer",fontWeight:600}}>
+              Cancel
+            </button>
+            <button
+              onClick={handleSaveAll}
+              disabled={saving}
+              style={{padding:"8px 24px",borderRadius:8,background:"#15803D",color:"white",border:"none",fontSize:".85rem",fontWeight:800,cursor:saving ? "wait" : "pointer",boxShadow:"0 2px 6px rgba(21,128,61,0.25)"}}
+            >
+              {saving ? "Saving Templates..." : "💾 Save Workspace Templates"}
+            </button>
+          </div>
         </div>
 
       </div>
@@ -21151,7 +22497,7 @@ function WorkspaceWhatsAppTemplateModal({ event, C, setC, auth, onClose }) {
 }
 
 // ── WhatsApp Applicant Communication Modal ───────────────────────────────────────
-function WhatsAppApplicantMessengerModal({ reg, onClose, C, auth, onLogSent, allRegs = [], onSelectReg }) {
+function WhatsAppApplicantMessengerModal({ reg, onClose, C, auth, onLogSent, allRegs = [], recipientList = null, onSelectReg }) {
   if (!reg) return null;
 
   const rawParticipantName = String(reg['Participant Name'] || reg['Full Name'] || reg['Student Name'] || reg['Candidate Name'] || reg['Name'] || reg.name || reg['Submitted By'] || 'Participant').replace(/\|/g, ' ').replace(/\s+/g, ' ').trim();
@@ -21166,8 +22512,9 @@ function WhatsAppApplicantMessengerModal({ reg, onClose, C, auth, onLogSent, all
   const currentStatus = reg['Status'] || reg.status || 'Pending';
   const remarks = reg['Remarks'] || reg.remarks || 'Application under review';
 
-  const currentIndex = allRegs.findIndex(r => r.id === reg.id || (r['Transaction ID'] && r['Transaction ID'] === reg['Transaction ID']));
-  const totalCount = allRegs.length;
+  const navList = (Array.isArray(recipientList) && recipientList.length > 0) ? recipientList : allRegs;
+  const currentIndex = navList.findIndex(r => r.id === reg.id || (r['Transaction ID'] && r['Transaction ID'] === reg['Transaction ID']));
+  const totalCount = navList.length;
 
   const evName = reg.eventName || reg.eventTitle || reg.eventId || "Education felicitation 2026";
   const eventObj = (C.events || []).find(e => e.id === reg.eventId || e.title === evName || e.titleGu === evName);
@@ -21197,10 +22544,17 @@ function WhatsAppApplicantMessengerModal({ reg, onClose, C, auth, onLogSent, all
     ? eventObj.whatsAppTemplates
     : defaultWorkspaceTemplates;
 
-  const defaultTpl = workspaceTemplates.find(t => t.isDefault) || workspaceTemplates[0];
+  const initialEventScope = reg?.targetEventId || reg?.activeDocTpl?.customTpl?.targetEventId || eventObj?.targetEventId || "education2026";
+  const initialVibhagScope = reg?.vibhagScope === "all" ? "all" : (reg?.vibhag || reg?.['Vibhag'] || reg?.['Vibhag New'] || "auto");
+  const [activeModalEvent, setActiveModalEvent] = useState(initialEventScope);
+  const [activeModalVibhag, setActiveModalVibhag] = useState(initialVibhagScope);
+
+  const defaultTpl = workspaceTemplates.find(t => t.isDefault) || workspaceTemplates[0] || defaultWorkspaceTemplates[0];
   const [selectedTplId, setSelectedTplId] = useState(defaultTpl?.id || "tpl_student_pass");
 
-  const formatTemplateString = (tplString, rName, rMobile, rTxn, rVibhag, rStream, rPct, rRemarks, rContactNameArg) => {
+  const formatTemplateString = (tplString, rName, rMobile, rTxn, rVibhag, rStream, rPct, rRemarks, rContactNameArg, eventScopeOverride, vibhagOverrideArg) => {
+    const chosenScope = eventScopeOverride || activeModalEvent || "education2026";
+    const chosenVibhag = vibhagOverrideArg || activeModalVibhag || "auto";
     const baseUrl = `${C.whatsAppPortalUrl || "https://www.mmp-cwc.com/"}`.replace(/\/?$/, '');
     const certUrl = `${baseUrl}/?cert=${encodeURIComponent(rTxn || "")}`;
     const inviteUrl = `${baseUrl}/?invite=${encodeURIComponent(rTxn || "")}`;
@@ -21215,6 +22569,17 @@ function WhatsAppApplicantMessengerModal({ reg, onClose, C, auth, onLogSent, all
     const contactNameVal = rContactNameArg || rawContactName || rName || "Member";
     const participantNameVal = rName || rawParticipantName || "Participant";
 
+    let modalGroups = [];
+    if (Array.isArray(reg.groups) && reg.groups.length > 0) modalGroups = reg.groups;
+    else if (Array.isArray(reg.Groups) && reg.Groups.length > 0) modalGroups = reg.Groups;
+    else if (reg.group || reg.Group || reg.category || reg.Category) {
+      modalGroups = String(reg.group || reg.Group || reg.category || reg.Category).split(/[,/|;]+/).map(s => s.trim()).filter(Boolean);
+    }
+    const rContactGroup = modalGroups.length > 0 ? modalGroups.join(", ") : (rVibhag || "General Committee");
+    const rEmail = reg['Email Address'] || reg.Email || reg.email || "";
+    const rAddress = reg.Address || reg.address || "";
+    const rSubWsName = reg.activeDocTpl?.name || reg.customDocName || "Official Pass";
+
     let processed = (tplString || "")
       .replace(/\{PORTAL_NAME\}/g, portalName)
       .replace(/\{WEBSITE_NAME\}/g, portalName)
@@ -21227,6 +22592,14 @@ function WhatsAppApplicantMessengerModal({ reg, onClose, C, auth, onLogSent, all
       .replace(/\{EVENT_DATE\}/g, evDate)
       .replace(/\{VENUE\}/g, evVenue)
       .replace(/\{LOCATION\}/g, evVenue)
+      .replace(/\{CONTACT_GROUP\}/g, rContactGroup)
+      .replace(/\{GROUP\}/g, rContactGroup)
+      .replace(/\{GROUPS\}/g, rContactGroup)
+      .replace(/\{COMMITTEE_GROUP\}/g, rContactGroup)
+      .replace(/\{DESIGNATION\}/g, rDesignation)
+      .replace(/\{ROLE\}/g, rDesignation)
+      .replace(/\{INVITEE_NAME\}/g, participantNameVal)
+      .replace(/\{INVITEE\}/g, participantNameVal)
       .replace(/\{CONTACT_USER_NAME\}/g, contactNameVal)
       .replace(/\{CONTACT_NAME\}/g, contactNameVal)
       .replace(/\{CONTACT_PERSON\}/g, contactNameVal)
@@ -21238,7 +22611,15 @@ function WhatsAppApplicantMessengerModal({ reg, onClose, C, auth, onLogSent, all
       .replace(/\{USER_NAME\}/g, contactNameVal)
       .replace(/\{NAME\}/g, participantNameVal)
       .replace(/\{TXN_ID\}/g, rTxn || "N/A")
+      .replace(/\{PASS_ID\}/g, rTxn || "N/A")
+      .replace(/\{ENTRY_PASS_ID\}/g, rTxn || "N/A")
       .replace(/\{VIBHAG\}/g, rVibhag || "All Vibhags")
+      .replace(/\{VIBHAG_NAME\}/g, rVibhag || "All Vibhags")
+      .replace(/\{SUB_WORKSPACE_NAME\}/g, rSubWsName)
+      .replace(/\{TEMPLATE_NAME\}/g, rSubWsName)
+      .replace(/\{EMAIL\}/g, rEmail)
+      .replace(/\{ADDRESS\}/g, rAddress)
+      .replace(/\{PHONE\}/g, rMobile || "")
       .replace(/\{STREAM\}/g, rStream || "N/A")
       .replace(/\{PERCENTAGE\}/g, rPct || "N/A")
       .replace(/\{REMARKS\}/g, rRemarks || "Application under review")
@@ -21253,6 +22634,79 @@ function WhatsAppApplicantMessengerModal({ reg, onClose, C, auth, onLogSent, all
       .replace(/\{WEBSITE_HOME\}/g, baseUrl)
       .replace(/\{HELPLINE_PHONES\}/g, C.whatsAppHelpline || C.trust?.phone || "+91 9820785209 / +91 9967821964")
       .replace(/\{ADMIN_MOBILE\}/g, C.whatsAppHelpline || C.trust?.phone || "+91 9820785209");
+
+    // 1. Evaluate Active Target Event Placeholders with Vibhag Scope
+    const activeTargetScope = (chosenScope && chosenScope !== 'current') ? chosenScope : 'education2026';
+
+    const activeScopeStats = typeof generateEventScopedStats === 'function'
+      ? generateEventScopedStats(reg, activeTargetScope, allRegs, chosenVibhag)
+      : buildWhatsAppStudentSummaryPlaceholders(reg, activeTargetScope, allRegs);
+
+    const eduStats = typeof generateEventScopedStats === 'function'
+      ? generateEventScopedStats(reg, 'education2026', allRegs, chosenVibhag)
+      : activeScopeStats;
+
+    processed = processed
+      .replace(/\{TOTAL_STUDENTS_COUNT\}/g, activeScopeStats.totalStudentsCount)
+      .replace(/\{TOTAL_REGISTRATIONS\}/g, activeScopeStats.totalStudentsCount)
+      .replace(/\{TOTAL_COUNT\}/g, activeScopeStats.totalStudentsCount)
+      .replace(/\{APPROVED_STUDENTS_COUNT\}/g, activeScopeStats.approvedStudentsCount)
+      .replace(/\{APPROVED_COUNT\}/g, activeScopeStats.approvedStudentsCount)
+      .replace(/\{PENDING_STUDENTS_COUNT\}/g, activeScopeStats.pendingStudentsCount)
+      .replace(/\{PENDING_COUNT\}/g, activeScopeStats.pendingStudentsCount)
+      .replace(/\{VIBHAG_STUDENT_COUNT\}/g, activeScopeStats.vibhagStudentCount)
+      .replace(/\{VIBHAG_APPROVED_COUNT\}/g, activeScopeStats.vibhagApprovedCount)
+      .replace(/\{VIBHAG_STUDENT_SUMMARY\}/g, activeScopeStats.vibhagStudentSummary)
+      .replace(/\{EVENT_STUDENT_SUMMARY\}/g, activeScopeStats.eventRegistrationSummary)
+      .replace(/\{EVENT_REGISTRATION_SUMMARY\}/g, activeScopeStats.eventRegistrationSummary)
+      .replace(/\{REGISTRATION_STATS\}/g, activeScopeStats.eventRegistrationSummary)
+      .replace(/\{VIBHAG_STUDENT_LIST\}/g, activeScopeStats.vibhagStudentList)
+      .replace(/\{STUDENT_LIST\}/g, activeScopeStats.vibhagStudentList)
+      .replace(/\{STUDENT_DETAILS_LIST\}/g, activeScopeStats.studentDetailsList)
+      .replace(/\{DETAILED_STUDENT_LIST\}/g, activeScopeStats.studentDetailsList)
+      .replace(/\{ALL_STUDENTS_LIST\}/g, activeScopeStats.allStudentsList)
+      // Dedicated Education 2026 shortcuts
+      .replace(/\{EDU_VIBHAG_STUDENT_LIST\}/g, eduStats.vibhagStudentList)
+      .replace(/\{EDU2026_VIBHAG_STUDENT_LIST\}/g, eduStats.vibhagStudentList)
+      .replace(/\{EDUCATION_2026_VIBHAG_STUDENT_LIST\}/g, eduStats.vibhagStudentList)
+      .replace(/\{EDU_VIBHAG_STUDENT_SUMMARY\}/g, eduStats.vibhagStudentSummary)
+      .replace(/\{EDU_ALL_STUDENTS_LIST\}/g, eduStats.allStudentsList)
+      .replace(/\{EDU_TOTAL_STUDENTS_COUNT\}/g, eduStats.totalStudentsCount);
+
+    // 2. Evaluate Dedicated Monsoon Event Placeholders
+    const monsoonStats = typeof generateEventScopedStats === 'function'
+      ? generateEventScopedStats(reg, 'Monsoon', allRegs)
+      : null;
+    if (monsoonStats) {
+      processed = processed
+        .replace(/\{MONSOON_VIBHAG_STUDENT_LIST\}/g, monsoonStats.vibhagStudentList)
+        .replace(/\{MONSOON_STUDENT_LIST\}/g, monsoonStats.vibhagStudentList)
+        .replace(/\{MONSOON_VIBHAG_LIST\}/g, monsoonStats.vibhagStudentList)
+        .replace(/\{MONSOON_VIBHAG_SUMMARY\}/g, monsoonStats.vibhagStudentSummary)
+        .replace(/\{MONSOON_ALL_LIST\}/g, monsoonStats.allStudentsList)
+        .replace(/\{MONSOON_TOTAL_COUNT\}/g, monsoonStats.totalStudentsCount);
+    }
+
+    // 3. Dynamic Universal Placeholder Evaluator: {EVENT_VIBHAG_LIST:Event Name} or {EVENT_SUMMARY:Event Name}
+    processed = processed.replace(/\{EVENT_VIBHAG_LIST:([^}]+)\}/gi, (match, evNameArg) => {
+      const s = generateEventScopedStats(reg, evNameArg.trim(), allRegs);
+      return s.vibhagStudentList;
+    }).replace(/\{EVENT_VIBHAG_STUDENT_LIST:([^}]+)\}/gi, (match, evNameArg) => {
+      const s = generateEventScopedStats(reg, evNameArg.trim(), allRegs);
+      return s.vibhagStudentList;
+    }).replace(/\{EVENT_SUMMARY:([^}]+)\}/gi, (match, evNameArg) => {
+      const s = generateEventScopedStats(reg, evNameArg.trim(), allRegs);
+      return s.eventRegistrationSummary;
+    }).replace(/\{EVENT_VIBHAG_SUMMARY:([^}]+)\}/gi, (match, evNameArg) => {
+      const s = generateEventScopedStats(reg, evNameArg.trim(), allRegs);
+      return s.vibhagStudentSummary;
+    }).replace(/\{EVENT_ALL_LIST:([^}]+)\}/gi, (match, evNameArg) => {
+      const s = generateEventScopedStats(reg, evNameArg.trim(), allRegs);
+      return s.allStudentsList;
+    }).replace(/\{EVENT_COUNT:([^}]+)\}/gi, (match, evNameArg) => {
+      const s = generateEventScopedStats(reg, evNameArg.trim(), allRegs);
+      return s.totalStudentsCount;
+    });
 
     return processed;
   };
@@ -21279,7 +22733,7 @@ function WhatsAppApplicantMessengerModal({ reg, onClose, C, auth, onLogSent, all
 
   const [customMessage, setCustomMessage] = useState(() => {
     if (reg.isInviteMode && defaultTpl) {
-      return formatTemplateString(defaultTpl.text, rawName, rawMobile, txnId, vibhag, stream, percentage, remarks);
+      return formatTemplateString(defaultTpl.text, rawName, rawMobile, txnId, vibhag, stream, percentage, remarks, null, initialEventScope, initialVibhagScope);
     }
     return buildTemplateForStatus(currentStatus, rawName, rawMobile, txnId, vibhag, stream, percentage, remarks);
   });
@@ -21288,7 +22742,7 @@ function WhatsAppApplicantMessengerModal({ reg, onClose, C, auth, onLogSent, all
     setSelectedTplId(tplId);
     const chosen = workspaceTemplates.find(t => t.id === tplId);
     if (chosen) {
-      setCustomMessage(formatTemplateString(chosen.text, rawName, recipientMobile, txnId, vibhag, stream, percentage, remarks));
+      setCustomMessage(formatTemplateString(chosen.text, rawName, recipientMobile, txnId, vibhag, stream, percentage, remarks, null, activeModalEvent, activeModalVibhag));
     }
   };
 
@@ -21394,18 +22848,22 @@ function WhatsAppApplicantMessengerModal({ reg, onClose, C, auth, onLogSent, all
 
     try { navigator.clipboard.writeText(customMessage); } catch(e){}
 
+    const msgTypeName = reg.isInviteMode 
+      ? "Official Invitation Pass" 
+      : `${currentStatus} Notice`;
+
+    if (typeof onLogSent === "function") {
+      try { onLogSent(reg, msgTypeName, customMessage); } catch(e){}
+    }
+
     if (launchMode === "app") {
       const appUrl = `whatsapp://send?phone=91${cleanPhone}&text=${encodeURIComponent(customMessage)}`;
       window.location.href = appUrl;
       return;
     }
 
-    const msgTypeName = reg.isInviteMode 
-      ? "Official Invitation Pass" 
-      : `${currentStatus} Notice`;
-
     if (typeof onLogSent === "function") {
-      try { onLogSent(reg, msgTypeName); } catch(e){}
+      try { onLogSent(reg, msgTypeName, customMessage); } catch(e){}
     }
 
     const webUrl = `https://web.whatsapp.com/send?phone=91${cleanPhone}&text=${encodeURIComponent(customMessage)}`;
@@ -21500,45 +22958,146 @@ function WhatsAppApplicantMessengerModal({ reg, onClose, C, auth, onLogSent, all
               borderRadius: 10,
               padding: "12px 14px",
               display: "flex",
-              alignItems: "center",
-              justifyContent: "space-between",
-              flexWrap: "wrap",
+              flexDirection: "column",
               gap: 10
             }}>
-              <div style={{display:"flex",alignItems:"center",gap:8,flex:1,minWidth:250}}>
-                <span style={{fontSize:".84rem",fontWeight:800,color:"#15803D",whiteSpace:"nowrap"}}>📝 Choose Template:</span>
-                <select
-                  value={selectedTplId}
-                  onChange={e => handleTemplateSelectChange(e.target.value)}
+              {/* Row 1: Choose Template & Reset Draft */}
+              <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:10,width:"100%",flexWrap:"wrap"}}>
+                <div style={{display:"flex",alignItems:"center",gap:8,flex:1,minWidth:240}}>
+                  <span style={{fontSize:".84rem",fontWeight:800,color:"#15803D",whiteSpace:"nowrap"}}>📝 Choose Template:</span>
+                  <select
+                    value={selectedTplId}
+                    onChange={e => handleTemplateSelectChange(e.target.value)}
+                    style={{
+                      flex: 1,
+                      padding: "7px 12px",
+                      borderRadius: 6,
+                      border: "1.5px solid #15803D",
+                      fontSize: ".84rem",
+                      fontWeight: 700,
+                      color: "#14532D",
+                      background: "white",
+                      cursor: "pointer",
+                      boxShadow: "0 1px 3px rgba(0,0,0,0.05)"
+                    }}
+                  >
+                    {workspaceTemplates.map(t => (
+                      <option key={t.id} value={t.id}>
+                        {t.name} {t.isDefault ? "★ (Default)" : ""}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => handleTemplateSelectChange(selectedTplId)}
                   style={{
-                    flex: 1,
-                    padding: "7px 12px",
-                    borderRadius: 6,
-                    border: "1.5px solid #15803D",
-                    fontSize: ".84rem",
-                    fontWeight: 700,
-                    color: "#14532D",
-                    background: "white",
-                    cursor: "pointer",
-                    boxShadow: "0 1px 3px rgba(0,0,0,0.05)"
+                    background:"white",
+                    border:"1px solid #86EFAC",
+                    color:"#15803D",
+                    padding:"6px 12px",
+                    borderRadius:6,
+                    fontSize:".76rem",
+                    fontWeight:700,
+                    cursor:"pointer",
+                    whiteSpace:"nowrap"
                   }}
+                  title="Reset to selected template content"
                 >
-                  {workspaceTemplates.map(t => (
-                    <option key={t.id} value={t.id}>
-                      {t.name} {t.isDefault ? "★ (Default)" : ""}
-                    </option>
-                  ))}
-                </select>
+                  ↺ Reset Draft
+                </button>
               </div>
 
-              <button
-                type="button"
-                onClick={() => handleTemplateSelectChange(selectedTplId)}
-                style={{background:"white",border:"1px solid #86EFAC",color:"#15803D",padding:"6px 12px",borderRadius:6,fontSize:".75rem",fontWeight:700,cursor:"pointer"}}
-                title="Reset to selected template content"
-              >
-                ↺ Reset Draft
-              </button>
+              {/* Row 2: Live Event Data Source & Geographic Vibhag Filter */}
+              <div style={{
+                display:"flex",
+                alignItems:"center",
+                justifyContent:"space-between",
+                gap:10,
+                paddingTop: 8,
+                borderTop: "1px dashed #BBF7D0",
+                width:"100%",
+                flexWrap:"wrap"
+              }}>
+                {/* Event Selector */}
+                <div style={{display:"flex",alignItems:"center",gap:6,flex:1,minWidth:200}}>
+                  <span style={{fontSize:".8rem",fontWeight:800,color:"#0D4B5E",whiteSpace:"nowrap"}}>🎯 Event:</span>
+                  <select
+                    value={activeModalEvent}
+                    onChange={e => {
+                      const newEv = e.target.value;
+                      setActiveModalEvent(newEv);
+                      const activeTpl = workspaceTemplates.find(t => t.id === selectedTplId) || defaultTpl;
+                      if (activeTpl) {
+                        setCustomMessage(formatTemplateString(activeTpl.text, rawName, recipientMobile, txnId, vibhag, stream, percentage, remarks, null, newEv, activeModalVibhag));
+                      }
+                    }}
+                    style={{
+                      flex: 1,
+                      padding: "5px 8px",
+                      borderRadius: 6,
+                      border: "1.5px solid #0D4B5E",
+                      fontSize: ".78rem",
+                      fontWeight: 800,
+                      color: "#0F766E",
+                      background: "white",
+                      cursor: "pointer"
+                    }}
+                    title="Switch event registrations source"
+                  >
+                    <option value="education2026">🎓 Education 2026</option>
+                    {(C.events || []).filter(evItem => evItem.id !== 'education2026' && !String(evItem.title || '').toLowerCase().includes('education')).map(evItem => (
+                      <option key={evItem.id || evItem.title} value={evItem.id || evItem.title}>
+                        📌 {evItem.title || evItem.id}
+                      </option>
+                    ))}
+                    <option value="all">🌐 All Events Combined</option>
+                  </select>
+                </div>
+
+                {/* Vibhag Filter */}
+                <div style={{display:"flex",alignItems:"center",gap:6,flex:1,minWidth:220}}>
+                  <span style={{fontSize:".8rem",fontWeight:800,color:"#15803D",whiteSpace:"nowrap"}}>📍 Vibhag:</span>
+                  <select
+                    value={activeModalVibhag}
+                    onChange={e => {
+                      const newV = e.target.value;
+                      setActiveModalVibhag(newV);
+                      const activeTpl = workspaceTemplates.find(t => t.id === selectedTplId) || defaultTpl;
+                      if (activeTpl) {
+                        setCustomMessage(formatTemplateString(activeTpl.text, rawName, recipientMobile, txnId, vibhag, stream, percentage, remarks, null, activeModalEvent, newV));
+                      }
+                    }}
+                    style={{
+                      flex: 1,
+                      padding: "5px 8px",
+                      borderRadius: 6,
+                      border: "1.5px solid #15803D",
+                      fontSize: ".78rem",
+                      fontWeight: 800,
+                      color: "#166534",
+                      background: "#F0FDF4",
+                      cursor: "pointer"
+                    }}
+                    title="Filter {VIBHAG_STUDENT_LIST} for a specific Vibhag (e.g. 10 MAHALAXMI)"
+                  >
+                    <option value="auto">🎯 Auto (Recipient's Vibhag)</option>
+                    <option value="10 MAHALAXMI">📍 10 MAHALAXMI</option>
+                    {(C.vibhags || [
+                      "01 KALWA", "02 WALPAKHADI", "03 BHANDUP", "04 KANJURMARG", "05 VIKHROLI",
+                      "06 GHATKOPAR", "07 CHEMBUR", "08 SION", "09 WORLI", "10 MAHALAXMI",
+                      "11 BYCULLA", "12 MUMBAI CENTRAL", "13 DADAR", "14 BANDRA", "15 RAMDEV NAGAR",
+                      "16 KHAR", "17 SANTACRUZ", "18 VILE PARLE", "19 ANDHERI", "20 JOGESHWARI",
+                      "21 GOREGAON", "22 MALAD", "23 KANDIVALI", "24 BORIVALI", "25 DAHISAR",
+                      "26 MIRA ROAD", "27 BHAYANDAR", "28 NAIGAON", "29 VASAI", "30 NALLASOPARA", "31 VIRAR"
+                    ]).filter(v => v !== "10 MAHALAXMI").map(v => (
+                      <option key={v} value={v}>📍 {v}</option>
+                    ))}
+                    <option value="all">🌐 All Vibhags Combined</option>
+                  </select>
+                </div>
+              </div>
             </div>
           ) : (
             <div style={{
@@ -21635,7 +23194,7 @@ function WhatsAppApplicantMessengerModal({ reg, onClose, C, auth, onLogSent, all
             {currentIndex > 0 && onSelectReg && (
               <button
                 type="button"
-                onClick={() => onSelectReg(allRegs[currentIndex - 1])}
+                onClick={() => onSelectReg(navList[currentIndex - 1])}
                 style={{padding:"9px 12px",background:"#F1F5F9",border:"1px solid #CBD5E1",borderRadius:8,fontSize:".8rem",fontWeight:700,cursor:"pointer"}}
                 title="Previous Applicant"
               >
@@ -21646,7 +23205,7 @@ function WhatsAppApplicantMessengerModal({ reg, onClose, C, auth, onLogSent, all
             {currentIndex >= 0 && currentIndex < totalCount - 1 && onSelectReg && (
               <button
                 type="button"
-                onClick={() => onSelectReg(allRegs[currentIndex + 1])}
+                onClick={() => onSelectReg(navList[currentIndex + 1])}
                 style={{padding:"9px 12px",background:"#F1F5F9",border:"1px solid #CBD5E1",borderRadius:8,fontSize:".8rem",fontWeight:700,cursor:"pointer"}}
                 title="Next Applicant"
               >
@@ -21678,7 +23237,7 @@ function WhatsAppApplicantMessengerModal({ reg, onClose, C, auth, onLogSent, all
               onClick={() => {
                 handleSendWhatsApp();
                 if (currentIndex >= 0 && currentIndex < totalCount - 1 && onSelectReg) {
-                  setTimeout(() => onSelectReg(allRegs[currentIndex + 1]), 400);
+                  setTimeout(() => onSelectReg(navList[currentIndex + 1]), 400);
                 }
               }}
               disabled={sendingApi}
@@ -23235,7 +24794,8 @@ function AdminRegistrations({ mob, C, setC, auth }) {
           onClose={() => setWhatsAppModalReg(null)} 
           C={C} 
           auth={auth}
-          allRegs={filteredRegs}
+          allRegs={regs}
+          recipientList={filteredRegs}
           onSelectReg={setWhatsAppModalReg}
           onLogSent={async (r, msgType) => {
             const updatedBy = auth?.email || "Admin";
@@ -23982,6 +25542,10 @@ function AdminCertificates({ mob, C, setC, auth }) {
     try {
       const d = await fbFetchRegistrations(auth?.idToken);
       setRegs(d || []);
+      if (typeof window !== 'undefined' && Array.isArray(d)) {
+        window.__MMP_REGS_CACHE__ = d;
+        window.__MMP_ALL_REGS_RAW__ = d;
+      }
     } catch(e) {
       console.error(e);
     }
@@ -24537,6 +26101,7 @@ function AdminCertificates({ mob, C, setC, auth }) {
         <BulkWhatsAppBroadcastModal
           event={activeEvent}
           recipients={selectedIds.length > 0 ? filteredRegs.filter(r => selectedIds.includes(r.id || r['Transaction ID'])) : filteredRegs}
+          allRegs={regs}
           C={C}
           auth={auth}
           onLogSent={async (r, msgType) => {
@@ -24581,7 +26146,9 @@ function AdminCertificates({ mob, C, setC, auth }) {
           onClose={() => setSelectedWhatsAppReg(null)}
           C={C}
           auth={auth}
-          allRegs={filteredRegs}
+          allRegs={regs}
+          recipientList={filteredRegs}
+          recipientList={filteredRegs}
           onSelectReg={(nextR) => setSelectedWhatsAppReg(nextR)}
           onLogSent={async (r, msgType) => {
             const updatedBy = auth?.email || "Admin";
@@ -24687,7 +26254,122 @@ const getContactGroups = (contact) => {
 };
 
 function AdminInviteLetters({ mob, C, setC, auth }) {
-  const [regs, setRegs] = useState([]);
+  const [regs, setRegs] = useState(() => {
+    try {
+      const cached = JSON.parse(localStorage.getItem("mmp_cached_registrations") || "[]");
+      if (Array.isArray(cached) && cached.length > 0) return cached;
+    } catch(e) {}
+    return [];
+  });
+
+  const handleDownloadSubworkspaceAuditFile = (ev, docTpl, contactsList) => {
+    const wsTitle = ev?.title || "Workspace";
+    const subWsName = docTpl?.name || "Invite Pass";
+    const subAuditKey = `mmp_wa_audit_${ev?.id || ev?.title || 'default'}_${docTpl?.id || 'invite'}`;
+    let loggedEntries = [];
+    try {
+      loggedEntries = JSON.parse(localStorage.getItem(subAuditKey) || "[]");
+    } catch(e) {}
+
+    const now = new Date();
+    const exportTime = now.toLocaleString("en-IN", { dateStyle: "medium", timeStyle: "short" });
+
+    // Calculate metrics
+    const totalContacts = (contactsList || []).length;
+    let seenCount = 0;
+    let sentCount = 0;
+
+    (contactsList || []).forEach(c => {
+      const openCount = parseInt(c.passOpenCount || 0, 10);
+      if (openCount > 0) seenCount++;
+      if (c.whatsAppCount > 0 || c.lastWhatsAppAt) sentCount++;
+    });
+
+    let lines = [];
+    lines.push("=".repeat(80));
+    lines.push("🏛️  MUMBAI MEGHWAL PANCHAYAT (CENTRAL WORKING COMMITTEE)");
+    lines.push("OFFICIAL SUB-WORKSPACE WHATSAPP DISPATCH & VERIFICATION AUDIT TRAIL");
+    lines.push("=".repeat(80));
+    lines.push(`📁 WORKSPACE: ${wsTitle}`);
+    lines.push(`🎟️ SUB-WORKSPACE / TEMPLATE: ${subWsName}`);
+    lines.push(`👥 TARGET AUDIENCE: ${docTpl?.customTpl?.targetAudience || 'Assigned / Group'}`);
+    lines.push(`📅 REPORT GENERATED: ${exportTime}`);
+    lines.push(`👤 GENERATED BY: ${auth?.email || 'Super Admin'}`);
+    lines.push(`📊 TOTAL CONTACTS IN SUB-WORKSPACE: ${totalContacts}`);
+    lines.push(`📤 WHATSAPP DISPATCHES RECORDED: ${Math.max(sentCount, loggedEntries.length)}`);
+    lines.push(`👁️ RECIPIENTS WHO VIEWED / OPENED PASS: ${seenCount} of ${totalContacts}`);
+    lines.push("=".repeat(80));
+    lines.push("");
+
+    if (totalContacts === 0) {
+      lines.push("No contacts found in this sub-workspace.");
+    } else {
+      contactsList.forEach((c, idx) => {
+        const name = c['Full Name'] || c.name || 'Invitee';
+        const designation = c.Designation || c.designation || 'Member / Invitee';
+        const mobile = c['Mobile Number'] || c.phone || c.mobile || 'N/A';
+        const txnId = c['Transaction ID'] || c.transactionId || c.id || 'N/A';
+        const vibhag = (typeof resolveGuestVibhag === 'function' ? resolveGuestVibhag(c) : (c.vibhag || c.Vibhag)) || 'General';
+        const openCount = parseInt(c.passOpenCount || 0, 10);
+        const lastOpenedAt = c.lastPassOpenedAt 
+          ? new Date(c.lastPassOpenedAt).toLocaleString("en-IN", { dateStyle: "medium", timeStyle: "short" }) 
+          : "Not opened yet";
+        
+        const openStatus = openCount > 0 
+          ? `🟢 SEEN & OPENED BY INVITEE (${openCount} time(s) • Last Seen: ${lastOpenedAt})`
+          : (c.whatsAppCount > 0 || c.lastWhatsAppAt)
+            ? `🟡 SENT TO WHATSAPP • PASS LINK NOT YET OPENED BY INVITEE`
+            : `⚪ QUEUED (Ready to Dispatch)`;
+
+        // Find logged dispatch content
+        const entry = loggedEntries.find(l => l.recipientTxnId === txnId || l.recipientMobile === String(mobile).replace(/\D/g, '').slice(-10));
+        const messageText = entry?.messageContent || c.lastWhatsAppContent || formatWhatsAppTemplateForContact({
+          tplString: "",
+          reg: { ...c, customDocId: (docTpl?.id !== 'invite' && docTpl?.id !== 'cert') ? docTpl?.id : null },
+          allRegs: regs,
+          C: C
+        });
+
+        const sentDate = entry?.timeFormatted || (c.lastWhatsAppAt ? new Date(c.lastWhatsAppAt).toLocaleString("en-IN", { dateStyle: "medium", timeStyle: "short" }) : "Not dispatched yet");
+        const sender = entry?.sender || (c.lastWhatsAppAt ? (auth?.email || "Admin") : "N/A");
+
+        lines.push("-".repeat(80));
+        lines.push(`[RECIPIENT #${idx + 1}] ${name.toUpperCase()} (${txnId})`);
+        lines.push("-".repeat(80));
+        lines.push(`• Participant Name: ${name}`);
+        lines.push(`• Designation: ${designation}`);
+        lines.push(`• Mobile Number: +91 ${String(mobile).replace(/\D/g, '').slice(-10)}`);
+        lines.push(`• Pass ID / Txn ID: ${txnId}`);
+        lines.push(`• Vibhag / Group: ${vibhag}`);
+        lines.push(`• WhatsApp Sent Date & Time: ${sentDate}`);
+        lines.push(`• Dispatched By: ${sender}`);
+        lines.push(`• View / Receipt Status: ${openStatus}`);
+        lines.push("");
+        lines.push("📜 EXACT WHATSAPP MESSAGE CONTENT DISPATCHED:");
+        lines.push("─".repeat(76));
+        lines.push(messageText.trim());
+        lines.push("─".repeat(76));
+        lines.push("");
+      });
+    }
+
+    lines.push("=".repeat(80));
+    lines.push("END OF AUDIT LOG • MUMBAI MEGHWAL PANCHAYAT");
+    lines.push("=".repeat(80));
+
+    const finalReport = lines.join("\n");
+    const cleanFileName = `WhatsApp_Audit_Log_${wsTitle.replace(/[^a-zA-Z0-9]/g, '_')}_${subWsName.replace(/[^a-zA-Z0-9]/g, '_')}_${now.toISOString().slice(0, 10)}.txt`;
+
+    const blob = new Blob([finalReport], { type: "text/plain;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = cleanFileName;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
@@ -24700,6 +26382,10 @@ function AdminInviteLetters({ mob, C, setC, auth }) {
   const [showImportGuestModal, setShowImportGuestModal] = useState(false);
   const [guestForm, setGuestForm] = useState({ fullName: "", mobile: "", email: "", address: "", designation: "", group: "CWC Member", groups: ["CWC Member"] });
   const [editingGuest, setEditingGuest] = useState(null);
+  const [selectedDirectoryGuestIds, setSelectedDirectoryGuestIds] = useState([]);
+  const [bulkGroupToAdd, setBulkGroupToAdd] = useState("");
+  const [applyingBulkGroup, setApplyingBulkGroup] = useState(false);
+  const [customBulkGroupInput, setCustomBulkGroupInput] = useState("");
   const [directoryGroupFilter, setDirectoryGroupFilter] = useState("All");
   const [directorySearch, setDirectorySearch] = useState("");
   const [expandedCardGroups, setExpandedCardGroups] = useState({});
@@ -24740,6 +26426,32 @@ function AdminInviteLetters({ mob, C, setC, auth }) {
   const [inviteReleasePillFilter, setInviteReleasePillFilter] = useState(null);
 
   const globalGuests = regs.filter(r => r.isGlobalGuest === true);
+
+  const getResolvedContactGroups = (contact) => {
+    if (!contact) return ["General Committee"];
+    let masterGroups = [];
+    if (contact.globalGuestId && Array.isArray(globalGuests) && globalGuests.length > 0) {
+      const masterG = globalGuests.find(g => g.id === contact.globalGuestId);
+      if (masterG) {
+        if (Array.isArray(masterG.groups) && masterG.groups.length > 0) masterGroups = masterG.groups;
+        else if (Array.isArray(masterG.Groups) && masterG.Groups.length > 0) masterGroups = masterG.Groups;
+        else if (masterG.Group || masterG.Category) {
+          masterGroups = String(masterG.Group || masterG.Category).split(/[,/|;]+/).map(s => s.trim()).filter(Boolean);
+        }
+      }
+    }
+    let ownGroups = [];
+    if (Array.isArray(contact.groups) && contact.groups.length > 0) ownGroups = contact.groups.map(s => String(s).trim()).filter(Boolean);
+    else if (Array.isArray(contact.Groups) && contact.Groups.length > 0) ownGroups = contact.Groups.map(s => String(s).trim()).filter(Boolean);
+    else {
+      const raw = contact.Group || contact.group || contact.Category || contact.category || contact.Team || contact.team || contact.Vibhag || "";
+      if (raw && typeof raw === 'string') {
+        ownGroups = raw.split(/[,/|;]+/).map(s => s.trim()).filter(Boolean);
+      }
+    }
+    const combined = Array.from(new Set([...ownGroups, ...masterGroups])).filter(Boolean);
+    return combined.length > 0 ? combined : ["General Committee"];
+  };
 
   const customEvents = C.events || [];
   const defaultDonorWorkspace = {
@@ -24786,6 +26498,51 @@ function AdminInviteLetters({ mob, C, setC, auth }) {
     }))
   ];
   const currentDocTpl = availableDocTemplates.find(d => d.id === activeDocType) || availableDocTemplates[0];
+  const currentDocName = currentDocTpl?.name || "this sub-workspace";
+
+  const resolveGuestVibhag = (r) => {
+    if (!r) return "";
+    const cleanDirect = String(r.vibhag || r['Vibhag'] || r['Vibhag New'] || '').trim();
+    const isNonGeo = ['cwc member', 'committee', 'trustee', 'general committee', 'unspecified', 'cwc', '-', 'blank'].includes(cleanDirect.toLowerCase());
+    if (cleanDirect && !isNonGeo) {
+      return cleanDirect;
+    }
+    const globalList = regs.filter(x => x.isGlobalGuest);
+    if (r.globalGuestId) {
+      const g = globalList.find(x => x.id === r.globalGuestId);
+      const gV = String(g?.vibhag || g?.['Vibhag'] || g?.['Vibhag New'] || '').trim();
+      if (gV && !['cwc member', 'committee', 'trustee', 'general committee', 'unspecified', 'cwc', '-', 'blank'].includes(gV.toLowerCase())) {
+        return gV;
+      }
+    }
+    const rName = String(r['Full Name'] || r['Participant Name'] || r.name || '').trim().toLowerCase();
+    const gByName = globalList.find(x => {
+      const gName = String(x['Full Name'] || x.Name || '').trim().toLowerCase();
+      return gName && (gName === rName || gName.includes(rName) || rName.includes(gName));
+    });
+    if (gByName) {
+      const gV = String(gByName.vibhag || gByName['Vibhag'] || gByName['Vibhag New'] || '').trim();
+      if (gV && !['cwc member', 'committee', 'trustee', 'general committee', 'unspecified', 'cwc', '-', 'blank'].includes(gV.toLowerCase())) {
+        return gV;
+      }
+    }
+
+    const bio = `${r.Address || ''} ${r.address || ''} ${r.Designation || ''} ${r.designation || ''}`.toLowerCase();
+    const knownVibhags = C.vibhags || [
+      "01 KALWA", "02 WALPAKHADI", "03 BHANDUP", "04 KANJURMARG", "05 VIKHROLI",
+      "06 GHATKOPAR", "07 CHEMBUR", "08 SION", "09 WORLI", "10 MAHALAXMI",
+      "11 BYCULLA", "12 MUMBAI CENTRAL", "13 DADAR", "14 BANDRA", "15 RAMDEV NAGAR",
+      "16 KHAR", "17 SANTACRUZ", "18 VILE PARLE", "19 ANDHERI", "20 JOGESHWARI",
+      "21 GOREGAON", "22 MALAD", "23 KANDIVALI", "24 BORIVALI", "25 DAHISAR",
+      "26 MIRA ROAD", "27 BHAYANDAR", "28 NAIGAON", "29 VASAI", "30 NALLASOPARA", "31 VIRAR"
+    ];
+    for (const kv of knownVibhags) {
+      const kvClean = kv.replace(/^\d+[\s_-]*/, '').trim().toLowerCase();
+      if (kvClean.length >= 4 && bio.includes(kvClean)) return kv;
+    }
+
+    return cleanDirect && !isNonGeo ? cleanDirect : "";
+  };
 
   const getDocReleaseStatus = (r, docId) => {
     if (!r) return { isReleased: false, isHeld: false };
@@ -24825,8 +26582,58 @@ function AdminInviteLetters({ mob, C, setC, auth }) {
     if (r.Status !== "Approved" && r.status !== "Approved" && !r.isSpecialGuest) return false;
     // Exclude the raw global directory pool entry itself
     if (r.isGlobalGuest) return false;
+
+    // Only Approved registrations or special/committee guests
+    if (r.Status !== "Approved" && r.status !== "Approved" && !r.isSpecialGuest) return false;
+    // Exclude the raw global directory pool entry itself
+    if (r.isGlobalGuest) return false;
+
+    // Check workspace membership
     let evName = r.eventName || r.eventTitle || r.eventId;
-    return r.eventId === ev.id || evName === ev.title || evName === ev.titleGu;
+    const matchesEvent = r.eventId === ev.id || evName === ev.title || evName === ev.titleGu;
+    if (!matchesEvent) return false;
+
+    // ── Template / Sub-Workspace Contact Isolation ──
+    const activeDocId = currentDocTpl?.id || "invite";
+    const activeTplObj = currentDocTpl?.customTpl;
+
+    // If viewing a custom template (e.g. Local Vibhag Panchyat, Gate Pass, abcd, etc.)
+    if (activeDocId !== "invite" && activeDocId !== "cert") {
+      const targetAudienceMode = activeTplObj?.targetAudience || "assigned"; // "assigned" | "group" | "all"
+      if (targetAudienceMode === "all") return true;
+      
+      // Check if contact was explicitly imported/assigned to this sub-workspace
+      const isAssigned = r.targetTemplateId === activeDocId || (Array.isArray(r.assignedDocTypes) && r.assignedDocTypes.includes(activeDocId));
+      if (isAssigned) return true;
+
+      // If in group mode, also include any contact whose groups match template name or targetGroup
+      const targetGroupName = activeTplObj?.targetGroup || activeTplObj?.name || currentDocTpl?.name || "";
+      const rGroups = typeof getResolvedContactGroups === 'function' ? getResolvedContactGroups(r) : getContactGroups(r);
+      if (targetAudienceMode === "group" && targetGroupName) {
+        if (rGroups.some(g => String(g).trim().toLowerCase() === String(targetGroupName).trim().toLowerCase())) return true;
+      }
+      return false;
+    }
+
+    // If viewing default "Official Invite Letter", show entries assigned to default or not specifically isolated to other custom templates
+    if (activeDocId === "invite") {
+      if (r.targetTemplateId && r.targetTemplateId !== "invite" && r.targetTemplateId !== "cert") {
+        if (!Array.isArray(r.assignedDocTypes) || !r.assignedDocTypes.includes("invite")) {
+          return false;
+        }
+      }
+    }
+
+    // If viewing default "Official Invite Letter", show entries assigned to default or not specifically isolated to other custom templates
+    if (activeDocId === "invite") {
+      if (r.targetTemplateId && r.targetTemplateId !== "invite" && r.targetTemplateId !== "cert") {
+        if (!Array.isArray(r.assignedDocTypes) || !r.assignedDocTypes.includes("invite")) {
+          return false;
+        }
+      }
+    }
+
+    return true;
   });
 
   const filteredRegs = inviteRegs.filter(r => {
@@ -24863,7 +26670,16 @@ function AdminInviteLetters({ mob, C, setC, auth }) {
   const fetchRegs = async () => {
     try {
       const d = await fbFetchRegistrations(auth?.idToken);
-      setRegs(d || []);
+      const list = d || [];
+      setRegs(list);
+      if (typeof window !== 'undefined') {
+        window.__MMP_INVITE_REGS__ = list;
+        window.__MMP_ALL_REGS_RAW__ = list;
+        window.__MMP_REGS_CACHE__ = list;
+      }
+      try {
+        localStorage.setItem("mmp_cached_registrations", JSON.stringify(list));
+      } catch(e) {}
     } catch(e) {
       console.error(e);
     }
@@ -24906,7 +26722,9 @@ function AdminInviteLetters({ mob, C, setC, auth }) {
           "Organization": guestForm.designation?.trim() || "",
           "Group": groupStr,
           "Category": groupStr,
-          "Vibhag": assignedGroups[0] || "General Committee",
+          "Vibhag": guestForm.vibhag || editingGuest.vibhag || editingGuest['Vibhag'] || assignedGroups[0] || "General Committee",
+          "Vibhag New": guestForm.vibhag || editingGuest.vibhag || editingGuest['Vibhag'] || assignedGroups[0] || "General Committee",
+          vibhag: guestForm.vibhag || editingGuest.vibhag || editingGuest['Vibhag'] || assignedGroups[0] || "General Committee",
           groups: assignedGroups,
           Groups: assignedGroups
         };
@@ -24916,7 +26734,7 @@ function AdminInviteLetters({ mob, C, setC, auth }) {
         await fbUpdateRegistration(editingGuest.id, cleanCopy, auth?.idToken);
         alert("✅ Contact details and groups updated successfully!");
         setEditingGuest(null);
-        setGuestForm({ fullName: "", mobile: "", email: "", address: "", designation: "", group: "CWC Member", groups: ["CWC Member"] });
+        setGuestForm({ fullName: "", mobile: "", email: "", address: "", designation: "", vibhag: "", group: "CWC Member", groups: ["CWC Member"] });
         fetchRegs();
       } else {
         // Create new contact
@@ -24933,7 +26751,9 @@ function AdminInviteLetters({ mob, C, setC, auth }) {
           "Organization": guestForm.designation?.trim() || "",
           "Group": groupStr,
           "Category": groupStr,
-          "Vibhag": assignedGroups[0] || "General Committee",
+          "Vibhag": guestForm.vibhag || assignedGroups[0] || "General Committee",
+          "Vibhag New": guestForm.vibhag || assignedGroups[0] || "General Committee",
+          vibhag: guestForm.vibhag || assignedGroups[0] || "General Committee",
           groups: assignedGroups,
           Groups: assignedGroups,
           isGlobalGuest: true,
@@ -24943,7 +26763,7 @@ function AdminInviteLetters({ mob, C, setC, auth }) {
 
         await fbSubmitRegistration(newGlobalGuest, auth?.idToken);
         alert("✅ Global guest added to directory with assigned groups!");
-        setGuestForm({ fullName: "", mobile: "", email: "", address: "", designation: "", group: "CWC Member", groups: ["CWC Member"] });
+        setGuestForm({ fullName: "", mobile: "", email: "", address: "", designation: "", vibhag: "", group: "CWC Member", groups: ["CWC Member"] });
         fetchRegs();
       }
     } catch (err) {
@@ -25097,9 +26917,12 @@ function AdminInviteLetters({ mob, C, setC, auth }) {
       return alert("Please select at least one contact group to import.");
     }
 
+    const currentActiveDoc = activeDocType || "invite";
+    const currentDocName = currentDocTpl?.name || "this sub-workspace";
+
     const matchedGuestsMap = new Map();
     globalGuests.forEach(g => {
-      const gGroups = getContactGroups(g);
+      const gGroups = getResolvedContactGroups ? getResolvedContactGroups(g) : getContactGroups(g);
       const isMatched = groupsList.some(grp => gGroups.includes(grp));
       if (isMatched && !matchedGuestsMap.has(g.id)) {
         matchedGuestsMap.set(g.id, g);
@@ -25111,45 +26934,95 @@ function AdminInviteLetters({ mob, C, setC, auth }) {
       return alert("No contacts found in the selected group(s).");
     }
 
-    const unimported = allMatchedGuests.filter(g => !regs.some(r => r.globalGuestId === g.id && r.eventId === ev.id));
-    if (unimported.length === 0) {
-      return alert("All " + allMatchedGuests.length + " contacts from the selected group(s) are already imported into this workspace!");
-    }
-
     const groupNamesStr = groupsList.length === 1 ? groupsList[0] : (groupsList.length + " groups (" + groupsList.slice(0, 3).join(", ") + (groupsList.length > 3 ? "..." : "") + ")");
-    if (!window.confirm("Import " + unimported.length + " contact(s) from " + groupNamesStr + " into " + ev.title + "?")) return;
+    if (!window.confirm("Attach / Import " + allMatchedGuests.length + " contact(s) from " + groupNamesStr + " into \"" + currentDocName + "\" (" + ev.title + ")?")) return;
 
     setImportingContactGroups(true);
     let successCount = 0;
-    for (const g of unimported) {
-      const newEventGuest = {
-        ...g,
-        eventId: ev.id,
-        eventName: ev.title || "Unknown Event",
-        eventTitle: ev.title || "Unknown Event",
-        Status: "Approved",
-        isSpecialGuest: true,
-        globalGuestId: g.id,
-        _submittedAt: Date.now()
-      };
-      if (ev.guestMapping) {
-        if (ev.guestMapping.fullName) newEventGuest[ev.guestMapping.fullName] = g["Full Name"];
-        if (ev.guestMapping.designation) newEventGuest[ev.guestMapping.designation] = g.Designation;
-        if (ev.guestMapping.mobile) newEventGuest[ev.guestMapping.mobile] = g.Mobile;
-        if (ev.guestMapping.email) newEventGuest[ev.guestMapping.email] = g.Email;
-        if (ev.guestMapping.address) newEventGuest[ev.guestMapping.address] = g.Address;
-      }
-      delete newEventGuest.isGlobalGuest;
-      delete newEventGuest.id;
-      try {
-        await fbSubmitRegistration(newEventGuest, auth?.idToken);
-        successCount++;
-      } catch(e) {
-        console.error("Error importing contact:", e);
+    const newlyAddedOrUpdatedRegs = [];
+
+    for (const g of allMatchedGuests) {
+      const existingReg = regs.find(r => (r.globalGuestId === g.id || r["Full Name"] === g["Full Name"] || r.name === g["Full Name"]) && r.eventId === ev.id);
+      if (existingReg) {
+        const curAssigned = Array.isArray(existingReg.assignedDocTypes) ? existingReg.assignedDocTypes : [existingReg.targetTemplateId || "invite"];
+        const updatedAssigned = Array.from(new Set([...curAssigned, currentActiveDoc]));
+        const resolvedG = getResolvedContactGroups ? getResolvedContactGroups(g) : getContactGroups(g);
+        const updatedGroups = Array.from(new Set([...(existingReg.groups || []), ...resolvedG]));
+        const gVibhag = g.vibhag || g['Vibhag'] || g['Vibhag New'] || "";
+        const updatedReg = {
+          ...existingReg,
+          assignedDocTypes: updatedAssigned,
+          targetTemplateId: currentActiveDoc,
+          vibhag: gVibhag || existingReg.vibhag || existingReg['Vibhag'],
+          Vibhag: gVibhag || existingReg['Vibhag'] || existingReg.vibhag,
+          "Vibhag New": gVibhag || existingReg['Vibhag New'] || existingReg.vibhag,
+          groups: updatedGroups,
+          Groups: updatedGroups,
+          Group: updatedGroups.join(", ")
+        };
+        const cleanCopy = { ...updatedReg };
+        delete cleanCopy.id;
+        delete cleanCopy._submittedAt;
+        try {
+          await fbUpdateRegistration(existingReg.id, cleanCopy, auth?.idToken);
+          newlyAddedOrUpdatedRegs.push(updatedReg);
+          successCount++;
+        } catch(e) {
+          console.error("Error updating template assignment:", e);
+        }
+      } else {
+        const newEventGuest = {
+          ...g,
+          id: g.id || ("reg_" + Date.now() + "_" + Math.random().toString(36).substr(2, 5)),
+          eventId: ev.id,
+          eventName: ev.title || "Unknown Event",
+          eventTitle: ev.title || "Unknown Event",
+          Status: "Approved",
+          status: "Approved",
+          isSpecialGuest: true,
+          globalGuestId: g.id,
+          targetTemplateId: currentActiveDoc,
+          assignedDocTypes: [currentActiveDoc],
+          _submittedAt: Date.now()
+        };
+        if (ev.guestMapping) {
+          if (ev.guestMapping.fullName) newEventGuest[ev.guestMapping.fullName] = g["Full Name"];
+          if (ev.guestMapping.designation) newEventGuest[ev.guestMapping.designation] = g.Designation;
+          if (ev.guestMapping.mobile) newEventGuest[ev.guestMapping.mobile] = g.Mobile;
+          if (ev.guestMapping.email) newEventGuest[ev.guestMapping.email] = g.Email;
+          if (ev.guestMapping.address) newEventGuest[ev.guestMapping.address] = g.Address;
+        }
+        const submitPayload = { ...newEventGuest };
+        delete submitPayload.isGlobalGuest;
+        delete submitPayload.id;
+        try {
+          const res = await fbSubmitRegistration(submitPayload, auth?.idToken);
+          if (res?.name) {
+            newEventGuest.id = res.name.split("/").pop();
+          }
+          newlyAddedOrUpdatedRegs.push(newEventGuest);
+          successCount++;
+        } catch(e) {
+          console.error("Error importing contact:", e);
+        }
       }
     }
+
+    setRegs(prev => {
+      let merged = [...prev];
+      newlyAddedOrUpdatedRegs.forEach(item => {
+        const idx = merged.findIndex(r => r.id === item.id || (r.globalGuestId === item.globalGuestId && r.eventId === item.eventId));
+        if (idx >= 0) {
+          merged[idx] = { ...merged[idx], ...item };
+        } else {
+          merged = [item, ...merged];
+        }
+      });
+      return merged;
+    });
+
     setImportingContactGroups(false);
-    alert("✅ Successfully imported " + successCount + " contacts into " + ev.title + "!");
+    alert("✅ Successfully attached / imported " + successCount + " contact(s) into \"" + currentDocName + "\"!");
     setShowImportContactGroupModal(false);
     setSelectedGroupsToImport([]);
     fetchRegs();
@@ -25475,6 +27348,104 @@ This cannot be undone.`)) return;
     setDownloadingBulk(false);
   };
 
+  
+  const handleQuickAddGroupToContact = async (guest, groupName) => {
+    if (!guest || !groupName || !groupName.trim()) return;
+    const cleanGroup = groupName.trim();
+    const curGroups = getContactGroups(guest);
+    if (curGroups.includes(cleanGroup)) return;
+
+    const updatedGroups = [...curGroups, cleanGroup];
+    const groupStr = updatedGroups.join(", ");
+    const updatedData = {
+      ...guest,
+      Group: groupStr,
+      Category: groupStr,
+      groups: updatedGroups,
+      Groups: updatedGroups
+    };
+    const cleanCopy = { ...updatedData };
+    delete cleanCopy.id;
+    delete cleanCopy._submittedAt;
+
+    try {
+      await fbUpdateRegistration(guest.id, cleanCopy, auth?.idToken);
+      setRegs(prev => prev.map(r => r.id === guest.id ? { ...r, ...updatedData } : r));
+    } catch(err) {
+      alert("Failed to update group: " + err.message);
+    }
+  };
+
+  const handleQuickRemoveGroupFromContact = async (guest, groupToRemove) => {
+    if (!guest || !groupToRemove) return;
+    const curGroups = getContactGroups(guest);
+    const updatedGroups = curGroups.filter(g => g !== groupToRemove);
+    const finalGroups = updatedGroups.length > 0 ? updatedGroups : ["General Committee"];
+    const groupStr = finalGroups.join(", ");
+    const updatedData = {
+      ...guest,
+      Group: groupStr,
+      Category: groupStr,
+      groups: finalGroups,
+      Groups: finalGroups
+    };
+    const cleanCopy = { ...updatedData };
+    delete cleanCopy.id;
+    delete cleanCopy._submittedAt;
+
+    try {
+      await fbUpdateRegistration(guest.id, cleanCopy, auth?.idToken);
+      setRegs(prev => prev.map(r => r.id === guest.id ? { ...r, ...updatedData } : r));
+    } catch(err) {
+      alert("Failed to remove group: " + err.message);
+    }
+  };
+
+  const handleApplyBulkGroupToSelected = async (targetGroup) => {
+    const cleanGroup = (targetGroup || bulkGroupToAdd || customBulkGroupInput || "").trim();
+    if (!cleanGroup) return alert("Please select or type a group name to assign.");
+    if (selectedDirectoryGuestIds.length === 0) return alert("Please select at least one contact.");
+
+    const targetGuests = globalGuests.filter(g => selectedDirectoryGuestIds.includes(g.id));
+    if (targetGuests.length === 0) return;
+
+    if (!window.confirm(`Assign group "${cleanGroup}" to ${targetGuests.length} selected contact(s)?`)) return;
+
+    setApplyingBulkGroup(true);
+    let successCount = 0;
+    try {
+      for (const g of targetGuests) {
+        const curGroups = getContactGroups(g);
+        if (curGroups.includes(cleanGroup)) continue;
+
+        const updatedGroups = [...curGroups, cleanGroup];
+        const groupStr = updatedGroups.join(", ");
+        const updatedData = {
+          ...g,
+          Group: groupStr,
+          Category: groupStr,
+          groups: updatedGroups,
+          Groups: updatedGroups
+        };
+        const cleanCopy = { ...updatedData };
+        delete cleanCopy.id;
+        delete cleanCopy._submittedAt;
+
+        await fbUpdateRegistration(g.id, cleanCopy, auth?.idToken);
+        setRegs(prev => prev.map(r => r.id === g.id ? { ...r, ...updatedData } : r));
+        successCount++;
+      }
+      alert(`✅ Successfully added group "${cleanGroup}" to ${successCount} contact(s)!`);
+      setSelectedDirectoryGuestIds([]);
+      setBulkGroupToAdd("");
+      setCustomBulkGroupInput("");
+    } catch(err) {
+      alert("Bulk group assignment error: " + err.message);
+    } finally {
+      setApplyingBulkGroup(false);
+    }
+  };
+
   const renderGlobalGuestsModal = () => {
     // Extract unique groups across all global guests for the filter bar
     const allGroupsSet = new Set();
@@ -25505,7 +27476,7 @@ This cannot be undone.`)) return;
                  setShowGlobalGuestsModal(false); 
                  setShowDirectoryModal(false);
                  setEditingGuest(null);
-                 setGuestForm({ fullName: "", mobile: "", email: "", address: "", designation: "", group: "CWC Member", groups: ["CWC Member"] });
+                 setGuestForm({ fullName: "", mobile: "", email: "", address: "", designation: "", vibhag: "", group: "CWC Member", groups: ["CWC Member"] });
                }} 
                style={{background:"#F1F5F9",border:"none",borderRadius:"50%",width:34,height:34,cursor:"pointer",fontWeight:800,fontSize:"1.1rem",color:"#475569"}}
              >
@@ -25522,7 +27493,7 @@ This cannot be undone.`)) return;
                     <span style={{fontSize:".82rem",color:"#1E40AF",fontWeight:800}}>✏️ Editing Contact: {editingGuest["Full Name"]}</span>
                     <button type="button" onClick={() => {
                       setEditingGuest(null);
-                      setGuestForm({ fullName: "", mobile: "", email: "", address: "", designation: "", group: "CWC Member", groups: ["CWC Member"] });
+                      setGuestForm({ fullName: "", mobile: "", email: "", address: "", designation: "", vibhag: "", group: "CWC Member", groups: ["CWC Member"] });
                     }} style={{background:"none",border:"none",color:"#EF4444",fontSize:".75rem",fontWeight:700,cursor:"pointer"}}>Cancel Edit</button>
                   </div>
                 )}
@@ -25646,6 +27617,30 @@ This cannot be undone.`)) return;
                       + Add
                     </button>
                   </div>
+                </div>
+
+                {/* Vibhag Selection from Standard Library */}
+                <div>
+                  <label style={{display:"block",fontSize:".82rem",fontWeight:700,marginBottom:4,color:"#15803D"}}>
+                    📍 Assigned Vibhag (Select from Standard Library)
+                  </label>
+                  <select
+                    value={guestForm.vibhag || ""}
+                    onChange={e => setGuestForm({ ...guestForm, vibhag: e.target.value })}
+                    style={{width:"100%",padding:"8px 12px",borderRadius:8,border:"1.5px solid #15803D",background:"#F0FDF4",color:"#166534",fontWeight:700,fontSize:".85rem",cursor:"pointer",boxSizing:"border-box"}}
+                  >
+                    <option value="">-- Select Assigned Vibhag (e.g. 10 MAHALAXMI) --</option>
+                    {(C.vibhags || [
+                      "01 KALWA", "02 WALPAKHADI", "03 BHANDUP", "04 KANJURMARG", "05 VIKHROLI",
+                      "06 GHATKOPAR", "07 CHEMBUR", "08 SION", "09 WORLI", "10 MAHALAXMI",
+                      "11 BYCULLA", "12 MUMBAI CENTRAL", "13 DADAR", "14 BANDRA", "15 RAMDEV NAGAR",
+                      "16 KHAR", "17 SANTACRUZ", "18 VILE PARLE", "19 ANDHERI", "20 JOGESHWARI",
+                      "21 GOREGAON", "22 MALAD", "23 KANDIVALI", "24 BORIVALI", "25 DAHISAR",
+                      "26 MIRA ROAD", "27 BHAYANDAR", "28 NAIGAON", "29 VASAI", "30 NALLASOPARA", "31 VIRAR"
+                    ]).map(v => (
+                      <option key={v} value={v}>📍 {v}</option>
+                    ))}
+                  </select>
                 </div>
 
                 <div style={{display:"flex",gap:12}}>
@@ -25805,8 +27800,80 @@ This cannot be undone.`)) return;
                 </div>
               </div>
 
+              {/* Sticky Bulk Group Assignment Toolbar */}
+              {selectedDirectoryGuestIds.length > 0 && (
+                <div style={{background:"#EFF6FF",border:"1.5px solid #3B82F6",borderRadius:10,padding:"8px 12px",display:"flex",alignItems:"center",justifyContent:"space-between",flexWrap:"wrap",gap:8,boxShadow:"0 2px 8px rgba(59,130,246,0.15)",marginBottom:8}}>
+                  <div style={{fontSize:".8rem",color:"#1E40AF",fontWeight:800,display:"flex",alignItems:"center",gap:6}}>
+                    <span>🏷️</span> Assign Group to Selected (<strong>{selectedDirectoryGuestIds.length}</strong> contacts):
+                  </div>
+                  <div style={{display:"flex",alignItems:"center",gap:6,flexWrap:"wrap"}}>
+                    <select
+                      value={bulkGroupToAdd}
+                      onChange={e => { setBulkGroupToAdd(e.target.value); if (e.target.value !== '__custom__') setCustomBulkGroupInput(''); }}
+                      style={{padding:"4px 8px",borderRadius:6,border:"1px solid #93C5FD",fontSize:".76rem",fontWeight:700,background:"white",color:"#1E3A8A"}}
+                    >
+                      <option value="">-- Choose Group --</option>
+                      {uniqueGroups.map(grp => (
+                        <option key={grp} value={grp}>👥 {grp}</option>
+                      ))}
+                      <option value="__custom__">➕ + Type New Group...</option>
+                    </select>
+                    {bulkGroupToAdd === '__custom__' && (
+                      <input
+                        type="text"
+                        placeholder="Enter group name..."
+                        value={customBulkGroupInput}
+                        onChange={e => setCustomBulkGroupInput(e.target.value)}
+                        style={{padding:"4px 8px",borderRadius:6,border:"1.5px solid #2563EB",fontSize:".76rem",width:150}}
+                      />
+                    )}
+                    <button
+                      type="button"
+                      disabled={applyingBulkGroup || (!bulkGroupToAdd && !customBulkGroupInput)}
+                      onClick={() => handleApplyBulkGroupToSelected()}
+                      style={{padding:"5px 12px",background:"#2563EB",color:"white",border:"none",borderRadius:6,fontSize:".76rem",fontWeight:800,cursor:"pointer",display:"flex",alignItems:"center",gap:4}}
+                    >
+                      <span>✓</span> {applyingBulkGroup ? "Assigning..." : "Apply to Selected"}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setSelectedDirectoryGuestIds([])}
+                      style={{padding:"5px 8px",background:"white",color:"#64748B",border:"1px solid #CBD5E1",borderRadius:6,fontSize:".74rem",fontWeight:700,cursor:"pointer"}}
+                    >
+                      Clear
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* Select All Bar */}
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"4px 6px",marginBottom:6}}>
+                <label style={{display:"flex",alignItems:"center",gap:6,fontSize:".76rem",fontWeight:700,color:"#475569",cursor:"pointer"}}>
+                  <input
+                    type="checkbox"
+                    checked={filteredDirectoryGuests.length > 0 && filteredDirectoryGuests.every(g => selectedDirectoryGuestIds.includes(g.id))}
+                    onChange={(e) => {
+                      if (e.target.checked) {
+                        const allIds = filteredDirectoryGuests.map(g => g.id);
+                        setSelectedDirectoryGuestIds(prev => Array.from(new Set([...prev, ...allIds])));
+                      } else {
+                        const curFilteredIds = new Set(filteredDirectoryGuests.map(g => g.id));
+                        setSelectedDirectoryGuestIds(prev => prev.filter(id => !curFilteredIds.has(id)));
+                      }
+                    }}
+                    style={{cursor:"pointer",accentColor:"#2563EB"}}
+                  />
+                  <span>Select All Filtered ({filteredDirectoryGuests.length})</span>
+                </label>
+                {selectedDirectoryGuestIds.length > 0 && (
+                  <span style={{fontSize:".74rem",color:"#2563EB",fontWeight:800}}>
+                    {selectedDirectoryGuestIds.length} Selected
+                  </span>
+                )}
+              </div>
+
               {/* Contact Cards List with Compact Group Badges */}
-              <div style={{display:"flex",flexDirection:"column",gap:8,maxHeight:450,overflowY:"auto",paddingRight:4}}>
+              <div style={{display:"flex",flexDirection:"column",gap:8,maxHeight:420,overflowY:"auto",paddingRight:4}}>
                 {(() => {
                   let list = filteredDirectoryGuests;
                   if (directorySearch && directorySearch.trim()) {
@@ -25835,19 +27902,38 @@ This cannot be undone.`)) return;
                     const hiddenCount = cGroups.length - visibleGroups.length;
 
                     return (
-                      <div key={g.id} style={{padding:"9px 12px",border:"1px solid #E2E8F0",borderRadius:10,background:"#FAFAFA",display:"flex",flexDirection:"column",gap:4,transition:"all .15s"}}>
-                        <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start"}}>
-                          <div>
-                            <div style={{fontWeight:800,color:"#0F172A",fontSize:".88rem",display:"flex",alignItems:"center",gap:6}}>
-                              <span>{g["Full Name"]}</span>
-                              {g.Designation && (
-                                <span style={{fontSize:".72rem",fontWeight:600,color:"#0D4B5E",background:"#E0F2FE",padding:"1px 6px",borderRadius:4}}>
-                                  {g.Designation}
-                                </span>
-                              )}
-                            </div>
-                            <div style={{fontSize:".76rem",color:"#64748B",marginTop:2}}>
-                              {g.Mobile ? ("📱 " + g.Mobile) : "No Mobile"} {g.Address ? (" • 📍 " + g.Address) : ""}
+                      <div key={g.id} style={{padding:"9px 12px",border: selectedDirectoryGuestIds.includes(g.id) ? "1.5px solid #3B82F6" : "1px solid #E2E8F0",borderRadius:10,background: selectedDirectoryGuestIds.includes(g.id) ? "#EFF6FF" : "#FAFAFA",display:"flex",flexDirection:"column",gap:4,transition:"all .15s"}}>
+                        <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:8}}>
+                          <div style={{display:"flex",alignItems:"flex-start",gap:8}}>
+                            <input
+                              type="checkbox"
+                              checked={selectedDirectoryGuestIds.includes(g.id)}
+                              onChange={(e) => {
+                                e.stopPropagation();
+                                setSelectedDirectoryGuestIds(prev => 
+                                  prev.includes(g.id) ? prev.filter(x => x !== g.id) : [...prev, g.id]
+                                );
+                              }}
+                              style={{marginTop:3,width:16,height:16,cursor:"pointer",accentColor:"#2563EB",flexShrink:0}}
+                            />
+                            <div>
+                              <div style={{fontWeight:800,color:"#0F172A",fontSize:".88rem",display:"flex",alignItems:"center",gap:6,flexWrap:"wrap"}}>
+                                <span>{g["Full Name"]}</span>
+                                {g.Designation && (
+                                  <span style={{fontSize:".72rem",fontWeight:600,color:"#0D4B5E",background:"#E0F2FE",padding:"1px 6px",borderRadius:4}}>
+                                    {g.Designation}
+                                  </span>
+                                )}
+                              </div>
+                              <div style={{fontSize:".76rem",color:"#64748B",marginTop:2,display:"flex",alignItems:"center",gap:6,flexWrap:"wrap"}}>
+                                <span>{g.Mobile ? ("📱 " + g.Mobile) : "No Mobile"}</span>
+                                {g.Address ? <span>• 📍 {g.Address}</span> : null}
+                                {(g.vibhag || g['Vibhag'] || g['Vibhag New']) ? (
+                                  <span style={{background:"#FEF3C7",color:"#92400E",border:"1px solid #FDE68A",padding:"1px 6px",borderRadius:4,fontSize:".68rem",fontWeight:800}}>
+                                    📍 {g.vibhag || g['Vibhag'] || g['Vibhag New']}
+                                  </span>
+                                ) : null}
+                              </div>
                             </div>
                           </div>
                           <div style={{display:"flex",gap:6,alignItems:"center",flexShrink:0}}>
@@ -25861,6 +27947,7 @@ This cannot be undone.`)) return;
                                   email: g.Email || "",
                                   address: g.Address || "",
                                   designation: g.Designation || "",
+                                  vibhag: g.vibhag || g['Vibhag'] || g['Vibhag New'] || "",
                                   group: cGroups.join(", "),
                                   groups: cGroups
                                 });
@@ -25879,16 +27966,21 @@ This cannot be undone.`)) return;
                           </div>
                         </div>
 
-                        {/* Compact Multi-Group Badges with +N More Pill */}
+                        {/* Multi-Group Badges with Direct ✕ Remove & Inline ➕ Tag Dropdown */}
                         <div style={{display:"flex",flexWrap:"wrap",gap:4,marginTop:2,alignItems:"center"}}>
                           {visibleGroups.map((grp, k) => (
                             <span 
                               key={k} 
-                              onClick={() => setDirectoryGroupFilter(grp)}
-                              style={{background:"#DCFCE7",color:"#15803D",padding:"2px 6px",borderRadius:6,fontSize:".67rem",fontWeight:700,border:"1px solid #86EFAC",cursor:"pointer"}}
-                              title={"Filter by " + grp}
+                              style={{background:"#DCFCE7",color:"#15803D",padding:"2px 6px",borderRadius:6,fontSize:".67rem",fontWeight:700,border:"1px solid #86EFAC",display:"inline-flex",alignItems:"center",gap:3}}
                             >
-                              👥 {grp}
+                              <span onClick={() => setDirectoryGroupFilter(grp)} style={{cursor:"pointer"}} title={"Filter by " + grp}>👥 {grp}</span>
+                              <span 
+                                onClick={(e) => { e.stopPropagation(); handleQuickRemoveGroupFromContact(g, grp); }} 
+                                style={{cursor:"pointer",color:"#DC2626",fontWeight:800,fontSize:".65rem",marginLeft:2}} 
+                                title={"Remove " + grp + " from this contact"}
+                              >
+                                ✕
+                              </span>
                             </span>
                           ))}
                           {hiddenCount > 0 && (
@@ -25908,6 +28000,28 @@ This cannot be undone.`)) return;
                               Collapse ▴
                             </span>
                           )}
+
+                          {/* Inline Tag Group Dropdown */}
+                          <select
+                            value=""
+                            onChange={(e) => {
+                              const val = e.target.value;
+                              if (val === '__new__') {
+                                const customName = prompt("Enter new contact group name (e.g. Vibhag Pramukh, Core Committee):");
+                                if (customName && customName.trim()) handleQuickAddGroupToContact(g, customName.trim());
+                              } else if (val) {
+                                handleQuickAddGroupToContact(g, val);
+                              }
+                            }}
+                            style={{fontSize:".65rem",fontWeight:700,padding:"1px 4px",borderRadius:4,border:"1px dashed #93C5FD",background:"#F0F9FF",color:"#0369A1",cursor:"pointer"}}
+                            title="Quick tag this contact with a group"
+                          >
+                            <option value="">➕ Tag Group...</option>
+                            {uniqueGroups.filter(grp => !cGroups.includes(grp)).map(grp => (
+                              <option key={grp} value={grp}>+ {grp}</option>
+                            ))}
+                            <option value="__new__">➕ + Type New Group...</option>
+                          </select>
                         </div>
                       </div>
                     );
@@ -26465,19 +28579,55 @@ This cannot be undone.`)) return;
                     <span style={{fontSize:"1.1rem"}}>{tab.icon || '📄'}</span>
                     <strong style={{fontSize:".86rem",color: isActive ? "#15803D" : "#0F172A"}}>{tab.name}</strong>
                   </div>
-                  {tab.bgUrl ? (
-                    <span style={{fontSize:".65rem",background:"#DCFCE7",color:"#15803D",padding:"1px 5px",borderRadius:4,fontWeight:800}}>
-                      ✓ Configured
-                    </span>
-                  ) : (
-                    <span style={{fontSize:".65rem",background:"#FEF3C7",color:"#B45309",padding:"1px 5px",borderRadius:4,fontWeight:800}}>
-                      ⚠️ Needs Image
-                    </span>
-                  )}
+                  <div style={{display:"flex",alignItems:"center",gap:4}}>
+                    {tab.bgUrl ? (
+                      <span style={{fontSize:".65rem",background:"#DCFCE7",color:"#15803D",padding:"1px 5px",borderRadius:4,fontWeight:800}}>
+                        ✓ Configured
+                      </span>
+                    ) : (
+                      <span style={{fontSize:".65rem",background:"#FEF3C7",color:"#B45309",padding:"1px 5px",borderRadius:4,fontWeight:800}}>
+                        ⚠️ Needs Image
+                      </span>
+                    )}
+                    {tab.customTpl && (
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          if (!window.confirm(`Are you sure you want to permanently delete sub-workspace / template "${tab.name}"?`)) return;
+                          const updatedTpls = (activeEvent.pdfTemplates || []).filter(t => t.id !== tab.id);
+                          const updatedEvents = (C.events || []).map(ev => (ev.id === activeEvent.id || ev.title === activeEvent.title) ? { ...ev, pdfTemplates: updatedTpls } : ev);
+                          const updatedC = { ...C, events: updatedEvents };
+                          if (setC) setC(updatedC);
+                          fbSave(updatedC, auth?.idToken);
+                          if (activeDocType === tab.id) {
+                            setActiveDocType('invite');
+                          }
+                          alert(`✅ Sub-workspace / template "${tab.name}" deleted successfully.`);
+                        }}
+                        style={{
+                          background: "#FEE2E2",
+                          border: "1px solid #FECACA",
+                          color: "#DC2626",
+                          borderRadius: 4,
+                          padding: "2px 6px",
+                          fontSize: ".68rem",
+                          fontWeight: 800,
+                          cursor: "pointer",
+                          display: "flex",
+                          alignItems: "center",
+                          gap: 2
+                        }}
+                        title={`Delete sub-workspace "${tab.name}"`}
+                      >
+                        ✕ Delete
+                      </button>
+                    )}
+                  </div>
                 </div>
 
                 {/* Inline Placement Dropdown / Tag directly inside each tab */}
-                <div style={{marginTop: 2}} onClick={e => e.stopPropagation()}>
+                <div style={{marginTop: 2}}>
                   {tab.id === 'invite' ? (
                     <span style={{fontSize:".68rem",fontWeight:700,color:"#D2691E",background:"#FFF7ED",padding:"2px 6px",borderRadius:4,border:"1px solid #FFEDD5",display:"inline-block"}}>
                       📍 Portal: 💌 Special Invites
@@ -26487,33 +28637,161 @@ This cannot be undone.`)) return;
                       📍 Portal: 🎓 Education Awards
                     </span>
                   ) : (
-                    <div style={{display:"flex",alignItems:"center",gap:4}}>
-                      <span style={{fontSize:".68rem",fontWeight:800,color:"#475569"}}>📍 Portal:</span>
-                      <select
-                        value={tab.customTpl?.targetSection || "invites"}
-                        onChange={(e) => {
-                          e.stopPropagation();
-                          const newSection = e.target.value;
-                          const updatedTpls = (activeEvent.pdfTemplates || []).map(t => t.id === tab.id ? { ...t, targetSection: newSection } : t);
-                          const updatedEvents = (C.events || []).map(ev => (ev.id === activeEvent.id || ev.title === activeEvent.title) ? { ...ev, pdfTemplates: updatedTpls } : ev);
-                          const updatedC = { ...C, events: updatedEvents };
-                          if (setC) setC(updatedC);
-                          fbSave(updatedC, auth?.idToken);
-                        }}
-                        style={{
-                          fontSize: ".7rem",
-                          fontWeight: 800,
-                          padding: "2px 6px",
-                          borderRadius: 4,
-                          border: "1.5px solid #2563EB",
-                          background: (tab.customTpl?.targetSection === 'awards') ? "#F0FDF4" : "#FFF7ED",
-                          color: (tab.customTpl?.targetSection === 'awards') ? "#15803D" : "#D2691E",
-                          cursor: "pointer"
-                        }}
-                      >
-                        <option value="invites">💌 Special Invites</option>
-                        <option value="awards">🎓 Education Awards</option>
-                      </select>
+                    <div style={{display:"flex",flexDirection:"column",gap:4}}>
+                      <div style={{display:"flex",alignItems:"center",gap:4}}>
+                        <span style={{fontSize:".68rem",fontWeight:800,color:"#475569"}}>📍 Portal:</span>
+                        <select
+                          value={tab.customTpl?.targetSection || "invites"}
+                          onChange={(e) => {
+                            e.stopPropagation();
+                            const newSection = e.target.value;
+                            const updatedTpls = (activeEvent.pdfTemplates || []).map(t => t.id === tab.id ? { ...t, targetSection: newSection } : t);
+                            const updatedEvents = (C.events || []).map(ev => (ev.id === activeEvent.id || ev.title === activeEvent.title) ? { ...ev, pdfTemplates: updatedTpls } : ev);
+                            const updatedC = { ...C, events: updatedEvents };
+                            if (setC) setC(updatedC);
+                            fbSave(updatedC, auth?.idToken);
+                          }}
+                          style={{
+                            fontSize: ".7rem",
+                            fontWeight: 800,
+                            padding: "2px 6px",
+                            borderRadius: 4,
+                            border: "1.5px solid #2563EB",
+                            background: (tab.customTpl?.targetSection === 'awards') ? "#F0FDF4" : "#FFF7ED",
+                            color: (tab.customTpl?.targetSection === 'awards') ? "#15803D" : "#D2691E",
+                            cursor: "pointer"
+                          }}
+                        >
+                          <option value="invites">💌 Special Invites</option>
+                          <option value="awards">🎓 Education Awards</option>
+                        </select>
+                      </div>
+
+                      <div style={{display:"flex",alignItems:"center",gap:4}}>
+                        <span style={{fontSize:".68rem",fontWeight:800,color:"#1E293B"}}>👥 Audience:</span>
+                        <select
+                          value={tab.customTpl?.targetAudience || "assigned"}
+                          onChange={(e) => {
+                            e.stopPropagation();
+                            const newAudience = e.target.value;
+                            const updatedTpls = (activeEvent.pdfTemplates || []).map(t => t.id === tab.id ? { ...t, targetAudience: newAudience } : t);
+                            const updatedEvents = (C.events || []).map(ev => (ev.id === activeEvent.id || ev.title === activeEvent.title) ? { ...ev, pdfTemplates: updatedTpls } : ev);
+                            const updatedC = { ...C, events: updatedEvents };
+                            if (setC) setC(updatedC);
+                            fbSave(updatedC, auth?.idToken);
+                          }}
+                          style={{
+                            fontSize: ".68rem",
+                            fontWeight: 800,
+                            padding: "2px 4px",
+                            borderRadius: 4,
+                            border: "1px solid #CBD5E1",
+                            background: "white",
+                            color: (tab.customTpl?.targetAudience === 'all') ? "#2563EB" : "#15803D",
+                            cursor: "pointer"
+                          }}
+                        >
+                          <option value="assigned">🎯 Assigned / Imported Only</option>
+                          <option value="event">🎯 Selected Event Registrations</option>
+                          <option value="group">👥 Group ({tab.customTpl?.name || 'Named'})</option>
+                          <option value="all">🌐 All in Workspace</option>
+                        </select>
+                      </div>
+
+                      <div style={{display:"flex",alignItems:"center",gap:4}}>
+                        <span style={{fontSize:".68rem",fontWeight:800,color:"#0D4B5E"}}>🎯 Event:</span>
+                        <select
+                          value={tab.customTpl?.targetEventId || "current"}
+                          onChange={(e) => {
+                            e.stopPropagation();
+                            setActiveDocType(tab.id);
+                            const newEvId = e.target.value;
+                            const updatedTpls = (activeEvent.pdfTemplates || []).map(t => t.id === tab.id ? { ...t, targetEventId: newEvId } : t);
+                            const updatedEvents = (C.events || []).map(ev => (ev.id === activeEvent.id || ev.title === activeEvent.title) ? { ...ev, pdfTemplates: updatedTpls } : ev);
+                            const updatedC = { ...C, events: updatedEvents };
+                            if (setC) setC(updatedC);
+                            fbSave(updatedC, auth?.idToken);
+                          }}
+                          style={{
+                            fontSize: ".68rem",
+                            fontWeight: 800,
+                            padding: "2px 4px",
+                            borderRadius: 4,
+                            border: "1px solid #0D4B5E",
+                            background: "#F0FDF4",
+                            color: "#166534",
+                            cursor: "pointer",
+                            maxWidth: 150
+                          }}
+                          title="Select specific event registrations data source for this template & WhatsApp reports"
+                        >
+                          <option value="current">🔄 Current Event (Auto)</option>
+                          <option value="education2026">🎓 Education 2026</option>
+                          {(C.events || []).filter(e => e.id !== 'education2026' && e.title !== 'Education Felicitation 2026').map(evItem => (
+                            <option key={evItem.id || evItem.title} value={evItem.id || evItem.title}>
+                              📌 {evItem.title || evItem.id}
+                            </option>
+                          ))}
+                          <option value="all">🌐 All Events Combined</option>
+                        </select>
+                      </div>
+
+                      {/* Vibhag Scope Toggle Button: "Specific Vibhag" | "All" */}
+                      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:4,marginTop:2}}>
+                        <span style={{fontSize:".68rem",fontWeight:800,color:"#15803D",whiteSpace:"nowrap"}}>📍 Vibhag:</span>
+                        <div style={{display:"inline-flex",background:"#E2E8F0",borderRadius:5,padding:2,gap:2}}>
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setActiveDocType(tab.id);
+                              const updatedTpls = (activeEvent.pdfTemplates || []).map(t => t.id === tab.id ? { ...t, vibhagScope: "auto" } : t);
+                              const updatedEvents = (C.events || []).map(ev => (ev.id === activeEvent.id || ev.title === activeEvent.title) ? { ...ev, pdfTemplates: updatedTpls } : ev);
+                              const updatedC = { ...C, events: updatedEvents };
+                              if (setC) setC(updatedC);
+                              fbSave(updatedC, auth?.idToken);
+                            }}
+                            style={{
+                              padding: "2px 6px",
+                              borderRadius: 4,
+                              fontSize: ".66rem",
+                              fontWeight: 800,
+                              border: "none",
+                              cursor: "pointer",
+                              background: (tab.customTpl?.vibhagScope !== "all") ? "#15803D" : "transparent",
+                              color: (tab.customTpl?.vibhagScope !== "all") ? "white" : "#475569"
+                            }}
+                            title="Auto-filter student report to recipient's associated Vibhag"
+                          >
+                            🎯 Specific Vibhag
+                          </button>
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setActiveDocType(tab.id);
+                              const updatedTpls = (activeEvent.pdfTemplates || []).map(t => t.id === tab.id ? { ...t, vibhagScope: "all" } : t);
+                              const updatedEvents = (C.events || []).map(ev => (ev.id === activeEvent.id || ev.title === activeEvent.title) ? { ...ev, pdfTemplates: updatedTpls } : ev);
+                              const updatedC = { ...C, events: updatedEvents };
+                              if (setC) setC(updatedC);
+                              fbSave(updatedC, auth?.idToken);
+                            }}
+                            style={{
+                              padding: "2px 6px",
+                              borderRadius: 4,
+                              fontSize: ".66rem",
+                              fontWeight: 800,
+                              border: "none",
+                              cursor: "pointer",
+                              background: (tab.customTpl?.vibhagScope === "all") ? "#2563EB" : "transparent",
+                              color: (tab.customTpl?.vibhagScope === "all") ? "white" : "#475569"
+                            }}
+                            title="Include all registrations across all Vibhags"
+                          >
+                            🌐 All
+                          </button>
+                        </div>
+                      </div>
                     </div>
                   )}
                 </div>
@@ -26533,6 +28811,7 @@ This cannot be undone.`)) return;
                   id: tplId,
                   name: cleanName,
                   targetSection: "invites",
+                  targetAudience: "assigned",
                   bgUrl: "",
                   map: {},
                   fontSize: 30,
@@ -26569,6 +28848,30 @@ This cannot be undone.`)) return;
             }}
           >
             <span>➕</span> + Add New Template
+          </button>
+
+          {/* Sub-Workspace WhatsApp Audit & Dispatch Proof Export */}
+          <button
+            type="button"
+            onClick={() => handleDownloadSubworkspaceAuditFile(activeEvent, currentDocTpl, filteredRegs)}
+            style={{
+              padding: "10px 16px",
+              borderRadius: 10,
+              fontSize: ".8rem",
+              fontWeight: 800,
+              background: "#F8FAFC",
+              border: "1.5px solid #0D4B5E",
+              color: "#0D4B5E",
+              cursor: "pointer",
+              display: "flex",
+              alignItems: "center",
+              gap: 6,
+              boxShadow: "0 2px 8px rgba(0,0,0,0.06)",
+              whiteSpace: "nowrap"
+            }}
+            title="Download complete WhatsApp dispatch audit proof and delivery log for this sub-workspace"
+          >
+            <span>📜</span> Download Sub-Workspace Audit Log (.txt / .doc)
           </button>
         </div>
 
@@ -26662,7 +28965,16 @@ This cannot be undone.`)) return;
                               <span>👁️</span> Preview
                             </button>
                             <button 
-                              onClick={(e)=>{e.stopPropagation(); setSelectedWhatsAppReg(r);}} 
+                              onClick={(e)=>{
+                                e.stopPropagation(); 
+                                const resolvedV = resolveGuestVibhag(r);
+                                setSelectedWhatsAppReg({
+                                  ...r,
+                                  vibhag: resolvedV || r.vibhag,
+                                  Vibhag: resolvedV || r['Vibhag'],
+                                  "Vibhag New": resolvedV || r['Vibhag New']
+                                });
+                              }} 
                               style={{
                                 padding:"4px 9px",
                                 borderRadius:6,
@@ -26757,20 +29069,70 @@ This cannot be undone.`)) return;
                       {/* Participant & ID */}
                       <td style={{padding:"12px 10px"}}>
                         <div style={{display:"flex",flexDirection:"column",gap:3}}>
-                          <span style={{fontSize:".88rem",fontWeight:800,color:"#0F172A",letterSpacing:"-0.01em"}}>
-                            {cleanPName}
-                          </span>
+                          <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
+                            <span style={{fontSize:".88rem",fontWeight:800,color:"#0F172A",letterSpacing:"-0.01em"}}>
+                              {cleanPName}
+                            </span>
+                            {r.Designation && (
+                              <span style={{fontSize:".68rem",fontWeight:700,color:"#475569",background:"#F1F5F9",padding:"1px 6px",borderRadius:4,border:"1px solid #E2E8F0"}}>
+                                {r.Designation}
+                              </span>
+                            )}
+                          </div>
                           <div style={{display:"flex",alignItems:"center",gap:6,flexWrap:"wrap"}}>
                             {txnId && (
                               <span style={{fontSize:".7rem",fontFamily:"monospace",fontWeight:800,background:"#1E293B",color:"white",padding:"1px 6px",borderRadius:4}}>
                                 {txnId}
                               </span>
                             )}
-                            {vibhag && (
-                              <span style={{fontSize:".7rem",fontWeight:700,background:"#F1F5F9",color:"#475569",padding:"1px 6px",borderRadius:4,border:"1px solid #E2E8F0"}}>
-                                {vibhag}
-                              </span>
-                            )}
+
+                            {/* Inline Vibhag Selector / Badge */}
+                            <select
+                              value={resolveGuestVibhag(r) || ""}
+                              onClick={e => e.stopPropagation()}
+                              onChange={async (e) => {
+                                e.stopPropagation();
+                                const newV = e.target.value;
+                                const updatedReg = {
+                                  ...r,
+                                  vibhag: newV,
+                                  Vibhag: newV,
+                                  "Vibhag New": newV
+                                };
+                                setRegs(prev => prev.map(x => x.id === r.id ? updatedReg : x));
+                                const cleanCopy = { ...updatedReg };
+                                delete cleanCopy.id;
+                                delete cleanCopy._submittedAt;
+                                await fbUpdateRegistration(r.id, cleanCopy, auth?.idToken);
+                                if (r.globalGuestId) {
+                                  await fbUpdateRegistration(r.globalGuestId, { vibhag: newV, Vibhag: newV, "Vibhag New": newV }, auth?.idToken);
+                                }
+                              }}
+                              style={{
+                                fontSize: ".7rem",
+                                fontWeight: 800,
+                                padding: "1px 5px",
+                                borderRadius: 4,
+                                border: resolveGuestVibhag(r) ? "1.5px solid #86EFAC" : "1.5px dashed #F59E0B",
+                                background: resolveGuestVibhag(r) ? "#F0FDF4" : "#FFFBEB",
+                                color: resolveGuestVibhag(r) ? "#166534" : "#B45309",
+                                cursor: "pointer",
+                                maxWidth: 175
+                              }}
+                              title="Click to assign or change this contact's associated Vibhag"
+                            >
+                              <option value="">📍 Assign Vibhag...</option>
+                              {(C.vibhags || [
+                                "01 KALWA", "02 WALPAKHADI", "03 BHANDUP", "04 KANJURMARG", "05 VIKHROLI",
+                                "06 GHATKOPAR", "07 CHEMBUR", "08 SION", "09 WORLI", "10 MAHALAXMI",
+                                "11 BYCULLA", "12 MUMBAI CENTRAL", "13 DADAR", "14 BANDRA", "15 RAMDEV NAGAR",
+                                "16 KHAR", "17 SANTACRUZ", "18 VILE PARLE", "19 ANDHERI", "20 JOGESHWARI",
+                                "21 GOREGAON", "22 MALAD", "23 KANDIVALI", "24 BORIVALI", "25 DAHISAR",
+                                "26 MIRA ROAD", "27 BHAYANDAR", "28 NAIGAON", "29 VASAI", "30 NALLASOPARA", "31 VIRAR"
+                              ]).map(v => (
+                                <option key={v} value={v}>📍 {v}</option>
+                              ))}
+                            </select>
                           </div>
                         </div>
                       </td>
@@ -26889,22 +29251,72 @@ This cannot be undone.`)) return;
           recipients={selectedIds.length > 0 ? filteredRegs.filter(r => selectedIds.includes(r.id || r['Transaction ID'])) : filteredRegs}
           C={C}
           auth={auth}
-          onLogSent={async (r, msgType) => {
+          onLogSent={async (r, msgType, actualMessage) => {
             const updatedBy = auth?.email || "Admin";
+            const now = new Date();
+            const nowIso = now.toISOString();
+            const nowFormatted = now.toLocaleString("en-IN", { dateStyle: "medium", timeStyle: "short" });
             const existingLogs = Array.isArray(r.logHistory) ? r.logHistory : [];
             const waLog = {
-              timestamp: new Date().toISOString(),
+              timestamp: nowIso,
+              timeFormatted: nowFormatted,
               actor: updatedBy,
               action: `WhatsApp Sent: ${msgType}`,
               type: "whatsapp",
               messageType: msgType,
+              subWorkspaceId: currentDocTpl?.id || "invite",
+              subWorkspaceName: `${activeEvent.title || 'Workspace'} > ${currentDocTpl?.name || 'Invite'}`,
+              content: actualMessage || "",
               remarks: `WhatsApp invitation pass (${msgType}) sent to applicant.`
             };
             const newLogs = [...existingLogs, waLog];
             const newCount = (r.whatsAppCount || 0) + 1;
-            setRegs(prev => prev.map(x => x.id === r.id ? { ...x, logHistory: newLogs, whatsAppCount: newCount, lastWhatsAppType: msgType, lastWhatsAppAt: waLog.timestamp } : x));
+            const updatedRec = { 
+              ...r, 
+              logHistory: newLogs, 
+              whatsAppCount: newCount, 
+              lastWhatsAppType: msgType, 
+              lastWhatsAppAt: nowIso,
+              lastWhatsAppContent: actualMessage || r.lastWhatsAppContent || ""
+            };
+            setRegs(prev => {
+              const updatedList = prev.map(x => x.id === r.id ? updatedRec : x);
+              try {
+                localStorage.setItem("mmp_cached_registrations", JSON.stringify(updatedList));
+                if (typeof window !== 'undefined') {
+                  window.__MMP_INVITE_REGS__ = updatedList;
+                  window.__MMP_ALL_REGS_RAW__ = updatedList;
+                  window.__MMP_REGS_CACHE__ = updatedList;
+                }
+              } catch(e) {}
+              return updatedList;
+            });
+
+            // Record into subworkspace specific audit log store in localStorage
+            const subAuditKey = `mmp_wa_audit_${activeEvent.id || activeEvent.title || 'default'}_${currentDocTpl?.id || 'invite'}`;
             try {
-              const cleanData = { ...r, logHistory: newLogs, whatsAppCount: newCount, lastWhatsAppType: msgType, lastWhatsAppAt: waLog.timestamp };
+              const currentSubLogs = JSON.parse(localStorage.getItem(subAuditKey) || "[]");
+              currentSubLogs.unshift({
+                id: "wa_" + Date.now() + "_" + Math.random().toString(36).substr(2, 4),
+                timestamp: nowIso,
+                timeFormatted: nowFormatted,
+                sender: updatedBy,
+                recipientName: r['Full Name'] || r.name || 'Invitee',
+                recipientMobile: r['Mobile Number'] || r.phone || r.mobile || '',
+                recipientTxnId: r['Transaction ID'] || r.transactionId || r.id || '',
+                recipientVibhag: typeof resolveGuestVibhag === 'function' ? (resolveGuestVibhag(r) || r.vibhag || '') : (r.vibhag || ''),
+                subWorkspaceId: currentDocTpl?.id || "invite",
+                subWorkspaceName: `${activeEvent.title || 'Workspace'} > ${currentDocTpl?.name || 'Invite'}`,
+                messageTitle: msgType,
+                messageContent: actualMessage || "",
+                passOpenCount: r.passOpenCount || 0,
+                lastPassOpenedAt: r.lastPassOpenedAt || null
+              });
+              localStorage.setItem(subAuditKey, JSON.stringify(currentSubLogs.slice(0, 500)));
+            } catch(e) {}
+
+            try {
+              const cleanData = { ...updatedRec };
               delete cleanData.id; delete cleanData._submittedAt;
               await fbUpdateRegistration(r.id, cleanData, auth?.idToken);
             } catch(e){}
@@ -26934,12 +29346,18 @@ This cannot be undone.`)) return;
             ...selectedWhatsAppReg, 
             isInviteMode: true, 
             activeDocTpl: currentDocTpl,
+            vibhag: typeof resolveGuestVibhag === 'function' ? (resolveGuestVibhag(selectedWhatsAppReg) || selectedWhatsAppReg.vibhag) : selectedWhatsAppReg.vibhag,
+            Vibhag: typeof resolveGuestVibhag === 'function' ? (resolveGuestVibhag(selectedWhatsAppReg) || selectedWhatsAppReg['Vibhag']) : selectedWhatsAppReg['Vibhag'],
+            "Vibhag New": typeof resolveGuestVibhag === 'function' ? (resolveGuestVibhag(selectedWhatsAppReg) || selectedWhatsAppReg['Vibhag New']) : selectedWhatsAppReg['Vibhag New'],
+            vibhagScope: currentDocTpl?.customTpl?.vibhagScope || "auto",
+            targetEventId: currentDocTpl?.customTpl?.targetEventId,
             customDocId: currentDocTpl?.customTpl ? currentDocTpl.id : null 
           }}
           onClose={() => setSelectedWhatsAppReg(null)}
           C={C}
           auth={auth}
-          allRegs={filteredRegs}
+          allRegs={regs}
+          recipientList={filteredRegs}
           onSelectReg={(nextR) => setSelectedWhatsAppReg(nextR)}
           onLogSent={async (r, msgType) => {
             const updatedBy = auth?.email || "Admin";
@@ -27299,7 +29717,7 @@ This cannot be undone.`)) return;
                    <span>🏷️</span> Import Contact Groups
                  </h2>
                  <p style={{fontSize:".82rem",color:"var(--mu)",margin:"4px 0 0 0"}}>
-                   Select one or multiple contact groups to batch import their members into <strong>{activeEvent.title}</strong>
+                   Select contact groups to attach / import into <strong>{currentDocName}</strong> ({activeEvent.title})
                  </p>
                </div>
                <button 
@@ -27313,7 +29731,7 @@ This cannot be undone.`)) return;
             {(() => {
               const groupsMap = {};
               globalGuests.forEach(g => {
-                const gGroups = getContactGroups(g);
+                const gGroups = typeof getResolvedContactGroups === 'function' ? getResolvedContactGroups(g) : getContactGroups(g);
                 gGroups.forEach(grp => {
                   if (!groupsMap[grp]) groupsMap[grp] = [];
                   groupsMap[grp].push(g);
@@ -27326,23 +29744,28 @@ This cannot be undone.`)) return;
                 groupNames = groupNames.filter(name => name.toLowerCase().includes(q));
               }
 
-              // Calculate total unimported across currently selected groups
-              const selectedUnimportedGuestsMap = new Map();
+              const currentActiveDoc = activeDocType || 'invite';
+              const isAlreadyInSubworkspace = (g) => {
+                return regs.some(r => {
+                  if ((r.globalGuestId !== g.id && r["Full Name"] !== g["Full Name"]) || r.eventId !== selectedEventId) return false;
+                  return (r.targetTemplateId === currentActiveDoc) || (Array.isArray(r.assignedDocTypes) && r.assignedDocTypes.includes(currentActiveDoc));
+                });
+              };
+
+              // Total contacts in selected groups
+              const allSelectedGuestsMap = new Map();
               selectedGroupsToImport.forEach(grpName => {
                 const list = groupsMap[grpName] || [];
                 list.forEach(g => {
-                  const isAlreadyInWorkspace = regs.some(r => r.globalGuestId === g.id && r.eventId === selectedEventId);
-                  if (!isAlreadyInWorkspace && !selectedUnimportedGuestsMap.has(g.id)) {
-                    selectedUnimportedGuestsMap.set(g.id, g);
+                  if (!allSelectedGuestsMap.has(g.id)) {
+                    allSelectedGuestsMap.set(g.id, g);
                   }
                 });
               });
-              const totalReadyFromSelected = selectedUnimportedGuestsMap.size;
+              const totalSelectedCount = allSelectedGuestsMap.size;
 
               const toggleGroupSelection = (grp) => {
-                setSelectedGroupsToImport(prev => 
-                  prev.includes(grp) ? prev.filter(x => x !== grp) : [...prev, grp]
-                );
+                setSelectedGroupsToImport(prev => prev.includes(grp) ? prev.filter(x => x !== grp) : [...prev, grp]);
               };
 
               const selectAllGroups = () => {
@@ -27388,9 +29811,8 @@ This cannot be undone.`)) return;
                   <div style={{display:"flex",flexDirection:"column",gap:10,maxHeight:"42vh",overflowY:"auto",paddingRight:4}}>
                     {groupNames.map(grp => {
                       const list = groupsMap[grp] || [];
-                      const importedCount = list.filter(g => regs.some(r => r.globalGuestId === g.id && r.eventId === selectedEventId)).length;
-                      const unimportedCount = list.length - importedCount;
                       const isSelected = selectedGroupsToImport.includes(grp);
+                      const inSubCount = list.filter(g => isAlreadyInSubworkspace(g)).length;
 
                       return (
                         <div 
@@ -27423,36 +29845,30 @@ This cannot be undone.`)) return;
                                 <span>🏷️</span> {grp}
                               </div>
                               <div style={{fontSize:".76rem",color:"#475569",marginTop:2}}>
-                                <strong>{list.length}</strong> total in group • <span style={{color:"#15803D",fontWeight:700}}>{importedCount} in workspace</span> {unimportedCount > 0 ? <span style={{color:"#D97706",fontWeight:700}}>• {unimportedCount} ready to import</span> : <span style={{color:"#64748B",fontWeight:600}}>• (all imported)</span>}
+                                <strong>{list.length}</strong> contacts in group {inSubCount > 0 ? <span>• <strong style={{color:"#15803D"}}>{inSubCount} attached to this sub-workspace</strong></span> : ""}
                               </div>
                             </div>
                           </div>
 
                           <div style={{display:"flex",alignItems:"center",gap:8}} onClick={e => e.stopPropagation()}>
-                            {unimportedCount > 0 ? (
-                              <button
-                                type="button"
-                                disabled={importingContactGroups}
-                                onClick={() => handleImportMultipleContactGroups([grp])}
-                                style={{
-                                  padding: "6px 14px",
-                                  borderRadius: 6,
-                                  border: "none",
-                                  background: "#15803D",
-                                  color: "white",
-                                  fontSize: ".75rem",
-                                  fontWeight: 800,
-                                  cursor: "pointer",
-                                  boxShadow: "0 1px 4px rgba(21,128,61,0.2)"
-                                }}
-                              >
-                                + Import {unimportedCount}
-                              </button>
-                            ) : (
-                              <span style={{padding:"4px 10px",background:"#F1F5F9",color:"#64748B",borderRadius:6,fontSize:".75rem",fontWeight:700}}>
-                                All In Workspace ✓
-                              </span>
-                            )}
+                            <button
+                              type="button"
+                              disabled={importingContactGroups}
+                              onClick={() => handleImportMultipleContactGroups([grp])}
+                              style={{
+                                padding: "6px 14px",
+                                borderRadius: 6,
+                                border: "none",
+                                background: "#15803D",
+                                color: "white",
+                                fontSize: ".75rem",
+                                fontWeight: 800,
+                                cursor: "pointer",
+                                boxShadow: "0 1px 4px rgba(21,128,61,0.2)"
+                              }}
+                            >
+                              + Attach / Import {list.length}
+                            </button>
                           </div>
                         </div>
                       );
@@ -27470,10 +29886,10 @@ This cannot be undone.`)) return;
                     <div style={{fontSize:".82rem",color:"#334155"}}>
                       {selectedGroupsToImport.length > 0 ? (
                         <span>
-                          <strong>{selectedGroupsToImport.length}</strong> group(s) selected • <strong style={{color:"#15803D"}}>{totalReadyFromSelected}</strong> new contact(s) will be imported
+                          <strong>{selectedGroupsToImport.length}</strong> group(s) selected • <strong style={{color:"#15803D"}}>{totalSelectedCount}</strong> contacts will be attached to <strong>{currentDocName}</strong>
                         </span>
                       ) : (
-                        <span style={{color:"#64748B",fontStyle:"italic"}}>Select one or more groups with checkboxes to import together</span>
+                        <span style={{color:"#64748B",fontStyle:"italic"}}>Select one or more groups with checkboxes to attach together</span>
                       )}
                     </div>
 
@@ -27487,24 +29903,24 @@ This cannot be undone.`)) return;
                       </button>
                       <button
                         type="button"
-                        disabled={selectedGroupsToImport.length === 0 || totalReadyFromSelected === 0 || importingContactGroups}
+                        disabled={selectedGroupsToImport.length === 0 || totalSelectedCount === 0 || importingContactGroups}
                         onClick={() => handleImportMultipleContactGroups(selectedGroupsToImport)}
                         style={{
                           padding: "9px 20px",
                           borderRadius: 8,
                           border: "none",
-                          background: (selectedGroupsToImport.length === 0 || totalReadyFromSelected === 0) ? "#CBD5E1" : "linear-gradient(135deg, #0D4B5E, #135D74)",
-                          color: (selectedGroupsToImport.length === 0 || totalReadyFromSelected === 0) ? "#64748B" : "white",
+                          background: (selectedGroupsToImport.length === 0 || totalSelectedCount === 0) ? "#CBD5E1" : "linear-gradient(135deg, #0D4B5E, #135D74)",
+                          color: (selectedGroupsToImport.length === 0 || totalSelectedCount === 0) ? "#64748B" : "white",
                           fontSize: ".85rem",
                           fontWeight: 800,
-                          cursor: (selectedGroupsToImport.length === 0 || totalReadyFromSelected === 0 || importingContactGroups) ? "not-allowed" : "pointer",
-                          boxShadow: (selectedGroupsToImport.length > 0 && totalReadyFromSelected > 0) ? "0 2px 8px rgba(13,75,94,0.25)" : "none",
+                          cursor: (selectedGroupsToImport.length === 0 || totalSelectedCount === 0 || importingContactGroups) ? "not-allowed" : "pointer",
+                          boxShadow: (selectedGroupsToImport.length > 0 && totalSelectedCount > 0) ? "0 2px 8px rgba(13,75,94,0.25)" : "none",
                           display: "flex",
                           alignItems: "center",
                           gap: 6
                         }}
                       >
-                        <span>📥</span> {importingContactGroups ? "Importing..." : "Import Selected Groups (" + totalReadyFromSelected + " Contacts)"}
+                        <span>📥</span> {importingContactGroups ? "Attaching..." : "Attach Selected Groups (" + totalSelectedCount + " Contacts)"}
                       </button>
                     </div>
                   </div>
@@ -28162,7 +30578,7 @@ const getChatbotPortalUrl = () => {
 
 const generateVibhagSummaryWhatsAppText = (summaryData, C) => {
   if (!summaryData) return "";
-  const { total, approved, pending, rejected, vibhagList, scopeTitle } = summaryData;
+  const { total, approved, pending, rejected, vibhagList, eventList, scopeTitle } = summaryData;
   const now = new Date();
   const dateStr = now.toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" });
   const timeStr = now.toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit" });
@@ -28493,7 +30909,7 @@ function ApplicationRecordCard({ app, onAction }) {
 function VibhagSummaryCard({ summaryData, C }) {
   const [copied, setCopied] = useState(false);
   if (!summaryData) return null;
-  const { total, approved, pending, rejected, vibhagList, scopeTitle } = summaryData;
+  const { total, approved, pending, rejected, vibhagList, eventList, scopeTitle } = summaryData;
 
   const handleCopyWhatsApp = () => {
     const text = generateVibhagSummaryWhatsAppText(summaryData, C);
@@ -28553,6 +30969,24 @@ function VibhagSummaryCard({ summaryData, C }) {
           <div style={{fontSize:"1.1rem",fontWeight:800,color:"#DC2626"}}>{rejected}</div>
         </div>
       </div>
+
+      {/* Breakdown by Events (if multiple events) */}
+      {eventList && eventList.length > 0 && (
+        <div style={{padding:"8px 14px",borderBottom:"1px solid #E2E8F0",background:"#F0F9FF"}}>
+          <div style={{fontSize:".73rem",fontWeight:800,color:"#0369A1",marginBottom:6,textTransform:"uppercase",letterSpacing:0.5}}>Selected Events Breakdown:</div>
+          <div style={{display:"flex",flexDirection:"column",gap:4,maxHeight:120,overflowY:"auto"}}>
+            {eventList.map(([evName, evStat], idx) => (
+              <div key={idx} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"4px 8px",background:"white",borderRadius:6,fontSize:".76rem",border:"1px solid #BAE6FD"}}>
+                <span style={{fontWeight:700,color:"#0F172A"}}>📌 {evName}</span>
+                <div style={{display:"flex",alignItems:"center",gap:6}}>
+                  <span style={{background:"#EFF6FF",color:"#1D4ED8",padding:"1px 6px",borderRadius:4,fontWeight:800,fontSize:".7rem"}}>Total: {evStat.total}</span>
+                  <span style={{background:"#DCFCE7",color:"#15803D",padding:"1px 6px",borderRadius:4,fontWeight:700,fontSize:".7rem"}}>🟢 {evStat.approved}</span>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Breakdown by Vibhag */}
       {vibhagList && vibhagList.length > 0 && (
@@ -30721,11 +33155,22 @@ function CommunityChatbot({ C, auth, onShowLogin }) {
   }, [messages, isOpen]);
 
   const ensureRegistrations = async () => {
-    let sourceList = regs;
+    let sourceList = (typeof window !== 'undefined' && window.__MMP_ALL_REGS_RAW__ && window.__MMP_ALL_REGS_RAW__.length > 0)
+      ? window.__MMP_ALL_REGS_RAW__
+      : ((typeof window !== 'undefined' && window.__MMP_REGS_CACHE__ && window.__MMP_REGS_CACHE__.length > 0)
+          ? window.__MMP_REGS_CACHE__
+          : ((regs && regs.length > 0) ? regs : (typeof localStorage !== 'undefined' ? JSON.parse(localStorage.getItem("mmp_cached_registrations") || "[]") : [])));
+
     if (!sourceList || sourceList.length === 0) {
       try {
         setLoading(true);
-        let token = auth?.idToken || localStorage.getItem("trustPublicAuthToken") || localStorage.getItem("globalAuthToken") || "";
+        let token = auth?.idToken || (typeof localStorage !== 'undefined' ? (localStorage.getItem("trustPublicAuthToken") || localStorage.getItem("globalAuthToken")) : "");
+        if (!token && typeof localStorage !== 'undefined') {
+          try {
+            const s = JSON.parse(localStorage.getItem("trustAuth") || "{}");
+            if (s?.idToken) token = s.idToken;
+          } catch(e) {}
+        }
         if (!token && fbAuth?.currentUser) {
           try { token = await fbAuth.currentUser.getIdToken(); } catch (e) {}
         }
@@ -30735,6 +33180,10 @@ function CommunityChatbot({ C, auth, onShowLogin }) {
         });
         sourceList = data || [];
         setRegs(sourceList);
+        if (typeof window !== 'undefined') {
+          window.__MMP_REGS_CACHE__ = sourceList;
+          window.__MMP_ALL_REGS_RAW__ = sourceList;
+        }
         setRegsLoaded(true);
       } catch (e) {
         console.error("Chatbot regs load error:", e);
@@ -30742,33 +33191,69 @@ function CommunityChatbot({ C, auth, onShowLogin }) {
       } finally {
         setLoading(false);
       }
+    } else {
+      if (typeof window !== 'undefined') {
+        window.__MMP_ALL_REGS_RAW__ = sourceList;
+      }
     }
 
-    // Comprehensive Trash, Directory, and Education 2026 Student Filter
+    // Comprehensive Trash & Directory Filter (For standard applicant counts)
     const cleanList = (sourceList || []).filter(r => {
       if (!r) return false;
-      // Exclude all deleted / trash items
       if (r.deleted === true || r.deleted === "true" || r.isDeleted === true || r.isTrash === true || r.inTrash === true || r.status === "Deleted" || r.Status === "Deleted") {
         return false;
       }
-      // Exclude special guest directory and workspace imports of directory contacts
-      if (r.isGlobalGuest === true || r.isSpecialGuest === true || Boolean(r.globalGuestId) || r.formId === "global_guest_directory" || r.formId === "global_guest_directory_import") {
+      if (r.isGlobalGuest === true || r.formId === "global_guest_directory") {
         return false;
       }
-      // Ensure we target Education Felicitation 2026 student applications
-      const evName = String(r.eventName || r.eventTitle || r.eventId || "").toLowerCase();
-      const isEduEvent = evName.includes("education") || evName.includes("felicitation") || evName.includes("2026") || evName.includes("vidya") || evName.includes("student") || evName === "" || evName === "unknown event";
-      const isEduTxn = String(r['Transaction ID'] || r.transactionId || "").toUpperCase().startsWith("VG-") || String(r['Transaction ID'] || r.transactionId || "").toUpperCase().startsWith("EDU");
-      const hasStudentFields = Boolean(r['Stream / Class'] || r['Stream'] || r['Course'] || r['% Obtained'] || r.percentage || r['Marks / Percentage'] || r['Standard'] || r.marksheet);
-
-      if (!isEduEvent && !isEduTxn && !hasStudentFields) {
-        return false;
-      }
-
       return true;
     });
 
     return cleanList;
+  };
+
+  const resolveEventTitle = (evIdOrTitle) => {
+    if (!evIdOrTitle) return "";
+    if (evIdOrTitle === "all") return "All Events Combined";
+    if (evIdOrTitle === "education2026" || evIdOrTitle === "edu26" || String(evIdOrTitle).toLowerCase().includes("education")) return "Education Felicitation 2026";
+    const evObj = (C?.events || []).find(e => e.id === evIdOrTitle || e.title === evIdOrTitle || (e.id && String(e.id).toLowerCase() === String(evIdOrTitle).toLowerCase()));
+    if (evObj && evObj.title) return evObj.title;
+    return evIdOrTitle;
+  };
+
+  const filterRegsByKbTargetEvents = (regsList, targetEventIds) => {
+    if (!Array.isArray(regsList) || regsList.length === 0) return [];
+    if (!Array.isArray(targetEventIds) || targetEventIds.length === 0 || targetEventIds.includes('all')) {
+      return regsList;
+    }
+
+    return regsList.filter(r => {
+      if (!r) return false;
+      if (r.deleted === true || r.isDeleted === true || r.Status === "Deleted" || r.status === "Deleted") return false;
+      if (r.isGlobalGuest === true || r.formId === "global_guest_directory") return false;
+
+      const rEvId = String(r.eventId || '').toLowerCase().trim();
+      const rEvName = String(r.eventName || r.eventTitle || r.program || r.purpose || r.title || '').toLowerCase().trim();
+      const combined = `${rEvId} ${rEvName}`.toLowerCase();
+
+      return targetEventIds.some(target => {
+        const tClean = String(target).toLowerCase().trim();
+        if (!tClean || tClean === 'all') return true;
+        if (r.eventId === target || rEvId === tClean) return true;
+        if (tClean.includes('education') || tClean === 'education2026' || tClean === 'edu26') {
+          const isEduEv = combined.includes('education') || combined.includes('felicitation') || combined.includes('vidya') || combined.includes('student');
+          const isEduTxn = String(r['Transaction ID'] || '').toUpperCase().startsWith('VG-') || String(r['Transaction ID'] || '').toUpperCase().startsWith('EDU');
+          const hasStudent = Boolean(r['Stream / Class'] || r['Stream'] || r['Course'] || r['% Obtained'] || r.studentName);
+          return isEduEv || isEduTxn || hasStudent;
+        }
+
+        const tokens = tClean.split(/[\s_/-]+/).filter(w => w.length > 2 && w !== 'event' && w !== 'program');
+        if (tokens.length > 0) {
+          return tokens.some(tok => combined.includes(tok));
+        }
+        return combined.includes(tClean);
+      });
+    });
   };
 
   const handleSendMessage = async (userText, overrideDisplayText) => {
@@ -30999,15 +33484,18 @@ function CommunityChatbot({ C, auth, onShowLogin }) {
       } else {
         botReply = `🔐 **Please Log In to Check Your Application Status**\n\nFor security and privacy, please log in with your registered mobile number on the website.\n\n• 👉 **Option 1**: Log in using the **Login** button at top right.\n• 👉 **Option 2**: Type your **Transaction ID (e.g. VG-7, EDU26-2)** or **10-digit Mobile Number** directly below to verify.`;
       }
-    } else if (qLower === "/edu_all" || qLower === "edu_all" || qLower === "/edu all" || qLower === "edu all" || qLower === "/education all" || qLower === "education all" || qLower === "/education_all" || (matchedKb && (matchedKb.id === "kb_all" || matchedKb.cmd.includes("all") || matchedKb.title.toLowerCase().includes("summary of all")))) {
-      // ── Trigger Live ALL Summary Card ──
+    } else if (qLower === "/edu_all" || qLower === "edu_all" || qLower === "/edu all" || qLower === "edu all" || qLower === "/education all" || qLower === "education all" || qLower === "/education_all" || (matchedKb && (matchedKb.id === "kb_all" || (matchedKb.cmd && matchedKb.cmd.toLowerCase().includes("all")) || (matchedKb.title && matchedKb.title.toLowerCase().includes("summary of all"))))) {
+      // ── Trigger Live ALL Summary Card with Target Events Scoping ──
       if (!isAnyAdmin) {
         botReply = C.chatbotAdminRestrictedMsg || `🔒 **Access Restricted**\n\nRegistration summaries, Vibhag counts, and committee metrics are restricted to authorized Committee Admins.\n\n👉 If you are a Committee Admin, please enter your **10-digit Authorized Mobile Number** to unlock.`;
       } else {
+        const scopedEvents = matchedKb?.targetEventIds || ["all"];
+        const targetEventRegs = filterRegsByKbTargetEvents(currentRegs, scopedEvents);
+
         let approved = 0, pending = 0, rejected = 0;
         const vibhagBreakMap = {};
 
-        currentRegs.forEach(r => {
+        targetEventRegs.forEach(r => {
           const s = String(r.Status || r.status || "Pending").trim();
           if (s === "Approved") approved++;
           else if (s === "Disapproved" || s === "Rejected") rejected++;
@@ -31022,17 +33510,38 @@ function CommunityChatbot({ C, auth, onShowLogin }) {
         });
 
         const breakList = Object.entries(vibhagBreakMap).sort((a, b) => a[0].localeCompare(b[0]));
+        
+        // Resolve clean human-readable event titles
+        const cleanEventTitles = scopedEvents.map(resolveEventTitle);
+        const eventLabel = (!scopedEvents.includes('all') && cleanEventTitles.length > 0)
+          ? cleanEventTitles.join(" & ")
+          : "All Events Combined";
+
+        // Calculate per-event breakdown if multiple events selected
+        const eventBreakMap = {};
+        if (cleanEventTitles.length > 1 || scopedEvents.includes('all')) {
+          targetEventRegs.forEach(r => {
+            const rEv = r.eventName || r.eventTitle || resolveEventTitle(r.eventId) || "General";
+            if (!eventBreakMap[rEv]) eventBreakMap[rEv] = { total: 0, approved: 0, pending: 0 };
+            eventBreakMap[rEv].total++;
+            const s = String(r.Status || r.status || "Pending").trim();
+            if (s === "Approved") eventBreakMap[rEv].approved++;
+            else eventBreakMap[rEv].pending++;
+          });
+        }
+        const eventBreakList = Object.entries(eventBreakMap).sort((a, b) => b[1].total - a[1].total);
 
         botType = "summary_card";
-        botReply = matchedKb.answer || `📊 **Live Registration Summary (All Vibhags)**:`;
+        botReply = (matchedKb && matchedKb.answer) ? matchedKb.answer : `📊 **Live Registration Summary (${eventLabel})**:`;
         cardData = {
-          total: currentRegs.length,
+          total: targetEventRegs.length,
           approved,
           pending,
           rejected,
-          scopeTitle: "All Vibhags Live Summary",
+          scopeTitle: `${eventLabel} Live Summary`,
           vibhagList: breakList,
-          apps: currentRegs,
+          eventList: eventBreakList,
+          apps: targetEventRegs,
           tplId: matchedKb?.attachedWhatsAppTplId
         };
       }
@@ -31041,7 +33550,9 @@ function CommunityChatbot({ C, auth, onShowLogin }) {
       if (!isAnyAdmin) {
         botReply = `🔒 **Access Restricted**\n\nPending review lists are restricted to authorized Committee Admins.\n\n👉 If you are a Committee Admin, please enter your **10-digit Authorized Mobile Number** to unlock this list.`;
       } else {
-        let pendingList = currentRegs.filter(r => {
+        const scopedEvents = matchedKb?.targetEventIds || ["all"];
+        const basePendingRegs = filterRegsByKbTargetEvents(currentRegs, scopedEvents);
+        let pendingList = basePendingRegs.filter(r => {
           const s = String(r.Status || r.status || "Pending").trim();
           return s !== "Approved" && s !== "Disapproved" && s !== "Rejected";
         });
@@ -31067,7 +33578,9 @@ function CommunityChatbot({ C, auth, onShowLogin }) {
       if (!isAnyAdmin) {
         botReply = `🔒 **Access Restricted**\n\nApproved application registries are restricted to authorized Committee Admins.\n\n👉 If you are a Committee Admin, please enter your **10-digit Authorized Mobile Number** to unlock this list.`;
       } else {
-        let approvedList = currentRegs.filter(r => String(r.Status || r.status || "").trim() === "Approved");
+        const scopedEvents = matchedKb?.targetEventIds || ["all"];
+        const baseApprovedRegs = filterRegsByKbTargetEvents(currentRegs, scopedEvents);
+        let approvedList = baseApprovedRegs.filter(r => String(r.Status || r.status || "").trim() === "Approved");
         if (userSessionScope === "vibhag" && sessionVibhag) {
           const allowedVibs = sessionVibhag.split(",").map(s => s.trim().toLowerCase()).filter(Boolean);
           approvedList = approvedList.filter(r => {
@@ -31084,6 +33597,94 @@ function CommunityChatbot({ C, auth, onShowLogin }) {
           botReply = `ℹ️ No approved applications recorded yet${userSessionScope === "vibhag" ? ` in ${sessionVibhag}` : ""}.`;
         }
       }
+    } else if (matchedKb && matchedKb.connectedSubWorkspaceId) {
+      // ── Connected Sub-Workspace Invitee Dispatch Workflow ──
+      const targetEvId = matchedKb.connectedEventId || "";
+      const targetDocId = matchedKb.connectedSubWorkspaceId || "invite";
+      const targetTplId = matchedKb.attachedWhatsAppTplId || "";
+
+      let allPool = (typeof window !== 'undefined' && window.__MMP_ALL_REGS_RAW__ && window.__MMP_ALL_REGS_RAW__.length > 0)
+        ? window.__MMP_ALL_REGS_RAW__
+        : ((typeof window !== 'undefined' && window.__MMP_REGS_CACHE__ && window.__MMP_REGS_CACHE__.length > 0)
+            ? window.__MMP_REGS_CACHE__
+            : ((regs && regs.length > 0) ? regs : currentRegs));
+
+      if (!allPool || allPool.length === 0) {
+        try {
+          await ensureRegistrations();
+          allPool = (typeof window !== 'undefined' && window.__MMP_ALL_REGS_RAW__) || (typeof window !== 'undefined' && window.__MMP_REGS_CACHE__) || regs || [];
+        } catch(e) {}
+      }
+
+      const matchedContacts = getSubworkspaceContactsList({
+        eventId: targetEvId,
+        subWorkspaceId: targetDocId,
+        allRegs: allPool,
+        C: C
+      });
+
+      // Find template text
+      let chosenTplText = "";
+      if (targetTplId) {
+        const customTpl = (C?.whatsappBroadcastTemplates || []).find(t => t.id === targetTplId);
+        if (customTpl && customTpl.text) {
+          chosenTplText = customTpl.text;
+        } else {
+          for (const ev of (C?.events || [])) {
+            const wsTpls = typeof getEventWhatsAppTemplates === 'function' ? getEventWhatsAppTemplates(ev, C) : (ev.whatsAppTemplates || ev.whatsappTemplates || []);
+            const foundWsTpl = wsTpls.find(t => t.id === targetTplId || t.name === targetTplId);
+            if (foundWsTpl && foundWsTpl.text) {
+              chosenTplText = foundWsTpl.text;
+              break;
+            }
+          }
+        }
+      }
+
+      // Fallback default invitation pass text if none selected
+      if (!chosenTplText) {
+        const evObj = (C?.events || []).find(e => e.id === targetEvId || e.title === targetEvId);
+        const wsTpls = evObj?.whatsAppTemplates || evObj?.whatsappTemplates || [];
+        const defaultWsTpl = wsTpls.find(t => t.isDefault) || wsTpls[0];
+        if (defaultWsTpl && defaultWsTpl.text) {
+          chosenTplText = defaultWsTpl.text;
+        } else {
+          chosenTplText = `🏛️ *MUMBAI MEGHWAL PANCHAYAT*\n🏆 *{EVENT_NAME}*\n═══════════════════════\nNamaste *{MEMBER_NAME}*,\n\nYou are cordially invited to *{EVENT_NAME}*!\n\n👉 *Invitation Pass:* {PASS_LINK}\n\n📞 Helpline: {HELPLINE_PHONES}`;
+        }
+      }
+
+      // Format message for each matched contact
+      const dispatchItems = matchedContacts.map(contact => {
+        const formattedMsg = formatWhatsAppTemplateForContact({
+          tplString: chosenTplText,
+          reg: { ...contact, customDocId: (targetDocId !== 'invite' && targetDocId !== 'cert') ? targetDocId : null },
+          allRegs: allPool,
+          C: C
+        });
+        const name = String(contact['Full Name'] || contact['Participant Name'] || contact['Name'] || contact.name || 'Member').trim();
+        const mob = String(contact['Mobile Number'] || contact.Mobile || contact.mobile || contact.phone || '').replace(/\D/g, '').slice(-10);
+        const vib = contact.vibhag || contact['Vibhag'] || contact['Vibhag New'] || 'General';
+        const txn = contact['Transaction ID'] || contact.transactionId || contact.id || 'N/A';
+        return {
+          ...contact,
+          name,
+          mobile: mob,
+          vibhag: vib,
+          txnId: txn,
+          formattedMessage: formattedMsg
+        };
+      });
+
+      botType = "subworkspace_whatsapp_dispatcher";
+      botReply = matchedKb.answer || `💌 **${matchedKb.title || matchedKb.connectedSubWorkspaceName || "Sub-Workspace Dispatcher"}**:\n\nFound **${dispatchItems.length} contact(s)** in this sub-workspace. Use the interactive dispatcher below to send personalized WhatsApp messages:`;
+      cardData = {
+        items: dispatchItems,
+        subWorkspaceName: matchedKb.connectedSubWorkspaceName || "Sub-Workspace",
+        kbTitle: matchedKb.title,
+        attachedWhatsAppTplId: targetTplId,
+        eventId: targetEvId,
+        subWorkspaceId: targetDocId
+      };
     } else if (matchedKb) {
       const reqRole = matchedKb.roleAccess || (matchedKb.adminOnly ? "vibhag_admin" : "public");
       const isPermitted = 
@@ -31117,7 +33718,34 @@ function CommunityChatbot({ C, auth, onShowLogin }) {
           answer: matchedKb.answer
         };
       } else {
-        botReply = matchedKb.answer;
+        const kbTargetEvents = (Array.isArray(matchedKb.targetEventIds) && matchedKb.targetEventIds.length > 0)
+          ? matchedKb.targetEventIds
+          : ['all'];
+        
+        let dynamicAnswer = matchedKb.answer || "";
+        const activeTargetScope = kbTargetEvents.includes('all') ? 'all' : kbTargetEvents[0];
+        
+        if (typeof generateEventScopedStats === 'function') {
+          const scopedStats = generateEventScopedStats(
+            { vibhag: sessionVibhag && sessionVibhag !== "All Vibhags" ? sessionVibhag : "" },
+            activeTargetScope,
+            currentRegs,
+            sessionVibhag && sessionVibhag !== "All Vibhags" ? sessionVibhag : "auto"
+          );
+
+          dynamicAnswer = dynamicAnswer
+            .replace(/{TOTAL_STUDENTS_COUNT}/g, scopedStats.totalStudentsCount)
+            .replace(/{TOTAL_REGISTRATIONS}/g, scopedStats.totalStudentsCount)
+            .replace(/{APPROVED_STUDENTS_COUNT}/g, scopedStats.approvedStudentsCount)
+            .replace(/{PENDING_STUDENTS_COUNT}/g, scopedStats.pendingStudentsCount)
+            .replace(/{VIBHAG_STUDENT_SUMMARY}/g, scopedStats.vibhagStudentSummary)
+            .replace(/{EVENT_REGISTRATION_SUMMARY}/g, scopedStats.eventRegistrationSummary)
+            .replace(/{REGISTRATION_STATS}/g, scopedStats.eventRegistrationSummary)
+            .replace(/{VIBHAG_STUDENT_LIST}/g, scopedStats.vibhagStudentList)
+            .replace(/{ALL_STUDENTS_LIST}/g, scopedStats.allStudentsList);
+        }
+
+        botReply = dynamicAnswer;
       }
     // ── Topic Category Hubs (Group / Bucket Commands) ──
     } else if (qLower === "/education" || qLower === "education" || qLower === "/edu" || qLower === "edu") {
@@ -31741,6 +34369,11 @@ function CommunityChatbot({ C, auth, onShowLogin }) {
                               }]);
                             }}
                           />
+                        )}
+
+                                                {/* Sub-Workspace WhatsApp Dispatcher Card */}
+                        {m.type === "subworkspace_whatsapp_dispatcher" && m.cardData && (
+                          <ChatbotWhatsAppDispatcherCard dispatchData={m.cardData} C={C} allRegs={regs || []} />
                         )}
 
                         {/* If Message has Summary Card */}
@@ -32492,9 +35125,38 @@ export default function App() {
     } catch (e) {}
     return defaultData;
   });
-  const [auth,    setAuth]    = useState(null);      // { idToken, email }
+  const [auth,    setAuth]    = useState(() => {
+    try {
+      const savedAuth = localStorage.getItem("trustAuth");
+      if (savedAuth) {
+        const p = JSON.parse(savedAuth);
+        if (p && p.idToken) return p;
+      }
+    } catch(e) {}
+    const token = typeof localStorage !== 'undefined' ? (localStorage.getItem("trustPublicAuthToken") || localStorage.getItem("globalAuthToken")) : null;
+    if (token) return { idToken: token };
+    return null;
+  });
   const [fbState, setFbState] = useState("loading"); // loading | ready | error
   const [showLogin, setShowLogin] = useState(false);
+
+  // ── Restore Firebase Auth session on mount ──────────────────────────────────
+  useEffect(() => {
+    if (fbAuth) {
+      const unsub = onAuthStateChanged(fbAuth, async (user) => {
+        if (user) {
+          try {
+            const token = await user.getIdToken();
+            const authObj = { idToken: token, email: user.email, uid: user.uid };
+            setAuth(authObj);
+            localStorage.setItem("trustAuth", JSON.stringify(authObj));
+            localStorage.setItem("trustPublicAuthToken", token);
+          } catch(e) {}
+        }
+      });
+      return () => unsub();
+    }
+  }, []);
 
   // ── Load content from Firestore on mount ─────────────────────────────────
   useEffect(() => {
@@ -32594,6 +35256,12 @@ export default function App() {
 
   const handleLogin = (authData) => {
     setAuth(authData);
+    try {
+      localStorage.setItem("trustAuth", JSON.stringify(authData));
+      if (authData?.idToken) {
+        localStorage.setItem("trustPublicAuthToken", authData.idToken);
+      }
+    } catch(e) {}
     setShowLogin(false);
     setPage("admin");
   };
