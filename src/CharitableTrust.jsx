@@ -31842,6 +31842,13 @@ function OfflineDonationEntryCard({ initialData, onSubmit, C }) {
   );
 }
 
+export const getAppreciationTemplateDefaultUrl = () => {
+  if (typeof window !== "undefined" && window.location.hostname.includes("github.io")) {
+    return "https://pradeepparmar902.github.io/MY_Community_Website/donor_appreciation_poster_tpl.jpg";
+  }
+  return "/donor_appreciation_poster_tpl.jpg";
+};
+
 // ── Canvas-based Donor Appreciation Poster Generator ──
 export const generateDonorPosterCanvas = (donation, templateImgUrl) => {
   return new Promise((resolve, reject) => {
@@ -31849,6 +31856,9 @@ export const generateDonorPosterCanvas = (donation, templateImgUrl) => {
     canvas.width = 994;
     canvas.height = 1024;
     const ctx = canvas.getContext("2d");
+
+    const activeTpl = templateImgUrl || getAppreciationTemplateDefaultUrl();
+    const defaultTpl = getAppreciationTemplateDefaultUrl();
 
     const img = new Image();
     img.crossOrigin = "anonymous";
@@ -31906,8 +31916,8 @@ export const generateDonorPosterCanvas = (donation, templateImgUrl) => {
       }
     };
     img.onerror = () => {
-      // If custom template fails to load, fallback to default local asset
-      if (templateImgUrl !== "/donor_appreciation_poster_tpl.jpg") {
+      // If custom template fails to load, fallback to default asset
+      if (activeTpl !== defaultTpl) {
         const fallbackImg = new Image();
         fallbackImg.crossOrigin = "anonymous";
         fallbackImg.onload = () => {
@@ -31915,12 +31925,12 @@ export const generateDonorPosterCanvas = (donation, templateImgUrl) => {
           resolve(canvas.toDataURL("image/png"));
         };
         fallbackImg.onerror = reject;
-        fallbackImg.src = "/donor_appreciation_poster_tpl.jpg";
+        fallbackImg.src = defaultTpl;
       } else {
         reject(new Error("Failed to load poster template image"));
       }
     };
-    img.src = templateImgUrl || "/donor_appreciation_poster_tpl.jpg";
+    img.src = activeTpl;
   });
 };
 
@@ -31931,7 +31941,7 @@ function OfflineDonationSuccessCard({ donation, C }) {
 
   useEffect(() => {
     let isMounted = true;
-    const tplUrl = C?.donorPosterTemplateUrl || "/donor_appreciation_poster_tpl.jpg";
+    const tplUrl = C?.donorPosterTemplateUrl || getAppreciationTemplateDefaultUrl();
     generateDonorPosterCanvas(donation, tplUrl)
       .then(url => {
         if (isMounted) {
@@ -32855,7 +32865,7 @@ function DonorListCard({ donorData, auth, onRefresh, C }) {
                 Current active template for Certificate of Appreciation:
               </p>
               <img 
-                src={C?.donorPosterTemplateUrl || "/donor_appreciation_poster_tpl.jpg"} 
+                src={C?.donorPosterTemplateUrl || getAppreciationTemplateDefaultUrl()} 
                 alt="Current Template" 
                 style={{width:"100%",maxHeight:220,objectFit:"contain",borderRadius:8,border:"1px solid #CBD5E1",boxShadow:"0 2px 6px rgba(0,0,0,0.1)"}}
               />
@@ -32871,9 +32881,7 @@ function DonorListCard({ donorData, auth, onRefresh, C }) {
                 if (!file) return;
                 setUploadingPosterTpl(true);
                 try {
-                  const storageRef = fbStorageRef(storage, `templates/donor_poster_${Date.now()}_${file.name.replace(/[^a-zA-Z0-9.]/g, '_')}`);
-                  await fbUploadBytes(storageRef, file);
-                  const downloadUrl = await fbGetDownloadURL(storageRef);
+                  const downloadUrl = await fbUploadPhoto(file, auth?.idToken);
 
                   if (C) {
                     C.donorPosterTemplateUrl = downloadUrl;
