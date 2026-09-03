@@ -26907,7 +26907,51 @@ function AdminInviteLetters({ mob, C, setC, auth }) {
     return true;
   });
 
-  const filteredRegs = inviteRegs.filter(r => {
+  // Deduplicate sub-workspace recipients so no person or pass appears twice
+  const uniqueInviteRegs = useMemo(() => {
+    const map = new Map();
+
+    inviteRegs.forEach(r => {
+      const txn = String(r['Transaction ID'] || r.transactionId || '').trim();
+      const mob = String(r['Mobile Number'] || r.phone || r.mobile || '').replace(/\D/g, '').slice(-10);
+      const name = String(r['Full Name'] || r['Participant Name'] || r.name || '').trim().toLowerCase();
+
+      // Stable person identifier: Txn ID > 10-digit mobile > Full Name
+      const dedupeKey = txn || (mob && mob.length === 10 ? `mob_${mob}` : (name ? `name_${name}` : r.id));
+
+      if (map.has(dedupeKey)) {
+        const existing = map.get(dedupeKey);
+        // Prefer the record that is more recently updated or has whatsApp activity
+        const existingScore = (existing.targetTemplateId === currentDocTpl?.id ? 10 : 0) + 
+          (existing.whatsAppCount || 0) + 
+          (existing._submittedAt || 0);
+
+        const currentScore = (r.targetTemplateId === currentDocTpl?.id ? 10 : 0) + 
+          (r.whatsAppCount || 0) + 
+          (r._submittedAt || 0);
+
+        const existingGroups = typeof getResolvedContactGroups === 'function' ? getResolvedContactGroups(existing) : (existing.groups || []);
+        const rGroups = typeof getResolvedContactGroups === 'function' ? getResolvedContactGroups(r) : (r.groups || []);
+        const combinedGroups = Array.from(new Set([...existingGroups, ...rGroups])).filter(Boolean);
+
+        const winner = currentScore >= existingScore ? r : existing;
+        map.set(dedupeKey, {
+          ...existing,
+          ...r,
+          ...winner,
+          groups: combinedGroups,
+          Groups: combinedGroups,
+          Group: combinedGroups.join(", ")
+        });
+      } else {
+        map.set(dedupeKey, r);
+      }
+    });
+
+    return Array.from(map.values());
+  }, [inviteRegs, currentDocTpl]);
+
+  const filteredRegs = uniqueInviteRegs.filter(r => {
     if (searchQuery) {
       const q = searchQuery.toLowerCase();
       if (!Object.values(r).some(v => String(v).toLowerCase().includes(q))) return false;
