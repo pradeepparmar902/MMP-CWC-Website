@@ -31842,13 +31842,152 @@ function OfflineDonationEntryCard({ initialData, onSubmit, C }) {
   );
 }
 
-function OfflineDonationSuccessCard({ donation }) {
+// ── Canvas-based Donor Appreciation Poster Generator ──
+export const generateDonorPosterCanvas = (donation, templateImgUrl) => {
+  return new Promise((resolve, reject) => {
+    const canvas = document.createElement("canvas");
+    canvas.width = 994;
+    canvas.height = 1024;
+    const ctx = canvas.getContext("2d");
+
+    const img = new Image();
+    img.crossOrigin = "anonymous";
+    img.onload = () => {
+      try {
+        // 1. Draw base certificate background
+        ctx.drawImage(img, 0, 0, 994, 1024);
+
+        // 2. Donor Name on MR. line
+        const dName = String(donation.name || donation['Full Name'] || 'Respected Donor').trim();
+        const dNameGu = String(donation.nameGu || donation.donorNameGu || '').trim();
+        const displayName = dNameGu && dNameGu !== dName ? `${dName} (${dNameGu})` : dName;
+
+        ctx.save();
+        ctx.fillStyle = "#0B2545"; // Deep navy
+        let fontSize = 24;
+        if (displayName.length > 32) fontSize = 17;
+        else if (displayName.length > 22) fontSize = 20;
+        ctx.font = `bold ${fontSize}px 'Playfair Display', Georgia, serif`;
+        ctx.textAlign = "center";
+        ctx.fillText(displayName, 415, 532);
+        ctx.restore();
+
+        // 3. Donation Amount on golden INR banner
+        const amtStr = `₹ ${Number(donation.amount || 0).toLocaleString('en-IN')}/-`;
+        ctx.save();
+        ctx.fillStyle = "#FFFFFF";
+        ctx.shadowColor = "rgba(0,0,0,0.5)";
+        ctx.shadowBlur = 4;
+        ctx.shadowOffsetX = 1;
+        ctx.shadowOffsetY = 1;
+        ctx.font = "bold 22px 'Montserrat', Arial, sans-serif";
+        ctx.textAlign = "center";
+        ctx.fillText(amtStr, 385, 626);
+        ctx.restore();
+
+        // 4. Donor Acknowledgment details
+        const receiptNo = donation.receiptNo || donation.internalReceiptNo || donation.id || 'N/A';
+        const vibhag = donation.vibhag || donation.Vibhag || 'General';
+        const dateStr = donation.date || new Date().toISOString().split('T')[0];
+
+        ctx.save();
+        ctx.fillStyle = "#334155";
+        ctx.font = "italic 13.5px 'Montserrat', Arial, sans-serif";
+        ctx.textAlign = "center";
+        const ackLine1 = "Presented with heartfelt gratitude for supporting the Education Activity 2026.";
+        const ackLine2 = `Receipt #: ${receiptNo}   •   Vibhag: ${vibhag}   •   Date: ${dateStr}`;
+        ctx.fillText(ackLine1, 497, 814);
+        ctx.fillText(ackLine2, 497, 834);
+        ctx.restore();
+
+        resolve(canvas.toDataURL("image/png"));
+      } catch(err) {
+        reject(err);
+      }
+    };
+    img.onerror = () => {
+      // If custom template fails to load, fallback to default local asset
+      if (templateImgUrl !== "/donor_appreciation_poster_tpl.jpg") {
+        const fallbackImg = new Image();
+        fallbackImg.crossOrigin = "anonymous";
+        fallbackImg.onload = () => {
+          ctx.drawImage(fallbackImg, 0, 0, 994, 1024);
+          resolve(canvas.toDataURL("image/png"));
+        };
+        fallbackImg.onerror = reject;
+        fallbackImg.src = "/donor_appreciation_poster_tpl.jpg";
+      } else {
+        reject(new Error("Failed to load poster template image"));
+      }
+    };
+    img.src = templateImgUrl || "/donor_appreciation_poster_tpl.jpg";
+  });
+};
+
+function OfflineDonationSuccessCard({ donation, C }) {
+  const [posterUrl, setPosterUrl] = useState(null);
+  const [generating, setGenerating] = useState(true);
+  const [copied, setCopied] = useState(false);
+
+  useEffect(() => {
+    let isMounted = true;
+    const tplUrl = C?.donorPosterTemplateUrl || "/donor_appreciation_poster_tpl.jpg";
+    generateDonorPosterCanvas(donation, tplUrl)
+      .then(url => {
+        if (isMounted) {
+          setPosterUrl(url);
+          setGenerating(false);
+        }
+      })
+      .catch(err => {
+        console.warn("Poster generation error:", err);
+        if (isMounted) setGenerating(false);
+      });
+    return () => { isMounted = false; };
+  }, [donation, C]);
+
+  const handleDownloadPoster = () => {
+    if (!posterUrl) return;
+    const link = document.createElement("a");
+    link.href = posterUrl;
+    link.download = `MMP_Appreciation_Certificate_${(donation.name || 'Donor').replace(/[^a-zA-Z0-9]/g, '_')}.png`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+  const getThankYouWhatsAppMsg = () => {
+    const dName = donation.name || "Respected Donor";
+    const amt = Number(donation.amount || 0).toLocaleString('en-IN');
+    const rNo = donation.receiptNo || donation.internalReceiptNo || donation.id || 'N/A';
+    const vib = donation.vibhag || "General";
+    const dt = donation.date || new Date().toISOString().split('T')[0];
+
+    return `🌷 || મુંબઈ મેઘવાળ પંચાયત || 🌷\n         [NGO]\n   •••• સેન્ટ્રલ વર્કિંગ કમિટી ••••\n☸~~~~~~~~~~~~~~~~~☸\n\nવિષય: શૈક્ષણિક કાર્યક્રમ દાન રસીદ & સન્માન પત્રક\n\nનમસ્તે શ્રીમાન/શ્રીમતી *${dName}*,\nવિદ્યાર્થી ગુણગૌરવ પુરસ્કાર ૨૦૨૬ માટે આપના ઉદાર દાન બદલ મુંબઈ મેઘવાળ પંચાયત આપનો હૃદયપૂર્વક આભાર માને છે.\n\n🧾 *દાન પાવતી વિગત:*\n• દાતા: *${dName}*\n• રકમ: *₹${amt}/-*\n• પાવતી નં.: *${rNo}*\n• વિભાગ: *${vib}*\n• તારીખ: *${dt}*\n• હેતુ: *${donation.purpose || donation.program || 'Education Activity 2026'}*\n\n📜 આપનું ડિજિટલ સન્માન પ્રમાણપત્ર (Certificate of Appreciation) તૈયાર થઈ ગયું છે.\n\nલિ. સેન્ટ્રલ વર્કિંગ કમિટી\nમુંબઈ મેઘવાળ પંચાયત\n🌐 https://www.mmp-cwc.com`;
+  };
+
+  const handleCopyText = () => {
+    navigator.clipboard.writeText(getThankYouWhatsAppMsg());
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+
+  const handleShareWhatsApp = () => {
+    const text = getThankYouWhatsAppMsg();
+    const cleanPhone = String(donation.phone || donation.mobile || '').replace(/\D/g, '').slice(-10);
+    const waUrl = cleanPhone 
+      ? `https://api.whatsapp.com/send?phone=91${cleanPhone}&text=${encodeURIComponent(text)}`
+      : `https://api.whatsapp.com/send?text=${encodeURIComponent(text)}`;
+    window.open(waUrl, "_blank");
+  };
+
   return (
-    <div style={{background:"white",border:"1.5px solid #22C55E",borderRadius:10,padding:12,marginTop:6,boxShadow:"0 2px 8px rgba(34,197,94,0.15)"}}>
+    <div style={{background:"white",border:"1.5px solid #22C55E",borderRadius:12,padding:12,marginTop:6,boxShadow:"0 2px 10px rgba(34,197,94,0.15)"}}>
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8,borderBottom:"1px solid #F1F5F9",paddingBottom:6}}>
         <div style={{fontSize:".85rem",fontWeight:800,color:"#15803D"}}>🎉 Offline Donation Recorded</div>
         <span style={{background:"#DCFCE7",color:"#166534",fontSize:".68rem",padding:"2px 6px",borderRadius:6,fontWeight:800}}>Offline</span>
       </div>
+
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:6,fontSize:".78rem"}}>
         <div><span style={{color:"#64748B"}}>Donor:</span> <strong>{donation.name}</strong></div>
         <div><span style={{color:"#64748B"}}>Amount:</span> <strong style={{color:"#15803D"}}>₹{Number(donation.amount).toLocaleString('en-IN')}</strong></div>
@@ -31857,8 +31996,53 @@ function OfflineDonationSuccessCard({ donation }) {
         <div><span style={{color:"#64748B"}}>Receipt #:</span> <strong>{donation.receiptNo || donation.internalReceiptNo || donation.id}</strong></div>
         <div><span style={{color:"#64748B"}}>Event Code:</span> <strong>{donation.eventCode || 'EDU26'}</strong></div>
       </div>
-      <div style={{marginTop:8,padding:"4px 8px",background:"#F8FAFC",borderRadius:6,fontSize:".72rem",color:"#475569"}}>
-        <strong>Purpose:</strong> {donation.purpose || donation.program}
+
+      {/* Generated Appreciation Poster Preview */}
+      <div style={{marginTop:10,background:"#F8FAFC",borderRadius:8,padding:10,border:"1px solid #E2E8F0",textAlign:"center"}}>
+        <div style={{fontSize:".75rem",fontWeight:800,color:"#0F172A",marginBottom:6,display:"flex",alignItems:"center",justifyContent:"center",gap:6}}>
+          <span>📜</span> Certificate of Appreciation Poster Generated:
+        </div>
+
+        {generating ? (
+          <div style={{padding:20,fontSize:".75rem",color:"#64748B"}}>⏳ Rendering Personalized Poster...</div>
+        ) : posterUrl ? (
+          <div>
+            <img 
+              src={posterUrl} 
+              alt="Donation Appreciation Certificate" 
+              style={{width:"100%",maxWidth:340,borderRadius:8,boxShadow:"0 3px 10px rgba(0,0,0,0.15)",border:"1px solid #CBD5E1",marginBottom:8}} 
+            />
+
+            {/* Action Buttons Bar */}
+            <div style={{display:"flex",gap:6,justifyContent:"center",flexWrap:"wrap"}}>
+              <button
+                type="button"
+                onClick={handleDownloadPoster}
+                style={{padding:"6px 12px",borderRadius:6,background:"#0D4B5E",color:"white",border:"none",fontWeight:800,fontSize:".74rem",cursor:"pointer",display:"flex",alignItems:"center",gap:4}}
+              >
+                <span>📥</span> Download Poster
+              </button>
+
+              <button
+                type="button"
+                onClick={handleShareWhatsApp}
+                style={{padding:"6px 12px",borderRadius:6,background:"#25D366",color:"white",border:"none",fontWeight:800,fontSize:".74rem",cursor:"pointer",display:"flex",alignItems:"center",gap:4}}
+              >
+                <span>💬</span> Share to WhatsApp
+              </button>
+
+              <button
+                type="button"
+                onClick={handleCopyText}
+                style={{padding:"6px 10px",borderRadius:6,background:"#F1F5F9",color:"#334155",border:"1px solid #CBD5E1",fontWeight:700,fontSize:".74rem",cursor:"pointer"}}
+              >
+                {copied ? "✓ Copied!" : "📋 Copy"}
+              </button>
+            </div>
+          </div>
+        ) : (
+          <div style={{fontSize:".72rem",color:"#94A3B8"}}>Certificate preview unavailable</div>
+        )}
       </div>
     </div>
   );
@@ -32245,6 +32429,10 @@ function DonorListCard({ donorData, auth, onRefresh, C }) {
 
   // Edit Donation Modal State
   const [editingDonation, setEditingDonation] = useState(null);
+  const [activePosterDonor, setActivePosterDonor] = useState(null);
+  const [showPosterTplUploadModal, setShowPosterTplUploadModal] = useState(false);
+  const [uploadingPosterTpl, setUploadingPosterTpl] = useState(false);
+  const posterTplInputRef = useRef(null);
   const [savingEdit, setSavingEdit] = useState(false);
   const [editFormData, setEditFormData] = useState({
     name: "",
@@ -32436,8 +32624,20 @@ function DonorListCard({ donorData, auth, onRefresh, C }) {
   return (
     <div style={{background:"white",border:"1.5px solid #CBD5E1",borderRadius:12,padding:12,marginTop:6}}>
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
-        <div style={{fontSize:".82rem",fontWeight:800,color:"#0F172A"}}>📋 Donor Registry ({filtered.length} of {donors.length})</div>
-        <span style={{fontSize:".78rem",fontWeight:800,color:"#15803D"}}>₹{donorData.totalAmount.toLocaleString('en-IN')} Total</span>
+        <div style={{fontSize:".82rem",fontWeight:800,color:"#0F172A",display:"flex",alignItems:"center",gap:6}}>
+          <span>📋</span> Donor Registry ({filtered.length} of {donors.length})
+        </div>
+        <div style={{display:"flex",alignItems:"center",gap:6}}>
+          <button
+            type="button"
+            onClick={() => setShowPosterTplUploadModal(true)}
+            style={{padding:"3px 8px",borderRadius:5,background:"#F0FDF4",border:"1px solid #86EFAC",color:"#15803D",fontSize:".68rem",fontWeight:800,cursor:"pointer",display:"flex",alignItems:"center",gap:3}}
+            title="Upload or change Appreciation Certificate background template"
+          >
+            <span>🎨</span> Poster Template
+          </button>
+          <span style={{fontSize:".78rem",fontWeight:800,color:"#15803D"}}>₹{donorData.totalAmount.toLocaleString('en-IN')} Total</span>
+        </div>
       </div>
 
       <input
@@ -32464,6 +32664,14 @@ function DonorListCard({ donorData, auth, onRefresh, C }) {
                 </div>
                 <div style={{display:"flex",alignItems:"center",gap:6}}>
                   <span style={{fontWeight:800,color:"#15803D",fontSize:".82rem"}}>₹{Number(d.amount).toLocaleString('en-IN')}</span>
+                  <button
+                    type="button"
+                    onClick={() => setActivePosterDonor(d)}
+                    style={{background:"#F0FDF4",border:"1px solid #86EFAC",color:"#166534",fontSize:".68rem",padding:"2px 6px",borderRadius:4,cursor:"pointer",fontWeight:800,display:"flex",alignItems:"center",gap:3}}
+                    title="View, download, or share Certificate of Appreciation poster for this donor"
+                  >
+                    <span>🖼️</span> Poster
+                  </button>
                   <button
                     onClick={() => {
                       const customWordDict = C?.gujaratiWordDictionary || {};
@@ -32595,7 +32803,126 @@ function DonorListCard({ donorData, auth, onRefresh, C }) {
           </button>
         </div>
 
-        {showTemplateEditor && (
+        {/* Poster Viewer & Share Modal */}
+      {activePosterDonor && (
+        <div style={{position:"fixed",top:0,left:0,right:0,bottom:0,background:"rgba(15,23,42,0.7)",backdropFilter:"blur(4px)",zIndex:999999,display:"flex",alignItems:"center",justifyContent:"center",padding:16}}>
+          <div style={{background:"white",borderRadius:16,maxWidth:520,width:"100%",padding:20,boxShadow:"0 25px 50px rgba(0,0,0,0.3)",maxHeight:"90vh",overflowY:"auto"}}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12,borderBottom:"1px solid #E2E8F0",paddingBottom:8}}>
+              <div style={{fontSize:".95rem",fontWeight:800,color:"#0F172A",display:"flex",alignItems:"center",gap:6}}>
+                <span>📜</span> Appreciation Certificate: {activePosterDonor.name}
+              </div>
+              <button 
+                onClick={() => setActivePosterDonor(null)}
+                style={{background:"#F1F5F9",border:"none",borderRadius:"50%",width:30,height:30,cursor:"pointer",fontWeight:800,fontSize:".9rem",color:"#475569"}}
+              >
+                ✕
+              </button>
+            </div>
+
+            <OfflineDonationSuccessCard donation={activePosterDonor} C={C} />
+
+            <div style={{marginTop:12,display:"flex",justifyContent:"flex-end"}}>
+              <button
+                type="button"
+                onClick={() => setActivePosterDonor(null)}
+                style={{padding:"8px 16px",borderRadius:8,background:"#F1F5F9",color:"#475569",border:"1px solid #CBD5E1",fontWeight:700,fontSize:".8rem",cursor:"pointer"}}
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Template Upload Modal */}
+      {showPosterTplUploadModal && (
+        <div style={{position:"fixed",top:0,left:0,right:0,bottom:0,background:"rgba(15,23,42,0.7)",backdropFilter:"blur(4px)",zIndex:999999,display:"flex",alignItems:"center",justifyContent:"center",padding:16}}>
+          <div style={{background:"white",borderRadius:16,maxWidth:460,width:"100%",padding:20,boxShadow:"0 25px 50px rgba(0,0,0,0.3)"}}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12,borderBottom:"1px solid #E2E8F0",paddingBottom:8}}>
+              <div style={{fontSize:".95rem",fontWeight:800,color:"#0F172A",display:"flex",alignItems:"center",gap:6}}>
+                <span>🎨</span> Appreciation Certificate Template
+              </div>
+              <button 
+                onClick={() => setShowPosterTplUploadModal(false)}
+                style={{background:"#F1F5F9",border:"none",borderRadius:"50%",width:30,height:30,cursor:"pointer",fontWeight:800,fontSize:".9rem",color:"#475569"}}
+              >
+                ✕
+              </button>
+            </div>
+
+            <div style={{textAlign:"center",marginBottom:14}}>
+              <p style={{fontSize:".8rem",color:"#64748B",margin:"0 0 10px 0"}}>
+                Current active template for Certificate of Appreciation:
+              </p>
+              <img 
+                src={C?.donorPosterTemplateUrl || "/donor_appreciation_poster_tpl.jpg"} 
+                alt="Current Template" 
+                style={{width:"100%",maxHeight:220,objectFit:"contain",borderRadius:8,border:"1px solid #CBD5E1",boxShadow:"0 2px 6px rgba(0,0,0,0.1)"}}
+              />
+            </div>
+
+            <input 
+              type="file" 
+              ref={posterTplInputRef} 
+              accept="image/*" 
+              style={{display:"none"}} 
+              onChange={async (e) => {
+                const file = e.target.files[0];
+                if (!file) return;
+                setUploadingPosterTpl(true);
+                try {
+                  const storageRef = fbStorageRef(storage, `templates/donor_poster_${Date.now()}_${file.name.replace(/[^a-zA-Z0-9.]/g, '_')}`);
+                  await fbUploadBytes(storageRef, file);
+                  const downloadUrl = await fbGetDownloadURL(storageRef);
+
+                  if (C) {
+                    C.donorPosterTemplateUrl = downloadUrl;
+                    await fbSave(C, auth?.idToken);
+                  }
+                  alert("✅ New appreciation poster template uploaded & saved successfully!");
+                  setShowPosterTplUploadModal(false);
+                } catch(err) {
+                  alert("Upload failed: " + err.message);
+                } finally {
+                  setUploadingPosterTpl(false);
+                }
+              }}
+            />
+
+            <div style={{display:"flex",gap:8}}>
+              <button
+                type="button"
+                onClick={() => posterTplInputRef.current?.click()}
+                disabled={uploadingPosterTpl}
+                style={{flex:1,padding:"10px",borderRadius:8,background:"#0D4B5E",color:"white",border:"none",fontWeight:800,fontSize:".82rem",cursor:uploadingPosterTpl?"wait":"pointer",display:"flex",alignItems:"center",justifyContent:"center",gap:6}}
+              >
+                <span>📂</span> {uploadingPosterTpl ? "Uploading..." : "Upload New Template Image"}
+              </button>
+
+              {C?.donorPosterTemplateUrl && (
+                <button
+                  type="button"
+                  onClick={async () => {
+                    if (!confirm("Reset to the default Appreciation Certificate template?")) return;
+                    try {
+                      delete C.donorPosterTemplateUrl;
+                      await fbSave(C, auth?.idToken);
+                      alert("✅ Reset to default template.");
+                    } catch(e) {
+                      alert("Error: " + e.message);
+                    }
+                  }}
+                  style={{padding:"10px 14px",borderRadius:8,background:"#FEE2E2",color:"#DC2626",border:"none",fontWeight:800,fontSize:".8rem",cursor:"pointer"}}
+                >
+                  Reset Default
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showTemplateEditor && (
           <div style={{background:"#F8FAFC",border:"1.5px solid #CBD5E1",borderRadius:8,padding:10,fontSize:".75rem",display:"flex",flexDirection:"column",gap:8}}>
             <div style={{fontWeight:800,color:"#15803D",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
               <span>📱 Customize WhatsApp Template Text</span>
@@ -33096,7 +33423,7 @@ function DynamicChatbotFormCard({ formDef, destination = "donations", introTitle
 
   if (submittedResult) {
     if (submittedResult.type === "donation") {
-      return <OfflineDonationSuccessCard donation={submittedResult.data} />;
+      return <OfflineDonationSuccessCard donation={submittedResult.data} C={C} />;
     }
     return (
       <div style={{background:"#F0FDF4",border:"1.5px solid #86EFAC",borderRadius:10,padding:14,marginTop:6,boxShadow:"0 2px 8px rgba(34,197,94,0.15)"}}>
@@ -35111,7 +35438,7 @@ function CommunityChatbot({ C, auth, onShowLogin }) {
 
                         {/* If Message has Offline Donation Success Confirmation */}
                         {m.type === "offline_donation_success" && m.cardData?.donation && (
-                          <OfflineDonationSuccessCard donation={m.cardData.donation} />
+                          <OfflineDonationSuccessCard donation={m.cardData.donation} C={C} />
                         )}
 
                         {/* If Message has Donation Summary Card */}
