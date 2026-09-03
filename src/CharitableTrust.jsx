@@ -27148,6 +27148,7 @@ function AdminInviteLetters({ mob, C, setC, auth }) {
           "Full Name": "Harish Makwana",
           "Designation": "Trustee",
           "Mobile Number": "9819728011",
+          "Vibhag": "10 MAHALAXMI",
           "Group": "Trustee, CWC Member",
           "Email": "harish@example.com",
           "Address": "Mahim, Mumbai"
@@ -27156,34 +27157,56 @@ function AdminInviteLetters({ mob, C, setC, auth }) {
           "Full Name": "Pradeep Parmar",
           "Designation": "CWC Member & Lead",
           "Mobile Number": "9819984437",
+          "Vibhag": "10 MAHALAXMI",
           "Group": "CWC Member, Education Committee",
           "Email": "pradeep@example.com",
           "Address": "Mahalaxmi, Mumbai"
         },
         {
-          "Full Name": "Ramesh Solanki",
-          "Designation": "Education Committee Convener",
-          "Mobile Number": "9820123456",
-          "Group": "Education Committee",
-          "Email": "ramesh@example.com",
-          "Address": "Dadar, Mumbai"
+          "Full Name": "Vinod Makwana",
+          "Designation": "General Secretary",
+          "Mobile Number": "9820582546",
+          "Vibhag": "15 RAMDEV NAGAR",
+          "Group": "CWC Member, Education Committee, Core Committee",
+          "Email": "vinod@example.com",
+          "Address": "Ramdev Nagar, Mumbai"
         },
         {
-          "Full Name": "Pooja Vaghela",
-          "Designation": "Volunteer Head",
-          "Mobile Number": "9833456789",
-          "Group": "Volunteer, Kalyan Team",
-          "Email": "pooja@example.com",
-          "Address": "Kalyan, Mumbai"
+          "Full Name": "Devshi Malji Koli",
+          "Designation": "Member / Invitee",
+          "Mobile Number": "9819266669",
+          "Vibhag": "35 CHEMBUR",
+          "Group": "CWC Member, Education Committee",
+          "Email": "devshi@example.com",
+          "Address": "Chembur, Mumbai"
+        },
+        {
+          "Full Name": "Premji kundhdiya",
+          "Designation": "Trustee",
+          "Mobile Number": "9819068663",
+          "Vibhag": "55 BHAYANDER",
+          "Group": "CWC Member, Trustee, Education Committee",
+          "Email": "premji@example.com",
+          "Address": "Bhayander, Mumbai"
+        },
+        {
+          "Full Name": "Kamla Kataria",
+          "Designation": "Member",
+          "Mobile Number": "9224398791",
+          "Vibhag": "9 TULSIWADI",
+          "Group": "CWC Member, Education Committee",
+          "Email": "kamla@example.com",
+          "Address": "Tulsiwadi, Mumbai"
         }
       ];
 
       const ws = XLSX.utils.json_to_sheet(sampleData);
       ws['!cols'] = [
-        { wch: 22 },
+        { wch: 24 },
         { wch: 28 },
         { wch: 16 },
-        { wch: 34 },
+        { wch: 24 },
+        { wch: 38 },
         { wch: 24 },
         { wch: 24 }
       ];
@@ -27197,11 +27220,13 @@ function AdminInviteLetters({ mob, C, setC, auth }) {
 
   const handleDownloadSampleCsv = () => {
     try {
-      const csvContent = "Full Name,Designation,Mobile Number,Group,Email,Address\n" +
-        '"Harish Makwana","Trustee","9819728011","Trustee, CWC Member","harish@example.com","Mahim, Mumbai"\n' +
-        '"Pradeep Parmar","CWC Member & Lead","9819984437","CWC Member, Education Committee","pradeep@example.com","Mahalaxmi, Mumbai"\n' +
-        '"Ramesh Solanki","Education Committee Convener","9820123456","Education Committee","ramesh@example.com","Dadar, Mumbai"\n' +
-        '"Pooja Vaghela","Volunteer Head","9833456789","Volunteer, Kalyan Team","pooja@example.com","Kalyan, Mumbai"\n';
+      const csvContent = "Full Name,Designation,Mobile Number,Vibhag,Group,Email,Address\n" +
+        '"Harish Makwana","Trustee","9819728011","10 MAHALAXMI","Trustee, CWC Member","harish@example.com","Mahim, Mumbai"\n' +
+        '"Pradeep Parmar","CWC Member & Lead","9819984437","10 MAHALAXMI","CWC Member, Education Committee","pradeep@example.com","Mahalaxmi, Mumbai"\n' +
+        '"Vinod Makwana","General Secretary","9820582546","15 RAMDEV NAGAR","CWC Member, Education Committee","vinod@example.com","Ramdev Nagar, Mumbai"\n' +
+        '"Devshi Malji Koli","Member / Invitee","9819266669","35 CHEMBUR","CWC Member, Education Committee","devshi@example.com","Chembur, Mumbai"\n' +
+        '"Premji kundhdiya","Trustee","9819068663","55 BHAYANDER","CWC Member, Trustee","premji@example.com","Bhayander, Mumbai"\n' +
+        '"Kamla Kataria","Member","9224398791","9 TULSIWADI","CWC Member, Education Committee","kamla@example.com","Tulsiwadi, Mumbai"\n';
 
       const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
       const link = document.createElement("a");
@@ -27212,6 +27237,72 @@ function AdminInviteLetters({ mob, C, setC, auth }) {
       document.body.removeChild(link);
     } catch(err) {
       alert("Error downloading CSV: " + err.message);
+    }
+  };
+
+  // Export all or filtered directory contacts
+  const handleExportDirectoryContacts = (onlyFiltered = false) => {
+    try {
+      // Calculate filtered list
+      const allGlobal = regs.filter(r => r.isGlobalGuest || r.formId === "global_guest_directory" || r.formId === "global_guest_directory_import");
+      const exportList = onlyFiltered 
+        ? allGlobal.filter(g => {
+            const q = (directorySearch || '').toLowerCase().trim();
+            const grpFilter = directoryGroupFilter || 'All';
+            const grps = getContactGroups(g);
+            if (grpFilter !== 'All' && !grps.includes(grpFilter)) return false;
+            if (!q) return true;
+            const name = String(g['Full Name'] || g.Name || g.name || '').toLowerCase();
+            const mob = String(g.Mobile || g['Mobile Number'] || g.mobile || g.phone || '').toLowerCase();
+            const desig = String(g.Designation || g.designation || '').toLowerCase();
+            const vib = String(g.Vibhag || g.vibhag || g['Vibhag New'] || '').toLowerCase();
+            return name.includes(q) || mob.includes(q) || desig.includes(q) || vib.includes(q) || grps.some(x => x.toLowerCase().includes(q));
+          })
+        : allGlobal;
+
+      if (exportList.length === 0) {
+        alert("No contacts available to export.");
+        return;
+      }
+
+      const exportRows = exportList.map((g, idx) => {
+        const cGroups = getContactGroups(g);
+        const resolvedV = (typeof resolveGuestVibhag === 'function' ? resolveGuestVibhag(g) : (g.vibhag || g['Vibhag'] || g['Vibhag New'])) || 'General';
+        const dateStr = g._submittedAt ? new Date(g._submittedAt).toLocaleDateString("en-IN") : "";
+        return {
+          "Sr No": idx + 1,
+          "Pass ID": g['Transaction ID'] || g.transactionId || g.id || "",
+          "Full Name": g['Full Name'] || g.Name || g.name || "",
+          "Designation": g.Designation || g.designation || "",
+          "Mobile Number": g.Mobile || g['Mobile Number'] || g.mobile || g.phone || "",
+          "Assigned Vibhag": resolvedV,
+          "Contact Groups": cGroups.join(", "),
+          "Email Address": g.Email || g.email || "",
+          "Address / Location": g.Address || g.address || "",
+          "Date Added": dateStr
+        };
+      });
+
+      const ws = XLSX.utils.json_to_sheet(exportRows);
+      ws['!cols'] = [
+        { wch: 8 },
+        { wch: 16 },
+        { wch: 28 },
+        { wch: 26 },
+        { wch: 18 },
+        { wch: 26 },
+        { wch: 40 },
+        { wch: 26 },
+        { wch: 30 },
+        { wch: 14 }
+      ];
+
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, "Contacts_Directory");
+      const fileName = `MMP_Contacts_Directory_${new Date().toISOString().slice(0, 10)}.xlsx`;
+      XLSX.writeFile(wb, fileName);
+    } catch(err) {
+      alert("Error exporting contacts: " + err.message);
     }
   };
 
@@ -27227,16 +27318,45 @@ function AdminInviteLetters({ mob, C, setC, auth }) {
       const rows = XLSX.utils.sheet_to_json(firstSheet);
       
       let successCount = 0;
+      const allOfficialVibhags = typeof getStandardVibhagsList === 'function' ? getStandardVibhagsList(C) : OFFICIAL_VIBHAGS;
+
       for (const row of rows) {
         const fullName = row["Full Name"] || row["Name"] || row["Participant Name"] || "";
         if (!fullName || !String(fullName).trim()) continue;
 
         const mobile = row["Mobile"] || row["Mobile Number"] || row["Phone"] || "";
         const email = row["Email"] || row["Email Address"] || "";
-        const designation = row["Designation"] || row["Organization"] || row["Company"] || "";
+        const designation = row["Designation"] || row["Organization"] || row["Company"] || row["Role"] || "";
         const address = row["Address"] || row["Location"] || "";
 
-        const rawGroup = row.Group || row.group || row.Groups || row.groups || row["Contact Group"] || row.Category || row.category || row.Team || row.team || row.Vibhag || "General Committee";
+        // Parse and match Vibhag
+        const rawVibhag = String(row["Vibhag"] || row["Vibhag New"] || row["vibhag"] || row["Assigned Vibhag"] || "").trim();
+        let matchedVibhag = "";
+        if (rawVibhag) {
+          // Exact match
+          const exact = allOfficialVibhags.find(v => v.toLowerCase() === rawVibhag.toLowerCase());
+          if (exact) {
+            matchedVibhag = exact;
+          } else {
+            // Number match
+            const rowNum = (rawVibhag.match(/^\d+/) || [])[0];
+            if (rowNum) {
+              const numMatch = allOfficialVibhags.find(v => (v.match(/^\d+/) || [])[0] === rowNum);
+              if (numMatch) matchedVibhag = numMatch;
+            }
+            // Name substring match
+            if (!matchedVibhag) {
+              const cleanRowV = rawVibhag.replace(/^\d+[\s_-]*/, '').trim().toLowerCase();
+              if (cleanRowV.length >= 3) {
+                const nameMatch = allOfficialVibhags.find(v => v.toLowerCase().includes(cleanRowV));
+                if (nameMatch) matchedVibhag = nameMatch;
+              }
+            }
+          }
+        }
+        const finalVibhag = matchedVibhag || rawVibhag || "General";
+
+        const rawGroup = row.Group || row.group || row.Groups || row.groups || row["Contact Group"] || row.Category || row.category || row.Team || row.team || "CWC Member";
         const assignedGroups = getContactGroups({ group: String(rawGroup) });
         const groupStr = assignedGroups.join(", ");
 
@@ -27253,23 +27373,28 @@ function AdminInviteLetters({ mob, C, setC, auth }) {
           "Organization": designation ? String(designation).trim() : "",
           "Group": groupStr,
           "Category": groupStr,
-          "Vibhag": assignedGroups[0] || "General Committee",
+          "Vibhag": finalVibhag,
+          "Vibhag New": finalVibhag,
+          vibhag: finalVibhag,
           groups: assignedGroups,
           Groups: assignedGroups,
           isGlobalGuest: true,
-          _submittedAt: Date.now(),
+          _submittedAt: Date.now() + successCount,
           formId: "global_guest_directory_import"
         };
+
         await fbSubmitRegistration(newGlobalGuest, auth?.idToken);
         successCount++;
       }
-      alert(`✅ Successfully imported ${successCount} contacts into directory!`);
+
+      alert(`✅ Successfully imported ${successCount} contact(s) with assigned Vibhag into Directory!`);
       fetchRegs();
     } catch (err) {
       alert("Error reading file: " + err.message);
+    } finally {
+      setUploadingExcel(false);
+      if (fileInputRef.current) fileInputRef.current.value = "";
     }
-    setUploadingExcel(false);
-    if (fileInputRef.current) fileInputRef.current.value = "";
   };
 
   const handleImportMultipleContactGroups = async (targetGroups) => {
@@ -27840,215 +27965,312 @@ This cannot be undone.`)) return;
     });
 
     return (
-      <div style={{position:"fixed",top:0,left:0,right:0,bottom:0,background:"rgba(0,0,0,0.6)",zIndex:99999,display:"flex",alignItems:"center",justifyContent:"center",padding:16}}>
-        <div style={{background:"white",borderRadius:16,padding:mob?16:28,width:"100%",maxWidth:950,maxHeight:"90vh",overflowY:"auto",boxShadow:"0 25px 50px rgba(0,0,0,0.3)"}}>
-          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:20,borderBottom:"1.5px solid #E2E8F0",paddingBottom:12}}>
-             <div>
-               <h2 style={{fontFamily:"'Playfair Display',serif",color:"var(--dt)",margin:0,fontSize:"1.3rem",display:"flex",alignItems:"center",gap:8}}>
-                 <span>👥</span> Special Guests & Committee Directory
-               </h2>
-               <p style={{fontSize:".82rem",color:"var(--mu)",margin:"4px 0 0 0"}}>
-                 Add contacts once, assign them to multiple groups, and import them seamlessly into any workspace.
-               </p>
-             </div>
-             <button 
-               onClick={()=>{
-                 setShowGlobalGuestsModal(false); 
-                 setShowDirectoryModal(false);
-                 setEditingGuest(null);
-                 setGuestForm({ fullName: "", mobile: "", email: "", address: "", designation: "", vibhag: "", group: "CWC Member", groups: ["CWC Member"] });
-               }} 
-               style={{background:"#F1F5F9",border:"none",borderRadius:"50%",width:34,height:34,cursor:"pointer",fontWeight:800,fontSize:"1.1rem",color:"#475569"}}
-             >
-               ✕
-             </button>
+      <div style={{position:"fixed",top:0,left:0,right:0,bottom:0,background:"rgba(15, 23, 42, 0.65)",backdropFilter:"blur(4px)",zIndex:99999,display:"flex",alignItems:"center",justifyContent:"center",padding:16}}>
+        <div style={{background:"#FFFFFF",borderRadius:20,width:"100%",maxWidth:1120,maxHeight:"92vh",display:"flex",flexDirection:"column",boxShadow:"0 25px 50px -12px rgba(0, 0, 0, 0.35)",overflow:"hidden",border:"1px solid #E2E8F0"}}>
+          
+          {/* Modal Top Header */}
+          <div style={{padding:"18px 24px",background:"linear-gradient(135deg, #0F172A 0%, #1E293B 100%)",color:"white",display:"flex",justifyContent:"space-between",alignItems:"center",borderBottom:"1px solid #334155"}}>
+            <div style={{display:"flex",alignItems:"center",gap:12}}>
+              <div style={{width:40,height:40,borderRadius:10,background:"linear-gradient(135deg, #2563EB, #1D4ED8)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:"1.3rem",boxShadow:"0 4px 10px rgba(37,99,235,0.3)"}}>
+                👥
+              </div>
+              <div>
+                <h2 style={{margin:0,fontSize:"1.22rem",fontWeight:800,letterSpacing:"-0.01em",color:"#FFFFFF",display:"flex",alignItems:"center",gap:8}}>
+                  Special Guests & Committee Directory
+                  <span style={{background:"rgba(255,255,255,0.15)",color:"#93C5FD",fontSize:".74rem",padding:"2px 8px",borderRadius:20,fontWeight:700}}>
+                    {globalGuests.length} Total Contacts
+                  </span>
+                </h2>
+                <p style={{margin:"3px 0 0 0",fontSize:".8rem",color:"#94A3B8"}}>
+                  Central address book: assign multiple committee groups, link official Vibhags, and import effortlessly into any workspace.
+                </p>
+              </div>
+            </div>
+
+            <div style={{display:"flex",alignItems:"center",gap:10}}>
+              <button
+                type="button"
+                onClick={() => handleExportDirectoryContacts(false)}
+                style={{
+                  padding:"7px 14px",
+                  borderRadius:8,
+                  background:"#10B981",
+                  color:"white",
+                  border:"none",
+                  fontWeight:800,
+                  fontSize:".8rem",
+                  cursor:"pointer",
+                  display:"flex",
+                  alignItems:"center",
+                  gap:6,
+                  boxShadow:"0 2px 6px rgba(16,185,129,0.3)"
+                }}
+                title="Export all directory contacts to Excel"
+              >
+                <span>📤</span> Export All ({globalGuests.length})
+              </button>
+
+              <button 
+                onClick={()=>{
+                  setShowGlobalGuestsModal(false); 
+                  setShowDirectoryModal(false);
+                  setEditingGuest(null);
+                  setGuestForm({ fullName: "", mobile: "", email: "", address: "", designation: "", vibhag: "", group: "CWC Member", groups: ["CWC Member"] });
+                }} 
+                style={{background:"rgba(255,255,255,0.1)",border:"none",borderRadius:8,width:34,height:34,cursor:"pointer",fontWeight:800,fontSize:"1.1rem",color:"#CBD5E1",display:"flex",alignItems:"center",justifyContent:"center"}}
+                title="Close Modal"
+              >
+                ✕
+              </button>
+            </div>
           </div>
 
-          <div style={{display:"flex",gap:24,flexDirection:mob?"column":"row"}}>
-            {/* Left Side Form: Add / Edit Contact */}
-            <div style={{flex:1.1}}>
-              <form onSubmit={handleAddGlobalGuest} style={{display:"flex",flexDirection:"column",gap:12}}>
-                {editingGuest && (
-                  <div style={{background:"#EFF6FF",border:"1.5px solid #93C5FD",borderRadius:8,padding:"8px 12px",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-                    <span style={{fontSize:".82rem",color:"#1E40AF",fontWeight:800}}>✏️ Editing Contact: {editingGuest["Full Name"]}</span>
-                    <button type="button" onClick={() => {
-                      setEditingGuest(null);
-                      setGuestForm({ fullName: "", mobile: "", email: "", address: "", designation: "", vibhag: "", group: "CWC Member", groups: ["CWC Member"] });
-                    }} style={{background:"none",border:"none",color:"#EF4444",fontSize:".75rem",fontWeight:700,cursor:"pointer"}}>Cancel Edit</button>
+          {/* Modal Body Container */}
+          <div style={{display:"flex",gap:20,flexDirection:mob?"column":"row",padding:20,overflowY:"auto",flex:1,background:"#F8FAFC"}}>
+            
+            {/* Left Column: Modern Card for Add / Edit Contact + Import Hub */}
+            <div style={{flex:1.05,display:"flex",flexDirection:"column",gap:16}}>
+              
+              {/* Form Card */}
+              <div style={{background:"#FFFFFF",borderRadius:14,border:"1px solid #E2E8F0",padding:18,boxShadow:"0 2px 8px rgba(0,0,0,0.04)"}}>
+                <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14,paddingBottom:10,borderBottom:"1.5px solid #F1F5F9"}}>
+                  <div style={{fontSize:".92rem",fontWeight:800,color:"#0F172A",display:"flex",alignItems:"center",gap:6}}>
+                    <span>{editingGuest ? "✏️" : "➕"}</span>
+                    <span>{editingGuest ? `Edit: ${editingGuest["Full Name"] || editingGuest.Name}` : "Add New Contact"}</span>
                   </div>
-                )}
-
-                <div>
-                  <label style={{display:"block",fontSize:".82rem",fontWeight:700,marginBottom:4}}>Full Name (Required) *</label>
-                  <input type="text" required placeholder="e.g. Harish Makwana" value={guestForm.fullName} onChange={e=>setGuestForm({...guestForm, fullName: e.target.value})} style={{width:"100%",padding:"8px 12px",borderRadius:8,border:"1.5px solid #CBD5E1",boxSizing:"border-box",fontFamily:"inherit",fontSize:".88rem"}} />
+                  {editingGuest && (
+                    <button 
+                      type="button" 
+                      onClick={() => {
+                        setEditingGuest(null);
+                        setGuestForm({ fullName: "", mobile: "", email: "", address: "", designation: "", vibhag: "", group: "CWC Member", groups: ["CWC Member"] });
+                      }} 
+                      style={{background:"#FEE2E2",border:"none",color:"#DC2626",fontSize:".74rem",fontWeight:800,cursor:"pointer",padding:"3px 8px",borderRadius:6}}
+                    >
+                      Cancel Edit
+                    </button>
+                  )}
                 </div>
 
-                <div style={{display:"flex",gap:12}}>
-                  <div style={{flex:1}}>
-                    <label style={{display:"block",fontSize:".82rem",fontWeight:700,marginBottom:4}}>Designation / Role</label>
-                    <input type="text" placeholder="e.g. Trustee, CWC Member" value={guestForm.designation} onChange={e=>setGuestForm({...guestForm, designation: e.target.value})} style={{width:"100%",padding:"8px 12px",borderRadius:8,border:"1.5px solid #CBD5E1",boxSizing:"border-box",fontFamily:"inherit",fontSize:".85rem"}} />
-                  </div>
-                  <div style={{flex:1}}>
-                    <label style={{display:"block",fontSize:".82rem",fontWeight:700,marginBottom:4}}>Mobile Number</label>
-                    <input type="text" placeholder="e.g. 9819728011" value={guestForm.mobile} onChange={e=>setGuestForm({...guestForm, mobile: e.target.value})} style={{width:"100%",padding:"8px 12px",borderRadius:8,border:"1.5px solid #CBD5E1",boxSizing:"border-box",fontFamily:"inherit",fontSize:".85rem"}} />
-                  </div>
-                </div>
-
-                {/* Multi-Group Selector */}
-                <div style={{background:"#F8FAFC",padding:"12px",borderRadius:10,border:"1.5px solid #CBD5E1"}}>
-                  <label style={{display:"block",fontSize:".82rem",fontWeight:800,color:"#0F172A",marginBottom:4}}>
-                    🏷️ Assign Multiple Contact Groups:
-                  </label>
-                  <div style={{fontSize:".72rem",color:"#64748B",marginBottom:8}}>
-                    Click to add/remove groups. One person can belong to multiple committees.
-                  </div>
-                  
-                  {/* Active Group Badges */}
-                  <div style={{display:"flex",flexWrap:"wrap",gap:6,marginBottom:8}}>
-                    {(guestForm.groups || []).map((grp, gIdx) => (
-                      <span key={gIdx} style={{background:"#DBEAFE",color:"#1E40AF",border:"1px solid #93C5FD",padding:"3px 8px",borderRadius:12,fontSize:".74rem",fontWeight:700,display:"inline-flex",alignItems:"center",gap:5}}>
-                        <span>👥 {grp}</span>
-                        <button 
-                          type="button" 
-                          onClick={() => {
-                            const updated = (guestForm.groups || []).filter((_, k) => k !== gIdx);
-                            setGuestForm({ ...guestForm, groups: updated, group: updated.join(", ") });
-                          }}
-                          style={{background:"none",border:"none",color:"#DC2626",cursor:"pointer",padding:0,fontWeight:800,fontSize:".8rem"}}
-                        >
-                          ✕
-                        </button>
-                      </span>
-                    ))}
-                    {(guestForm.groups || []).length === 0 && (
-                      <span style={{fontSize:".75rem",color:"#94A3B8",fontStyle:"italic"}}>No groups assigned yet. Click a group below.</span>
-                    )}
-                  </div>
-
-                  {/* Quick Add Suggested Groups */}
-                  <div style={{display:"flex",flexWrap:"wrap",gap:5,alignItems:"center",marginBottom:8}}>
-                    <span style={{fontSize:".7rem",color:"#475569",fontWeight:700}}>Quick Add:</span>
-                    {["CWC Member", "Trustee", "Education Committee", "Core Committee", "Volunteer", "Kalyan Team", "Special Guest of Honor"].map(quickG => {
-                      const isSelected = (guestForm.groups || []).includes(quickG);
-                      return (
-                        <button
-                          key={quickG}
-                          type="button"
-                          onClick={() => {
-                            const cur = guestForm.groups || [];
-                            const updated = isSelected ? cur.filter(x => x !== quickG) : [...cur, quickG];
-                            setGuestForm({ ...guestForm, groups: updated, group: updated.join(", ") });
-                          }}
-                          style={{
-                            padding:"3px 7px",
-                            borderRadius:6,
-                            fontSize:".7rem",
-                            fontWeight:700,
-                            cursor:"pointer",
-                            background: isSelected ? "#2563EB" : "white",
-                            color: isSelected ? "white" : "#334155",
-                            border: isSelected ? "1px solid #1D4ED8" : "1px solid #CBD5E1"
-                          }}
-                        >
-                          {isSelected ? ("✓ " + quickG) : ("+ " + quickG)}
-                        </button>
-                      );
-                    })}
-                  </div>
-
-                  {/* Custom Group Name Input */}
-                  <div style={{display:"flex",gap:6}}>
+                <form onSubmit={handleAddGlobalGuest} style={{display:"flex",flexDirection:"column",gap:11}}>
+                  <div>
+                    <label style={{display:"block",fontSize:".78rem",fontWeight:800,color:"#334155",marginBottom:4}}>
+                      👤 Full Name (Required) *
+                    </label>
                     <input 
                       type="text" 
-                      placeholder="Type custom group (e.g. Audit Team)..." 
-                      id="custom_group_dir_inp"
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter') {
-                          e.preventDefault();
-                          const val = e.target.value?.trim();
+                      required 
+                      placeholder="e.g. Harish Makwana" 
+                      value={guestForm.fullName} 
+                      onChange={e=>setGuestForm({...guestForm, fullName: e.target.value})} 
+                      style={{width:"100%",padding:"8px 12px",borderRadius:8,border:"1.5px solid #CBD5E1",boxSizing:"border-box",fontFamily:"inherit",fontSize:".88rem",background:"#FAFAFA"}} 
+                    />
+                  </div>
+
+                  <div style={{display:"flex",gap:10}}>
+                    <div style={{flex:1}}>
+                      <label style={{display:"block",fontSize:".78rem",fontWeight:800,color:"#334155",marginBottom:4}}>
+                        🏷️ Designation / Role
+                      </label>
+                      <input 
+                        type="text" 
+                        placeholder="e.g. Trustee, CWC Member" 
+                        value={guestForm.designation} 
+                        onChange={e=>setGuestForm({...guestForm, designation: e.target.value})} 
+                        style={{width:"100%",padding:"8px 12px",borderRadius:8,border:"1.5px solid #CBD5E1",boxSizing:"border-box",fontFamily:"inherit",fontSize:".85rem",background:"#FAFAFA"}} 
+                      />
+                    </div>
+                    <div style={{flex:1}}>
+                      <label style={{display:"block",fontSize:".78rem",fontWeight:800,color:"#334155",marginBottom:4}}>
+                        📱 Mobile Number
+                      </label>
+                      <input 
+                        type="text" 
+                        placeholder="e.g. 9819728011" 
+                        value={guestForm.mobile} 
+                        onChange={e=>setGuestForm({...guestForm, mobile: e.target.value})} 
+                        style={{width:"100%",padding:"8px 12px",borderRadius:8,border:"1.5px solid #CBD5E1",boxSizing:"border-box",fontFamily:"inherit",fontSize:".85rem",background:"#FAFAFA"}} 
+                      />
+                    </div>
+                  </div>
+
+                  {/* Vibhag Selection from Official Standard Library (71 Vibhags) */}
+                  <div>
+                    <label style={{display:"block",fontSize:".78rem",fontWeight:800,color:"#15803D",marginBottom:4}}>
+                      📍 Assigned Vibhag (Select from Official 71 Vibhags)
+                    </label>
+                    <select
+                      value={guestForm.vibhag || ""}
+                      onChange={e => setGuestForm({ ...guestForm, vibhag: e.target.value })}
+                      style={{width:"100%",padding:"8px 12px",borderRadius:8,border:"1.5px solid #16A34A",background:"#F0FDF4",color:"#15803D",fontWeight:800,fontSize:".85rem",cursor:"pointer",boxSizing:"border-box"}}
+                    >
+                      <option value="">-- Select Assigned Vibhag (e.g. 15 RAMDEV NAGAR) --</option>
+                      {getStandardVibhagsList(C).map(v => (
+                        <option key={v} value={v}>📍 {v}</option>
+                      ))}
+                    </select>
+                  </div>
+
+                  {/* Multi-Group Selector */}
+                  <div style={{background:"#F8FAFC",padding:"10px 12px",borderRadius:10,border:"1.5px solid #E2E8F0"}}>
+                    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:6}}>
+                      <label style={{fontSize:".78rem",fontWeight:800,color:"#0F172A"}}>
+                        🏷️ Assign Multiple Contact Groups:
+                      </label>
+                      <span style={{fontSize:".7rem",color:"#64748B"}}>Multi-committee tagging</span>
+                    </div>
+
+                    {/* Active Group Badges */}
+                    <div style={{display:"flex",flexWrap:"wrap",gap:5,marginBottom:8}}>
+                      {(guestForm.groups || []).map((grp, gIdx) => (
+                        <span key={gIdx} style={{background:"#DBEAFE",color:"#1E40AF",border:"1px solid #93C5FD",padding:"2px 8px",borderRadius:14,fontSize:".72rem",fontWeight:800,display:"inline-flex",alignItems:"center",gap:4}}>
+                          <span>👥 {grp}</span>
+                          <button 
+                            type="button" 
+                            onClick={() => {
+                              const updated = (guestForm.groups || []).filter((_, k) => k !== gIdx);
+                              setGuestForm({ ...guestForm, groups: updated, group: updated.join(", ") });
+                            }}
+                            style={{background:"none",border:"none",color:"#DC2626",cursor:"pointer",padding:0,fontWeight:800,fontSize:".8rem",lineHeight:1}}
+                          >
+                            ✕
+                          </button>
+                        </span>
+                      ))}
+                      {(guestForm.groups || []).length === 0 && (
+                        <span style={{fontSize:".72rem",color:"#94A3B8",fontStyle:"italic"}}>No groups assigned. Choose from below or add custom.</span>
+                      )}
+                    </div>
+
+                    {/* Quick Add Suggested Groups */}
+                    <div style={{display:"flex",flexWrap:"wrap",gap:4,alignItems:"center",marginBottom:8}}>
+                      <span style={{fontSize:".68rem",color:"#64748B",fontWeight:700}}>Quick Add:</span>
+                      {["CWC Member", "Trustee", "Education Committee", "Core Committee", "Volunteer", "Special Guest"].map(quickG => {
+                        const isSelected = (guestForm.groups || []).includes(quickG);
+                        return (
+                          <button
+                            key={quickG}
+                            type="button"
+                            onClick={() => {
+                              const cur = guestForm.groups || [];
+                              const updated = isSelected ? cur.filter(x => x !== quickG) : [...cur, quickG];
+                              setGuestForm({ ...guestForm, groups: updated, group: updated.join(", ") });
+                            }}
+                            style={{
+                              padding:"2px 6px",
+                              borderRadius:5,
+                              fontSize:".68rem",
+                              fontWeight:700,
+                              cursor:"pointer",
+                              background: isSelected ? "#2563EB" : "white",
+                              color: isSelected ? "white" : "#334155",
+                              border: isSelected ? "1px solid #1D4ED8" : "1px solid #CBD5E1"
+                            }}
+                          >
+                            {isSelected ? ("✓ " + quickG) : ("+ " + quickG)}
+                          </button>
+                        );
+                      })}
+                    </div>
+
+                    {/* Custom Group Name Input */}
+                    <div style={{display:"flex",gap:6}}>
+                      <input 
+                        type="text" 
+                        placeholder="Type new group name (e.g. Audit Team)..." 
+                        id="custom_group_dir_inp"
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') {
+                            e.preventDefault();
+                            const val = e.target.value?.trim();
+                            if (val) {
+                              const cur = guestForm.groups || [];
+                              if (!cur.includes(val)) {
+                                const updated = [...cur, val];
+                                setGuestForm({ ...guestForm, groups: updated, group: updated.join(", ") });
+                              }
+                              e.target.value = "";
+                            }
+                          }
+                        }}
+                        style={{flex:1,padding:"5px 8px",borderRadius:6,border:"1px solid #CBD5E1",fontSize:".76rem",fontFamily:"inherit",background:"white"}} 
+                      />
+                      <button 
+                        type="button"
+                        onClick={() => {
+                          const inp = document.getElementById("custom_group_dir_inp");
+                          const val = inp?.value?.trim();
                           if (val) {
                             const cur = guestForm.groups || [];
                             if (!cur.includes(val)) {
                               const updated = [...cur, val];
                               setGuestForm({ ...guestForm, groups: updated, group: updated.join(", ") });
                             }
-                            e.target.value = "";
+                            inp.value = "";
                           }
-                        }
-                      }}
-                      style={{flex:1,padding:"6px 10px",borderRadius:6,border:"1px solid #CBD5E1",fontSize:".8rem",fontFamily:"inherit"}} 
-                    />
-                    <button 
-                      type="button"
-                      onClick={() => {
-                        const inp = document.getElementById("custom_group_dir_inp");
-                        const val = inp?.value?.trim();
-                        if (val) {
-                          const cur = guestForm.groups || [];
-                          if (!cur.includes(val)) {
-                            const updated = [...cur, val];
-                            setGuestForm({ ...guestForm, groups: updated, group: updated.join(", ") });
-                          }
-                          inp.value = "";
-                        }
-                      }}
-                      style={{padding:"6px 12px",background:"#0D4B5E",color:"white",border:"none",borderRadius:6,fontSize:".75rem",fontWeight:700,cursor:"pointer"}}
-                    >
-                      + Add
-                    </button>
+                        }}
+                        style={{padding:"5px 10px",background:"#0D4B5E",color:"white",border:"none",borderRadius:6,fontSize:".74rem",fontWeight:800,cursor:"pointer"}}
+                      >
+                        + Add
+                      </button>
+                    </div>
                   </div>
-                </div>
 
-                {/* Vibhag Selection from Standard Library */}
-                <div>
-                  <label style={{display:"block",fontSize:".82rem",fontWeight:700,marginBottom:4,color:"#15803D"}}>
-                    📍 Assigned Vibhag (Select from Standard Library)
-                  </label>
-                  <select
-                    value={guestForm.vibhag || ""}
-                    onChange={e => setGuestForm({ ...guestForm, vibhag: e.target.value })}
-                    style={{width:"100%",padding:"8px 12px",borderRadius:8,border:"1.5px solid #15803D",background:"#F0FDF4",color:"#166534",fontWeight:700,fontSize:".85rem",cursor:"pointer",boxSizing:"border-box"}}
+                  <div style={{display:"flex",gap:10}}>
+                    <div style={{flex:1}}>
+                      <label style={{display:"block",fontSize:".78rem",fontWeight:800,color:"#334155",marginBottom:4}}>✉️ Email</label>
+                      <input type="email" placeholder="Optional" value={guestForm.email} onChange={e=>setGuestForm({...guestForm, email: e.target.value})} style={{width:"100%",padding:"7px 10px",borderRadius:8,border:"1.5px solid #CBD5E1",boxSizing:"border-box",fontFamily:"inherit",fontSize:".82rem",background:"#FAFAFA"}} />
+                    </div>
+                    <div style={{flex:1}}>
+                      <label style={{display:"block",fontSize:".78rem",fontWeight:800,color:"#334155",marginBottom:4}}>🏠 Address / Location</label>
+                      <input type="text" placeholder="e.g. Mahim, Mumbai" value={guestForm.address} onChange={e=>setGuestForm({...guestForm, address: e.target.value})} style={{width:"100%",padding:"7px 10px",borderRadius:8,border:"1.5px solid #CBD5E1",boxSizing:"border-box",fontFamily:"inherit",fontSize:".82rem",background:"#FAFAFA"}} />
+                    </div>
+                  </div>
+
+                  <button 
+                    type="submit" 
+                    disabled={addingGuest} 
+                    style={{
+                      padding:"10px 16px",
+                      borderRadius:8,
+                      border:"none",
+                      background:editingGuest ? "linear-gradient(135deg, #15803D, #166534)" : "linear-gradient(135deg, #0D4B5E, #135D74)",
+                      color:"white",
+                      cursor:addingGuest?"wait":"pointer",
+                      fontWeight:800,
+                      fontSize:".88rem",
+                      marginTop:4,
+                      boxShadow:"0 2px 8px rgba(0,0,0,0.12)"
+                    }}
                   >
-                    <option value="">-- Select Assigned Vibhag (e.g. 10 MAHALAXMI) --</option>
-                    {getStandardVibhagsList(C).map(v => (
-                      <option key={v} value={v}>📍 {v}</option>
-                    ))}
-                  </select>
-                </div>
+                    {addingGuest ? "Saving..." : editingGuest ? "💾 Save Updated Contact" : "➕ Add to Directory"}
+                  </button>
+                </form>
+              </div>
 
-                <div style={{display:"flex",gap:12}}>
-                  <div style={{flex:1}}>
-                    <label style={{display:"block",fontSize:".82rem",fontWeight:700,marginBottom:4}}>Email</label>
-                    <input type="email" placeholder="Optional" value={guestForm.email} onChange={e=>setGuestForm({...guestForm, email: e.target.value})} style={{width:"100%",padding:"8px 12px",borderRadius:8,border:"1.5px solid #CBD5E1",boxSizing:"border-box",fontFamily:"inherit",fontSize:".85rem"}} />
-                  </div>
-                  <div style={{flex:1}}>
-                    <label style={{display:"block",fontSize:".82rem",fontWeight:700,marginBottom:4}}>Address / Location</label>
-                    <input type="text" placeholder="e.g. Mahim, Mumbai" value={guestForm.address} onChange={e=>setGuestForm({...guestForm, address: e.target.value})} style={{width:"100%",padding:"8px 12px",borderRadius:8,border:"1.5px solid #CBD5E1",boxSizing:"border-box",fontFamily:"inherit",fontSize:".85rem"}} />
-                  </div>
-                </div>
-
-                <button type="submit" disabled={addingGuest} style={{padding:"11px 20px",borderRadius:8,border:"none",background:editingGuest ? "linear-gradient(135deg, #15803D, #166534)" : "var(--dt)",color:"white",cursor:addingGuest?"wait":"pointer",fontWeight:800,fontSize:".9rem",marginTop:6,boxShadow:"0 2px 8px rgba(0,0,0,0.15)"}}>
-                  {addingGuest ? "Saving..." : editingGuest ? "💾 Save Updated Contact" : "➕ Add to Directory"}
-                </button>
-              </form>
-
-              <div style={{marginTop:18,borderTop:"1.5px solid #E2E8F0",paddingTop:14,background:"#F8FAFC",padding:"12px 14px",borderRadius:10,border:"1px solid #E2E8F0"}}>
+              {/* Import & Templates Card */}
+              <div style={{background:"#FFFFFF",borderRadius:14,border:"1px solid #E2E8F0",padding:16,boxShadow:"0 2px 8px rgba(0,0,0,0.04)"}}>
                 <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
-                  <label style={{fontSize:".82rem",fontWeight:800,color:"#0F172A"}}>📥 Bulk Import via Excel / CSV:</label>
+                  <span style={{fontSize:".85rem",fontWeight:800,color:"#0F172A",display:"flex",alignItems:"center",gap:6}}>
+                    <span>📥</span> Bulk Import via Excel / CSV (with Vibhag)
+                  </span>
                 </div>
+                <p style={{fontSize:".72rem",color:"#64748B",margin:"0 0 10px 0"}}>
+                  Download our ready template with the new <strong>Vibhag</strong> column pre-formatted:
+                </p>
 
                 <div style={{display:"flex",gap:8,marginBottom:10}}>
                   <button 
                     type="button" 
                     onClick={handleDownloadSampleExcel}
-                    style={{flex:1,padding:"7px 10px",borderRadius:6,background:"#EFF6FF",color:"#1D4ED8",border:"1px solid #93C5FD",fontWeight:700,fontSize:".74rem",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",gap:4}}
+                    style={{flex:1,padding:"7px 10px",borderRadius:6,background:"#EFF6FF",color:"#1D4ED8",border:"1px solid #BFDBFE",fontWeight:800,fontSize:".74rem",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",gap:4}}
                   >
                     <span>📊</span> Sample Excel (.xlsx)
                   </button>
                   <button 
                     type="button" 
                     onClick={handleDownloadSampleCsv}
-                    style={{flex:1,padding:"7px 10px",borderRadius:6,background:"#F0FDF4",color:"#15803D",border:"1px solid #86EFAC",fontWeight:700,fontSize:".74rem",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",gap:4}}
+                    style={{flex:1,padding:"7px 10px",borderRadius:6,background:"#F0FDF4",color:"#15803D",border:"1px solid #BBF7D0",fontWeight:800,fontSize:".74rem",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",gap:4}}
                   >
                     <span>📄</span> Sample CSV (.csv)
                   </button>
@@ -28059,63 +28281,106 @@ This cannot be undone.`)) return;
                   type="button"
                   onClick={() => fileInputRef.current?.click()} 
                   disabled={uploadingExcel} 
-                  style={{width:"100%",padding:"10px",borderRadius:8,background:"linear-gradient(135deg, #0D4B5E, #135D74)",color:"white",border:"none",fontWeight:800,cursor:uploadingExcel?"wait":"pointer",fontSize:".84rem",display:"flex",alignItems:"center",justifyContent:"center",gap:6,boxShadow:"0 2px 6px rgba(13,75,94,0.2)"}}
+                  style={{
+                    width:"100%",
+                    padding:"9px",
+                    borderRadius:8,
+                    background:"linear-gradient(135deg, #0284C7, #0369A1)",
+                    color:"white",
+                    border:"none",
+                    fontWeight:800,
+                    cursor:uploadingExcel?"wait":"pointer",
+                    fontSize:".82rem",
+                    display:"flex",
+                    alignItems:"center",
+                    justifyContent:"center",
+                    gap:6,
+                    boxShadow:"0 2px 6px rgba(2,132,199,0.25)"
+                  }}
                 >
                   <span>📂</span> {uploadingExcel ? "Importing Contacts..." : "Upload Completed Excel / CSV File"}
                 </button>
               </div>
             </div>
 
-            {/* Right Side: Sleek, Compact Directory List with Space-Efficient Filter Bar */}
-            <div style={{flex:1.4,borderLeft:mob?"none":"1.5px solid #E2E8F0",paddingLeft:mob?0:20}}>
-              {/* Header & Single-Row Search + Compact Filter Pills with +N More (No Scroll Needed) */}
-              <div style={{marginBottom:10}}>
-                <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:6}}>
-                  <span style={{fontSize:".92rem",fontWeight:800,color:"#0F172A"}}>
-                    Contacts Directory ({filteredDirectoryGuests.length} / {globalGuests.length})
-                  </span>
-                  {directoryGroupFilter !== "All" && (
-                    <button 
-                      type="button" 
-                      onClick={() => setDirectoryGroupFilter("All")}
-                      style={{background:"none",border:"none",color:"#2563EB",fontSize:".74rem",fontWeight:700,cursor:"pointer"}}
+            {/* Right Column: Sleek Directory Contacts List with Category Pills & Search */}
+            <div style={{flex:1.45,display:"flex",flexDirection:"column",gap:10}}>
+              
+              {/* Directory Filter & Search Header Card */}
+              <div style={{background:"#FFFFFF",borderRadius:14,border:"1px solid #E2E8F0",padding:"12px 14px",boxShadow:"0 2px 8px rgba(0,0,0,0.04)"}}>
+                <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
+                  <div style={{display:"flex",alignItems:"center",gap:8}}>
+                    <span style={{fontSize:".92rem",fontWeight:800,color:"#0F172A"}}>
+                      Contacts Directory
+                    </span>
+                    <span style={{fontSize:".74rem",background:"#E0F2FE",color:"#0369A1",fontWeight:800,padding:"2px 8px",borderRadius:12}}>
+                      {filteredDirectoryGuests.length} of {globalGuests.length}
+                    </span>
+                  </div>
+
+                  <div style={{display:"flex",alignItems:"center",gap:6}}>
+                    {directoryGroupFilter !== "All" && (
+                      <button 
+                        type="button" 
+                        onClick={() => setDirectoryGroupFilter("All")}
+                        style={{background:"none",border:"none",color:"#2563EB",fontSize:".74rem",fontWeight:800,cursor:"pointer"}}
+                      >
+                        Reset Group
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => handleExportDirectoryContacts(true)}
+                      style={{
+                        padding:"4px 10px",
+                        borderRadius:6,
+                        background:"#F0FDF4",
+                        border:"1px solid #86EFAC",
+                        color:"#166534",
+                        fontSize:".74rem",
+                        fontWeight:800,
+                        cursor:"pointer",
+                        display:"flex",
+                        alignItems:"center",
+                        gap:4
+                      }}
+                      title="Export currently filtered contacts to Excel"
                     >
-                      Reset Filter (Show All)
+                      <span>📥</span> Export Filtered
                     </button>
-                  )}
+                  </div>
                 </div>
 
-                {/* Single Compact Row: Reduced Search Box + Quick Filter Pills + More Dropdown */}
-                <div style={{display:"flex",gap:6,alignItems:"center",background:"#F8FAFC",padding:"6px 8px",borderRadius:8,border:"1px solid #CBD5E1",flexWrap:"wrap"}}>
-                  {/* Reduced Search Box */}
-                  <div style={{width: 145, flexShrink: 0}}>
+                {/* Search Bar & Filter Pills */}
+                <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"}}>
+                  <div style={{flex:1,minWidth:180}}>
                     <input 
                       type="text" 
-                      placeholder="🔍 Search..." 
+                      placeholder="🔍 Search name, mobile, vibhag, designation..." 
                       value={directorySearch}
                       onChange={e => setDirectorySearch(e.target.value)}
-                      style={{width:"100%",padding:"5px 8px",borderRadius:6,border:"1px solid #CBD5E1",fontSize:".75rem",fontFamily:"inherit",boxSizing:"border-box",background:"white"}}
+                      style={{width:"100%",padding:"6px 10px",borderRadius:6,border:"1px solid #CBD5E1",fontSize:".78rem",fontFamily:"inherit",boxSizing:"border-box",background:"#FAFAFA"}}
                     />
                   </div>
 
-                  {/* Quick Filter Pills (Top 2-3 + "+N more...") */}
-                  <div style={{display:"flex",gap:4,alignItems:"center",flexWrap:"wrap",flex:1}}>
+                  <div style={{display:"flex",gap:4,alignItems:"center",flexWrap:"wrap"}}>
                     <button
                       type="button"
                       onClick={() => setDirectoryGroupFilter("All")}
                       style={{
-                        padding:"3px 7px",
+                        padding:"4px 8px",
                         borderRadius:6,
-                        fontSize:".69rem",
+                        fontSize:".7rem",
                         fontWeight:800,
                         cursor:"pointer",
-                        border: directoryGroupFilter === "All" ? "1px solid #0D4B5E" : "1px solid #CBD5E1",
-                        background: directoryGroupFilter === "All" ? "#0D4B5E" : "white",
+                        border: directoryGroupFilter === "All" ? "1px solid #0F172A" : "1px solid #CBD5E1",
+                        background: directoryGroupFilter === "All" ? "#0F172A" : "white",
                         color: directoryGroupFilter === "All" ? "white" : "#475569"
                       }}
                     >
                       All ({globalGuests.length})
                     </button>
+
                     {uniqueGroups.slice(0, 2).map(grp => {
                       const count = globalGuests.filter(g => getContactGroups(g).includes(grp)).length;
                       const isActive = directoryGroupFilter === grp;
@@ -28125,13 +28390,13 @@ This cannot be undone.`)) return;
                           type="button"
                           onClick={() => setDirectoryGroupFilter(grp)}
                           style={{
-                            padding:"3px 7px",
+                            padding:"4px 8px",
                             borderRadius:6,
-                            fontSize:".69rem",
+                            fontSize:".7rem",
                             fontWeight:700,
                             cursor:"pointer",
-                            border: isActive ? "1px solid #0D4B5E" : "1px solid #CBD5E1",
-                            background: isActive ? "#0D4B5E" : "#FFFFFF",
+                            border: isActive ? "1px solid #2563EB" : "1px solid #CBD5E1",
+                            background: isActive ? "#2563EB" : "white",
                             color: isActive ? "white" : "#334155"
                           }}
                         >
@@ -28140,21 +28405,20 @@ This cannot be undone.`)) return;
                       );
                     })}
 
-                    {/* Dropdown for All / Remaining Groups */}
+                    {/* Remaining Groups Dropdown */}
                     <select
                       value={directoryGroupFilter}
                       onChange={e => setDirectoryGroupFilter(e.target.value)}
                       style={{
-                        padding:"3px 6px",
+                        padding:"4px 8px",
                         borderRadius:6,
-                        border: uniqueGroups.slice(2).includes(directoryGroupFilter) ? "1px solid #0D4B5E" : "1px solid #CBD5E1",
-                        fontSize:".69rem",
+                        border: uniqueGroups.slice(2).includes(directoryGroupFilter) ? "1px solid #2563EB" : "1px solid #CBD5E1",
+                        fontSize:".7rem",
                         fontWeight:700,
-                        background: uniqueGroups.slice(2).includes(directoryGroupFilter) ? "#0D4B5E" : "white",
+                        background: uniqueGroups.slice(2).includes(directoryGroupFilter) ? "#2563EB" : "white",
                         color: uniqueGroups.slice(2).includes(directoryGroupFilter) ? "white" : "#0F172A",
                         cursor:"pointer",
-                        outline:"none",
-                        maxWidth: 150
+                        outline:"none"
                       }}
                     >
                       <option value="All">
@@ -28173,17 +28437,17 @@ This cannot be undone.`)) return;
                 </div>
               </div>
 
-              {/* Sticky Bulk Group Assignment Toolbar */}
+              {/* Bulk Group Toolbar (when checkboxes selected) */}
               {selectedDirectoryGuestIds.length > 0 && (
-                <div style={{background:"#EFF6FF",border:"1.5px solid #3B82F6",borderRadius:10,padding:"8px 12px",display:"flex",alignItems:"center",justifyContent:"space-between",flexWrap:"wrap",gap:8,boxShadow:"0 2px 8px rgba(59,130,246,0.15)",marginBottom:8}}>
-                  <div style={{fontSize:".8rem",color:"#1E40AF",fontWeight:800,display:"flex",alignItems:"center",gap:6}}>
+                <div style={{background:"#EFF6FF",border:"1.5px solid #3B82F6",borderRadius:10,padding:"8px 12px",display:"flex",alignItems:"center",justifyContent:"space-between",flexWrap:"wrap",gap:8,boxShadow:"0 2px 8px rgba(59,130,246,0.15)"}}>
+                  <div style={{fontSize:".78rem",color:"#1E40AF",fontWeight:800,display:"flex",alignItems:"center",gap:6}}>
                     <span>🏷️</span> Assign Group to Selected (<strong>{selectedDirectoryGuestIds.length}</strong> contacts):
                   </div>
                   <div style={{display:"flex",alignItems:"center",gap:6,flexWrap:"wrap"}}>
                     <select
                       value={bulkGroupToAdd}
                       onChange={e => { setBulkGroupToAdd(e.target.value); if (e.target.value !== '__custom__') setCustomBulkGroupInput(''); }}
-                      style={{padding:"4px 8px",borderRadius:6,border:"1px solid #93C5FD",fontSize:".76rem",fontWeight:700,background:"white",color:"#1E3A8A"}}
+                      style={{padding:"4px 8px",borderRadius:6,border:"1px solid #93C5FD",fontSize:".74rem",fontWeight:700,background:"white",color:"#1E3A8A"}}
                     >
                       <option value="">-- Choose Group --</option>
                       {uniqueGroups.map(grp => (
@@ -28197,21 +28461,21 @@ This cannot be undone.`)) return;
                         placeholder="Enter group name..."
                         value={customBulkGroupInput}
                         onChange={e => setCustomBulkGroupInput(e.target.value)}
-                        style={{padding:"4px 8px",borderRadius:6,border:"1.5px solid #2563EB",fontSize:".76rem",width:150}}
+                        style={{padding:"4px 8px",borderRadius:6,border:"1.5px solid #2563EB",fontSize:".74rem",width:140}}
                       />
                     )}
                     <button
                       type="button"
                       disabled={applyingBulkGroup || (!bulkGroupToAdd && !customBulkGroupInput)}
                       onClick={() => handleApplyBulkGroupToSelected()}
-                      style={{padding:"5px 12px",background:"#2563EB",color:"white",border:"none",borderRadius:6,fontSize:".76rem",fontWeight:800,cursor:"pointer",display:"flex",alignItems:"center",gap:4}}
+                      style={{padding:"4px 10px",background:"#2563EB",color:"white",border:"none",borderRadius:6,fontSize:".74rem",fontWeight:800,cursor:"pointer",display:"flex",alignItems:"center",gap:4}}
                     >
-                      <span>✓</span> {applyingBulkGroup ? "Assigning..." : "Apply to Selected"}
+                      <span>✓</span> {applyingBulkGroup ? "Assigning..." : "Apply"}
                     </button>
                     <button
                       type="button"
                       onClick={() => setSelectedDirectoryGuestIds([])}
-                      style={{padding:"5px 8px",background:"white",color:"#64748B",border:"1px solid #CBD5E1",borderRadius:6,fontSize:".74rem",fontWeight:700,cursor:"pointer"}}
+                      style={{padding:"4px 8px",background:"white",color:"#64748B",border:"1px solid #CBD5E1",borderRadius:6,fontSize:".72rem",fontWeight:700,cursor:"pointer"}}
                     >
                       Clear
                     </button>
@@ -28219,9 +28483,9 @@ This cannot be undone.`)) return;
                 </div>
               )}
 
-              {/* Select All Bar */}
-              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"4px 6px",marginBottom:6}}>
-                <label style={{display:"flex",alignItems:"center",gap:6,fontSize:".76rem",fontWeight:700,color:"#475569",cursor:"pointer"}}>
+              {/* Select All Row */}
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"2px 6px"}}>
+                <label style={{display:"flex",alignItems:"center",gap:6,fontSize:".74rem",fontWeight:800,color:"#475569",cursor:"pointer"}}>
                   <input
                     type="checkbox"
                     checked={filteredDirectoryGuests.length > 0 && filteredDirectoryGuests.every(g => selectedDirectoryGuestIds.includes(g.id))}
@@ -28239,45 +28503,44 @@ This cannot be undone.`)) return;
                   <span>Select All Filtered ({filteredDirectoryGuests.length})</span>
                 </label>
                 {selectedDirectoryGuestIds.length > 0 && (
-                  <span style={{fontSize:".74rem",color:"#2563EB",fontWeight:800}}>
+                  <span style={{fontSize:".72rem",color:"#2563EB",fontWeight:800}}>
                     {selectedDirectoryGuestIds.length} Selected
                   </span>
                 )}
               </div>
 
-              {/* Contact Cards List with Compact Group Badges */}
-              <div style={{display:"flex",flexDirection:"column",gap:8,maxHeight:420,overflowY:"auto",paddingRight:4}}>
-                {(() => {
-                  let list = filteredDirectoryGuests;
-                  if (directorySearch && directorySearch.trim()) {
-                    const q = directorySearch.trim().toLowerCase();
-                    list = list.filter(g => {
-                      const name = String(g["Full Name"] || g.Name || "").toLowerCase();
-                      const mobile = String(g.Mobile || g["Mobile Number"] || "").toLowerCase();
-                      const desig = String(g.Designation || "").toLowerCase();
-                      const grps = getContactGroups(g).join(" ").toLowerCase();
-                      return name.includes(q) || mobile.includes(q) || desig.includes(q) || grps.includes(q);
-                    });
-                  }
-
-                  if (list.length === 0) {
-                    return (
-                      <div style={{color:"var(--mu)",fontSize:".84rem",padding:16,textAlign:"center",background:"#F8FAFC",borderRadius:8,border:"1px dashed #CBD5E1"}}>
-                        No matching contacts found {directorySearch ? `for "${directorySearch}"` : `in "${directoryGroupFilter}"`}.
-                      </div>
-                    );
-                  }
-
-                  return list.map(g => {
+              {/* Contacts Directory Cards List */}
+              <div style={{display:"flex",flexDirection:"column",gap:8,maxHeight:440,overflowY:"auto",paddingRight:4}}>
+                {filteredDirectoryGuests.length === 0 ? (
+                  <div style={{color:"#64748B",fontSize:".84rem",padding:24,textAlign:"center",background:"#FFFFFF",borderRadius:12,border:"1px dashed #CBD5E1"}}>
+                    No matching contacts found {directorySearch ? `for "${directorySearch}"` : `in "${directoryGroupFilter}"`}.
+                  </div>
+                ) : (
+                  filteredDirectoryGuests.map(g => {
                     const cGroups = getContactGroups(g);
                     const isExpanded = !!expandedCardGroups[g.id];
                     const visibleGroups = isExpanded ? cGroups : cGroups.slice(0, 3);
                     const hiddenCount = cGroups.length - visibleGroups.length;
+                    const resolvedV = (typeof resolveGuestVibhag === 'function' ? resolveGuestVibhag(g) : (g.vibhag || g['Vibhag'] || g['Vibhag New'])) || '';
+                    const initials = (g["Full Name"] || g.Name || "M").split(" ").map(w=>w[0]).filter(Boolean).slice(0,2).join("").toUpperCase();
 
                     return (
-                      <div key={g.id} style={{padding:"9px 12px",border: selectedDirectoryGuestIds.includes(g.id) ? "1.5px solid #3B82F6" : "1px solid #E2E8F0",borderRadius:10,background: selectedDirectoryGuestIds.includes(g.id) ? "#EFF6FF" : "#FAFAFA",display:"flex",flexDirection:"column",gap:4,transition:"all .15s"}}>
-                        <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:8}}>
-                          <div style={{display:"flex",alignItems:"flex-start",gap:8}}>
+                      <div 
+                        key={g.id} 
+                        style={{
+                          padding:"10px 14px",
+                          border: selectedDirectoryGuestIds.includes(g.id) ? "1.5px solid #3B82F6" : "1px solid #E2E8F0",
+                          borderLeft: resolvedV ? "4px solid #16A34A" : "4px solid #94A3B8",
+                          borderRadius:12,
+                          background: selectedDirectoryGuestIds.includes(g.id) ? "#EFF6FF" : "#FFFFFF",
+                          display:"flex",
+                          flexDirection:"column",
+                          gap:6,
+                          boxShadow:"0 1px 3px rgba(0,0,0,0.03)"
+                        }}
+                      >
+                        <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:10}}>
+                          <div style={{display:"flex",alignItems:"flex-start",gap:10,minWidth:0}}>
                             <input
                               type="checkbox"
                               checked={selectedDirectoryGuestIds.includes(g.id)}
@@ -28287,31 +28550,43 @@ This cannot be undone.`)) return;
                                   prev.includes(g.id) ? prev.filter(x => x !== g.id) : [...prev, g.id]
                                 );
                               }}
-                              style={{marginTop:3,width:16,height:16,cursor:"pointer",accentColor:"#2563EB",flexShrink:0}}
+                              style={{marginTop:4,width:16,height:16,cursor:"pointer",accentColor:"#2563EB",flexShrink:0}}
                             />
-                            <div>
+
+                            {/* Initials Avatar */}
+                            <div style={{width:32,height:32,borderRadius:"50%",background:"linear-gradient(135deg, #0D4B5E, #135D74)",color:"white",display:"flex",alignItems:"center",justifyContent:"center",fontSize:".74rem",fontWeight:800,flexShrink:0}}>
+                              {initials}
+                            </div>
+
+                            <div style={{minWidth:0}}>
                               <div style={{fontWeight:800,color:"#0F172A",fontSize:".88rem",display:"flex",alignItems:"center",gap:6,flexWrap:"wrap"}}>
-                                <span>{g["Full Name"]}</span>
+                                <span>{g["Full Name"] || g.Name}</span>
                                 {g.Designation && (
-                                  <span style={{fontSize:".72rem",fontWeight:600,color:"#0D4B5E",background:"#E0F2FE",padding:"1px 6px",borderRadius:4}}>
+                                  <span style={{fontSize:".7rem",fontWeight:700,color:"#0369A1",background:"#E0F2FE",padding:"1px 6px",borderRadius:4}}>
                                     {g.Designation}
                                   </span>
                                 )}
                               </div>
-                              <div style={{fontSize:".76rem",color:"#64748B",marginTop:2,display:"flex",alignItems:"center",gap:6,flexWrap:"wrap"}}>
-                                <span>{g.Mobile ? ("📱 " + g.Mobile) : "No Mobile"}</span>
-                                {g.Address ? <span>• 📍 {g.Address}</span> : null}
-                                {(g.vibhag || g['Vibhag'] || g['Vibhag New']) ? (
-                                  <span style={{background:"#FEF3C7",color:"#92400E",border:"1px solid #FDE68A",padding:"1px 6px",borderRadius:4,fontSize:".68rem",fontWeight:800}}>
-                                    📍 {g.vibhag || g['Vibhag'] || g['Vibhag New']}
+                              <div style={{fontSize:".74rem",color:"#64748B",marginTop:2,display:"flex",alignItems:"center",gap:6,flexWrap:"wrap"}}>
+                                <span style={{fontWeight:600,color:"#334155"}}>📱 {g.Mobile || g['Mobile Number'] || "No Mobile"}</span>
+                                {resolvedV ? (
+                                  <span style={{background:"#F0FDF4",color:"#15803D",border:"1px solid #BBF7D0",padding:"1px 6px",borderRadius:4,fontSize:".68rem",fontWeight:800}}>
+                                    📍 {resolvedV}
                                   </span>
-                                ) : null}
+                                ) : (
+                                  <span style={{background:"#FFFBEB",color:"#B45309",border:"1px solid #FDE68A",padding:"1px 5px",borderRadius:4,fontSize:".65rem",fontWeight:700}}>
+                                    📍 No Vibhag
+                                  </span>
+                                )}
+                                {g.Address ? <span style={{color:"#94A3B8"}}>• 🏠 {g.Address}</span> : null}
                               </div>
                             </div>
                           </div>
-                          <div style={{display:"flex",gap:6,alignItems:"center",flexShrink:0}}>
+
+                          {/* Actions */}
+                          <div style={{display:"flex",gap:4,alignItems:"center",flexShrink:0}}>
                             <button 
-                              type="button"
+                              type="button" 
                               onClick={() => {
                                 setEditingGuest(g);
                                 setGuestForm({
@@ -28320,31 +28595,32 @@ This cannot be undone.`)) return;
                                   email: g.Email || "",
                                   address: g.Address || "",
                                   designation: g.Designation || "",
-                                  vibhag: g.vibhag || g['Vibhag'] || g['Vibhag New'] || "",
+                                  vibhag: resolvedV || g.vibhag || g['Vibhag'] || g['Vibhag New'] || "",
                                   group: cGroups.join(", "),
                                   groups: cGroups
                                 });
                               }} 
-                              style={{background:"#EFF6FF",border:"1px solid #BFDBFE",color:"#1D4ED8",fontSize:".74rem",fontWeight:800,cursor:"pointer",padding:"3px 8px",borderRadius:6}}
+                              style={{background:"#EFF6FF",border:"1px solid #BFDBFE",color:"#1D4ED8",fontSize:".72rem",fontWeight:800,cursor:"pointer",padding:"3px 8px",borderRadius:6}}
                             >
                               ✏️ Edit
                             </button>
                             <button 
-                              type="button"
+                              type="button" 
                               onClick={()=>handleDeleteGlobalGuest(g)} 
-                              style={{background:"none",border:"none",color:"#DC2626",fontSize:".74rem",cursor:"pointer",textDecoration:"underline"}}
+                              style={{background:"#FEF2F2",border:"1px solid #FECACA",color:"#DC2626",fontSize:".72rem",fontWeight:700,cursor:"pointer",padding:"3px 7px",borderRadius:6}}
+                              title="Delete from directory"
                             >
-                              Remove
+                              🗑️
                             </button>
                           </div>
                         </div>
 
-                        {/* Multi-Group Badges with Direct ✕ Remove & Inline ➕ Tag Dropdown */}
+                        {/* Multi-Group Badges */}
                         <div style={{display:"flex",flexWrap:"wrap",gap:4,marginTop:2,alignItems:"center"}}>
                           {visibleGroups.map((grp, k) => (
                             <span 
                               key={k} 
-                              style={{background:"#DCFCE7",color:"#15803D",padding:"2px 6px",borderRadius:6,fontSize:".67rem",fontWeight:700,border:"1px solid #86EFAC",display:"inline-flex",alignItems:"center",gap:3}}
+                              style={{background:"#DCFCE7",color:"#15803D",padding:"2px 6px",borderRadius:6,fontSize:".66rem",fontWeight:700,border:"1px solid #86EFAC",display:"inline-flex",alignItems:"center",gap:3}}
                             >
                               <span onClick={() => setDirectoryGroupFilter(grp)} style={{cursor:"pointer"}} title={"Filter by " + grp}>👥 {grp}</span>
                               <span 
@@ -28359,7 +28635,7 @@ This cannot be undone.`)) return;
                           {hiddenCount > 0 && (
                             <span 
                               onClick={() => setExpandedCardGroups(prev => ({ ...prev, [g.id]: true }))}
-                              style={{background:"#FEF3C7",color:"#92400E",border:"1px solid #FDE68A",padding:"2px 6px",borderRadius:6,fontSize:".67rem",fontWeight:800,cursor:"pointer"}}
+                              style={{background:"#FEF3C7",color:"#92400E",border:"1px solid #FDE68A",padding:"2px 6px",borderRadius:6,fontSize:".66rem",fontWeight:800,cursor:"pointer"}}
                               title="Click to view all groups"
                             >
                               +{hiddenCount} more...
@@ -28368,7 +28644,7 @@ This cannot be undone.`)) return;
                           {isExpanded && cGroups.length > 3 && (
                             <span 
                               onClick={() => setExpandedCardGroups(prev => ({ ...prev, [g.id]: false }))}
-                              style={{background:"#F1F5F9",color:"#64748B",border:"1px solid #CBD5E1",padding:"2px 6px",borderRadius:6,fontSize:".67rem",fontWeight:700,cursor:"pointer"}}
+                              style={{background:"#F1F5F9",color:"#64748B",border:"1px solid #CBD5E1",padding:"2px 6px",borderRadius:6,fontSize:".66rem",fontWeight:700,cursor:"pointer"}}
                             >
                               Collapse ▴
                             </span>
@@ -28393,13 +28669,13 @@ This cannot be undone.`)) return;
                             {uniqueGroups.filter(grp => !cGroups.includes(grp)).map(grp => (
                               <option key={grp} value={grp}>+ {grp}</option>
                             ))}
-                            <option value="__new__">➕ + Type New Group...</option>
+                            <option value="__new__">➕ + New Group...</option>
                           </select>
                         </div>
                       </div>
                     );
-                  });
-                })()}
+                  })
+                )}
               </div>
             </div>
           </div>
@@ -28408,7 +28684,7 @@ This cannot be undone.`)) return;
     );
   };
 
-  let availableFields = [];
+    let availableFields = [];
   if (selectedEventId) {
     const ev = inviteEvents.find(e => e.id === selectedEventId);
     const keys = new Set(Object.keys(ev?.inviteMap || {}));
