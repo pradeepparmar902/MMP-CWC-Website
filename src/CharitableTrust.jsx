@@ -26503,7 +26503,90 @@ function AdminInviteLetters({ mob, C, setC, auth }) {
   const [inviteOpenPillFilter, setInviteOpenPillFilter] = useState(null);
   const [inviteReleasePillFilter, setInviteReleasePillFilter] = useState(null);
 
-  const globalGuests = regs.filter(r => r.isGlobalGuest === true);
+  // Comprehensive Directory of all contacts, guests, and committee members
+  const globalGuests = useMemo(() => {
+    const map = new Map();
+
+    const getPersonKey = (r) => {
+      const mob = String(r['Mobile Number'] || r.mobile || r.Mobile || r.phone || '').replace(/\D/g, '').slice(-10);
+      const name = String(r['Full Name'] || r['Participant Name'] || r['Name'] || r.name || '').trim().toLowerCase();
+      if (mob && mob.length === 10) return `mob_${mob}`;
+      if (name) return `name_${name}`;
+      return `id_${r.id || Math.random()}`;
+    };
+
+    const isDirectoryContact = (r) => {
+      if (!r || typeof r !== 'object') return false;
+      if (r.deleted === true || r.deleted === "true" || r.isDeleted === true || r.isTrash === true || r.inTrash === true || r.status === "Deleted" || r.Status === "Deleted" || r.deletedGuest === true) return false;
+      
+      // Explicit directory guest flags
+      if (r.isGlobalGuest === true || r.formId === "global_guest_directory" || r.formId === "global_guest_directory_import") return true;
+
+      // Special guests & workspace invitees
+      if (r.isSpecialGuest === true || r.isInviteGuest === true || Boolean(r.globalGuestId)) return true;
+
+      // Has transaction ID starting with GST, GUEST or VIP
+      const txn = String(r['Transaction ID'] || r.transactionId || r.id || '').toUpperCase();
+      if (txn.startsWith('GST-') || txn.startsWith('GUEST-') || txn.startsWith('VIP-')) return true;
+
+      // Has assigned groups, category, or designation
+      const hasGroups = (Array.isArray(r.groups) && r.groups.length > 0) || (Array.isArray(r.Groups) && r.Groups.length > 0) || Boolean(r.group || r.Group || r.Category || r.category);
+      if (hasGroups) return true;
+
+      const hasDesignation = Boolean(r.Designation || r.designation || r['Designation / Role'] || r.Role || r.role);
+      if (hasDesignation) return true;
+
+      // If registered under committee event or imported
+      const evName = String(r.eventName || r.eventTitle || r.eventId || '').toLowerCase();
+      if (evName.includes('committee') || evName.includes('cwc') || evName.includes('trustee') || evName.includes('guest') || evName.includes('special')) return true;
+
+      return false;
+    };
+
+    // First pass: Explicit directory contacts
+    (regs || []).forEach(r => {
+      if (r && (r.isGlobalGuest === true || r.formId === "global_guest_directory")) {
+        const key = getPersonKey(r);
+        map.set(key, { ...r, isGlobalGuest: true });
+      }
+    });
+
+    // Second pass: Any other contacts, invitees or committee members from workspaces
+    (regs || []).forEach(r => {
+      if (isDirectoryContact(r)) {
+        const key = getPersonKey(r);
+        if (map.has(key)) {
+          const existing = map.get(key);
+          const existingGroups = typeof getContactGroups === 'function' ? getContactGroups(existing) : (existing.groups || []);
+          const rGroups = typeof getContactGroups === 'function' ? getContactGroups(r) : (r.groups || []);
+          const combinedGroups = Array.from(new Set([...existingGroups, ...rGroups])).filter(Boolean);
+          
+          map.set(key, {
+            ...r,
+            ...existing,
+            isGlobalGuest: true,
+            groups: combinedGroups.length > 0 ? combinedGroups : existingGroups,
+            Designation: existing.Designation || existing.designation || r.Designation || r.designation || "",
+            Mobile: existing.Mobile || existing.mobile || r['Mobile Number'] || r.Mobile || r.mobile || "",
+            Vibhag: existing.Vibhag || existing.vibhag || r['Vibhag New'] || r.Vibhag || r.vibhag || ""
+          });
+        } else {
+          const rGroups = typeof getContactGroups === 'function' ? getContactGroups(r) : (r.groups || []);
+          map.set(key, {
+            ...r,
+            isGlobalGuest: true,
+            'Full Name': r['Full Name'] || r['Participant Name'] || r.name || 'Invitee',
+            Designation: r.Designation || r.designation || r['Designation / Role'] || "",
+            Mobile: r['Mobile Number'] || r.Mobile || r.mobile || r.phone || "",
+            Vibhag: r['Vibhag New'] || r.Vibhag || r.vibhag || "",
+            groups: rGroups.length > 0 ? rGroups : (r.group ? [r.group] : ["General Committee"])
+          });
+        }
+      }
+    });
+
+    return Array.from(map.values());
+  }, [regs]);
 
   const getResolvedContactGroups = (contact) => {
     if (!contact) return ["General Committee"];
@@ -27532,10 +27615,20 @@ This cannot be undone.`)) return;
     });
     const uniqueGroups = Array.from(allGroupsSet).sort();
 
-    // Filter guests based on directoryGroupFilter
-    const filteredDirectoryGuests = directoryGroupFilter === "All"
+    // Filter guests based on directoryGroupFilter and search query
+    const filteredDirectoryGuests = (directoryGroupFilter === "All"
       ? globalGuests
-      : globalGuests.filter(g => getContactGroups(g).includes(directoryGroupFilter));
+      : globalGuests.filter(g => getContactGroups(g).includes(directoryGroupFilter))
+    ).filter(g => {
+      if (!directorySearch.trim()) return true;
+      const q = directorySearch.toLowerCase().trim();
+      const name = String(g['Full Name'] || g['Participant Name'] || g.name || '').toLowerCase();
+      const mob = String(g.Mobile || g['Mobile Number'] || g.mobile || g.phone || '').toLowerCase();
+      const desig = String(g.Designation || g.designation || g['Designation / Role'] || '').toLowerCase();
+      const vib = String(g.Vibhag || g.vibhag || g['Vibhag New'] || '').toLowerCase();
+      const grps = (typeof getContactGroups === 'function' ? getContactGroups(g) : (g.groups || [])).join(' ').toLowerCase();
+      return name.includes(q) || mob.includes(q) || desig.includes(q) || vib.includes(q) || grps.includes(q);
+    });
 
     return (
       <div style={{position:"fixed",top:0,left:0,right:0,bottom:0,background:"rgba(0,0,0,0.6)",zIndex:99999,display:"flex",alignItems:"center",justifyContent:"center",padding:16}}>
