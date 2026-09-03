@@ -1,24 +1,114 @@
 import { QRCodeCanvas } from "qrcode.react";
 import { useState, useEffect, useRef, createContext, useContext, useMemo } from "react";
 
+export const OFFICIAL_VIBHAGS = [
+  "1 UMERKHADI",
+  "2 WALPAKHADI",
+  "3 TARWADI",
+  "4 MATARPAKHADI",
+  "5 LOVE LANE",
+  "6 ANNESLY ROAD",
+  "7 MUMBAI CENTRAL BIT",
+  "8 TADDEV",
+  "9 TULSIWADI",
+  "10 MAHALAXMI",
+  "11 MADANPURA / Byculla",
+  "12 SATRASTA",
+  "13 RASULJEEVA",
+  "14 SHANTI NAGAR",
+  "15 RAMDEV NAGAR",
+  "16 ARTHUR ROAD",
+  "17 SHEESH MAHAL",
+  "18 DOCTOR COMPOUND",
+  "19 DELISLE ROAD",
+  "20 FATIMABAI CHAWL",
+  "21 GANDHI HOSPITAL",
+  "22 LOWER PAREL",
+  "23 PRABHADEVI",
+  "24 GAUTAM NAGAR",
+  "25 MATUGA RAILWAY CHAWL",
+  "26 MATUGA LABOUR CAMP",
+  "27-28 G T B NAGAR",
+  "29 DHARAVI",
+  "30 PRATKISHA NAGAR",
+  "31 KURLA EAST",
+  "32 KURLA WEST",
+  "33 NEHRU NAGAR",
+  "34 AJINKYATARA",
+  "35 CHEMBUR",
+  "36 GOVANDI",
+  "37 VIDHYA VIHAR",
+  "38 GHATKOPAR",
+  "39 BHATWADI",
+  "40 VIKHROLI",
+  "41 MULUND B M C",
+  "42 MULUND DUMPING ROAD",
+  "43 NAV BHARAT SOCIETY",
+  "44 KHAR EAST",
+  "45 M R SOCIETY",
+  "46 SAKI NAKA ANDHERI EAST",
+  "47 SAVGAN SOCIETY",
+  "48 JOGESHWARI",
+  "49 GOREGOAN EAST",
+  "50 GOREGOAN WEST",
+  "51 MALVANI",
+  "52 KADIVALI",
+  "53 BORIVALI EAST",
+  "54 BORIVALI WEST",
+  "55 BHAYANDER",
+  "56 IGATPURI",
+  "57 BANDRA",
+  "58 NALASOPARA EAST",
+  "59 NASHIK",
+  "60 BHANDUP",
+  "61 KALYAN / DOMBIVALI",
+  "62 MULUND CHECKNAKA",
+  "63 MALAD EAST",
+  "64 POONA",
+  "65 KALWA",
+  "66 NALASOPARA WEST",
+  "67 Navi Mumbai",
+  "68 WORLI",
+  "69 MULUND SIDDHARTH NAGAR",
+  "70 DIVA",
+  "71 PANVEL (KAMOTHE)",
+  "Don't Know"
+];
+
+export const getStandardVibhagsList = (C = {}) => {
+  if (C && Array.isArray(C.customVibhags) && C.customVibhags.length >= 20) {
+    return C.customVibhags;
+  }
+  if (C && Array.isArray(C.vibhags) && C.vibhags.length >= 40) {
+    return C.vibhags;
+  }
+  if (Array.isArray(C?.forms)) {
+    for (const form of C.forms) {
+      if (Array.isArray(form?.fields)) {
+        const vField = form.fields.find(f => {
+          const l = String(f.label || f.dataKey || '').trim().toLowerCase();
+          return l === 'vibhag new' || l === 'vibhag_new' || l === 'vibhag';
+        });
+        if (vField && vField.options) {
+          const parsed = typeof vField.options === 'string' 
+            ? vField.options.split(/[\n,]+/).map(s => s.trim()).filter(Boolean)
+            : Array.isArray(vField.options) ? vField.options : [];
+          if (parsed.length >= 20) return parsed;
+        }
+      }
+    }
+  }
+  return OFFICIAL_VIBHAGS;
+};
+
 // ── Dynamic Vibhag Extractor & Event Code Helpers ──
 export const extractVibhagList = (config = {}) => {
   if (config && Array.isArray(config.customVibhags) && config.customVibhags.length > 0) {
     return config.customVibhags.filter(v => typeof v === "string" && v.trim());
   }
 
-  // Standard official MMP Vibhags list
-  const defaults = [
-    "10 MAHALAXMI",
-    "15 RAMDEV NAGAR",
-    "2 WALPAKHADI",
-    "22 LOWER PAREL",
-    "30 PRATKISHA NAGAR",
-    "55 BHAYANDER",
-    "65 KALWA",
-    "Outside Mumbai / General"
-  ];
-  return defaults;
+  // Standard official MMP Vibhags list (71 Vibhags)
+  return OFFICIAL_VIBHAGS;
 };
 
 export const getAvailableVibhags = (config = {}) => extractVibhagList(config);
@@ -23176,15 +23266,7 @@ function WhatsAppApplicantMessengerModal({ reg, onClose, C, auth, onLogSent, all
                     title="Filter {VIBHAG_STUDENT_LIST} for a specific Vibhag (e.g. 10 MAHALAXMI)"
                   >
                     <option value="auto">🎯 Auto (Recipient's Vibhag)</option>
-                    <option value="10 MAHALAXMI">📍 10 MAHALAXMI</option>
-                    {(C.vibhags || [
-                      "01 KALWA", "02 WALPAKHADI", "03 BHANDUP", "04 KANJURMARG", "05 VIKHROLI",
-                      "06 GHATKOPAR", "07 CHEMBUR", "08 SION", "09 WORLI", "10 MAHALAXMI",
-                      "11 BYCULLA", "12 MUMBAI CENTRAL", "13 DADAR", "14 BANDRA", "15 RAMDEV NAGAR",
-                      "16 KHAR", "17 SANTACRUZ", "18 VILE PARLE", "19 ANDHERI", "20 JOGESHWARI",
-                      "21 GOREGAON", "22 MALAD", "23 KANDIVALI", "24 BORIVALI", "25 DAHISAR",
-                      "26 MIRA ROAD", "27 BHAYANDAR", "28 NAIGAON", "29 VASAI", "30 NALLASOPARA", "31 VIRAR"
-                    ]).filter(v => v !== "10 MAHALAXMI").map(v => (
+                    {getStandardVibhagsList(C).map(v => (
                       <option key={v} value={v}>📍 {v}</option>
                     ))}
                     <option value="all">🌐 All Vibhags Combined</option>
@@ -26728,14 +26810,7 @@ function AdminInviteLetters({ mob, C, setC, auth }) {
     }
 
     const bio = `${r.Address || ''} ${r.address || ''} ${r.Designation || ''} ${r.designation || ''}`.toLowerCase();
-    const knownVibhags = C.vibhags || [
-      "01 KALWA", "02 WALPAKHADI", "03 BHANDUP", "04 KANJURMARG", "05 VIKHROLI",
-      "06 GHATKOPAR", "07 CHEMBUR", "08 SION", "09 WORLI", "10 MAHALAXMI",
-      "11 BYCULLA", "12 MUMBAI CENTRAL", "13 DADAR", "14 BANDRA", "15 RAMDEV NAGAR",
-      "16 KHAR", "17 SANTACRUZ", "18 VILE PARLE", "19 ANDHERI", "20 JOGESHWARI",
-      "21 GOREGAON", "22 MALAD", "23 KANDIVALI", "24 BORIVALI", "25 DAHISAR",
-      "26 MIRA ROAD", "27 BHAYANDAR", "28 NAIGAON", "29 VASAI", "30 NALLASOPARA", "31 VIRAR"
-    ];
+    const knownVibhags = getStandardVibhagsList(C);
     for (const kv of knownVibhags) {
       const kvClean = kv.replace(/^\d+[\s_-]*/, '').trim().toLowerCase();
       if (kvClean.length >= 4 && bio.includes(kvClean)) return kv;
@@ -27873,14 +27948,7 @@ This cannot be undone.`)) return;
                     style={{width:"100%",padding:"8px 12px",borderRadius:8,border:"1.5px solid #15803D",background:"#F0FDF4",color:"#166534",fontWeight:700,fontSize:".85rem",cursor:"pointer",boxSizing:"border-box"}}
                   >
                     <option value="">-- Select Assigned Vibhag (e.g. 10 MAHALAXMI) --</option>
-                    {(C.vibhags || [
-                      "01 KALWA", "02 WALPAKHADI", "03 BHANDUP", "04 KANJURMARG", "05 VIKHROLI",
-                      "06 GHATKOPAR", "07 CHEMBUR", "08 SION", "09 WORLI", "10 MAHALAXMI",
-                      "11 BYCULLA", "12 MUMBAI CENTRAL", "13 DADAR", "14 BANDRA", "15 RAMDEV NAGAR",
-                      "16 KHAR", "17 SANTACRUZ", "18 VILE PARLE", "19 ANDHERI", "20 JOGESHWARI",
-                      "21 GOREGAON", "22 MALAD", "23 KANDIVALI", "24 BORIVALI", "25 DAHISAR",
-                      "26 MIRA ROAD", "27 BHAYANDAR", "28 NAIGAON", "29 VASAI", "30 NALLASOPARA", "31 VIRAR"
-                    ]).map(v => (
+                    {getStandardVibhagsList(C).map(v => (
                       <option key={v} value={v}>📍 {v}</option>
                     ))}
                   </select>
@@ -29365,14 +29433,7 @@ This cannot be undone.`)) return;
                               title="Click to assign or change this contact's associated Vibhag"
                             >
                               <option value="">📍 Assign Vibhag...</option>
-                              {(C.vibhags || [
-                                "01 KALWA", "02 WALPAKHADI", "03 BHANDUP", "04 KANJURMARG", "05 VIKHROLI",
-                                "06 GHATKOPAR", "07 CHEMBUR", "08 SION", "09 WORLI", "10 MAHALAXMI",
-                                "11 BYCULLA", "12 MUMBAI CENTRAL", "13 DADAR", "14 BANDRA", "15 RAMDEV NAGAR",
-                                "16 KHAR", "17 SANTACRUZ", "18 VILE PARLE", "19 ANDHERI", "20 JOGESHWARI",
-                                "21 GOREGAON", "22 MALAD", "23 KANDIVALI", "24 BORIVALI", "25 DAHISAR",
-                                "26 MIRA ROAD", "27 BHAYANDAR", "28 NAIGAON", "29 VASAI", "30 NALLASOPARA", "31 VIRAR"
-                              ]).map(v => (
+                              {getStandardVibhagsList(C).map(v => (
                                 <option key={v} value={v}>📍 {v}</option>
                               ))}
                             </select>
