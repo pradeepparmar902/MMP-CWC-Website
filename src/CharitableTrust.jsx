@@ -26739,19 +26739,15 @@ function AdminInviteLetters({ mob, C, setC, auth }) {
       return false;
     }
 
-    // Only Approved registrations or special/committee guests
-    if (r.Status !== "Approved" && r.status !== "Approved" && !r.isSpecialGuest) return false;
-    // Exclude the raw global directory pool entry itself
-    if (r.isGlobalGuest) return false;
-
-    // Only Approved registrations or special/committee guests
-    if (r.Status !== "Approved" && r.status !== "Approved" && !r.isSpecialGuest) return false;
-    // Exclude the raw global directory pool entry itself
-    if (r.isGlobalGuest) return false;
+    // Exclude standalone directory-only records that have no workspace assigned
+    if (r.formId === "global_guest_directory" && !r.eventId && !r.eventName && !r.targetTemplateId && (!Array.isArray(r.assignedDocTypes) || r.assignedDocTypes.length === 0)) {
+      return false;
+    }
 
     // Check workspace membership
     let evName = r.eventName || r.eventTitle || r.eventId;
-    const matchesEvent = r.eventId === ev.id || evName === ev.title || evName === ev.titleGu;
+    const isExplicitlyAssigned = (r.targetTemplateId === currentDocTpl?.id) || (Array.isArray(r.assignedDocTypes) && r.assignedDocTypes.includes(currentDocTpl?.id));
+    const matchesEvent = r.eventId === ev.id || evName === ev.title || evName === ev.titleGu || isExplicitlyAssigned;
     if (!matchesEvent) return false;
 
     // ── Template / Sub-Workspace Contact Isolation ──
@@ -26893,7 +26889,38 @@ function AdminInviteLetters({ mob, C, setC, auth }) {
         delete cleanCopy.id;
         delete cleanCopy._submittedAt;
         await fbUpdateRegistration(editingGuest.id, cleanCopy, auth?.idToken);
-        alert("✅ Contact details and groups updated successfully!");
+
+        // Sync across any linked event workspace records for this person
+        const targetPhone = (guestForm.mobile?.trim() || editingGuest.Mobile || editingGuest['Mobile Number'] || '').replace(/\D/g, '').slice(-10);
+        const oldName = String(editingGuest['Full Name'] || editingGuest.name || '').trim().toLowerCase();
+        
+        for (const otherR of (regs || [])) {
+          if (otherR.id !== editingGuest.id) {
+            const otherPhone = String(otherR['Mobile Number'] || otherR.mobile || '').replace(/\D/g, '').slice(-10);
+            const otherName = String(otherR['Full Name'] || otherR.name || '').trim().toLowerCase();
+            if ((targetPhone && targetPhone === otherPhone) || (oldName && oldName === otherName)) {
+              const otherAssignedGroups = Array.from(new Set([...(otherR.groups || []), ...assignedGroups]));
+              const updatedOther = {
+                ...otherR,
+                "Full Name": guestForm.fullName.trim(),
+                "Participant Name": guestForm.fullName.trim(),
+                "Name": guestForm.fullName.trim(),
+                Designation: guestForm.designation?.trim() || otherR.Designation,
+                Mobile: guestForm.mobile?.trim() || otherR.Mobile,
+                "Mobile Number": guestForm.mobile?.trim() || otherR['Mobile Number'],
+                groups: otherAssignedGroups,
+                Groups: otherAssignedGroups,
+                Group: otherAssignedGroups.join(", ")
+              };
+              delete updatedOther.id; delete updatedOther._submittedAt;
+              try {
+                await fbUpdateRegistration(otherR.id, updatedOther, auth?.idToken);
+              } catch(e) {}
+            }
+          }
+        }
+
+        alert("✅ Contact details and groups updated successfully across directory & workspaces!");
         setEditingGuest(null);
         setGuestForm({ fullName: "", mobile: "", email: "", address: "", designation: "", vibhag: "", group: "CWC Member", groups: ["CWC Member"] });
         fetchRegs();
@@ -27112,6 +27139,12 @@ function AdminInviteLetters({ mob, C, setC, auth }) {
         const gVibhag = g.vibhag || g['Vibhag'] || g['Vibhag New'] || "";
         const updatedReg = {
           ...existingReg,
+          eventId: ev.id,
+          eventName: ev.title || "Unknown Event",
+          eventTitle: ev.title || "Unknown Event",
+          Status: "Approved",
+          status: "Approved",
+          isSpecialGuest: true,
           assignedDocTypes: updatedAssigned,
           targetTemplateId: currentActiveDoc,
           vibhag: gVibhag || existingReg.vibhag || existingReg['Vibhag'],
