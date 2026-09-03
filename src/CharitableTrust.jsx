@@ -32941,6 +32941,72 @@ const transliterateEnglishToGujaratiPhonetic = (text) => {
 function DonorListCard({ donorData, auth, onRefresh, C }) {
   const [filterText, setFilterText] = useState("");
   const [copied, setCopied] = useState(false);
+  const [copiedIndividualId, setCopiedIndividualId] = useState(null);
+  const [savingPosterId, setSavingPosterId] = useState(null);
+
+  const getIndividualDonorMsg = (d) => {
+    const dName = d.name || "Respected Donor";
+    const amt = Number(d.amount || 0).toLocaleString('en-IN');
+    const rNo = d.receiptNo || d.internalReceiptNo || d.id || 'N/A';
+    const vib = d.vibhag || "General";
+    const dt = d.date || new Date().toISOString().split('T')[0];
+    const pur = d.purpose || d.program || "Education Felicitation 2026";
+
+    return `🌷 || મુંબઈ મેઘવાળ પંચાયત || 🌷\n         [NGO]\n   •••• સેન્ટ્રલ વર્કિંગ કમિટી ••••\n☸~~~~~~~~~~~~~~~~~☸\n\nવિષય: શૈક્ષણિક કાર્યક્રમ દાન રસીદ & સન્માન પત્રક\n\nનમસ્તે શ્રીમાન/શ્રીમતી *${dName}*,\nવિદ્યાર્થી ગુણગૌરવ પુરસ્કાર ૨૦૨૬ માટે આપના ઉદાર દાન બદલ મુંબઈ મેઘવાળ પંચાયત આપનો હૃદયપૂર્વક આભાર માને છે.\n\n🧾 *દાન પાવતી વિગત:*\n• દાતા: *${dName}*\n• રકમ: *₹${amt}/-*\n• પાવતી નં.: *${rNo}*\n• વિભાગ: *${vib}*\n• તારીખ: *${dt}*\n• હેતુ: *${pur}*\n\n📜 આપનું ડિજિટલ સન્માન પ્રમાણપત્ર (Certificate of Appreciation) તૈયાર થઈ ગયું છે.\n\nલિ. સેન્ટ્રલ વર્કિંગ કમિટી\nમુંબઈ મેઘવાળ પંચાયત\n🌐 https://www.mmp-cwc.com`;
+  };
+
+  const handleDirectDonorSavePoster = async (d) => {
+    const dId = d._docId || d.id || d.name;
+    setSavingPosterId(dId);
+    try {
+      const tplUrl = C?.donorPosterTemplateUrl || getAppreciationTemplateDefaultUrl();
+      const posterDataUrl = await generateDonorPosterCanvas(d, tplUrl, C?.donorPosterPositions);
+      const link = document.createElement("a");
+      link.href = posterDataUrl;
+      link.download = `MMP_Appreciation_Certificate_${(d.name || 'Donor').replace(/[^a-zA-Z0-9]/g, '_')}_₹${d.amount || 0}.png`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    } catch(err) {
+      alert("Failed to save poster: " + err.message);
+    } finally {
+      setSavingPosterId(null);
+    }
+  };
+
+  const handleDirectDonorCopyMsg = (d) => {
+    const text = getIndividualDonorMsg(d);
+    navigator.clipboard.writeText(text);
+    const dId = d._docId || d.id || d.name;
+    setCopiedIndividualId(dId);
+    setTimeout(() => setCopiedIndividualId(null), 2500);
+  };
+
+  const handleDirectDonorWhatsApp = async (d) => {
+    const text = getIndividualDonorMsg(d);
+    const rawPhone = d.phone || d.mobile || d['Mobile Number'] || d['Phone'] || d['WhatsApp Number'] || '';
+    const cleanPhone = String(rawPhone).replace(/\D/g, '').slice(-10);
+
+    // Try generating and copying poster to clipboard for instant pasting
+    try {
+      const tplUrl = C?.donorPosterTemplateUrl || getAppreciationTemplateDefaultUrl();
+      const posterDataUrl = await generateDonorPosterCanvas(d, tplUrl, C?.donorPosterPositions);
+      const res = await fetch(posterDataUrl);
+      const blob = await res.blob();
+      if (navigator.clipboard && navigator.clipboard.write) {
+        await navigator.clipboard.write([
+          new ClipboardItem({ 'image/png': blob })
+        ]);
+      }
+    } catch(e) {
+      console.log("Direct WhatsApp clipboard error:", e);
+    }
+
+    const waUrl = cleanPhone 
+      ? `https://api.whatsapp.com/send?phone=91${cleanPhone}&text=${encodeURIComponent(text)}`
+      : `https://api.whatsapp.com/send?text=${encodeURIComponent(text)}`;
+    window.open(waUrl, "_blank");
+  };
   const [exportFormat, setExportFormat] = useState("gujarati");
   const [includeVibhag, setIncludeVibhag] = useState(false);
   const [includeReceipt, setIncludeReceipt] = useState(false);
@@ -33255,6 +33321,49 @@ function DonorListCard({ donorData, auth, onRefresh, C }) {
                 <span>📍 {d.vibhag || d.program || "General"}</span>
                 <span style={{background:isOff?"#FFEDD5":"#DCFCE7",color:isOff?"#C2410C":"#15803D",padding:"0 4px",borderRadius:4,fontWeight:700}}>{isOff ? "Offline" : "Online"}</span>
                 <span>Receipt: <strong>{d.receiptNo || d.internalReceiptNo || d.id}</strong></span>
+                {(d.phone || d.mobile) && (
+                  <span style={{color:"#15803D",fontWeight:700}}>📱 +91 {String(d.phone || d.mobile).replace(/\D/g,'').slice(-10)}</span>
+                )}
+              </div>
+
+              {/* Individual Donor Actions Bar: WhatsApp, Save Poster to drive, Copy Message, Preview */}
+              <div style={{display:"flex",gap:6,alignItems:"center",marginTop:6,flexWrap:"wrap",borderTop:"1px dashed #E2E8F0",paddingTop:6}}>
+                <button
+                  type="button"
+                  onClick={() => handleDirectDonorWhatsApp(d)}
+                  style={{padding:"4px 9px",borderRadius:5,background:"#25D366",color:"white",border:"none",fontSize:".7rem",fontWeight:800,cursor:"pointer",display:"flex",alignItems:"center",gap:4,boxShadow:"0 1px 4px rgba(37,211,102,0.3)"}}
+                  title={`Directly send WhatsApp to ${d.name} (${d.phone || d.mobile || 'No mobile'})`}
+                >
+                  <span>💬</span> WhatsApp
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => handleDirectDonorSavePoster(d)}
+                  disabled={savingPosterId === (d._docId || d.id || d.name)}
+                  style={{padding:"4px 9px",borderRadius:5,background:"#0D4B5E",color:"white",border:"none",fontSize:".7rem",fontWeight:800,cursor:savingPosterId === (d._docId || d.id || d.name) ? "wait" : "pointer",display:"flex",alignItems:"center",gap:4}}
+                  title="Directly download / save this donor's certificate poster to local drive"
+                >
+                  <span>📥</span> {savingPosterId === (d._docId || d.id || d.name) ? "Saving..." : "Save Poster"}
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => handleDirectDonorCopyMsg(d)}
+                  style={{padding:"4px 8px",borderRadius:5,background:"#F1F5F9",color:"#334155",border:"1px solid #CBD5E1",fontSize:".7rem",fontWeight:700,cursor:"pointer",display:"flex",alignItems:"center",gap:3}}
+                  title="Copy individual thank you message for this donor"
+                >
+                  <span>{copiedIndividualId === (d._docId || d.id || d.name) ? "✓ Copied!" : "📋 Copy"}</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setActivePosterDonor(d)}
+                  style={{padding:"4px 8px",borderRadius:5,background:"#EFF6FF",color:"#1D4ED8",border:"1px solid #BFDBFE",fontSize:".7rem",fontWeight:700,cursor:"pointer",display:"flex",alignItems:"center",gap:3}}
+                  title="Full screen view and adjustments for this poster"
+                >
+                  <span>👁️</span> Preview
+                </button>
               </div>
             </div>
           );
