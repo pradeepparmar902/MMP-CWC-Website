@@ -7907,6 +7907,459 @@ function BackupRestore({ C, setC, auth }) {
 }
 
 
+// ── FULL-PAGE ADMIN MEDIA LIBRARY WORKSPACE ─────────────────────────────────────
+function AdminMediaLibrary({ mob, C, setC, auth }) {
+  const [activeCat, setActiveCat] = useState("all");
+  const [searchQuery, setSearchQuery] = useState("");
+  const [uploading, setUploading] = useState(false);
+  const [editingAssetId, setEditingAssetId] = useState(null);
+  const [editName, setEditName] = useState("");
+  const fileInputRef = useRef(null);
+  const replaceInputRef = useRef(null);
+  const [replacingAssetId, setReplacingAssetId] = useState(null);
+
+  const mediaItems = Array.isArray(C?.mediaLibrary) ? C.mediaLibrary : [];
+
+  // Track active usages of each asset across templates and team
+  const getUsageInfo = (assetId) => {
+    const usages = [];
+    const mediaRef = `media://${assetId}`;
+
+    (C?.events || []).forEach(ev => {
+      const evName = ev.title || "Event";
+      if (ev.inviteBgUrl === mediaRef || ev.inviteBgUrl === assetId) usages.push(`${evName}: Invite Letter`);
+      if (ev.certBgUrl === mediaRef || ev.certBgUrl === assetId) usages.push(`${evName}: Certificate`);
+      (ev.pdfTemplates || []).forEach(tpl => {
+        if (tpl.bgUrl === mediaRef || tpl.bgUrl === assetId) usages.push(`${evName}: ${tpl.name || 'PDF Pass'}`);
+      });
+    });
+
+    (C?.teamItems || []).forEach(t => {
+      if (t.image === mediaRef || t['Photo URL'] === mediaRef) usages.push(`Team: ${t.name || 'Member'}`);
+    });
+
+    return usages;
+  };
+
+  const handleUploadFiles = async (e) => {
+    const files = Array.from(e.target.files || []);
+    if (files.length === 0) return;
+    setUploading(true);
+
+    try {
+      const newItems = [...mediaItems];
+      for (const file of files) {
+        const reader = new FileReader();
+        const b64 = await new Promise((res, rej) => {
+          reader.onload = () => res(reader.result);
+          reader.onerror = rej;
+          reader.readAsDataURL(file);
+        });
+
+        const { w, h } = await new Promise((res) => {
+          const img = new Image();
+          img.onload = () => res({ w: img.width, h: img.height });
+          img.onerror = () => res({ w: 800, h: 600 });
+          img.src = b64;
+        });
+
+        const maxDim = activeCat === 'letterhead' ? 1600 : 800;
+        const quality = activeCat === 'letterhead' ? 0.78 : 0.65;
+        const compressed = await compressBase64Image(b64, maxDim, quality);
+
+        const assetId = "media_" + Date.now() + "_" + Math.random().toString(36).substr(2, 5);
+        const cleanName = file.name.replace(/\.[^/.]+$/, "").replace(/[-_]+/g, ' ');
+        const itemCategory = (activeCat && activeCat !== "all") ? activeCat : (w / h > 1.2 || h / w > 1.2 ? "letterhead" : "team_profile");
+
+        const assetDoc = {
+          id: assetId,
+          name: cleanName,
+          category: itemCategory,
+          url: compressed,
+          dimensions: { width: w, height: h },
+          fileSize: `${Math.round(compressed.length * 0.75 / 1024)} KB`,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString()
+        };
+
+        newItems.unshift(assetDoc);
+        if (typeof assetCache !== 'undefined') assetCache[assetId] = compressed;
+        if (typeof window !== 'undefined') {
+          window.__MMP_MEDIA_CACHE__ = window.__MMP_MEDIA_CACHE__ || {};
+          window.__MMP_MEDIA_CACHE__[assetId] = compressed;
+        }
+      }
+
+      const updatedC = { ...C, mediaLibrary: newItems };
+      if (setC) setC(updatedC);
+      await fbSave(updatedC, auth?.idToken);
+      alert(`✅ Successfully uploaded ${files.length} media item(s) to Central Media Folder!`);
+    } catch(err) {
+      alert("Upload failed: " + err.message);
+    } finally {
+      setUploading(false);
+      if (e.target) e.target.value = "";
+    }
+  };
+
+  const handleReplaceImage = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file || !replacingAssetId) return;
+    setUploading(true);
+
+    try {
+      const reader = new FileReader();
+      const b64 = await new Promise((res, rej) => {
+        reader.onload = () => res(reader.result);
+        reader.onerror = rej;
+        reader.readAsDataURL(file);
+      });
+
+      const { w, h } = await new Promise((res) => {
+        const img = new Image();
+        img.onload = () => res({ w: img.width, h: img.height });
+        img.onerror = () => res({ w: 800, h: 600 });
+        img.src = b64;
+      });
+
+      const compressed = await compressBase64Image(b64, 1600, 0.78);
+
+      const newItems = mediaItems.map(m => {
+        if (m.id === replacingAssetId) {
+          return {
+            ...m,
+            url: compressed,
+            dimensions: { width: w, height: h },
+            fileSize: `${Math.round(compressed.length * 0.75 / 1024)} KB`,
+            updatedAt: new Date().toISOString()
+          };
+        }
+        return m;
+      });
+
+      if (typeof assetCache !== 'undefined') assetCache[replacingAssetId] = compressed;
+      if (typeof window !== 'undefined') {
+        window.__MMP_MEDIA_CACHE__ = window.__MMP_MEDIA_CACHE__ || {};
+        window.__MMP_MEDIA_CACHE__[replacingAssetId] = compressed;
+      }
+
+      const updatedC = { ...C, mediaLibrary: newItems };
+      if (setC) setC(updatedC);
+      await fbSave(updatedC, auth?.idToken);
+      alert("✅ Image replaced! All connected templates and sections now use this updated image.");
+    } catch(err) {
+      alert("Replace failed: " + err.message);
+    } finally {
+      setUploading(false);
+      setReplacingAssetId(null);
+      if (e.target) e.target.value = "";
+    }
+  };
+
+  const handleDelete = async (assetId) => {
+    const usages = getUsageInfo(assetId);
+    let msg = "Are you sure you want to delete this image from the Media Library?";
+    if (usages.length > 0) {
+      msg = `⚠️ WARNING: This image is currently connected to:\n• ${usages.join('\n• ')}\n\nDeleting it will remove the background/photo from those templates/items. Delete anyway?`;
+    }
+    if (!window.confirm(msg)) return;
+
+    const newItems = mediaItems.filter(m => m.id !== assetId);
+    const updatedC = { ...C, mediaLibrary: newItems };
+    if (setC) setC(updatedC);
+    await fbSave(updatedC, auth?.idToken);
+  };
+
+  const handleSaveRename = async (assetId) => {
+    if (!editName.trim()) return;
+    const newItems = mediaItems.map(m => m.id === assetId ? { ...m, name: editName.trim() } : m);
+    const updatedC = { ...C, mediaLibrary: newItems };
+    if (setC) setC(updatedC);
+    await fbSave(updatedC, auth?.idToken);
+    setEditingAssetId(null);
+  };
+
+  const filteredItems = mediaItems.filter(item => {
+    if (activeCat !== "all" && item.category !== activeCat) return false;
+    if (searchQuery.trim()) {
+      const q = searchQuery.toLowerCase().trim();
+      return (item.name || "").toLowerCase().includes(q) || (item.category || "").toLowerCase().includes(q);
+    }
+    return true;
+  });
+
+  const categories = [
+    { id: "all", label: "🌟 All Media", icon: "📁" },
+    { id: "letterhead", label: "📄 Letterheads & PDF Backgrounds", icon: "📄" },
+    { id: "team_profile", label: "👤 Team & Profile Photos", icon: "👤" },
+    { id: "stamp_signature", label: "🖋️ Stamps & Signatures", icon: "🖋️" },
+    { id: "banner", label: "🖼️ Logos & Banners", icon: "🖼️" }
+  ];
+
+  return (
+    <div style={{animation:"fadeIn .3s ease",display:"flex",flexDirection:"column",gap:16}}>
+      {/* Hidden inputs */}
+      <input type="file" ref={fileInputRef} accept="image/*" multiple onChange={handleUploadFiles} style={{display:"none"}} />
+      <input type="file" ref={replaceInputRef} accept="image/*" onChange={handleReplaceImage} style={{display:"none"}} />
+
+      {/* Top Banner & Upload Card */}
+      <div style={{background:"white",padding:"20px 24px",borderRadius:16,border:"1px solid var(--bd)",boxShadow:"0 4px 15px rgba(0,0,0,0.03)",display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:16}}>
+        <div style={{flex:1,minWidth:280}}>
+          <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:4}}>
+            <span style={{fontSize:"1.6rem"}}>📁</span>
+            <h2 style={{fontSize:"1.4rem",color:"var(--dt)",margin:0}}>Central Media Library & Asset Manager</h2>
+            <span style={{fontSize:".7rem",background:"#CCFBF1",color:"#0F766E",padding:"3px 10px",borderRadius:12,fontWeight:800,border:"1px solid #99F6E4"}}>
+              Single Storage • Zero Duplication
+            </span>
+          </div>
+          <p style={{color:"var(--mu)",fontSize:".84rem",margin:0,lineHeight:1.5}}>
+            Upload letterheads, certificates, team photos, and stamps once. Connect them to any PDF letter, subworkspace, or team member without duplicate storage. Updating an asset here automatically updates all connected templates!
+          </p>
+        </div>
+
+        <button
+          type="button"
+          onClick={() => fileInputRef.current?.click()}
+          disabled={uploading}
+          style={{
+            padding:"12px 22px",
+            background:"linear-gradient(135deg, #0F766E, #0D9488)",
+            color:"white",
+            border:"none",
+            borderRadius:10,
+            fontSize:".9rem",
+            fontWeight:800,
+            cursor:uploading ? "wait" : "pointer",
+            display:"flex",
+            alignItems:"center",
+            gap:8,
+            boxShadow:"0 3px 10px rgba(15,118,110,0.3)"
+          }}
+        >
+          <span>{uploading ? "⏳" : "➕"}</span>
+          <span>{uploading ? "Compressing & Saving..." : "Upload Images to Media Folder"}</span>
+        </button>
+      </div>
+
+      {/* Folder Tabs & Search Bar */}
+      <div style={{background:"white",padding:"12px 18px",borderRadius:12,border:"1px solid var(--bd)",display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:12}}>
+        <div style={{display:"flex",gap:8,flexWrap:"wrap",alignItems:"center"}}>
+          {categories.map(cat => {
+            const count = cat.id === "all" ? mediaItems.length : mediaItems.filter(m => m.category === cat.id).length;
+            const isActive = activeCat === cat.id;
+            return (
+              <button
+                key={cat.id}
+                type="button"
+                onClick={() => setActiveCat(cat.id)}
+                style={{
+                  padding:"6px 14px",
+                  borderRadius:8,
+                  border: isActive ? "2px solid #0F766E" : "1px solid #CBD5E1",
+                  background: isActive ? "#CCFBF1" : "#F8FAFC",
+                  color: isActive ? "#0F766E" : "#334155",
+                  fontSize:".78rem",
+                  fontWeight: isActive ? 800 : 600,
+                  cursor:"pointer",
+                  display:"flex",
+                  alignItems:"center",
+                  gap:6
+                }}
+              >
+                <span>{cat.label}</span>
+                <span style={{fontSize:".68rem",background:isActive ? "#0F766E" : "#E2E8F0",color:isActive ? "white" : "#475569",padding:"1px 6px",borderRadius:10,fontWeight:700}}>
+                  {count}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+
+        <div style={{minWidth:240,maxWidth:320,flex:1}}>
+          <input
+            type="text"
+            placeholder="🔍 Search assets by name..."
+            value={searchQuery}
+            onChange={e => setSearchQuery(e.target.value)}
+            style={{width:"100%",padding:"8px 12px",borderRadius:8,border:"1px solid #CBD5E1",fontSize:".82rem",boxSizing:"border-box"}}
+          />
+        </div>
+      </div>
+
+      {/* Drag & Drop Upload Dropzone Card */}
+      <div
+        onClick={() => fileInputRef.current?.click()}
+        onDragOver={e => e.preventDefault()}
+        onDrop={e => {
+          e.preventDefault();
+          if (e.dataTransfer.files?.length > 0) {
+            handleUploadFiles({ target: { files: e.dataTransfer.files } });
+          }
+        }}
+        style={{
+          border:"2px dashed #99F6E4",
+          background:"#F0FDFA",
+          borderRadius:12,
+          padding:"24px 20px",
+          display:"flex",
+          flexDirection:"column",
+          alignItems:"center",
+          justifyContent:"center",
+          gap:8,
+          cursor:"pointer",
+          color:"#0F766E"
+        }}
+      >
+        <div style={{fontSize:"2rem"}}>📤</div>
+        <div style={{fontSize:".92rem",fontWeight:800}}>Drag & Drop letterheads or photos here, or click to browse files</div>
+        <div style={{fontSize:".75rem",color:"#115E59"}}>Supports JPG, PNG, WebP (Images are automatically compressed while preserving high-definition letterhead text)</div>
+      </div>
+
+      {/* Media Grid */}
+      <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill, minmax(280px, 1fr))",gap:16}}>
+        {filteredItems.length === 0 ? (
+          <div style={{gridColumn:"1 / -1",background:"white",padding:40,borderRadius:12,textAlign:"center",color:"#64748B",border:"1px solid var(--bd)"}}>
+            <div style={{fontSize:"3rem",marginBottom:8}}>🖼️</div>
+            <div style={{fontSize:"1.05rem",fontWeight:700,color:"#1E293B"}}>No media assets in this folder yet</div>
+            <div style={{fontSize:".82rem",marginTop:4}}>Click the button above to upload your first letterhead or photo!</div>
+          </div>
+        ) : (
+          filteredItems.map(item => {
+            const usages = getUsageInfo(item.id);
+            const isEditing = editingAssetId === item.id;
+
+            return (
+              <div
+                key={item.id}
+                style={{
+                  background:"white",
+                  borderRadius:12,
+                  border:"1.5px solid #E2E8F0",
+                  overflow:"hidden",
+                  boxShadow:"0 3px 10px rgba(0,0,0,0.03)",
+                  display:"flex",
+                  flexDirection:"column"
+                }}
+              >
+                {/* Thumbnail */}
+                <div style={{height:165,background:"#0F172A",position:"relative",display:"flex",alignItems:"center",justifyContent:"center",overflow:"hidden"}}>
+                  <img
+                    src={resolveMediaUrl(item.url, C)}
+                    alt={item.name}
+                    style={{maxWidth:"100%",maxHeight:"100%",objectFit:"contain"}}
+                  />
+                  <span style={{position:"absolute",top:8,right:8,background:"rgba(15,23,42,0.8)",color:"white",fontSize:".65rem",padding:"2px 7px",borderRadius:4,fontWeight:700,fontFamily:"monospace"}}>
+                    {item.fileSize || "Image"}
+                  </span>
+                  {item.dimensions && (
+                    <span style={{position:"absolute",bottom:8,left:8,background:"rgba(15,23,42,0.8)",color:"#86EFAC",fontSize:".65rem",padding:"2px 7px",borderRadius:4,fontWeight:700,fontFamily:"monospace"}}>
+                      {item.dimensions.width} × {item.dimensions.height} px
+                    </span>
+                  )}
+                </div>
+
+                {/* Body */}
+                <div style={{padding:"14px 16px",display:"flex",flexDirection:"column",gap:10,flex:1}}>
+                  {isEditing ? (
+                    <div style={{display:"flex",gap:6}}>
+                      <input
+                        type="text"
+                        value={editName}
+                        onChange={e => setEditName(e.target.value)}
+                        style={{flex:1,padding:"5px 8px",borderRadius:6,border:"1px solid #0F766E",fontSize:".82rem",fontWeight:700}}
+                        autoFocus
+                      />
+                      <button
+                        type="button"
+                        onClick={() => handleSaveRename(item.id)}
+                        style={{padding:"5px 10px",background:"#0F766E",color:"white",border:"none",borderRadius:6,fontSize:".76rem",fontWeight:700,cursor:"pointer"}}
+                      >
+                        Save
+                      </button>
+                    </div>
+                  ) : (
+                    <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start"}}>
+                      <div style={{fontSize:".9rem",fontWeight:800,color:"#0F172A",lineHeight:1.3,wordBreak:"break-word"}}>
+                        {item.name}
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => { setEditingAssetId(item.id); setEditName(item.name); }}
+                        style={{background:"none",border:"none",color:"#64748B",cursor:"pointer",fontSize:".8rem"}}
+                        title="Rename"
+                      >
+                        ✏️
+                      </button>
+                    </div>
+                  )}
+
+                  {/* Usages */}
+                  <div style={{fontSize:".72rem",color: usages.length > 0 ? "#15803D" : "#64748B",display:"flex",alignItems:"center",gap:5,fontWeight:700}}>
+                    <span>{usages.length > 0 ? "🔗" : "⚪"}</span>
+                    <span>{usages.length > 0 ? `Connected in ${usages.length} template(s) / section(s)` : "Not currently connected"}</span>
+                  </div>
+
+                  {usages.length > 0 && (
+                    <div style={{fontSize:".65rem",color:"#475569",background:"#F8FAFC",padding:"6px 10px",borderRadius:6,lineHeight:1.35,border:"1px solid #E2E8F0",maxHeight:55,overflowY:"auto"}}>
+                      {usages.join(", ")}
+                    </div>
+                  )}
+
+                  {/* Actions */}
+                  <div style={{marginTop:"auto",paddingTop:10,borderTop:"1px solid #F1F5F9",display:"flex",justifyContent:"space-between",alignItems:"center",gap:8}}>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setReplacingAssetId(item.id);
+                        replaceInputRef.current?.click();
+                      }}
+                      style={{
+                        flex:1,
+                        padding:"7px 12px",
+                        background:"#F1F5F9",
+                        color:"#1E293B",
+                        border:"1px solid #CBD5E1",
+                        borderRadius:6,
+                        fontSize:".74rem",
+                        fontWeight:700,
+                        cursor:"pointer",
+                        display:"flex",
+                        alignItems:"center",
+                        justifyContent:"center",
+                        gap:5
+                      }}
+                      title="Upload new file to replace this image everywhere it is connected"
+                    >
+                      <span>🔄</span>
+                      <span>Replace Image</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => handleDelete(item.id)}
+                      style={{
+                        background:"none",
+                        border:"none",
+                        color:"#DC2626",
+                        cursor:"pointer",
+                        fontSize:".9rem",
+                        padding:"4px 8px"
+                      }}
+                      title="Delete from Media Library"
+                    >
+                      🗑️
+                    </button>
+                  </div>
+                </div>
+              </div>
+            );
+          })
+        )}
+      </div>
+    </div>
+  );
+}
+
 function Admin({ C, setC, setPage, auth, onLogout, onShowLogin }) {
   const isMasterAdmin = (email) => {
     if (!email) return false;
@@ -8047,6 +8500,7 @@ function Admin({ C, setC, setPage, auth, onLogout, onShowLogin }) {
           {tab==="meritlist" && hasAccess.includes("meritlist") && <AdminMeritList mob={mob} C={C} auth={auth}/>}
           {(tab==="inviteletters" || tab==="certificates") && (hasAccess.includes("inviteletters") || hasAccess.includes("certificates")) && <AdminInviteLetters mob={mob} C={C} setC={setC} auth={auth}/>}
           {tab==="team"      && hasAccess.includes("team") && <AdminTeam mob={mob} C={C} setC={setC} auth={auth}/>}
+          {tab==="medialibrary" && hasAccess.includes("medialibrary") && <AdminMediaLibrary mob={mob} C={C} setC={setC} auth={auth}/>}
           {tab==="gallery"   && hasAccess.includes("gallery") && <AdminGallery mob={mob} C={C} setC={setC} auth={auth}/>}
           {tab==="achievements" && hasAccess.includes("achievements") && <AdminAchievements mob={mob} C={C} setC={setC} auth={auth}/>}
           {tab==="settings"  && hasAccess.includes("settings") && <Settings mob={mob} C={C} setC={setC} auth={auth} setPage={setPage} hasAccess={hasAccess} master={master}/>}
