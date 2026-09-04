@@ -3495,7 +3495,7 @@ function Achievements({ C, lang }) {
               {/* Image Area */}
               <div style={{width:"100%",aspectRatio:"16/9",background:"#F9F9F9",borderBottom:"1px solid #EAEAEA",display:"flex",alignItems:"center",justifyContent:"center",position:"relative",overflow:"hidden"}}>
                 {item.image ? (
-                  <img src={item.image} alt={item.title} style={{width:"100%",height:"100%",objectFit:"cover",transition:"transform .5s ease"}} className="ach-img"/>
+                  <img src={resolveMediaUrl(item.image, C)} alt={item.title} style={{width:"100%",height:"100%",objectFit:"cover",transition:"transform .5s ease"}} className="ach-img"/>
                 ) : (
                   <span style={{fontSize:"3rem",opacity:0.1}}>🏆</span>
                 )}
@@ -3777,7 +3777,7 @@ function Team({ C, lang }) {
                       }} onMouseEnter={e=>e.currentTarget.style.transform="translateY(-3px)"} onMouseLeave={e=>e.currentTarget.style.transform="none"} onClick={() => openModal(node)}>
                         <div style={{width:mob?40:50, height:mob?40:50, margin:"0 auto 8px", borderRadius:"50%", overflow:"hidden", border:"2px solid #f0f0f0", background:"#eee"}}>
                           {node.image ? (
-                            <img src={node.image} alt={node.name} style={{width:"100%", height:"100%", objectFit:"cover"}}/>
+                            <img src={resolveMediaUrl(node.image, C)} alt={node.name} style={{width:"100%", height:"100%", objectFit:"cover"}}/>
                           ) : (
                             <div style={{width:"100%", height:"100%", display:"flex", alignItems:"center", justifyContent:"center", fontSize:"1.5rem"}}>👤</div>
                           )}
@@ -3869,7 +3869,7 @@ function Team({ C, lang }) {
               }} onMouseEnter={e=>e.currentTarget.style.transform="translateY(-3px)"} onMouseLeave={e=>e.currentTarget.style.transform="none"} onClick={() => openModal(node)}>
                 <div style={{width:mob?40:50, height:mob?40:50, margin:"0 auto 8px", borderRadius:"50%", overflow:"hidden", border:"2px solid #f0f0f0", background:"#eee"}}>
                   {node.image ? (
-                    <img src={node.image} alt={node.name} style={{width:"100%", height:"100%", objectFit:"cover"}}/>
+                    <img src={resolveMediaUrl(node.image, C)} alt={node.name} style={{width:"100%", height:"100%", objectFit:"cover"}}/>
                   ) : (
                     <div style={{width:"100%", height:"100%", display:"flex", alignItems:"center", justifyContent:"center", fontSize:"1.5rem"}}>👤</div>
                   )}
@@ -3919,7 +3919,7 @@ function Team({ C, lang }) {
             onMouseEnter={e=>e.currentTarget.style.transform="translateY(-8px)"} onMouseLeave={e=>e.currentTarget.style.transform="none"} onClick={() => openModal(item)}>
             <div style={{width:"100%",aspectRatio:"1",background:"#f5f5f5",position:"relative"}}>
               {item.image ? (
-                <img src={item.image} alt={item.name} style={{width:"100%",height:"100%",objectFit:"cover"}}/>
+                <img src={resolveMediaUrl(item.image, C)} alt={item.name} style={{width:"100%",height:"100%",objectFit:"cover"}}/>
               ) : (
                 <div style={{width:"100%",height:"100%",display:"flex",alignItems:"center",justifyContent:"center",fontSize:"4rem",opacity:0.1}}>👤</div>
               )}
@@ -5017,9 +5017,12 @@ export const generateCertificatePDF = async (certConfig, fieldsData, fallbackNam
 
     const isInvite = actualType === 'invite';
     let srcUrl = customTpl ? customTpl.bgUrl : isInvite ? certConfig?.inviteBgUrl : (certConfig?.certBgUrl || certConfig?.bgUrl);
+    if (srcUrl && srcUrl.startsWith('media://')) {
+      srcUrl = resolveMediaUrl(srcUrl, certConfig) || srcUrl;
+    }
     if (srcUrl && srcUrl.startsWith('asset://')) {
       const assetId = srcUrl.replace('asset://', '');
-      srcUrl = assetCache[assetId] || srcUrl;
+      srcUrl = (typeof assetCache !== 'undefined' && assetCache[assetId]) || srcUrl;
     }
 
     if (!srcUrl) {
@@ -7234,6 +7237,7 @@ const ANAV = [
   {id:"volunteers",icon:"🤝",label:"Volunteers"},
   {id:"gallery",icon:"🖼️",label:"Gallery"},
   {id:"team",icon:"👥",label:"Our Team"},
+  {id:"medialibrary",icon:"📁",label:"Media Library"},
   {id:"achievements",icon:"🏆",label:"Achievements"},
   {id:"settings",icon:"⚙️",label:"Settings"},
   {id:"chatbotaccess",icon:"🤖",label:"Chatbot Admins"},
@@ -7914,7 +7918,7 @@ function Admin({ C, setC, setPage, auth, onLogout, onShowLogin }) {
 
   let hasAccess = [];
   if (auth?.email) {
-    hasAccess = master ? ["content", "seo", "overview", "donations", "events", "registrations", "volunteers", "gallery", "team", "achievements", "settings", "chatbotaccess", "whatsappadmin", "access", "backup", "profile", "meritlist", "inviteletters", "certificates"] : [...(userRole?.permissions || []), "chatbotaccess", "whatsappadmin", "profile"];
+    hasAccess = master ? ["content", "seo", "overview", "donations", "events", "registrations", "volunteers", "gallery", "team", "medialibrary", "achievements", "settings", "chatbotaccess", "whatsappadmin", "access", "backup", "profile", "meritlist", "inviteletters", "certificates"] : [...(userRole?.permissions || []), "chatbotaccess", "whatsappadmin", "profile"];
   }
 
   const visibleNav = ANAV.filter(item => hasAccess.includes(item.id));
@@ -11590,6 +11594,581 @@ function AdminAchievements({ mob, C, setC, auth }) {
   );
 }
 
+// ── CENTRAL MEDIA LIBRARY & ASSET MANAGER ──────────────────────────────────────────
+export const resolveMediaUrl = (url, C = {}) => {
+  if (!url || typeof url !== 'string') return "";
+  if (url.startsWith("media://")) {
+    const assetId = url.replace("media://", "");
+    if (typeof assetCache !== 'undefined' && assetCache[assetId]) return assetCache[assetId];
+    if (Array.isArray(C?.mediaLibrary)) {
+      const found = C.mediaLibrary.find(m => m.id === assetId);
+      if (found && found.url) {
+        if (typeof assetCache !== 'undefined') assetCache[assetId] = found.url;
+        return found.url;
+      }
+    }
+    if (typeof window !== 'undefined' && window.__MMP_MEDIA_CACHE__ && window.__MMP_MEDIA_CACHE__[assetId]) {
+      return window.__MMP_MEDIA_CACHE__[assetId];
+    }
+  }
+  if (url.startsWith("asset://")) {
+    const assetId = url.replace("asset://", "");
+    if (typeof assetCache !== 'undefined' && assetCache[assetId]) return assetCache[assetId];
+  }
+  return url;
+};
+
+export function MediaLibraryModal({
+  isOpen,
+  onClose,
+  onSelect = null, // if passed, shows "Select & Connect" button
+  targetCategory = "all", // "all" | "letterhead" | "team_profile" | "stamp_signature" | "general"
+  C = {},
+  setC,
+  auth
+}) {
+  if (!isOpen) return null;
+
+  const [activeCat, setActiveCat] = useState(targetCategory || "all");
+  const [searchQuery, setSearchQuery] = useState("");
+  const [uploading, setUploading] = useState(false);
+  const [editingAssetId, setEditingAssetId] = useState(null);
+  const [editName, setEditName] = useState("");
+  const fileInputRef = useRef(null);
+  const replaceInputRef = useRef(null);
+  const [replacingAssetId, setReplacingAssetId] = useState(null);
+
+  // Maintain local / synced media library items
+  const mediaItems = Array.isArray(C?.mediaLibrary) ? C.mediaLibrary : [];
+
+  // Track active usages of each asset across templates and team
+  const getUsageInfo = (assetId) => {
+    const usages = [];
+    const mediaRef = `media://${assetId}`;
+
+    // Check events / PDF templates
+    (C?.events || []).forEach(ev => {
+      const evName = ev.title || "Event";
+      if (ev.inviteBgUrl === mediaRef || ev.inviteBgUrl === assetId) {
+        usages.push(`${evName}: Invite Letter`);
+      }
+      if (ev.certBgUrl === mediaRef || ev.certBgUrl === assetId) {
+        usages.push(`${evName}: Certificate`);
+      }
+      (ev.pdfTemplates || []).forEach(tpl => {
+        if (tpl.bgUrl === mediaRef || tpl.bgUrl === assetId) {
+          usages.push(`${evName}: ${tpl.name || 'PDF Pass'}`);
+        }
+      });
+    });
+
+    // Check team items
+    (C?.teamItems || []).forEach(t => {
+      if (t.image === mediaRef || t['Photo URL'] === mediaRef) {
+        usages.push(`Team: ${t.name || 'Member'}`);
+      }
+    });
+
+    return usages;
+  };
+
+  // Upload handler with automatic compression
+  const handleUploadFiles = async (e) => {
+    const files = Array.from(e.target.files || []);
+    if (files.length === 0) return;
+    setUploading(true);
+
+    try {
+      const newItems = [...mediaItems];
+      for (const file of files) {
+        const reader = new FileReader();
+        const b64 = await new Promise((res, rej) => {
+          reader.onload = () => res(reader.result);
+          reader.onerror = rej;
+          reader.readAsDataURL(file);
+        });
+
+        // Determine image dimensions
+        const { w, h } = await new Promise((res) => {
+          const img = new Image();
+          img.onload = () => res({ w: img.width, h: img.height });
+          img.onerror = () => res({ w: 800, h: 600 });
+          img.src = b64;
+        });
+
+        // For letterheads preserve 1600px width for sharp text; for profiles 800px
+        const maxDim = activeCat === 'letterhead' ? 1600 : 800;
+        const quality = activeCat === 'letterhead' ? 0.78 : 0.65;
+        const compressed = await compressBase64Image(b64, maxDim, quality);
+
+        const assetId = "media_" + Date.now() + "_" + Math.random().toString(36).substr(2, 5);
+        const cleanName = file.name.replace(/\.[^/.]+$/, "").replace(/[-_]+/g, ' ');
+
+        const itemCategory = (activeCat && activeCat !== "all") ? activeCat : (w / h > 1.2 || h / w > 1.2 ? "letterhead" : "team_profile");
+
+        const assetDoc = {
+          id: assetId,
+          name: cleanName,
+          category: itemCategory,
+          url: compressed,
+          dimensions: { width: w, height: h },
+          fileSize: `${Math.round(compressed.length * 0.75 / 1024)} KB`,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString()
+        };
+
+        newItems.unshift(assetDoc);
+        if (typeof assetCache !== 'undefined') assetCache[assetId] = compressed;
+        if (typeof window !== 'undefined') {
+          window.__MMP_MEDIA_CACHE__ = window.__MMP_MEDIA_CACHE__ || {};
+          window.__MMP_MEDIA_CACHE__[assetId] = compressed;
+        }
+
+        if (files.length === 1 && onSelect) {
+          setTimeout(() => {
+            onSelect(assetDoc);
+            onClose();
+          }, 200);
+        }
+      }
+
+      const updatedC = { ...C, mediaLibrary: newItems };
+      if (setC) setC(updatedC);
+      await fbSave(updatedC, auth?.idToken);
+      alert(`✅ Successfully uploaded ${files.length} image(s) to Central Media Folder!`);
+    } catch(err) {
+      console.error(err);
+      alert("Upload failed: " + err.message);
+    } finally {
+      setUploading(false);
+      if (e.target) e.target.value = "";
+    }
+  };
+
+  // Replace image under SAME asset ID (Global Sync!)
+  const handleReplaceImage = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file || !replacingAssetId) return;
+    setUploading(true);
+
+    try {
+      const reader = new FileReader();
+      const b64 = await new Promise((res, rej) => {
+        reader.onload = () => res(reader.result);
+        reader.onerror = rej;
+        reader.readAsDataURL(file);
+      });
+
+      const { w, h } = await new Promise((res) => {
+        const img = new Image();
+        img.onload = () => res({ w: img.width, h: img.height });
+        img.onerror = () => res({ w: 800, h: 600 });
+        img.src = b64;
+      });
+
+      const maxDim = 1600;
+      const compressed = await compressBase64Image(b64, maxDim, 0.78);
+
+      const newItems = mediaItems.map(m => {
+        if (m.id === replacingAssetId) {
+          return {
+            ...m,
+            url: compressed,
+            dimensions: { width: w, height: h },
+            fileSize: `${Math.round(compressed.length * 0.75 / 1024)} KB`,
+            updatedAt: new Date().toISOString()
+          };
+        }
+        return m;
+      });
+
+      if (typeof assetCache !== 'undefined') assetCache[replacingAssetId] = compressed;
+      if (typeof window !== 'undefined') {
+        window.__MMP_MEDIA_CACHE__ = window.__MMP_MEDIA_CACHE__ || {};
+        window.__MMP_MEDIA_CACHE__[replacingAssetId] = compressed;
+      }
+
+      const updatedC = { ...C, mediaLibrary: newItems };
+      if (setC) setC(updatedC);
+      await fbSave(updatedC, auth?.idToken);
+      alert("✅ Image replaced! All connected templates and sections will now automatically use this new image.");
+    } catch(err) {
+      alert("Replace failed: " + err.message);
+    } finally {
+      setUploading(false);
+      setReplacingAssetId(null);
+      if (e.target) e.target.value = "";
+    }
+  };
+
+  const handleDelete = async (assetId) => {
+    const usages = getUsageInfo(assetId);
+    let msg = "Are you sure you want to delete this image from the Media Library?";
+    if (usages.length > 0) {
+      msg = `⚠️ WARNING: This image is currently connected to:\n• ${usages.join('\n• ')}\n\nDeleting it will remove the background from those templates/items. Delete anyway?`;
+    }
+    if (!window.confirm(msg)) return;
+
+    const newItems = mediaItems.filter(m => m.id !== assetId);
+    const updatedC = { ...C, mediaLibrary: newItems };
+    if (setC) setC(updatedC);
+    await fbSave(updatedC, auth?.idToken);
+  };
+
+  const handleSaveRename = async (assetId) => {
+    if (!editName.trim()) return;
+    const newItems = mediaItems.map(m => m.id === assetId ? { ...m, name: editName.trim() } : m);
+    const updatedC = { ...C, mediaLibrary: newItems };
+    if (setC) setC(updatedC);
+    await fbSave(updatedC, auth?.idToken);
+    setEditingAssetId(null);
+  };
+
+  // Filtered items
+  const filteredItems = mediaItems.filter(item => {
+    if (activeCat !== "all" && item.category !== activeCat) return false;
+    if (searchQuery.trim()) {
+      const q = searchQuery.toLowerCase().trim();
+      return (item.name || "").toLowerCase().includes(q) || (item.category || "").toLowerCase().includes(q);
+    }
+    return true;
+  });
+
+  const categories = [
+    { id: "all", label: "🌟 All Media", icon: "📁" },
+    { id: "letterhead", label: "📄 Letterheads & PDF Backgrounds", icon: "📄" },
+    { id: "team_profile", label: "👤 Team & Profile Photos", icon: "👤" },
+    { id: "stamp_signature", label: "🖋️ Stamps & Signatures", icon: "🖋️" },
+    { id: "banner", label: "🖼️ Logos & Banners", icon: "🖼️" }
+  ];
+
+  return (
+    <div style={{position:"fixed",inset:0,zIndex:100005,background:"rgba(15,23,42,0.80)",backdropFilter:"blur(5px)",display:"flex",alignItems:"center",justifyContent:"center",padding:16}} onClick={onClose}>
+      <div 
+        onClick={e => e.stopPropagation()}
+        style={{
+          background:"#FFFFFF",
+          borderRadius:14,
+          width:"100%",
+          maxWidth:980,
+          height:"88vh",
+          maxHeight:820,
+          display:"flex",
+          flexDirection:"column",
+          overflow:"hidden",
+          boxShadow:"0 25px 50px -12px rgba(0,0,0,0.35)",
+          border:"1px solid #CBD5E1"
+        }}
+      >
+        {/* Hidden File Inputs */}
+        <input 
+          type="file" 
+          ref={fileInputRef} 
+          accept="image/*" 
+          multiple 
+          onChange={handleUploadFiles} 
+          style={{display:"none"}} 
+        />
+        <input 
+          type="file" 
+          ref={replaceInputRef} 
+          accept="image/*" 
+          onChange={handleReplaceImage} 
+          style={{display:"none"}} 
+        />
+
+        {/* Header Bar */}
+        <div style={{padding:"14px 20px",background:"linear-gradient(135deg, #0F766E, #115E59)",color:"white",display:"flex",justifyContent:"space-between",alignItems:"center",flexShrink:0}}>
+          <div style={{display:"flex",alignItems:"center",gap:10}}>
+            <span style={{fontSize:"1.4rem"}}>📁</span>
+            <div>
+              <div style={{fontSize:"1.05rem",fontWeight:800,display:"flex",alignItems:"center",gap:8}}>
+                <span>Central Media Library & Asset Manager</span>
+                <span style={{fontSize:".65rem",background:"rgba(255,255,255,0.25)",padding:"2px 8px",borderRadius:12,fontWeight:700}}>
+                  Single Storage • Zero Duplication
+                </span>
+              </div>
+              <div style={{fontSize:".74rem",opacity:0.9}}>
+                Upload once, connect everywhere (PDF Letterheads, Passes, Team Photos, Profiles). Updating a letterhead here updates all linked templates instantly!
+              </div>
+            </div>
+          </div>
+
+          <div style={{display:"flex",alignItems:"center",gap:10}}>
+            <button
+              type="button"
+              onClick={() => fileInputRef.current?.click()}
+              disabled={uploading}
+              style={{
+                padding:"8px 16px",
+                background:"#FFFFFF",
+                color:"#0F766E",
+                border:"none",
+                borderRadius:8,
+                fontSize:".82rem",
+                fontWeight:800,
+                cursor:uploading ? "wait" : "pointer",
+                display:"flex",
+                alignItems:"center",
+                gap:6,
+                boxShadow:"0 2px 6px rgba(0,0,0,0.2)"
+              }}
+            >
+              <span>{uploading ? "⏳" : "➕"}</span>
+              <span>{uploading ? "Processing..." : "Upload New Image"}</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={onClose}
+              style={{background:"rgba(255,255,255,0.2)",border:"none",color:"white",borderRadius:"50%",width:32,height:32,cursor:"pointer",fontSize:"1rem",fontWeight:800,display:"flex",alignItems:"center",justifyContent:"center"}}
+              title="Close Media Library"
+            >
+              ✕
+            </button>
+          </div>
+        </div>
+
+        {/* Toolbar & Filter Tabs Bar */}
+        <div style={{padding:"10px 18px",background:"#F8FAFC",borderBottom:"1px solid #E2E8F0",display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:10,flexShrink:0}}>
+          {/* Category Tabs */}
+          <div style={{display:"flex",gap:6,flexWrap:"wrap",alignItems:"center"}}>
+            {categories.map(cat => {
+              const count = cat.id === "all" ? mediaItems.length : mediaItems.filter(m => m.category === cat.id).length;
+              const isActive = activeCat === cat.id;
+              return (
+                <button
+                  key={cat.id}
+                  type="button"
+                  onClick={() => setActiveCat(cat.id)}
+                  style={{
+                    padding:"5px 11px",
+                    borderRadius:6,
+                    border: isActive ? "1.5px solid #0F766E" : "1px solid #CBD5E1",
+                    background: isActive ? "#CCFBF1" : "white",
+                    color: isActive ? "#0F766E" : "#334155",
+                    fontSize:".75rem",
+                    fontWeight: isActive ? 800 : 600,
+                    cursor:"pointer",
+                    display:"flex",
+                    alignItems:"center",
+                    gap:5
+                  }}
+                >
+                  <span>{cat.label}</span>
+                  <span style={{fontSize:".65rem",background:isActive ? "#0F766E" : "#E2E8F0",color:isActive ? "white" : "#475569",padding:"1px 5px",borderRadius:10,fontWeight:700}}>
+                    {count}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+
+          {/* Search Box */}
+          <div style={{minWidth:220,flex:1,maxWidth:280}}>
+            <input
+              type="text"
+              placeholder="🔍 Search media by name..."
+              value={searchQuery}
+              onChange={e => setSearchQuery(e.target.value)}
+              style={{width:"100%",padding:"6px 12px",borderRadius:6,border:"1px solid #CBD5E1",fontSize:".78rem",background:"white",boxSizing:"border-box"}}
+            />
+          </div>
+        </div>
+
+        {/* Grid Area */}
+        <div style={{flex:1,overflowY:"auto",padding:18,background:"#F1F5F9"}}>
+          {filteredItems.length === 0 ? (
+            <div style={{height:"100%",minHeight:260,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:12,color:"#64748B"}}>
+              <div style={{fontSize:"3.5rem"}}>🖼️</div>
+              <div style={{fontSize:"1.05rem",fontWeight:800,color:"#1E293B"}}>No media items found in this folder</div>
+              <div style={{fontSize:".8rem",maxWidth:420,textAlign:"center",lineHeight:1.4}}>
+                Upload your official letterheads, certificate backgrounds, team photos, or stamps. They will be stored once and can be connected anywhere!
+              </div>
+              <button
+                type="button"
+                onClick={() => fileInputRef.current?.click()}
+                style={{marginTop:6,padding:"8px 18px",background:"#0F766E",color:"white",border:"none",borderRadius:8,fontSize:".82rem",fontWeight:800,cursor:"pointer"}}
+              >
+                ➕ Upload Image Now
+              </button>
+            </div>
+          ) : (
+            <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill, minmax(260px, 1fr))",gap:16}}>
+              {filteredItems.map(item => {
+                const usages = getUsageInfo(item.id);
+                const isEditing = editingAssetId === item.id;
+
+                return (
+                  <div
+                    key={item.id}
+                    style={{
+                      background:"white",
+                      borderRadius:10,
+                      border:"1.5px solid #E2E8F0",
+                      overflow:"hidden",
+                      boxShadow:"0 3px 10px rgba(0,0,0,0.04)",
+                      display:"flex",
+                      flexDirection:"column",
+                      transition:"transform 0.1s, box-shadow 0.1s"
+                    }}
+                  >
+                    {/* Thumbnail Display with aspect fit */}
+                    <div style={{height:150,background:"#0F172A",position:"relative",display:"flex",alignItems:"center",justifyContent:"center",overflow:"hidden"}}>
+                      <img
+                        src={resolveMediaUrl(item.url, C)}
+                        alt={item.name}
+                        style={{maxWidth:"100%",maxHeight:"100%",objectFit:"contain"}}
+                      />
+                      <span style={{position:"absolute",top:8,right:8,background:"rgba(15,23,42,0.75)",color:"white",fontSize:".62rem",padding:"2px 6px",borderRadius:4,fontWeight:700,fontFamily:"monospace"}}>
+                        {item.fileSize || "Image"}
+                      </span>
+                      {item.dimensions && (
+                        <span style={{position:"absolute",bottom:8,left:8,background:"rgba(15,23,42,0.75)",color:"#86EFAC",fontSize:".62rem",padding:"2px 6px",borderRadius:4,fontWeight:700,fontFamily:"monospace"}}>
+                          {item.dimensions.width} × {item.dimensions.height} px
+                        </span>
+                      )}
+                    </div>
+
+                    {/* Metadata & Actions */}
+                    <div style={{padding:"12px 14px",display:"flex",flexDirection:"column",gap:8,flex:1}}>
+                      {/* Name or Rename Input */}
+                      {isEditing ? (
+                        <div style={{display:"flex",gap:4}}>
+                          <input
+                            type="text"
+                            value={editName}
+                            onChange={e => setEditName(e.target.value)}
+                            style={{flex:1,padding:"4px 8px",borderRadius:4,border:"1px solid #0F766E",fontSize:".8rem",fontWeight:700}}
+                            autoFocus
+                          />
+                          <button
+                            type="button"
+                            onClick={() => handleSaveRename(item.id)}
+                            style={{padding:"4px 8px",background:"#0F766E",color:"white",border:"none",borderRadius:4,fontSize:".72rem",fontWeight:700,cursor:"pointer"}}
+                          >
+                            Save
+                          </button>
+                        </div>
+                      ) : (
+                        <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start"}}>
+                          <div style={{fontSize:".84rem",fontWeight:800,color:"#0F172A",lineHeight:1.3,wordBreak:"break-word"}}>
+                            {item.name}
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => { setEditingAssetId(item.id); setEditName(item.name); }}
+                            style={{background:"none",border:"none",color:"#64748B",cursor:"pointer",fontSize:".75rem"}}
+                            title="Rename"
+                          >
+                            ✏️
+                          </button>
+                        </div>
+                      )}
+
+                      {/* Usage Badge (Shows where this asset is connected) */}
+                      <div style={{fontSize:".68rem",color: usages.length > 0 ? "#15803D" : "#64748B",display:"flex",alignItems:"center",gap:4,fontWeight:700}}>
+                        <span>{usages.length > 0 ? "🔗" : "⚪"}</span>
+                        <span>
+                          {usages.length > 0 ? `Connected in ${usages.length} template(s) / section(s)` : "Not currently connected"}
+                        </span>
+                      </div>
+
+                      {usages.length > 0 && (
+                        <div style={{fontSize:".62rem",color:"#475569",background:"#F8FAFC",padding:"4px 8px",borderRadius:4,lineHeight:1.3,border:"1px solid #E2E8F0",maxHeight:42,overflowY:"auto"}}>
+                          {usages.join(", ")}
+                        </div>
+                      )}
+
+                      {/* Action Buttons */}
+                      <div style={{marginTop:"auto",paddingTop:8,borderTop:"1px solid #F1F5F9",display:"flex",justifyContent:"space-between",alignItems:"center",gap:6}}>
+                        {onSelect ? (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              onSelect(item);
+                              onClose();
+                            }}
+                            style={{
+                              flex:1,
+                              padding:"7px 12px",
+                              background:"#0F766E",
+                              color:"white",
+                              border:"none",
+                              borderRadius:6,
+                              fontSize:".76rem",
+                              fontWeight:800,
+                              cursor:"pointer",
+                              display:"flex",
+                              alignItems:"center",
+                              justifyContent:"center",
+                              gap:4
+                            }}
+                          >
+                            <span>✓</span>
+                            <span>Select & Connect</span>
+                          </button>
+                        ) : null}
+
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setReplacingAssetId(item.id);
+                            replaceInputRef.current?.click();
+                          }}
+                          style={{
+                            padding:"6px 10px",
+                            background:"#F1F5F9",
+                            color:"#1E293B",
+                            border:"1px solid #CBD5E1",
+                            borderRadius:6,
+                            fontSize:".72rem",
+                            fontWeight:700,
+                            cursor:"pointer"
+                          }}
+                          title="Upload new file to replace this image everywhere it is connected"
+                        >
+                          🔄 Replace Image
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => handleDelete(item.id)}
+                          style={{
+                            background:"none",
+                            border:"none",
+                            color:"#DC2626",
+                            cursor:"pointer",
+                            fontSize:".8rem",
+                            padding:"4px 6px"
+                          }}
+                          title="Delete from Media Library"
+                        >
+                          🗑️
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+
+        {/* Footer info bar */}
+        <div style={{padding:"8px 18px",background:"#FFFFFF",borderTop:"1px solid #E2E8F0",display:"flex",justifyContent:"space-between",alignItems:"center",fontSize:".72rem",color:"#64748B",flexShrink:0}}>
+          <div>
+            Total Media Assets: <strong>{mediaItems.length}</strong> (Storage optimized via shared references)
+          </div>
+          <div>
+            Tip: Connecting a letterhead to multiple subworkspaces uses zero extra storage!
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ── ADMIN TEAM ────────────────────────────────────────────────────────────────
 function AdminTeam({ mob, C, setC, auth }) {
   const [items, setItems] = useState(C.teamItems || []);
@@ -11598,6 +12177,7 @@ function AdminTeam({ mob, C, setC, auth }) {
   const [activeNode, setActiveNode] = useState(null); // For editing details
   const [menuNode, setMenuNode] = useState(null); // For Add/Action actions
   const [uploadingImage, setUploadingImage] = useState(false);
+  const [showTeamMediaModal, setShowTeamMediaModal] = useState(false);
   const [allUsers, setAllUsers] = useState([]);
   const [activeCommittee, setActiveCommittee] = useState("All");
   const [draggedComm, setDraggedComm] = useState(null);
@@ -12675,7 +13255,7 @@ function AdminTeam({ mob, C, setC, auth }) {
                             {/* Card Content */}
                             <div style={{width:44, height:44, margin:"0 auto 8px", borderRadius:"50%", overflow:"hidden", border:"2px solid #f0f0f0", background:"#eee"}}>
                               {node.image ? (
-                                <img src={node.image} alt={node.name} style={{width:"100%", height:"100%", objectFit:"cover"}}/>
+                                <img src={resolveMediaUrl(node.image, C)} alt={node.name} style={{width:"100%", height:"100%", objectFit:"cover"}}/>
                               ) : (
                                 <div style={{width:"100%", height:"100%", display:"flex", alignItems:"center", justifyContent:"center", fontSize:"1.3rem"}}>👤</div>
                               )}
@@ -12831,7 +13411,7 @@ function AdminTeam({ mob, C, setC, auth }) {
 
                 <div style={{width:50, height:50, margin:"16px auto 6px", borderRadius:"50%", overflow:"hidden", border:"2px solid #f0f0f0", background:"#eee"}}>
                   {node.image ? (
-                    <img src={node.image} alt={node.name} style={{width:"100%", height:"100%", objectFit:"cover"}}/>
+                    <img src={resolveMediaUrl(node.image, C)} alt={node.name} style={{width:"100%", height:"100%", objectFit:"cover"}}/>
                   ) : (
                     <div style={{width:"100%", height:"100%", display:"flex", alignItems:"center", justifyContent:"center", fontSize:"1.5rem"}}>👤</div>
                   )}
@@ -13372,7 +13952,7 @@ function AdminTeam({ mob, C, setC, auth }) {
                 >
                   <div style={{fontSize:"1.2rem", color:"#bbb", fontWeight:"bold"}}>⋮⋮</div>
                   <div style={{width:60,height:60,borderRadius:"50%",background:"#eee",overflow:"hidden",flexShrink:0}}>
-                    {item.image ? <img src={item.image} style={{width:"100%",height:"100%",objectFit:"cover"}}/> : <div style={{width:"100%",height:"100%",display:"flex",alignItems:"center",justifyContent:"center",fontSize:"1.5rem"}}>👤</div>}
+                    {item.image ? <img src={resolveMediaUrl(item.image, C)} style={{width:"100%",height:"100%",objectFit:"cover"}}/> : <div style={{width:"100%",height:"100%",display:"flex",alignItems:"center",justifyContent:"center",fontSize:"1.5rem"}}>👤</div>}
                   </div>
                   <div style={{flex:1,minWidth:200}}>
                     <div style={{fontWeight:700,color:"var(--dt)",fontSize:"1.1rem"}}>{item.name || "No Name"}</div>
@@ -13429,15 +14009,25 @@ function AdminTeam({ mob, C, setC, auth }) {
 
                 <div style={{display:"flex",gap:16,marginBottom:20}}>
                   <div style={{width:80,height:80,borderRadius:"50%",background:"#f5f5f5",overflow:"hidden",position:"relative",flexShrink:0}}>
-                    {activeNode.image ? <img src={activeNode.image} style={{width:"100%",height:"100%",objectFit:"cover"}}/> : <div style={{width:"100%",height:"100%",display:"flex",alignItems:"center",justifyContent:"center",fontSize:"2rem"}}>👤</div>}
+                    {activeNode.image ? <img src={resolveMediaUrl(activeNode.image, C)} style={{width:"100%",height:"100%",objectFit:"cover"}}/> : <div style={{width:"100%",height:"100%",display:"flex",alignItems:"center",justifyContent:"center",fontSize:"2rem"}}>👤</div>}
                   </div>
                   <div style={{flex:1, minWidth:0}}>
                     <label style={{display:"flex",justifyContent:"space-between",alignItems:"center",fontSize:".75rem",fontWeight:700,color:"var(--mu)",marginBottom:4}}>
                       <span>PHOTO URL</span>
-                      <label style={{cursor:"pointer",color:"var(--dt)",textDecoration:"underline",fontWeight:700}}>
-                        {uploadingImage ? "Uploading..." : "Click to Upload Photo"}
-                        <input type="file" style={{display:"none"}} accept="image/*" onChange={handlePhotoUpload} disabled={uploadingImage}/>
-                      </label>
+                      <div style={{display:"flex",alignItems:"center",gap:8}}>
+                        <button
+                          type="button"
+                          onClick={() => setShowTeamMediaModal(true)}
+                          style={{background:"#CCFBF1",border:"1px solid #14B8A6",color:"#0F766E",borderRadius:4,padding:"2px 7px",fontSize:".68rem",fontWeight:800,cursor:"pointer"}}
+                          title="Pick photo from Central Media Folder"
+                        >
+                          📁 Media Folder
+                        </button>
+                        <label style={{cursor:"pointer",color:"var(--dt)",textDecoration:"underline",fontWeight:700}}>
+                          {uploadingImage ? "Uploading..." : "Click to Upload Photo"}
+                          <input type="file" style={{display:"none"}} accept="image/*" onChange={handlePhotoUpload} disabled={uploadingImage}/>
+                        </label>
+                      </div>
                     </label>
                     <input type="text" value={activeNode.image || ""} onChange={e=>updateActiveNode("image", e.target.value)} style={{width:"100%",padding:10,borderRadius:8,border:"1px solid var(--bd)",fontSize:".9rem"}} placeholder="https://..."/>
                   </div>
@@ -22682,6 +23272,7 @@ function WorkspaceWhatsAppTemplateModal({ event, C, setC, auth, onClose, initial
   });
   const [draggingPdfField, setDraggingPdfField] = useState(null);
   const [uploadingPdfBg, setUploadingPdfBg] = useState(false);
+  const [showPdfMediaLibrary, setShowPdfMediaLibrary] = useState(false);
   const canvasContainerRef = useRef(null);
   const pdfBgInputRef = useRef(null);
   const [canvasScale, setCanvasScale] = useState(1);
@@ -22839,8 +23430,23 @@ function WorkspaceWhatsAppTemplateModal({ event, C, setC, auth, onClose, initial
         ctx.fillStyle = "#FFFFFF";
         ctx.fillRect(0, 0, w, h);
         ctx.drawImage(img, 0, 0, w, h);
-        const b64 = canvas.toDataURL("image/jpeg", 0.75);
-        handleUpdateActivePdf("bgUrl", b64);
+        const b64 = canvas.toDataURL("image/jpeg", 0.78);
+        const newMediaId = "media_" + Date.now() + "_" + Math.random().toString(36).substr(2, 5);
+        const newMediaDoc = {
+          id: newMediaId,
+          name: activePdf.name || "Event Letterhead",
+          category: "letterhead",
+          url: b64,
+          dimensions: { width: w, height: h },
+          fileSize: `${Math.round(b64.length * 0.75 / 1024)} KB`,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString()
+        };
+        const curMedia = Array.isArray(C.mediaLibrary) ? C.mediaLibrary : [];
+        const updatedMedia = [newMediaDoc, ...curMedia];
+        if (typeof assetCache !== 'undefined') assetCache[newMediaId] = b64;
+        if (setC) setC({ ...C, mediaLibrary: updatedMedia });
+        handleUpdateActivePdf("bgUrl", `media://${newMediaId}`);
         setUploadingPdfBg(false);
       };
       img.onerror = () => setUploadingPdfBg(false);
@@ -24296,7 +24902,7 @@ function WorkspaceWhatsAppTemplateModal({ event, C, setC, auth, onClose, initial
                         {(activePdf.bgFit === 'letterhead' || (!activePdf.bgFit && activePdf.orientation !== 'landscape')) ? (
                           <div style={{position:"absolute",top:0,left:0,right:0,zIndex:1,pointerEvents:"none"}}>
                             <img
-                              src={activePdf.bgUrl}
+                              src={resolveMediaUrl(activePdf.bgUrl, C)}
                               alt="Letterhead Header"
                               style={{
                                 width:"100%",
@@ -24309,7 +24915,7 @@ function WorkspaceWhatsAppTemplateModal({ event, C, setC, auth, onClose, initial
                         ) : (
                           <div style={{position:"absolute",inset:0,zIndex:1,pointerEvents:"none"}}>
                             <img
-                              src={activePdf.bgUrl}
+                              src={resolveMediaUrl(activePdf.bgUrl, C)}
                               alt="Template Background"
                               style={{
                                 width:"100%",
@@ -24827,6 +25433,19 @@ function WorkspaceWhatsAppTemplateModal({ event, C, setC, auth, onClose, initial
           </div>
         </div>
       </div>
+
+      {/* Central Media Library Selector Modal for PDF Templates */}
+      <MediaLibraryModal
+        isOpen={showPdfMediaLibrary}
+        onClose={() => setShowPdfMediaLibrary(false)}
+        targetCategory="letterhead"
+        C={C}
+        setC={setC}
+        auth={auth}
+        onSelect={(asset) => {
+          handleUpdateActivePdf("bgUrl", `media://${asset.id}`);
+        }}
+      />
     </div>
   );
 }
