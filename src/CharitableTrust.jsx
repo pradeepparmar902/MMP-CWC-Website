@@ -4777,7 +4777,34 @@ export const generateCertificatePDF = async (certConfig, fieldsData, fallbackNam
               if (key.startsWith("[TEXT] ")) {
                   val = key.replace("[TEXT] ", "");
               } else if (!val) {
-                  if (key.toLowerCase().includes("name") && !key.toLowerCase().includes("event")) val = fallbackName;
+                  const cleanKey = key.replace(/[{}]/g, '').trim().toUpperCase();
+                  if (cleanKey === 'STUDENT_NAME' || cleanKey === 'INVITEE_NAME' || cleanKey === 'NAME' || cleanKey === 'DONOR_NAME') {
+                      val = fallbackName || fieldsData['Student Name'] || fieldsData['Participant Name'] || fieldsData['Full Name'] || fieldsData['Candidate Name'] || fieldsData['Name'] || '';
+                  } else if (cleanKey === 'TXN_ID' || cleanKey === 'PASS_ID') {
+                      val = fieldsData['Transaction ID'] || fieldsData['transactionId'] || fieldsData['Txn ID'] || '';
+                  } else if (cleanKey === 'VIBHAG') {
+                      val = fieldsData['Vibhag'] || fieldsData['vibhag'] || '';
+                  } else if (cleanKey === 'STREAM' || cleanKey === 'CLASS') {
+                      val = fieldsData['Stream / Class'] || fieldsData['Stream'] || fieldsData['Class'] || '';
+                  } else if (cleanKey === 'PERCENTAGE' || cleanKey === 'MARKS') {
+                      val = fieldsData['% Obtained'] || fieldsData['percentage'] || fieldsData['Percentage'] || '';
+                  } else if (cleanKey === 'TOKEN_NO' || cleanKey === 'TOKEN') {
+                      val = fieldsData['Token No'] || fieldsData['Token Number'] || fieldsData['tokenNo'] || fieldsData['Token'] || '';
+                  } else if (cleanKey === 'SEAT_NO' || cleanKey === 'SEAT') {
+                      val = fieldsData['Seat No'] || fieldsData['seatNo'] || fieldsData['Seat Number'] || '';
+                  } else if (cleanKey === 'DESIGNATION' || cleanKey === 'ROLE') {
+                      val = fieldsData['Designation'] || fieldsData['designation'] || fieldsData['Role'] || '';
+                  } else if (cleanKey === 'GROUP' || cleanKey === 'CONTACT_GROUP') {
+                      val = fieldsData['Group'] || fieldsData['group'] || fieldsData['Contact Group'] || '';
+                  } else if (cleanKey === 'EVENT_NAME') {
+                      val = certConfig?.title || certConfig?.name || '';
+                  } else if (cleanKey === 'EVENT_DATE') {
+                      val = certConfig?.date || '';
+                  } else if (cleanKey === 'EVENT_VENUE') {
+                      val = certConfig?.venue || '';
+                  } else if (cleanKey.toLowerCase().includes("name") && !cleanKey.toLowerCase().includes("event")) {
+                      val = fallbackName;
+                  }
               }
               
               if (typeof val === 'string') {
@@ -22110,8 +22137,8 @@ function BulkWhatsAppBroadcastModal({ event, recipients = [], allRegs = [], C, a
   );
 }
 
-// ── Workspace-Specific Multi-Template Manager Modal (3-Panel Pro Editor) ─────────
-function WorkspaceWhatsAppTemplateModal({ event, C, setC, auth, onClose }) {
+// ── Workspace-Specific Multi-Template Manager Modal (Unified WhatsApp & PDF Studio) ─────────
+function WorkspaceWhatsAppTemplateModal({ event, C, setC, auth, onClose, initialTab = "whatsapp", initialPdfTplId = null }) {
   if (!event) return null;
 
   const defaultTemplates = [
@@ -22145,14 +22172,65 @@ function WorkspaceWhatsAppTemplateModal({ event, C, setC, auth, onClose }) {
     ? event.whatsAppTemplates 
     : defaultTemplates;
 
+  // ── Mode Switcher: "whatsapp" | "pdf" ──
+  const [studioTab, setStudioTab] = useState(initialTab || "whatsapp");
+
+  // WhatsApp Templates State
   const [templates, setTemplates] = useState(JSON.parse(JSON.stringify(currentTemplates)));
   const [activeTplId, setActiveTplId] = useState(templates[0]?.id || "tpl_student_pass");
-  const [saving, setSaving] = useState(false);
-  const [variableSearch, setVariableSearch] = useState("");
   const textareaRef = useRef(null);
 
-  const activeTpl = templates.find(t => t.id === activeTplId) || templates[0];
+  // PDF Passes & Templates State
+  const isDonorWs = Boolean(event?.isDonorWorkspace || String(event?.title || "").toLowerCase().includes("donor"));
+  const initialPdfList = [
+    {
+      id: "invite",
+      name: isDonorWs ? "Official Thank You Letter" : "Official Invite Letter",
+      isPrimary: true,
+      type: "invite",
+      bgUrl: event.inviteBgUrl || "",
+      map: event.inviteMap || {},
+      fontSize: event.inviteFontSize || 30,
+      fontColor: event.inviteFontColor || "#000000"
+    },
+    ...(event.issueCertificates || event.certBgUrl ? [
+      {
+        id: "cert",
+        name: isDonorWs ? "Official 80G Receipt PDF" : "Certificate Pass",
+        isPrimary: true,
+        type: "cert",
+        bgUrl: event.certBgUrl || "",
+        map: event.certMap || {},
+        fontSize: event.certFontSize || 30,
+        fontColor: event.certFontColor || "#000000"
+      }
+    ] : []),
+    ...(event.pdfTemplates || []).map(t => ({
+      ...t,
+      type: "custom",
+      map: t.map || t.fieldMap || {},
+      fontSize: t.fontSize || 30,
+      fontColor: t.fontColor || "#000000"
+    }))
+  ];
 
+  const [pdfTemplates, setPdfTemplates] = useState(initialPdfList);
+  const [activePdfId, setActivePdfId] = useState(() => {
+    if (initialPdfTplId && initialPdfList.some(p => p.id === initialPdfTplId)) return initialPdfTplId;
+    return initialPdfList[0]?.id || "invite";
+  });
+  const [draggingPdfField, setDraggingPdfField] = useState(null);
+  const [uploadingPdfBg, setUploadingPdfBg] = useState(false);
+  const canvasContainerRef = useRef(null);
+  const pdfBgInputRef = useRef(null);
+
+  const [saving, setSaving] = useState(false);
+  const [variableSearch, setVariableSearch] = useState("");
+
+  const activeTpl = templates.find(t => t.id === activeTplId) || templates[0];
+  const activePdf = pdfTemplates.find(p => p.id === activePdfId) || pdfTemplates[0];
+
+  // WhatsApp Handlers
   const handleUpdateActiveTpl = (field, val) => {
     setTemplates(prev => prev.map(t => {
       if (t.id === activeTplId) {
@@ -22194,12 +22272,166 @@ function WorkspaceWhatsAppTemplateModal({ event, C, setC, auth, onClose }) {
     setActiveTplId(remaining[0].id);
   };
 
+  // PDF Handlers
+  const handleUpdateActivePdf = (field, val) => {
+    setPdfTemplates(prev => prev.map(p => {
+      if (p.id === activePdfId) {
+        return { ...p, [field]: val };
+      }
+      return p;
+    }));
+  };
+
+  const handleAddNewPdfTemplate = () => {
+    const name = prompt("Enter Name for new PDF Template (e.g. Food Coupon, Token Number, Gate Pass):");
+    if (!name || !name.trim()) return;
+    const cleanName = name.trim();
+    const newId = "doc_" + Date.now();
+    const newPdf = {
+      id: newId,
+      name: cleanName,
+      type: "custom",
+      targetSection: "invites",
+      targetAudience: "assigned",
+      bgUrl: "",
+      map: {},
+      fontSize: 30,
+      fontColor: "#000000"
+    };
+    setPdfTemplates(prev => [...prev, newPdf]);
+    setActivePdfId(newId);
+  };
+
+  const handleDeletePdfTemplate = (idToDelete) => {
+    const target = pdfTemplates.find(p => p.id === idToDelete);
+    if (target?.isPrimary) {
+      alert("Primary event documents (Invite Letter / Certificate) cannot be deleted.");
+      return;
+    }
+    if (!window.confirm(`Delete PDF template "${target?.name}"?`)) return;
+    const rem = pdfTemplates.filter(p => p.id !== idToDelete);
+    setPdfTemplates(rem);
+    setActivePdfId(rem[0]?.id || "invite");
+  };
+
+  const handlePdfBgUpload = (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    setUploadingPdfBg(true);
+    const reader = new FileReader();
+    reader.onload = (re) => {
+      const img = new Image();
+      img.onload = () => {
+        const canvas = document.createElement("canvas");
+        let w = img.width, h = img.height;
+        if (w > 1600 || h > 1600) {
+          if (w >= h) {
+            h = Math.round((1600 / w) * h);
+            w = 1600;
+          } else {
+            w = Math.round((1600 / h) * w);
+            h = 1600;
+          }
+        }
+        canvas.width = w; canvas.height = h;
+        const ctx = canvas.getContext("2d");
+        ctx.fillStyle = "#FFFFFF";
+        ctx.fillRect(0, 0, w, h);
+        ctx.drawImage(img, 0, 0, w, h);
+        const b64 = canvas.toDataURL("image/jpeg", 0.75);
+        handleUpdateActivePdf("bgUrl", b64);
+        setUploadingPdfBg(false);
+      };
+      img.onerror = () => setUploadingPdfBg(false);
+      img.src = re.target.result;
+    };
+    reader.readAsDataURL(file);
+    e.target.value = "";
+  };
+
+  const handleAddVariableToPdf = (varTag, customCoords = null) => {
+    if (!activePdf) return;
+    const curMap = { ...(activePdf.map || {}) };
+    const x = customCoords ? customCoords.x : 50;
+    const y = customCoords ? customCoords.y : (30 + ((Object.keys(curMap).length % 6) * 10));
+    curMap[varTag] = { x, y, visible: true };
+    handleUpdateActivePdf("map", curMap);
+  };
+
+  const handleRemoveVariableFromPdf = (varTag) => {
+    if (!activePdf) return;
+    const curMap = { ...(activePdf.map || {}) };
+    delete curMap[varTag];
+    handleUpdateActivePdf("map", curMap);
+  };
+
+  const handleCanvasDrop = (e) => {
+    e.preventDefault();
+    if (!canvasContainerRef.current) return;
+    const rawTag = e.dataTransfer.getData("text/plain");
+    if (!rawTag) return;
+    const rect = canvasContainerRef.current.getBoundingClientRect();
+    let x = ((e.clientX - rect.left) / rect.width) * 100;
+    let y = ((e.clientY - rect.top) / rect.height) * 100;
+    x = Math.max(2, Math.min(98, Math.round(x * 10) / 10));
+    y = Math.max(2, Math.min(98, Math.round(y * 10) / 10));
+    handleAddVariableToPdf(rawTag, { x, y });
+  };
+
+  const handlePointerDownBadge = (e, key) => {
+    e.preventDefault();
+    e.stopPropagation();
+    e.target.setPointerCapture(e.pointerId);
+    setDraggingPdfField(key);
+  };
+
+  const handlePointerMoveBadge = (e) => {
+    if (!draggingPdfField || !canvasContainerRef.current) return;
+    const rect = canvasContainerRef.current.getBoundingClientRect();
+    let x = ((e.clientX - rect.left) / rect.width) * 100;
+    let y = ((e.clientY - rect.top) / rect.height) * 100;
+    x = Math.max(2, Math.min(98, Math.round(x * 10) / 10));
+    y = Math.max(2, Math.min(98, Math.round(y * 10) / 10));
+    const curMap = { ...(activePdf.map || {}) };
+    curMap[draggingPdfField] = { ...(curMap[draggingPdfField] || {}), x, y, visible: true };
+    handleUpdateActivePdf("map", curMap);
+  };
+
+  const handlePointerUpBadge = (e) => {
+    if (draggingPdfField) {
+      e.target.releasePointerCapture(e.pointerId);
+      setDraggingPdfField(null);
+    }
+  };
+
+  // Unified Save All
   const handleSaveAll = async () => {
     setSaving(true);
     try {
+      const inviteTpl = pdfTemplates.find(p => p.id === "invite");
+      const certTpl = pdfTemplates.find(p => p.id === "cert");
+      const customPdfTpls = pdfTemplates.filter(p => p.type === "custom");
+
       const updatedEvents = (C.events || []).map(e => {
         if (e.id === event.id || e.title === event.title) {
-          return { ...e, whatsAppTemplates: templates };
+          const updated = { 
+            ...e, 
+            whatsAppTemplates: templates,
+            pdfTemplates: customPdfTpls
+          };
+          if (inviteTpl) {
+            updated.inviteBgUrl = inviteTpl.bgUrl;
+            updated.inviteMap = inviteTpl.map;
+            updated.inviteFontSize = inviteTpl.fontSize;
+            updated.inviteFontColor = inviteTpl.fontColor;
+          }
+          if (certTpl) {
+            updated.certBgUrl = certTpl.bgUrl;
+            updated.certMap = certTpl.map;
+            updated.certFontSize = certTpl.fontSize;
+            updated.certFontColor = certTpl.fontColor;
+          }
+          return updated;
         }
         return e;
       });
@@ -22207,7 +22439,7 @@ function WorkspaceWhatsAppTemplateModal({ event, C, setC, auth, onClose }) {
       const updatedC = { ...C, events: updatedEvents };
       if (setC) setC(updatedC);
       await fbSave(updatedC, auth?.idToken);
-      alert("✅ Workspace WhatsApp Templates saved successfully!");
+      alert("✅ Workspace WhatsApp & PDF Templates saved successfully!");
       onClose();
     } catch (err) {
       console.error(err);
@@ -22241,6 +22473,14 @@ function WorkspaceWhatsAppTemplateModal({ event, C, setC, auth, onClose }) {
     }
   };
 
+  const handlePaletteItemClick = (varTag) => {
+    if (studioTab === "whatsapp") {
+      insertPlaceholderAtCursor(varTag);
+    } else {
+      handleAddVariableToPdf(varTag);
+    }
+  };
+
   const handleDropOnTextarea = (e) => {
     e.preventDefault();
     const draggedText = e.dataTransfer.getData("text/plain");
@@ -22264,15 +22504,27 @@ function WorkspaceWhatsAppTemplateModal({ event, C, setC, auth, onClose }) {
         { tag: "{DESIGNATION}", label: "💼 Designation / Role", desc: "Guest designation (e.g. General Secretary, Trustee, Vibhag Pramukh)" },
         { tag: "{VIBHAG}", label: "📍 Vibhag / Branch Name", desc: "Vibhag or area name (e.g. 15 RAMDEV NAGAR)" },
         { tag: "{TXN_ID}", label: "🎫 Entry Pass / Transaction ID", desc: "Unique registration pass ID (e.g. GST-631028)" },
-        { tag: "{SUB_WORKSPACE_NAME}", label: "🎟️ Sub-Workspace / Template Name", desc: "Name of the pass/template (e.g. 'new vibhag')" },
+        { tag: "{SUB_WORKSPACE_NAME}", label: "🎟️ Sub-Workspace / Template Name", desc: "Name of the pass/template (e.g. 'Food coupon')" },
         { tag: "{PASS_LINK}", label: "🔗 1-Click Digital Pass Link", desc: "Direct personalized invitation pass URL" },
         { tag: "{MOBILE}", label: "📱 Recipient Mobile Number", desc: "Registered mobile number (+91...)" },
         { tag: "{EMAIL}", label: "✉️ Recipient Email", desc: "Registered email address" },
         { tag: "{ADDRESS}", label: "🏠 Address / Location", desc: "Recipient address" },
         { tag: "{CURRENT_DATE}", label: "📅 Current Date", desc: "Today's date in DD-MM-YYYY format" },
-        { tag: "{CURRENT_TIME}", label: "⏰ Current Time", desc: "Live current time in 12-hour AM/PM format" },
-        { tag: "{CURRENT_DATETIME}", label: "🗓️ Current Date & Time", desc: "Live timestamp (DD-MM-YYYY, HH:mm AM/PM)" },
         { tag: "{REMARKS}", label: "📝 Committee Remarks", desc: "Verification remarks or instructions" }
+      ]
+    },
+    {
+      title: "🎟️ Passes, Tokens & Custom Fields",
+      color: "#D97706",
+      bgColor: "#FFFBEB",
+      borderColor: "#FCD34D",
+      icon: "🎟️",
+      vars: [
+        { tag: "{TOKEN_NO}", label: "🔢 Token Number / Food Pass No", desc: "Token number or food pass counter" },
+        { tag: "{SEAT_NO}", label: "🪑 Seat / Hall Number", desc: "Assigned seat or auditorium row" },
+        { tag: "{STREAM}", label: "📚 Stream / Class / Course", desc: "Academic standard or course" },
+        { tag: "{PERCENTAGE}", label: "🏆 Marks / Percentage", desc: "Academic marks percentage" },
+        { tag: "{GATE_PASS}", label: "🚪 Gate / Entry Pass ID", desc: "Entry gate verification tag" }
       ]
     },
     {
@@ -22282,9 +22534,9 @@ function WorkspaceWhatsAppTemplateModal({ event, C, setC, auth, onClose }) {
       borderColor: "#A5F3FC",
       icon: "📅",
       vars: [
-        { tag: "{CURRENT_DATE}", label: "📅 Current Date (DD-MM-YYYY)", desc: "Today's live date (e.g. 03-09-2026)" },
-        { tag: "{CURRENT_TIME}", label: "⏰ Current Time (HH:mm AM/PM)", desc: "Live current time (e.g. 02:25 PM)" },
-        { tag: "{CURRENT_DATETIME}", label: "🗓️ Current Date & Time", desc: "Full timestamp (e.g. 03-09-2026, 02:25 PM)" },
+        { tag: "{CURRENT_DATE}", label: "📅 Current Date (DD-MM-YYYY)", desc: "Today's live date (e.g. 04-09-2026)" },
+        { tag: "{CURRENT_TIME}", label: "⏰ Current Time (HH:mm AM/PM)", desc: "Live current time (e.g. 09:30 AM)" },
+        { tag: "{CURRENT_DATETIME}", label: "🗓️ Current Date & Time", desc: "Full timestamp (e.g. 04-09-2026, 09:30 AM)" },
         { tag: "{TODAY}", label: "📅 Today Shortcut", desc: "Alias for today's date" }
       ]
     },
@@ -22297,39 +22549,11 @@ function WorkspaceWhatsAppTemplateModal({ event, C, setC, auth, onClose }) {
       vars: [
         { tag: "{VIBHAG_STUDENT_LIST}", label: "📋 Education Vibhag Student List", desc: "Numbered list of Education 2026 students from recipient's Vibhag" },
         { tag: "{VIBHAG_STUDENT_SUMMARY}", label: "📊 Education Vibhag Summary", desc: "Education 2026 counts & stream breakdown for recipient's Vibhag" },
-        { tag: "{ALL_STUDENTS_LIST}", label: "👥 All Education 2026 Students", desc: "Complete list of all 73+ registered students in Education 2026" },
+        { tag: "{ALL_STUDENTS_LIST}", label: "👥 All Education 2026 Students", desc: "Complete list of all 75 registered students in Education 2026" },
         { tag: "{TOTAL_STUDENTS_COUNT}", label: "🔢 Education Total Count", desc: "Total count of registered students in Education 2026" },
         { tag: "{EVENT_REGISTRATION_SUMMARY}", label: "📈 Education Stats Breakdown", desc: "Overall Education 2026 stats (Approved, Pending, Needs Info)" }
       ]
     },
-    {
-      title: "🌳 Monsoon Tree Plantation Summaries & Lists",
-      color: "#059669",
-      bgColor: "#ECFDF5",
-      borderColor: "#A7F3D0",
-      icon: "🌳",
-      vars: [
-        { tag: "{MONSOON_VIBHAG_STUDENT_LIST}", label: "📋 Monsoon Vibhag Participant List", desc: "Numbered list of Monsoon Tree participants from recipient's Vibhag" },
-        { tag: "{MONSOON_VIBHAG_SUMMARY}", label: "📊 Monsoon Vibhag Summary", desc: "Counts & breakdown for Monsoon Tree Plantation" },
-        { tag: "{MONSOON_ALL_LIST}", label: "👥 All Monsoon Registrations", desc: "Complete list of all participants in Monsoon Tree Plantation" },
-        { tag: "{MONSOON_TOTAL_COUNT}", label: "🔢 Monsoon Total Count", desc: "Total participant count in Monsoon Tree Plantation" }
-      ]
-    },
-    ...((C.events || []).filter(evItem => {
-      const t = String(evItem.title || evItem.id || '').toLowerCase();
-      return !t.includes('education') && !t.includes('monsoon') && !t.includes('committee');
-    }).map(otherEv => ({
-      title: `📌 ${otherEv.title || otherEv.id} Data`,
-      color: "#0284C7",
-      bgColor: "#F0F9FF",
-      borderColor: "#BAE6FD",
-      icon: "📌",
-      vars: [
-        { tag: `{EVENT_VIBHAG_LIST:${otherEv.title || otherEv.id}}`, label: `📋 ${otherEv.title || otherEv.id} Vibhag List`, desc: `Vibhag list for ${otherEv.title || otherEv.id}` },
-        { tag: `{EVENT_SUMMARY:${otherEv.title || otherEv.id}}`, label: `📊 ${otherEv.title || otherEv.id} Summary`, desc: `Summary stats for ${otherEv.title || otherEv.id}` },
-        { tag: `{EVENT_ALL_LIST:${otherEv.title || otherEv.id}}`, label: `👥 All ${otherEv.title || otherEv.id} Registrations`, desc: `All registrations for ${otherEv.title || otherEv.id}` }
-      ]
-    }))),
     {
       title: "🏛️ Event & Trust Info",
       color: "#B45309",
@@ -22343,211 +22567,580 @@ function WorkspaceWhatsAppTemplateModal({ event, C, setC, auth, onClose }) {
         { tag: "{VENUE}", label: "Venue Location", desc: "Event venue location" },
         { tag: "{HELPLINE_PHONES}", label: "Helpline Phone Numbers", desc: "Committee helpline contact numbers" }
       ]
-    },
-    {
-      title: "🔗 Digital Passes & Links",
-      color: "#1D4ED8",
-      bgColor: "#EFF6FF",
-      borderColor: "#93C5FD",
-      icon: "🔗",
-      vars: [
-        { tag: "{INVITE_PDF_LINK}", label: "Official PDF Invite Pass URL", desc: "Direct download link for invitation letter" },
-        { tag: "{CERTIFICATE_LINK}", label: "Official Certificate URL", desc: "Direct download link for certificate" },
-        { tag: "{PASS_LINK}", label: "Smart Digital Pass Link", desc: "Direct mobile pass URL" },
-        { tag: "{PORTAL_URL}", label: "Portal Website URL", desc: "Homepage link" }
-      ]
     }
   ];
 
-  const currentText = activeTpl?.text || "";
-  const charCount = currentText.length;
-  const wordCount = currentText.trim() ? currentText.trim().split(/\s+/).length : 0;
-  const lineCount = currentText ? currentText.split("\n").length : 0;
+  const charCount = (activeTpl?.text || "").length;
+  const wordCount = (activeTpl?.text || "").trim().split(/\s+/).filter(Boolean).length;
+  const lineCount = (activeTpl?.text || "").split("\n").length;
 
   return (
-    <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.65)",zIndex:100003,display:"flex",alignItems:"center",justifyContent:"center",padding:16}} onClick={onClose}>
-      <div style={{background:"white",borderRadius:16,maxWidth:1320,width:"96vw",height:"90vh",maxHeight:"92vh",display:"flex",flexDirection:"column",overflow:"hidden",boxShadow:"0 25px 50px -12px rgba(0,0,0,0.4)"}} onClick={e=>e.stopPropagation()}>
-        
-        {/* Header */}
-        <div style={{padding:"14px 22px",background:"linear-gradient(135deg, #15803D, #166534)",color:"white",display:"flex",justifyContent:"space-between",alignItems:"center",flexShrink:0}}>
-          <div>
-            <h3 style={{fontSize:"1.15rem",fontWeight:800,margin:0,display:"flex",alignItems:"center",gap:8}}>
-              <span>📝</span> WhatsApp Templates: {event.title || "Workspace"}
-            </h3>
-            <div style={{fontSize:".78rem",opacity:0.9,marginTop:2}}>
-              Design rich WhatsApp messages with drag & drop variables, live student counts, and formatted reports.
+    <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.7)",zIndex:100003,display:"flex",alignItems:"center",justifyContent:"center",padding:16}} onClick={onClose}>
+      <div 
+        style={{
+          background:"white",
+          borderRadius:16,
+          maxWidth:1250,
+          width:"98%",
+          height:"92vh",
+          display:"flex",
+          flexDirection:"column",
+          boxShadow:"0 25px 60px rgba(0,0,0,0.4)",
+          overflow:"hidden"
+        }} 
+        onClick={e=>e.stopPropagation()}
+      >
+        {/* ── UNIFIED STUDIO HEADER WITH TOP TABS SWITCHER ── */}
+        <div style={{background:"linear-gradient(135deg, #15803D, #166534)",color:"white",padding:"12px 20px",display:"flex",justifyContent:"space-between",alignItems:"center",gap:16,flexWrap:"wrap"}}>
+          <div style={{display:"flex",alignItems:"center",gap:14,flexWrap:"wrap"}}>
+            <div>
+              <h3 style={{margin:0,fontSize:"1.1rem",fontWeight:800,display:"flex",alignItems:"center",gap:8}}>
+                <span>🎨</span> Workspace Studio: {event.title}
+              </h3>
+              <div style={{fontSize:".74rem",opacity:0.9,marginTop:2}}>
+                {studioTab === "whatsapp" 
+                  ? "Design rich WhatsApp messages with live student counts and dynamic data." 
+                  : "Upload PDF template backgrounds and drag & drop variables directly onto the pass canvas."}
+              </div>
             </div>
-          </div>
-          <button onClick={onClose} style={{background:"rgba(255,255,255,0.2)",border:"none",borderRadius:"50%",width:32,height:32,color:"white",cursor:"pointer",fontWeight:800}}>✕</button>
-        </div>
 
-        {/* 3-Panel Body */}
-        <div style={{display:"flex",flex:1,overflow:"hidden",background:"#F8FAFC"}}>
-          
-          {/* ── LEFT PANEL: Templates List (Width ~240px) ── */}
-          <div style={{width:240,borderRight:"1px solid #E2E8F0",background:"white",display:"flex",flexDirection:"column",flexShrink:0}}>
-            <div style={{padding:"12px 14px",borderBottom:"1px solid #E2E8F0",display:"flex",justifyContent:"space-between",alignItems:"center",background:"#F8FAFC"}}>
-              <span style={{fontSize:".75rem",fontWeight:800,color:"#475569",textTransform:"uppercase"}}>TEMPLATES ({templates.length})</span>
+            {/* Top Segmented Mode Switcher */}
+            <div style={{display:"flex",background:"rgba(0,0,0,0.22)",padding:3,borderRadius:10,gap:3,border:"1px solid rgba(255,255,255,0.2)"}}>
               <button
                 type="button"
-                onClick={handleAddNewTemplate}
-                style={{padding:"4px 8px",background:"#15803D",color:"white",border:"none",borderRadius:6,fontSize:".74rem",fontWeight:800,cursor:"pointer",display:"flex",alignItems:"center",gap:4}}
+                onClick={() => setStudioTab("whatsapp")}
+                style={{
+                  padding:"6px 14px",
+                  borderRadius:8,
+                  border:"none",
+                  cursor:"pointer",
+                  fontSize:".78rem",
+                  fontWeight:800,
+                  background: studioTab === "whatsapp" ? "white" : "transparent",
+                  color: studioTab === "whatsapp" ? "#166534" : "rgba(255,255,255,0.9)",
+                  boxShadow: studioTab === "whatsapp" ? "0 2px 6px rgba(0,0,0,0.2)" : "none",
+                  display:"flex",
+                  alignItems:"center",
+                  gap:5,
+                  transition:"all 0.15s"
+                }}
+              >
+                <span>💬</span> WhatsApp Templates ({templates.length})
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setStudioTab("pdf")}
+                style={{
+                  padding:"6px 14px",
+                  borderRadius:8,
+                  border:"none",
+                  cursor:"pointer",
+                  fontSize:".78rem",
+                  fontWeight:800,
+                  background: studioTab === "pdf" ? "white" : "transparent",
+                  color: studioTab === "pdf" ? "#166534" : "rgba(255,255,255,0.9)",
+                  boxShadow: studioTab === "pdf" ? "0 2px 6px rgba(0,0,0,0.2)" : "none",
+                  display:"flex",
+                  alignItems:"center",
+                  gap:5,
+                  transition:"all 0.15s"
+                }}
+              >
+                <span>📑</span> PDF Passes & Templates ({pdfTemplates.length})
+              </button>
+            </div>
+          </div>
+
+          <button onClick={onClose} style={{background:"rgba(255,255,255,0.2)",border:"none",borderRadius:"50%",width:32,height:32,color:"white",cursor:"pointer",fontWeight:800,fontSize:"1rem"}}>✕</button>
+        </div>
+
+        {/* ── 3-PANEL BODY ── */}
+        <div style={{display:"flex",flex:1,overflow:"hidden",background:"#F8FAFC"}}>
+          
+          {/* ══════════════════════════════════════════════════════════════
+              LEFT PANEL: LIST OF TEMPLATES (WHATSAPP OR PDF)
+             ══════════════════════════════════════════════════════════════ */}
+          <div style={{width:240,borderRight:"1px solid #E2E8F0",background:"white",display:"flex",flexDirection:"column",flexShrink:0}}>
+            <div style={{padding:"10px 12px",borderBottom:"1px solid #E2E8F0",display:"flex",justifyContent:"space-between",alignItems:"center",background:"#F8FAFC"}}>
+              <span style={{fontSize:".74rem",fontWeight:800,color:"#475569",textTransform:"uppercase"}}>
+                {studioTab === "whatsapp" ? `TEMPLATES (${templates.length})` : `PASSES (${pdfTemplates.length})`}
+              </span>
+              <button
+                type="button"
+                onClick={studioTab === "whatsapp" ? handleAddNewTemplate : handleAddNewPdfTemplate}
+                style={{padding:"4px 8px",background:"#15803D",color:"white",border:"none",borderRadius:6,fontSize:".72rem",fontWeight:800,cursor:"pointer",display:"flex",alignItems:"center",gap:4}}
               >
                 <span>+</span> Add New
               </button>
             </div>
 
             <div style={{flex:1,overflowY:"auto",padding:10,display:"flex",flexDirection:"column",gap:6}}>
-              {templates.map(t => {
-                const isActive = t.id === activeTplId;
-                return (
-                  <div
-                    key={t.id}
-                    onClick={() => setActiveTplId(t.id)}
-                    style={{
-                      padding:"10px 12px",
-                      borderRadius:8,
-                      border:isActive ? "2px solid #15803D" : "1px solid #E2E8F0",
-                      background:isActive ? "#F0FDF4" : "white",
-                      cursor:"pointer",
-                      display:"flex",
-                      flexDirection:"column",
-                      gap:4,
-                      boxShadow: isActive ? "0 2px 6px rgba(21,128,61,0.12)" : "none",
-                      transition:"all 0.15s"
-                    }}
-                  >
-                    <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:4}}>
-                      <span style={{fontSize:".82rem",fontWeight:700,color:isActive ? "#15803D" : "#0F172A",lineHeight:1.3}}>
-                        {t.name}
-                      </span>
-                      {t.isDefault && (
-                        <span style={{background:"#DCFCE7",color:"#15803D",padding:"1px 5px",borderRadius:4,fontSize:".62rem",fontWeight:800,flexShrink:0}}>
-                          Default
+              {studioTab === "whatsapp" ? (
+                templates.map(t => {
+                  const isActive = t.id === activeTplId;
+                  return (
+                    <div
+                      key={t.id}
+                      onClick={() => setActiveTplId(t.id)}
+                      style={{
+                        padding:"9px 12px",
+                        borderRadius:8,
+                        border:isActive ? "2px solid #15803D" : "1px solid #E2E8F0",
+                        background:isActive ? "#F0FDF4" : "white",
+                        cursor:"pointer",
+                        display:"flex",
+                        flexDirection:"column",
+                        gap:3,
+                        boxShadow: isActive ? "0 2px 6px rgba(21,128,61,0.12)" : "none",
+                        transition:"all 0.15s"
+                      }}
+                    >
+                      <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:4}}>
+                        <span style={{fontSize:".8rem",fontWeight:700,color:isActive ? "#15803D" : "#0F172A",lineHeight:1.3}}>
+                          {t.name}
                         </span>
-                      )}
+                        {t.isDefault && (
+                          <span style={{background:"#DCFCE7",color:"#15803D",padding:"1px 5px",borderRadius:4,fontSize:".62rem",fontWeight:800,flexShrink:0}}>
+                            Default
+                          </span>
+                        )}
+                      </div>
                     </div>
-                  </div>
-                );
-              })}
+                  );
+                })
+              ) : (
+                pdfTemplates.map(p => {
+                  const isActive = p.id === activePdfId;
+                  return (
+                    <div
+                      key={p.id}
+                      onClick={() => setActivePdfId(p.id)}
+                      style={{
+                        padding:"9px 12px",
+                        borderRadius:8,
+                        border:isActive ? "2px solid #15803D" : "1px solid #E2E8F0",
+                        background:isActive ? "#F0FDF4" : "white",
+                        cursor:"pointer",
+                        display:"flex",
+                        flexDirection:"column",
+                        gap:3,
+                        boxShadow: isActive ? "0 2px 6px rgba(21,128,61,0.12)" : "none",
+                        transition:"all 0.15s"
+                      }}
+                    >
+                      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:4}}>
+                        <strong style={{fontSize:".8rem",color:isActive ? "#15803D" : "#0F172A",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>
+                          {p.name}
+                        </strong>
+                        {p.bgUrl ? (
+                          <span style={{background:"#DCFCE7",color:"#15803D",padding:"1px 5px",borderRadius:4,fontSize:".62rem",fontWeight:800}}>
+                            ✓
+                          </span>
+                        ) : (
+                          <span style={{background:"#FEF3C7",color:"#B45309",padding:"1px 5px",borderRadius:4,fontSize:".62rem",fontWeight:800}}>
+                            ⚠️
+                          </span>
+                        )}
+                      </div>
+                      <div style={{fontSize:".66rem",color:"#64748B",display:"flex",justifyContent:"space-between"}}>
+                        <span>{Object.keys(p.map || {}).length} variables</span>
+                        {p.type === "custom" && (
+                          <span 
+                            onClick={(e) => { e.stopPropagation(); handleDeletePdfTemplate(p.id); }}
+                            style={{color:"#DC2626",fontWeight:800,cursor:"pointer"}}
+                            title="Delete template"
+                          >
+                            🗑️
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })
+              )}
             </div>
           </div>
 
-          {/* ── MIDDLE PANEL: Big Editor Area (Flex: 1) ── */}
-          {activeTpl && (
-            <div style={{flex:1,padding:"16px 20px",display:"flex",flexDirection:"column",gap:10,overflowY:"auto",background:"white"}}>
-              
-              {/* Template Controls Bar */}
-              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:12,flexWrap:"wrap",paddingBottom:10,borderBottom:"1px solid #F1F5F9"}}>
-                <div style={{flex:1,minWidth:220}}>
-                  <label style={{display:"block",fontSize:".72rem",fontWeight:800,color:"#64748B",textTransform:"uppercase",marginBottom:3}}>TEMPLATE NAME</label>
-                  <input
-                    type="text"
-                    value={activeTpl.name}
-                    onChange={e => handleUpdateActiveTpl("name", e.target.value)}
-                    style={{width:"100%",padding:"7px 12px",borderRadius:8,border:"1.5px solid #CBD5E1",fontSize:".88rem",fontWeight:700,color:"#0F172A",boxSizing:"border-box"}}
+          {/* ══════════════════════════════════════════════════════════════
+              MIDDLE PANEL: EDITOR (WHATSAPP TEXTAREA OR PDF CANVAS)
+             ══════════════════════════════════════════════════════════════ */}
+          {studioTab === "whatsapp" ? (
+            activeTpl && (
+              <div style={{flex:1,padding:"16px 20px",display:"flex",flexDirection:"column",gap:10,overflowY:"auto",background:"white"}}>
+                
+                {/* Template Controls Bar */}
+                <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:12,flexWrap:"wrap",paddingBottom:8,borderBottom:"1px solid #F1F5F9"}}>
+                  <div style={{flex:1,minWidth:220}}>
+                    <label style={{display:"block",fontSize:".72rem",fontWeight:800,color:"#64748B",textTransform:"uppercase",marginBottom:3}}>TEMPLATE NAME</label>
+                    <input
+                      type="text"
+                      value={activeTpl.name}
+                      onChange={e => handleUpdateActiveTpl("name", e.target.value)}
+                      style={{width:"100%",padding:"7px 12px",borderRadius:8,border:"1.5px solid #CBD5E1",fontSize:".88rem",fontWeight:700,color:"#0F172A",boxSizing:"border-box"}}
+                    />
+                  </div>
+
+                  <div style={{display:"flex",alignItems:"center",gap:8,paddingTop:14}}>
+                    <label style={{display:"flex",alignItems:"center",gap:6,cursor:"pointer",fontSize:".8rem",fontWeight:700,color:"#15803D",background:"#F0FDF4",padding:"6px 12px",borderRadius:8,border:"1px solid #BBF7D0"}}>
+                      <input
+                        type="checkbox"
+                        checked={activeTpl.isDefault || false}
+                        onChange={e => handleUpdateActiveTpl("isDefault", e.target.checked)}
+                        style={{cursor:"pointer",accentColor:"#15803D"}}
+                      />
+                      <span>Set as Default</span>
+                    </label>
+
+                    {templates.length > 1 && !activeTpl.isDefault && (
+                      <button
+                        type="button"
+                        onClick={() => handleDeleteTemplate(activeTpl.id)}
+                        style={{padding:"6px 12px",background:"#FEF2F2",border:"1px solid #FECACA",color:"#DC2626",borderRadius:8,fontSize:".78rem",fontWeight:800,cursor:"pointer"}}
+                        title="Delete this template"
+                      >
+                        🗑️ Delete
+                      </button>
+                    )}
+                  </div>
+                </div>
+
+                {/* Formatting Toolbar & Drag Tip */}
+                <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:8,background:"#F8FAFC",padding:"6px 10px",borderRadius:8,border:"1px solid #E2E8F0"}}>
+                  <div style={{display:"flex",alignItems:"center",gap:4}}>
+                    <span style={{fontSize:".72rem",fontWeight:800,color:"#64748B",marginRight:4}}>QUICK FORMAT:</span>
+                    <button type="button" onClick={() => insertPlaceholderAtCursor("*bold text*")} style={{padding:"2px 7px",borderRadius:4,border:"1px solid #CBD5E1",background:"white",fontSize:".75rem",fontWeight:800,cursor:"pointer"}} title="Bold (*)"><b>B</b></button>
+                    <button type="button" onClick={() => insertPlaceholderAtCursor("_italic text_")} style={{padding:"2px 7px",borderRadius:4,border:"1px solid #CBD5E1",background:"white",fontSize:".75rem",fontStyle:"italic",fontWeight:700,cursor:"pointer"}} title="Italic (_)"><i>I</i></button>
+                    <button type="button" onClick={() => insertPlaceholderAtCursor("~strike~")} style={{padding:"2px 7px",borderRadius:4,border:"1px solid #CBD5E1",background:"white",fontSize:".75rem",textDecoration:"line-through",fontWeight:700,cursor:"pointer"}} title="Strikethrough (~)">S</button>
+                    <button type="button" onClick={() => insertPlaceholderAtCursor("\n• ")} style={{padding:"2px 7px",borderRadius:4,border:"1px solid #CBD5E1",background:"white",fontSize:".75rem",fontWeight:700,cursor:"pointer"}} title="Bullet point">• Bullet</button>
+                    <button type="button" onClick={() => insertPlaceholderAtCursor("👉 ")} style={{padding:"2px 7px",borderRadius:4,border:"1px solid #CBD5E1",background:"white",fontSize:".75rem",fontWeight:700,cursor:"pointer"}} title="Arrow pointer">👉</button>
+                    <button type="button" onClick={() => insertPlaceholderAtCursor("🏛️ *MUMBAI MEGHWAL PANCHAYAT*\n")} style={{padding:"2px 7px",borderRadius:4,border:"1px solid #CBD5E1",background:"white",fontSize:".72rem",fontWeight:700,cursor:"pointer"}} title="Trust Header">🏛️ Header</button>
+                  </div>
+                  <div style={{fontSize:".7rem",color:"#15803D",fontWeight:700,display:"flex",alignItems:"center",gap:4}}>
+                    <span>💡</span> Drag variables from the right panel into editor or click to insert!
+                  </div>
+                </div>
+
+                {/* Big Textarea Editor */}
+                <div style={{flex:1,display:"flex",flexDirection:"column",position:"relative",minHeight:260}}>
+                  <textarea
+                    ref={textareaRef}
+                    value={activeTpl.text || ""}
+                    onChange={e => handleUpdateActiveTpl("text", e.target.value)}
+                    onDragOver={(e) => e.preventDefault()}
+                    onDrop={handleDropOnTextarea}
+                    placeholder="Compose your WhatsApp template here. Drag or click any variable on the right to insert..."
+                    style={{
+                      width:"100%",
+                      height:"100%",
+                      minHeight:300,
+                      padding:"14px 16px",
+                      borderRadius:10,
+                      border:"1.5px solid #CBD5E1",
+                      fontSize:".88rem",
+                      lineHeight:1.6,
+                      fontFamily:"Consolas, Monaco, monospace",
+                      boxSizing:"border-box",
+                      background:"#FAFDF7",
+                      color:"#0F172A",
+                      resize:"none",
+                      outline:"none"
+                    }}
                   />
                 </div>
 
-                <div style={{display:"flex",alignItems:"center",gap:8,paddingTop:14}}>
-                  <label style={{display:"flex",alignItems:"center",gap:6,cursor:"pointer",fontSize:".8rem",fontWeight:700,color:"#15803D",background:"#F0FDF4",padding:"6px 12px",borderRadius:8,border:"1px solid #BBF7D0"}}>
+                {/* Editor Stats Bar */}
+                <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",fontSize:".74rem",color:"#64748B",padding:"2px 4px"}}>
+                  <div style={{display:"flex",gap:12}}>
+                    <span>Characters: <strong>{charCount}</strong></span>
+                    <span>Words: <strong>{wordCount}</strong></span>
+                    <span>Lines: <strong>{lineCount}</strong></span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      navigator.clipboard.writeText(activeTpl.text || "");
+                      alert("✅ Template text copied to clipboard!");
+                    }}
+                    style={{background:"none",border:"none",color:"#2563EB",cursor:"pointer",fontWeight:700,fontSize:".74rem",textDecoration:"underline"}}
+                  >
+                    📋 Copy Text
+                  </button>
+                </div>
+              </div>
+            )
+          ) : (
+            /* ── PDF PASSES & TEMPLATES VISUAL CANVAS EDITOR ── */
+            activePdf && (
+              <div style={{flex:1,padding:"14px 18px",display:"flex",flexDirection:"column",gap:10,overflowY:"auto",background:"white"}}>
+                
+                {/* Template Name & Background Uploader Controls Bar */}
+                <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:12,flexWrap:"wrap",paddingBottom:8,borderBottom:"1px solid #F1F5F9"}}>
+                  <div style={{flex:1,minWidth:200}}>
+                    <label style={{display:"block",fontSize:".72rem",fontWeight:800,color:"#64748B",textTransform:"uppercase",marginBottom:2}}>PDF TEMPLATE NAME</label>
                     <input
-                      type="checkbox"
-                      checked={activeTpl.isDefault || false}
-                      onChange={e => handleUpdateActiveTpl("isDefault", e.target.checked)}
-                      style={{cursor:"pointer",accentColor:"#15803D"}}
+                      type="text"
+                      value={activePdf.name}
+                      onChange={e => handleUpdateActivePdf("name", e.target.value)}
+                      disabled={activePdf.isPrimary}
+                      style={{width:"100%",padding:"6px 10px",borderRadius:6,border:"1.5px solid #CBD5E1",fontSize:".85rem",fontWeight:700,color:"#0F172A",boxSizing:"border-box"}}
                     />
-                    <span>Set as Default</span>
-                  </label>
+                  </div>
 
-                  {templates.length > 1 && !activeTpl.isDefault && (
+                  {/* Upload Background Image / PDF */}
+                  <div style={{display:"flex",alignItems:"center",gap:8,paddingTop:12}}>
+                    <input
+                      type="file"
+                      ref={pdfBgInputRef}
+                      accept="image/*"
+                      onChange={handlePdfBgUpload}
+                      style={{display:"none"}}
+                    />
                     <button
                       type="button"
-                      onClick={() => handleDeleteTemplate(activeTpl.id)}
-                      style={{padding:"6px 12px",background:"#FEF2F2",border:"1px solid #FECACA",color:"#DC2626",borderRadius:8,fontSize:".78rem",fontWeight:800,cursor:"pointer"}}
-                      title="Delete this template"
+                      onClick={() => pdfBgInputRef.current?.click()}
+                      disabled={uploadingPdfBg}
+                      style={{
+                        padding:"6px 12px",
+                        background:"#0D4B5E",
+                        color:"white",
+                        border:"none",
+                        borderRadius:6,
+                        fontSize:".75rem",
+                        fontWeight:800,
+                        cursor:uploadingPdfBg ? "wait" : "pointer",
+                        display:"flex",
+                        alignItems:"center",
+                        gap:4
+                      }}
                     >
-                      🗑️ Delete
+                      <span>🖼️</span> {uploadingPdfBg ? "Uploading..." : activePdf.bgUrl ? "Change Background" : "Upload Background Image"}
+                    </button>
+
+                    {activePdf.bgUrl && (
+                      <button
+                        type="button"
+                        onClick={() => handleUpdateActivePdf("bgUrl", "")}
+                        style={{padding:"6px 10px",background:"#FEF2F2",border:"1px solid #FECACA",color:"#DC2626",borderRadius:6,fontSize:".75rem",fontWeight:700,cursor:"pointer"}}
+                        title="Remove background image"
+                      >
+                        ✕ Remove
+                      </button>
+                    )}
+                  </div>
+                </div>
+
+                {/* Canvas Formatting Bar */}
+                <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:8,background:"#F8FAFC",padding:"6px 10px",borderRadius:8,border:"1px solid #E2E8F0"}}>
+                  <div style={{display:"flex",alignItems:"center",gap:12}}>
+                    <div style={{display:"flex",alignItems:"center",gap:5}}>
+                      <label style={{fontSize:".72rem",fontWeight:800,color:"#475569"}}>FONT SIZE:</label>
+                      <input
+                        type="range"
+                        min="12"
+                        max="60"
+                        step="1"
+                        value={activePdf.fontSize || 30}
+                        onChange={e => handleUpdateActivePdf("fontSize", parseInt(e.target.value))}
+                        style={{width:90}}
+                      />
+                      <span style={{fontSize:".72rem",fontWeight:800,color:"#0F172A",minWidth:28}}>{activePdf.fontSize || 30}px</span>
+                    </div>
+
+                    <div style={{display:"flex",alignItems:"center",gap:5}}>
+                      <label style={{fontSize:".72rem",fontWeight:800,color:"#475569"}}>COLOR:</label>
+                      <input
+                        type="color"
+                        value={activePdf.fontColor || "#000000"}
+                        onChange={e => handleUpdateActivePdf("fontColor", e.target.value)}
+                        style={{width:32,height:24,border:"none",borderRadius:4,cursor:"pointer",background:"transparent"}}
+                      />
+                    </div>
+                  </div>
+
+                  <div style={{fontSize:".7rem",color:"#15803D",fontWeight:800,display:"flex",alignItems:"center",gap:4}}>
+                    <span>🎯</span> Drag variables from the right palette and drop onto canvas!
+                  </div>
+                </div>
+
+                {/* Visual Interactive PDF Canvas Area */}
+                <div 
+                  style={{
+                    flex:1,
+                    display:"flex",
+                    flexDirection:"column",
+                    alignItems:"center",
+                    justifyContent:"center",
+                    background:"#E2E8F0",
+                    borderRadius:10,
+                    padding:16,
+                    minHeight:340,
+                    overflow:"auto",
+                    position:"relative"
+                  }}
+                  onDragOver={e => e.preventDefault()}
+                  onDrop={handleCanvasDrop}
+                >
+                  {activePdf.bgUrl ? (
+                    <div
+                      ref={canvasContainerRef}
+                      style={{
+                        position:"relative",
+                        display:"inline-block",
+                        boxShadow:"0 10px 30px rgba(0,0,0,0.25)",
+                        borderRadius:6,
+                        overflow:"hidden",
+                        userSelect:"none",
+                        lineHeight:0,
+                        maxWidth:"100%"
+                      }}
+                      onPointerMove={handlePointerMoveBadge}
+                      onPointerUp={handlePointerUpBadge}
+                    >
+                      <img
+                        src={activePdf.bgUrl}
+                        alt="Template Background"
+                        style={{
+                          display:"block",
+                          maxWidth:"100%",
+                          maxHeight:"520px",
+                          width:"auto",
+                          height:"auto",
+                          pointerEvents:"none"
+                        }}
+                      />
+
+                      {/* Positioned Field Badges */}
+                      {Object.entries(activePdf.map || {}).map(([key, pos]) => {
+                        const isBeingDragged = draggingPdfField === key;
+                        const cleanLabel = key.replace(/[{}]/g, '');
+                        return (
+                          <div
+                            key={key}
+                            onPointerDown={(e) => handlePointerDownBadge(e, key)}
+                            style={{
+                              position:"absolute",
+                              left:`${pos.x}%`,
+                              top:`${pos.y}%`,
+                              transform:"translate(-50%, -50%)",
+                              background: isBeingDragged ? "#1D4ED8" : "rgba(15, 23, 42, 0.88)",
+                              color: "white",
+                              padding:"4px 8px",
+                              borderRadius:5,
+                              fontSize:`${Math.max(11, Math.min(18, (activePdf.fontSize || 30) * 0.45))}px`,
+                              fontWeight:800,
+                              fontFamily:"monospace",
+                              cursor:"grab",
+                              whiteSpace:"nowrap",
+                              display:"flex",
+                              alignItems:"center",
+                              gap:4,
+                              boxShadow:"0 2px 8px rgba(0,0,0,0.35)",
+                              border: isBeingDragged ? "2px solid #93C5FD" : "1.5px solid rgba(255,255,255,0.7)",
+                              zIndex: isBeingDragged ? 100 : 10,
+                              touchAction:"none"
+                            }}
+                            title={`Drag to move ${key} (X: ${pos.x}%, Y: ${pos.y}%)`}
+                          >
+                            <span>{key}</span>
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleRemoveVariableFromPdf(key);
+                              }}
+                              style={{
+                                background:"rgba(255,255,255,0.2)",
+                                border:"none",
+                                borderRadius:"50%",
+                                width:16,
+                                height:16,
+                                color:"white",
+                                fontSize:".65rem",
+                                fontWeight:800,
+                                cursor:"pointer",
+                                display:"flex",
+                                alignItems:"center",
+                                justifyContent:"center",
+                                marginLeft:2
+                              }}
+                              title={`Remove ${key} from canvas`}
+                            >
+                              ✕
+                            </button>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  ) : (
+                    /* No Background Placeholder */
+                    <div 
+                      onClick={() => pdfBgInputRef.current?.click()}
+                      style={{
+                        padding:"50px 30px",
+                        textAlign:"center",
+                        background:"white",
+                        borderRadius:12,
+                        border:"2px dashed #94A3B8",
+                        cursor:"pointer",
+                        display:"flex",
+                        flexDirection:"column",
+                        alignItems:"center",
+                        gap:10,
+                        maxWidth:460
+                      }}
+                    >
+                      <div style={{fontSize:"2.5rem"}}>🖼️</div>
+                      <div style={{fontSize:".95rem",fontWeight:800,color:"#0F172A"}}>No Background Image Uploaded</div>
+                      <div style={{fontSize:".75rem",color:"#64748B",lineHeight:1.4}}>
+                        Click here to upload your Certificate, Food Pass, or Token Card background (JPG or PNG).
+                      </div>
+                      <button
+                        type="button"
+                        style={{marginTop:6,padding:"8px 16px",background:"#15803D",color:"white",border:"none",borderRadius:8,fontWeight:800,fontSize:".78rem",cursor:"pointer"}}
+                      >
+                        ➕ Upload Background Template
+                      </button>
+                    </div>
+                  )}
+                </div>
+
+                {/* Active Mapped Variables Summary Bar */}
+                <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",fontSize:".74rem",color:"#64748B",padding:"2px 4px",flexWrap:"wrap",gap:8}}>
+                  <div style={{display:"flex",gap:6,alignItems:"center",flexWrap:"wrap"}}>
+                    <strong style={{color:"#0F172A"}}>Mapped Fields ({Object.keys(activePdf.map || {}).length}):</strong>
+                    {Object.keys(activePdf.map || {}).map(k => (
+                      <span key={k} style={{background:"#EFF6FF",color:"#1D4ED8",padding:"1px 6px",borderRadius:4,fontSize:".68rem",fontWeight:700,border:"1px solid #BFDBFE"}}>
+                        {k}
+                      </span>
+                    ))}
+                  </div>
+
+                  {Object.keys(activePdf.map || {}).length > 0 && (
+                    <button
+                      type="button"
+                      onClick={() => handleUpdateActivePdf("map", {})}
+                      style={{background:"none",border:"none",color:"#DC2626",cursor:"pointer",fontWeight:700,fontSize:".72rem"}}
+                    >
+                      Clear All Fields
                     </button>
                   )}
                 </div>
               </div>
-
-              {/* Formatting Toolbar & Drag Tip */}
-              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:8,background:"#F8FAFC",padding:"6px 10px",borderRadius:8,border:"1px solid #E2E8F0"}}>
-                <div style={{display:"flex",alignItems:"center",gap:4}}>
-                  <span style={{fontSize:".72rem",fontWeight:800,color:"#64748B",marginRight:4}}>QUICK FORMAT:</span>
-                  <button type="button" onClick={() => insertPlaceholderAtCursor("*bold text*")} style={{padding:"2px 7px",borderRadius:4,border:"1px solid #CBD5E1",background:"white",fontSize:".75rem",fontWeight:800,cursor:"pointer"}} title="Bold (*)"><b>B</b></button>
-                  <button type="button" onClick={() => insertPlaceholderAtCursor("_italic text_")} style={{padding:"2px 7px",borderRadius:4,border:"1px solid #CBD5E1",background:"white",fontSize:".75rem",fontStyle:"italic",fontWeight:700,cursor:"pointer"}} title="Italic (_)"><i>I</i></button>
-                  <button type="button" onClick={() => insertPlaceholderAtCursor("~strike~")} style={{padding:"2px 7px",borderRadius:4,border:"1px solid #CBD5E1",background:"white",fontSize:".75rem",textDecoration:"line-through",fontWeight:700,cursor:"pointer"}} title="Strikethrough (~)">S</button>
-                  <button type="button" onClick={() => insertPlaceholderAtCursor("\n• ")} style={{padding:"2px 7px",borderRadius:4,border:"1px solid #CBD5E1",background:"white",fontSize:".75rem",fontWeight:700,cursor:"pointer"}} title="Bullet point">• Bullet</button>
-                  <button type="button" onClick={() => insertPlaceholderAtCursor("👉 ")} style={{padding:"2px 7px",borderRadius:4,border:"1px solid #CBD5E1",background:"white",fontSize:".75rem",fontWeight:700,cursor:"pointer"}} title="Arrow pointer">👉</button>
-                  <button type="button" onClick={() => insertPlaceholderAtCursor("🏛️ *MUMBAI MEGHWAL PANCHAYAT*\n")} style={{padding:"2px 7px",borderRadius:4,border:"1px solid #CBD5E1",background:"white",fontSize:".72rem",fontWeight:700,cursor:"pointer"}} title="Trust Header">🏛️ Header</button>
-                </div>
-                <div style={{fontSize:".7rem",color:"#15803D",fontWeight:700,display:"flex",alignItems:"center",gap:4}}>
-                  <span>💡</span> Drag variables from the right panel into editor or click to insert!
-                </div>
-              </div>
-
-              {/* Big Textarea Editor */}
-              <div style={{flex:1,display:"flex",flexDirection:"column",position:"relative",minHeight:280}}>
-                <textarea
-                  ref={textareaRef}
-                  value={activeTpl.text || ""}
-                  onChange={e => handleUpdateActiveTpl("text", e.target.value)}
-                  onDragOver={(e) => e.preventDefault()}
-                  onDrop={handleDropOnTextarea}
-                  placeholder="Compose your WhatsApp template here. Drag or click any variable on the right to insert..."
-                  style={{
-                    width:"100%",
-                    height:"100%",
-                    minHeight:320,
-                    padding:"14px 16px",
-                    borderRadius:10,
-                    border:"1.5px solid #CBD5E1",
-                    fontSize:".88rem",
-                    lineHeight:1.6,
-                    fontFamily:"Consolas, Monaco, monospace",
-                    boxSizing:"border-box",
-                    background:"#FAFDF7",
-                    color:"#0F172A",
-                    resize:"none",
-                    outline:"none"
-                  }}
-                />
-              </div>
-
-              {/* Editor Stats Bar */}
-              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",fontSize:".74rem",color:"#64748B",padding:"2px 4px"}}>
-                <div style={{display:"flex",gap:12}}>
-                  <span>Characters: <strong>{charCount}</strong></span>
-                  <span>Words: <strong>{wordCount}</strong></span>
-                  <span>Lines: <strong>{lineCount}</strong></span>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => {
-                    navigator.clipboard.writeText(activeTpl.text || "");
-                    alert("✅ Template text copied to clipboard!");
-                  }}
-                  style={{background:"none",border:"none",color:"#2563EB",cursor:"pointer",fontWeight:700,fontSize:".74rem",textDecoration:"underline"}}
-                >
-                  📋 Copy Text
-                </button>
-              </div>
-
-            </div>
+            )
           )}
 
-          {/* ── RIGHT PANEL: Variables & Dynamic Data Palette (Width ~340px) ── */}
+          {/* ══════════════════════════════════════════════════════════════
+              RIGHT PANEL: DYNAMIC VARIABLES PALETTE (SHARED BY BOTH MODES!)
+             ══════════════════════════════════════════════════════════════ */}
           <div style={{width:350,borderLeft:"1px solid #E2E8F0",background:"#F8FAFC",display:"flex",flexDirection:"column",flexShrink:0}}>
-            <div style={{padding:"12px 14px",borderBottom:"1px solid #E2E8F0",background:"white",display:"flex",flexDirection:"column",gap:8}}>
+            <div style={{padding:"10px 14px",borderBottom:"1px solid #E2E8F0",background:"white",display:"flex",flexDirection:"column",gap:6}}>
               <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
                 <span style={{fontSize:".76rem",fontWeight:800,color:"#1E293B",display:"flex",alignItems:"center",gap:6}}>
                   <span>🏷️</span> DYNAMIC VARIABLES PALETTE
                 </span>
-                <span style={{fontSize:".68rem",background:"#EFF6FF",color:"#2563EB",padding:"1px 6px",borderRadius:4,fontWeight:800}}>
-                  Drag or Click
+                <span style={{fontSize:".68rem",background: studioTab === "whatsapp" ? "#EFF6FF" : "#F0FDF4",color: studioTab === "whatsapp" ? "#2563EB" : "#15803D",padding:"1px 6px",borderRadius:4,fontWeight:800}}>
+                  {studioTab === "whatsapp" ? "Click to Type" : "Drag to Canvas"}
                 </span>
               </div>
               <input
@@ -22559,7 +23152,7 @@ function WorkspaceWhatsAppTemplateModal({ event, C, setC, auth, onClose }) {
               />
             </div>
 
-            <div style={{flex:1,overflowY:"auto",padding:10,display:"flex",flexDirection:"column",gap:12}}>
+            <div style={{flex:1,overflowY:"auto",padding:10,display:"flex",flexDirection:"column",gap:10}}>
               {variableCategories.map((cat, idx) => {
                 const filteredVars = cat.vars.filter(v => 
                   !variableSearch.trim() || 
@@ -22576,13 +23169,13 @@ function WorkspaceWhatsAppTemplateModal({ event, C, setC, auth, onClose }) {
                       <span>{cat.icon}</span> {cat.title}
                     </div>
 
-                    <div style={{display:"flex",flexDirection:"column",gap:5}}>
+                    <div style={{display:"flex",flexDirection:"column",gap:4}}>
                       {filteredVars.map(v => (
                         <div
                           key={v.tag}
                           draggable={true}
                           onDragStart={(e) => e.dataTransfer.setData("text/plain", v.tag)}
-                          onClick={() => insertPlaceholderAtCursor(v.tag)}
+                          onClick={() => handlePaletteItemClick(v.tag)}
                           style={{
                             background:"white",
                             border:`1px solid ${cat.borderColor}`,
@@ -22596,7 +23189,7 @@ function WorkspaceWhatsAppTemplateModal({ event, C, setC, auth, onClose }) {
                             transition:"all 0.15s",
                             boxShadow:"0 1px 2px rgba(0,0,0,0.03)"
                           }}
-                          title={`Click or Drag to insert: ${v.tag}\n${v.desc}`}
+                          title={`Click or Drag into ${studioTab === "whatsapp" ? "message editor" : "PDF Canvas"}: ${v.tag}\n${v.desc}`}
                         >
                           <div style={{display:"flex",flexDirection:"column",gap:1,overflow:"hidden"}}>
                             <span style={{fontSize:".74rem",fontWeight:800,color:cat.color,fontFamily:"monospace"}}>
@@ -22615,67 +23208,48 @@ function WorkspaceWhatsAppTemplateModal({ event, C, setC, auth, onClose }) {
                   </div>
                 );
               })}
-
-              {/* Custom Event Templates Direct Links */}
-              {(event?.pdfTemplates || []).length > 0 && (
-                <div style={{background:"#F0FDF4",border:"1.5px solid #86EFAC",borderRadius:10,padding:10,display:"flex",flexDirection:"column",gap:6}}>
-                  <div style={{fontSize:".74rem",fontWeight:800,color:"#15803D",display:"flex",alignItems:"center",gap:4}}>
-                    <span>📑</span> SUB-WORKSPACE PASS LINKS
-                  </div>
-                  {(event?.pdfTemplates || []).map(tpl => {
-                    const customLink = `https://www.mmp-cwc.com/?doc=${tpl.id}&pass={TXN_ID}`;
-                    return (
-                      <div
-                        key={tpl.id}
-                        draggable={true}
-                        onDragStart={(e) => e.dataTransfer.setData("text/plain", customLink)}
-                        onClick={() => insertPlaceholderAtCursor(customLink)}
-                        style={{background:"white",border:"1px solid #86EFAC",borderRadius:6,padding:"6px 8px",cursor:"pointer",display:"flex",justifyContent:"space-between",alignItems:"center",gap:6}}
-                        title={`Click or Drag to insert link for "${tpl.name}"`}
-                      >
-                        <div style={{display:"flex",flexDirection:"column",gap:1}}>
-                          <span style={{fontSize:".73rem",fontWeight:800,color:"#166534"}}>
-                            📄 {tpl.name} Pass Link
-                          </span>
-                          <span style={{fontSize:".65rem",color:"#64748B",fontFamily:"monospace"}}>
-                            /?doc={tpl.id}&pass={'{TXN_ID}'}
-                          </span>
-                        </div>
-                        <span style={{fontSize:".72rem",color:"#94A3B8",cursor:"grab",userSelect:"none"}}>⋮⋮</span>
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
             </div>
           </div>
-
         </div>
 
-        {/* Footer */}
-        <div style={{padding:"12px 22px",background:"#F8FAFC",borderTop:"1px solid #E2E8F0",display:"flex",justifyContent:"space-between",alignItems:"center",flexShrink:0}}>
+        {/* ── UNIFIED FOOTER BAR ── */}
+        <div style={{padding:"12px 20px",borderTop:"1px solid #E2E8F0",display:"flex",justifyContent:"space-between",alignItems:"center",background:"white"}}>
           <div style={{fontSize:".76rem",color:"#64748B"}}>
-            Editing template: <strong>{activeTpl?.name}</strong> {activeTpl?.isDefault ? "(Default)" : ""}
+            Editing: <strong>{studioTab === "whatsapp" ? (activeTpl?.name || "Template") : (activePdf?.name || "Pass")}</strong>
           </div>
+
           <div style={{display:"flex",gap:10}}>
-            <button onClick={onClose} style={{padding:"8px 18px",borderRadius:8,background:"white",border:"1px solid #CBD5E1",fontSize:".85rem",cursor:"pointer",fontWeight:600}}>
+            <button
+              type="button"
+              onClick={onClose}
+              style={{padding:"8px 18px",borderRadius:8,background:"#F1F5F9",color:"#475569",border:"1px solid #CBD5E1",fontSize:".82rem",fontWeight:700,cursor:"pointer"}}
+            >
               Cancel
             </button>
             <button
-              onClick={handleSaveAll}
+              type="button"
               disabled={saving}
-              style={{padding:"8px 24px",borderRadius:8,background:"#15803D",color:"white",border:"none",fontSize:".85rem",fontWeight:800,cursor:saving ? "wait" : "pointer",boxShadow:"0 2px 6px rgba(21,128,61,0.25)"}}
+              onClick={handleSaveAll}
+              style={{
+                padding:"8px 24px",
+                borderRadius:8,
+                background:"linear-gradient(135deg, #15803D, #166534)",
+                color:"white",
+                border:"none",
+                fontSize:".85rem",
+                fontWeight:800,
+                cursor:saving ? "wait" : "pointer",
+                boxShadow:"0 2px 8px rgba(22,101,52,0.3)"
+              }}
             >
-              {saving ? "Saving Templates..." : "💾 Save Workspace Templates"}
+              {saving ? "Saving Workspace..." : "💾 Save Workspace Templates"}
             </button>
           </div>
         </div>
-
       </div>
     </div>
   );
 }
-
 // ── WhatsApp Applicant Communication Modal ───────────────────────────────────────
 function WhatsAppApplicantMessengerModal({ reg, onClose, C, auth, onLogSent, allRegs = [], recipientList = null, onSelectReg }) {
   if (!reg) return null;
@@ -26525,11 +27099,9 @@ function AdminCertificates({ mob, C, setC, auth }) {
                       fbSave(updatedC, auth?.idToken);
                       setActiveDocType(tplId);
                       setShowTemplatesManagerModal(false);
-                      setConfigModal({
-                        ev: updatedTargetEvent,
-                        type: 'custom',
-                        customTpl: newTpl
-                      });
+                      setSelectedPdfTplId(tplId);
+                      setTplModalMode("pdf");
+                      setShowWorkspaceTplModal(true);
                     }
                   }}
                   style={{padding:"8px 14px",borderRadius:8,fontSize:".78rem",fontWeight:800,background:"#15803D",color:"white",border:"none",cursor:"pointer",display:"flex",alignItems:"center",gap:5,boxShadow:"0 2px 6px rgba(21,128,61,0.25)"}}
@@ -26564,8 +27136,10 @@ function AdminCertificates({ mob, C, setC, auth }) {
                             type="button"
                             onClick={() => {
                               setActiveDocType(tpl.id);
+                              setSelectedPdfTplId(tpl.id);
+                              setTplModalMode("pdf");
                               setShowTemplatesManagerModal(false);
-                              setConfigModal({ ev: activeEvent, type: 'custom', customTpl: tpl });
+                              setShowWorkspaceTplModal(true);
                             }}
                             style={{padding:"6px 12px",borderRadius:6,fontSize:".75rem",fontWeight:800,background:"#0D4B5E",color:"white",border:"none",cursor:"pointer",display:"flex",alignItems:"center",gap:4}}
                           >
@@ -26635,7 +27209,13 @@ function AdminCertificates({ mob, C, setC, auth }) {
           C={C}
           setC={setC}
           auth={auth}
-          onClose={() => setShowWorkspaceTplModal(false)}
+          initialTab={tplModalMode || "whatsapp"}
+          initialPdfTplId={selectedPdfTplId || null}
+          onClose={() => {
+            setShowWorkspaceTplModal(false);
+            setTplModalMode("whatsapp");
+            setSelectedPdfTplId(null);
+          }}
         />
       )}
 
@@ -26901,6 +27481,8 @@ function AdminInviteLetters({ mob, C, setC, auth }) {
   const [activeDocType, setActiveDocType] = useState("invite");
   const [configModal, setConfigModal] = useState(null);
   const [showTemplatesManagerModal, setShowTemplatesManagerModal] = useState(false);
+  const [tplModalMode, setTplModalMode] = useState("whatsapp");
+  const [selectedPdfTplId, setSelectedPdfTplId] = useState(null);
 
   // Global guest modals
   const [showGlobalGuestsModal, setShowGlobalGuestsModal] = useState(false);
@@ -29180,7 +29762,13 @@ This cannot be undone.`)) return;
           C={C}
           setC={setC}
           auth={auth}
-          onClose={() => setShowWorkspaceTplModal(false)}
+          initialTab={tplModalMode || "whatsapp"}
+          initialPdfTplId={selectedPdfTplId || null}
+          onClose={() => {
+            setShowWorkspaceTplModal(false);
+            setTplModalMode("whatsapp");
+            setSelectedPdfTplId(null);
+          }}
         />
       )}
             {/* Visual PDF Template Configuration & Variable Mapper Modal */}
@@ -29843,11 +30431,9 @@ This cannot be undone.`)) return;
                       onClick={(e) => {
                         e.stopPropagation();
                         setActiveDocType(tab.id);
-                        setConfigModal({
-                          ev: activeEvent,
-                          type: tab.id === 'invite' ? 'invite' : tab.id === 'cert' ? 'cert' : 'custom',
-                          customTpl: tab.customTpl
-                        });
+                        setSelectedPdfTplId(tab.id);
+                        setTplModalMode("pdf");
+                        setShowWorkspaceTplModal(true);
                       }}
                       style={{
                         background: "#0D4B5E",
@@ -30629,7 +31215,13 @@ This cannot be undone.`)) return;
           C={C}
           setC={setC}
           auth={auth}
-          onClose={() => setShowWorkspaceTplModal(false)}
+          initialTab={tplModalMode || "whatsapp"}
+          initialPdfTplId={selectedPdfTplId || null}
+          onClose={() => {
+            setShowWorkspaceTplModal(false);
+            setTplModalMode("whatsapp");
+            setSelectedPdfTplId(null);
+          }}
         />
       )}
 
