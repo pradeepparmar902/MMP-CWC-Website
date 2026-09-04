@@ -5015,8 +5015,35 @@ export const generateCertificatePDF = async (certConfig, fieldsData, fallbackNam
       customTpl = allCustom.find(t => t.id === actualType || t.name === actualType);
     }
 
-    const isInvite = actualType === 'invite';
+    const isInvite = actualType === 'invite' || (customTpl && (customTpl.id === 'invite' || customTpl.targetSection === 'invites'));
     let srcUrl = customTpl ? customTpl.bgUrl : isInvite ? certConfig?.inviteBgUrl : (certConfig?.certBgUrl || certConfig?.bgUrl);
+    if (!srcUrl && isInvite) {
+      srcUrl = certConfig?.bgUrl || certConfig?.certBgUrl;
+    }
+    // Deep fallback across window globals if still empty
+    if (!srcUrl && typeof window !== 'undefined') {
+      const activeEv = window.__MMP_ACTIVE_EVENT__;
+      if (activeEv) {
+        if (customTpl) {
+          const matched = (activeEv.pdfTemplates || []).find(t => t.id === customTpl.id || t.name === customTpl.name);
+          if (matched?.bgUrl) srcUrl = matched.bgUrl;
+        }
+        if (!srcUrl) {
+          srcUrl = isInvite ? activeEv.inviteBgUrl : (activeEv.certBgUrl || activeEv.bgUrl);
+        }
+      }
+      if (!srcUrl && window.__MMP_TRUST_CONFIG__?.events) {
+        for (const evItem of window.__MMP_TRUST_CONFIG__.events) {
+          if (customTpl) {
+            const matched = (evItem.pdfTemplates || []).find(t => t.id === customTpl.id || t.name === customTpl.name);
+            if (matched?.bgUrl) { srcUrl = matched.bgUrl; break; }
+          }
+          if (isInvite && evItem.inviteBgUrl) {
+            srcUrl = evItem.inviteBgUrl; break;
+          }
+        }
+      }
+    }
     if (srcUrl && srcUrl.startsWith('media://')) {
       srcUrl = resolveMediaUrl(srcUrl, certConfig) || srcUrl;
     }
@@ -12054,8 +12081,12 @@ export const resolveMediaUrl = (url, C = {}) => {
   if (url.startsWith("media://")) {
     const assetId = url.replace("media://", "");
     if (typeof assetCache !== 'undefined' && assetCache[assetId]) return assetCache[assetId];
-    if (Array.isArray(C?.mediaLibrary)) {
-      const found = C.mediaLibrary.find(m => m.id === assetId);
+    let lib = Array.isArray(C?.mediaLibrary) ? C.mediaLibrary : null;
+    if (!lib && typeof window !== 'undefined') {
+      lib = window.__MMP_MEDIA_LIBRARY__ || window.__MMP_TRUST_CONFIG__?.mediaLibrary || null;
+    }
+    if (Array.isArray(lib)) {
+      const found = lib.find(m => m.id === assetId || m.name === assetId);
       if (found && found.url) {
         if (typeof assetCache !== 'undefined') assetCache[assetId] = found.url;
         return found.url;
@@ -29020,6 +29051,269 @@ function BulkSelectionModal({ isOpen, onClose, title, items = [], actionLabel = 
   );
 }
 
+export function ConnectExistingTemplateModal({
+  isOpen,
+  onClose,
+  activeEvent,
+  C,
+  setC,
+  auth,
+  currentDocTpl,
+  onConnected
+}) {
+  if (!isOpen) return null;
+  const candidates = [];
+  const seenUrls = new Set();
+
+  (C.events || []).forEach(ev => {
+    if (ev.inviteBgUrl && !seenUrls.has(ev.inviteBgUrl)) {
+      seenUrls.add(ev.inviteBgUrl);
+      candidates.push({
+        id: 'tpl_invite_' + (ev.id || ev.title),
+        name: ev.inviteName || ev.inviteTitle || 'Official Invite Letter',
+        source: ev.title || 'Other Event',
+        bgUrl: ev.inviteBgUrl,
+        map: ev.inviteMap || {},
+        fontSize: ev.inviteFontSize || 16,
+        fontColor: ev.inviteFontColor || '#000000',
+        orientation: ev.inviteOrientation || 'portrait',
+        bgFit: ev.inviteBgFit || 'letterhead',
+        targetSection: 'invites',
+        isPrimaryInvite: true
+      });
+    }
+    if (ev.certBgUrl && !seenUrls.has(ev.certBgUrl)) {
+      seenUrls.add(ev.certBgUrl);
+      candidates.push({
+        id: 'tpl_cert_' + (ev.id || ev.title),
+        name: ev.certName || ev.certTitle || 'Certificate Pass',
+        source: ev.title || 'Other Event',
+        bgUrl: ev.certBgUrl,
+        map: ev.certMap || {},
+        fontSize: ev.certFontSize || 26,
+        fontColor: ev.certFontColor || '#000000',
+        orientation: ev.certOrientation || 'landscape',
+        bgFit: ev.certBgFit || 'full',
+        targetSection: 'awards'
+      });
+    }
+    (ev.pdfTemplates || []).forEach(t => {
+      if (t.bgUrl && !seenUrls.has(t.bgUrl)) {
+        seenUrls.add(t.bgUrl);
+        candidates.push({
+          id: t.id,
+          name: t.name,
+          source: ev.title || 'Other Event',
+          bgUrl: t.bgUrl,
+          map: t.map || t.fieldMap || {},
+          fontSize: t.fontSize || 16,
+          fontColor: t.fontColor || '#000000',
+          orientation: t.orientation || 'portrait',
+          bgFit: t.bgFit || 'letterhead',
+          targetSection: t.targetSection || 'invites'
+        });
+      }
+    });
+  });
+
+  (C.mediaLibrary || []).filter(m => m.category === 'letterheads' || m.category === 'certificates' || m.type === 'document' || m.type === 'image').forEach(m => {
+    const resolvedUrl = m.url;
+    if (!seenUrls.has(resolvedUrl)) {
+      seenUrls.add(resolvedUrl);
+      candidates.push({
+        id: 'media_' + m.id,
+        name: m.name || 'Media Library Letterhead',
+        source: 'Central Media Library (' + (m.category || 'Assets') + ')',
+        bgUrl: m.url,
+        map: {},
+        fontSize: 16,
+        fontColor: '#000000',
+        orientation: 'portrait',
+        bgFit: 'letterhead',
+        targetSection: 'invites',
+        isMediaAsset: true
+      });
+    }
+  });
+
+  const handleApplyConnect = async (tpl) => {
+    const defaultName = tpl.name ? tpl.name.replace(/\s*\(.*?\)\s*$/, '') : 'Letterhead Template';
+    const confirmName = prompt('Enter tab name for this template in "' + (activeEvent.title || 'Workspace') + '":', defaultName);
+    if (!confirmName || !confirmName.trim()) return;
+    const cleanName = confirmName.trim();
+
+    const isReplacingInvite = currentDocTpl?.id === 'invite' || !activeEvent.inviteBgUrl;
+    const shouldSetPrimary = isReplacingInvite && window.confirm('Set "' + cleanName + '" as the primary Official Invite Letter background for "' + (activeEvent.title || 'Workspace') + '"?\n\n(Click Cancel to add it as a new separate sub-workspace pass tab instead)');
+
+    try {
+      const currentEvents = C.events || [];
+      let updatedTargetEvent = { ...activeEvent };
+      let newActiveId = 'invite';
+
+      if (shouldSetPrimary) {
+        updatedTargetEvent = {
+          ...updatedTargetEvent,
+          inviteName: cleanName,
+          inviteTitle: cleanName,
+          inviteBgUrl: tpl.bgUrl,
+          inviteMap: tpl.map || {},
+          inviteFontSize: tpl.fontSize || 16,
+          inviteFontColor: tpl.fontColor || '#000000',
+          inviteOrientation: tpl.orientation || 'portrait',
+          inviteBgFit: tpl.bgFit || 'letterhead'
+        };
+        newActiveId = 'invite';
+      } else {
+        const newDocId = 'doc_' + Date.now();
+        const newTplObj = {
+          id: newDocId,
+          name: cleanName,
+          targetSection: tpl.targetSection || 'invites',
+          targetAudience: 'assigned',
+          bgUrl: tpl.bgUrl,
+          map: tpl.map || {},
+          fontSize: tpl.fontSize || 16,
+          fontColor: tpl.fontColor || '#000000',
+          orientation: tpl.orientation || 'portrait',
+          bgFit: tpl.bgFit || 'letterhead'
+        };
+        updatedTargetEvent = {
+          ...updatedTargetEvent,
+          pdfTemplates: [...(updatedTargetEvent.pdfTemplates || []), newTplObj]
+        };
+        newActiveId = newDocId;
+      }
+
+      const eventExists = currentEvents.some(e => e.id === activeEvent.id || e.title === activeEvent.title);
+      const updatedEvents = eventExists
+        ? currentEvents.map(e => (e.id === activeEvent.id || e.title === activeEvent.title) ? updatedTargetEvent : e)
+        : [...currentEvents, updatedTargetEvent];
+
+      const updatedC = { ...C, events: updatedEvents };
+      if (setC) setC(updatedC);
+      await fbSave(updatedC, auth?.idToken);
+      if (typeof onConnected === 'function') {
+        onConnected(newActiveId);
+      }
+      onClose();
+      alert('✅ "' + cleanName + '" successfully connected to "' + (activeEvent.title || 'Workspace') + '"! You can now preview and issue passes.');
+    } catch (e) {
+      alert("Error connecting template: " + e.message);
+    }
+  };
+
+  return (
+    <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.7)',zIndex:100010,display:'flex',alignItems:'center',justifyContent:'center',padding:16}} onClick={onClose}>
+      <div style={{background:'white',borderRadius:16,maxWidth:820,width:'100%',maxHeight:'88vh',display:'flex',flexDirection:'column',boxShadow:'0 25px 60px rgba(0,0,0,0.35)',overflow:'hidden'}} onClick={e=>e.stopPropagation()}>
+        <div style={{background:'linear-gradient(135deg, #0F766E, #047857)',color:'white',padding:'14px 20px',display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+          <div>
+            <h3 style={{margin:0,fontSize:'1.1rem',fontWeight:800,display:'flex',alignItems:'center',gap:8}}>
+              <span>🔗</span> Connect Existing PDF Template to "{activeEvent.title}"
+            </h3>
+            <div style={{fontSize:'.74rem',opacity:0.9,marginTop:2}}>
+              Choose any pre-built template from another workspace or letterhead from Central Media Library. Zero duplicate storage!
+            </div>
+          </div>
+          <button onClick={onClose} style={{background:'rgba(255,255,255,0.2)',border:'none',borderRadius:'50%',width:32,height:32,color:'white',cursor:'pointer',fontWeight:800,fontSize:'1rem'}}>✕</button>
+        </div>
+
+        <div style={{flex:1,overflowY:'auto',padding:18,display:'flex',flexDirection:'column',gap:12,background:'#F8FAFC'}}>
+          {candidates.length === 0 ? (
+            <div style={{padding:32,textAlign:'center',background:'white',borderRadius:10,border:'1px dashed #CBD5E1'}}>
+              <div style={{fontSize:'2rem',marginBottom:8}}>📁</div>
+              <div style={{fontSize:'.9rem',fontWeight:800,color:'#334155'}}>No other PDF templates found yet</div>
+              <div style={{fontSize:'.76rem',color:'#64748B',marginTop:4}}>
+                You can configure this template directly by clicking <strong>"⚙️ Configure"</strong> on the tab above, or upload letterheads to the Central Media Library.
+              </div>
+            </div>
+          ) : (
+            <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill, minmax(240px, 1fr))',gap:14}}>
+              {candidates.map((cand, idx) => (
+                <div 
+                  key={cand.id + '_' + idx}
+                  style={{
+                    background:'white',
+                    borderRadius:10,
+                    border:'1.5px solid #E2E8F0',
+                    padding:12,
+                    display:'flex',
+                    flexDirection:'column',
+                    justifyContent:'space-between',
+                    gap:10,
+                    boxShadow:'0 2px 6px rgba(0,0,0,0.04)',
+                    transition:'transform 0.15s, box-shadow 0.15s'
+                  }}
+                >
+                  <div>
+                    <div style={{width:'100%',height:110,background:'#F1F5F9',borderRadius:6,overflow:'hidden',display:'flex',alignItems:'center',justifyContent:'center',border:'1px solid #CBD5E1',position:'relative'}}>
+                      {cand.bgUrl ? (
+                        <img 
+                          src={resolveMediaUrl(cand.bgUrl, C)} 
+                          alt={cand.name}
+                          style={{width:'100%',height:'100%',objectFit:'cover'}}
+                        />
+                      ) : (
+                        <div style={{fontSize:'1.8rem'}}>📄</div>
+                      )}
+                      <span style={{position:'absolute',top:4,right:4,fontSize:'.62rem',fontWeight:800,background:'rgba(0,0,0,0.65)',color:'white',padding:'1px 6px',borderRadius:4}}>
+                        {cand.orientation === 'landscape' ? '📜 Landscape' : '📄 Portrait'}
+                      </span>
+                    </div>
+                    <div style={{marginTop:8}}>
+                      <strong style={{fontSize:'.84rem',color:'#0F172A',display:'block',lineHeight:1.3}}>
+                        {cand.name}
+                      </strong>
+                      <div style={{fontSize:'.68rem',color:'#059669',fontWeight:700,marginTop:2}}>
+                        📍 Source: {cand.source}
+                      </div>
+                    </div>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => handleApplyConnect(cand)}
+                    style={{
+                      padding:'7px 12px',
+                      background:'#15803D',
+                      color:'white',
+                      border:'none',
+                      borderRadius:6,
+                      fontSize:'.76rem',
+                      fontWeight:800,
+                      cursor:'pointer',
+                      display:'flex',
+                      alignItems:'center',
+                      justifyContent:'center',
+                      gap:6,
+                      boxShadow:'0 1px 4px rgba(21,128,61,0.2)'
+                    }}
+                  >
+                    <span>🔗</span>
+                    <span>Connect to this Workspace</span>
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        <div style={{padding:'12px 20px',borderTop:'1px solid #E2E8F0',background:'white',display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+          <span style={{fontSize:'.74rem',color:'#64748B'}}>
+            Connecting a template re-uses its design, dimensions, and letterhead without creating duplicate storage.
+          </span>
+          <button 
+            type="button" 
+            onClick={onClose}
+            style={{padding:'6px 14px',borderRadius:6,background:'#F1F5F9',color:'#475569',border:'1px solid #CBD5E1',fontSize:'.78rem',fontWeight:700,cursor:'pointer'}}
+          >
+            Close
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function AdminCertificates({ mob, C, setC, auth }) {
   const [regs, setRegs] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -29235,257 +29529,6 @@ function AdminCertificates({ mob, C, setC, auth }) {
       </div>
     );
   }
-
-
-  const renderConnectTemplateModal = () => {
-    const candidates = [];
-    const seenUrls = new Set();
-
-    (C.events || []).forEach(ev => {
-      if (ev.inviteBgUrl && !seenUrls.has(ev.inviteBgUrl)) {
-        seenUrls.add(ev.inviteBgUrl);
-        candidates.push({
-          id: 'tpl_invite_' + (ev.id || ev.title),
-          name: ev.inviteName || ev.inviteTitle || 'Official Invite Letter',
-          source: ev.title || 'Other Event',
-          bgUrl: ev.inviteBgUrl,
-          map: ev.inviteMap || {},
-          fontSize: ev.inviteFontSize || 16,
-          fontColor: ev.inviteFontColor || '#000000',
-          orientation: ev.inviteOrientation || 'portrait',
-          bgFit: ev.inviteBgFit || 'letterhead',
-          targetSection: 'invites',
-          isPrimaryInvite: true
-        });
-      }
-      if (ev.certBgUrl && !seenUrls.has(ev.certBgUrl)) {
-        seenUrls.add(ev.certBgUrl);
-        candidates.push({
-          id: 'tpl_cert_' + (ev.id || ev.title),
-          name: ev.certName || ev.certTitle || 'Certificate Pass',
-          source: ev.title || 'Other Event',
-          bgUrl: ev.certBgUrl,
-          map: ev.certMap || {},
-          fontSize: ev.certFontSize || 26,
-          fontColor: ev.certFontColor || '#000000',
-          orientation: ev.certOrientation || 'landscape',
-          bgFit: ev.certBgFit || 'full',
-          targetSection: 'awards'
-        });
-      }
-      (ev.pdfTemplates || []).forEach(t => {
-        if (t.bgUrl && !seenUrls.has(t.bgUrl)) {
-          seenUrls.add(t.bgUrl);
-          candidates.push({
-            id: t.id,
-            name: t.name,
-            source: ev.title || 'Other Event',
-            bgUrl: t.bgUrl,
-            map: t.map || t.fieldMap || {},
-            fontSize: t.fontSize || 16,
-            fontColor: t.fontColor || '#000000',
-            orientation: t.orientation || 'portrait',
-            bgFit: t.bgFit || 'letterhead',
-            targetSection: t.targetSection || 'invites'
-          });
-        }
-      });
-    });
-
-    (C.mediaLibrary || []).filter(m => m.category === 'letterheads' || m.category === 'certificates' || m.type === 'document' || m.type === 'image').forEach(m => {
-      const resolvedUrl = m.url;
-      if (!seenUrls.has(resolvedUrl)) {
-        seenUrls.add(resolvedUrl);
-        candidates.push({
-          id: 'media_' + m.id,
-          name: m.name || 'Media Library Letterhead',
-          source: 'Central Media Library (' + (m.category || 'Assets') + ')',
-          bgUrl: m.url,
-          map: {},
-          fontSize: 16,
-          fontColor: '#000000',
-          orientation: 'portrait',
-          bgFit: 'letterhead',
-          targetSection: 'invites',
-          isMediaAsset: true
-        });
-      }
-    });
-
-    const handleApplyConnect = async (tpl) => {
-      const defaultName = tpl.name ? tpl.name.replace(/\s*\(.*?\)\s*$/, '') : 'Letterhead Template';
-      const confirmName = prompt('Enter tab name for this template in "' + (activeEvent.title || 'Workspace') + '":', defaultName);
-      if (!confirmName || !confirmName.trim()) return;
-      const cleanName = confirmName.trim();
-
-      const isReplacingInvite = currentDocTpl?.id === 'invite' || !activeEvent.inviteBgUrl;
-      const shouldSetPrimary = isReplacingInvite && window.confirm('Set "' + cleanName + '" as the primary Official Invite Letter background for "' + (activeEvent.title || 'Workspace') + '"?\n\n(Click Cancel to add it as a new separate sub-workspace pass tab instead)');
-
-      try {
-        const currentEvents = C.events || [];
-        let updatedTargetEvent = { ...activeEvent };
-
-        if (shouldSetPrimary) {
-          updatedTargetEvent = {
-            ...updatedTargetEvent,
-            inviteName: cleanName,
-            inviteTitle: cleanName,
-            inviteBgUrl: tpl.bgUrl,
-            inviteMap: tpl.map || {},
-            inviteFontSize: tpl.fontSize || 16,
-            inviteFontColor: tpl.fontColor || '#000000',
-            inviteOrientation: tpl.orientation || 'portrait',
-            inviteBgFit: tpl.bgFit || 'letterhead'
-          };
-          setActiveDocType('invite');
-        } else {
-          const newDocId = 'doc_' + Date.now();
-          const newTplObj = {
-            id: newDocId,
-            name: cleanName,
-            targetSection: tpl.targetSection || 'invites',
-            targetAudience: 'assigned',
-            bgUrl: tpl.bgUrl,
-            map: tpl.map || {},
-            fontSize: tpl.fontSize || 16,
-            fontColor: tpl.fontColor || '#000000',
-            orientation: tpl.orientation || 'portrait',
-            bgFit: tpl.bgFit || 'letterhead'
-          };
-          updatedTargetEvent = {
-            ...updatedTargetEvent,
-            pdfTemplates: [...(updatedTargetEvent.pdfTemplates || []), newTplObj]
-          };
-          setActiveDocType(newDocId);
-        }
-
-        const eventExists = currentEvents.some(e => e.id === activeEvent.id || e.title === activeEvent.title);
-        const updatedEvents = eventExists
-          ? currentEvents.map(e => (e.id === activeEvent.id || e.title === activeEvent.title) ? updatedTargetEvent : e)
-          : [...currentEvents, updatedTargetEvent];
-
-        const updatedC = { ...C, events: updatedEvents };
-        if (setC) setC(updatedC);
-        await fbSave(updatedC, auth?.idToken);
-        alert('✅ "' + cleanName + '" successfully connected to "' + (activeEvent.title || 'Workspace') + '"! You can now preview and issue passes.');
-        setShowConnectTplModal(false);
-      } catch (err) {
-        console.error(err);
-        alert('Failed to connect template: ' + err.message);
-      }
-    };
-
-    return (
-      <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.7)',zIndex:100005,display:'flex',alignItems:'center',justifyContent:'center',padding:16}} onClick={()=>setShowConnectTplModal(false)}>
-        <div style={{background:'white',borderRadius:16,maxWidth:820,width:'100%',maxHeight:'88vh',display:'flex',flexDirection:'column',boxShadow:'0 25px 60px rgba(0,0,0,0.35)',overflow:'hidden'}} onClick={e=>e.stopPropagation()}>
-          <div style={{background:'linear-gradient(135deg, #0F766E, #047857)',color:'white',padding:'14px 20px',display:'flex',justifyContent:'space-between',alignItems:'center'}}>
-            <div>
-              <h3 style={{margin:0,fontSize:'1.1rem',fontWeight:800,display:'flex',alignItems:'center',gap:8}}>
-                <span>🔗</span> Connect Existing PDF Template to "{activeEvent.title}"
-              </h3>
-              <div style={{fontSize:'.74rem',opacity:0.9,marginTop:2}}>
-                Choose any pre-built template from another workspace or letterhead from Central Media Library. Zero duplicate storage!
-              </div>
-            </div>
-            <button onClick={()=>setShowConnectTplModal(false)} style={{background:'rgba(255,255,255,0.2)',border:'none',borderRadius:'50%',width:32,height:32,color:'white',cursor:'pointer',fontWeight:800,fontSize:'1rem'}}>✕</button>
-          </div>
-
-          <div style={{flex:1,overflowY:'auto',padding:18,display:'flex',flexDirection:'column',gap:12,background:'#F8FAFC'}}>
-            {candidates.length === 0 ? (
-              <div style={{padding:32,textAlign:'center',background:'white',borderRadius:10,border:'1px dashed #CBD5E1'}}>
-                <div style={{fontSize:'2rem',marginBottom:8}}>📁</div>
-                <div style={{fontSize:'.9rem',fontWeight:800,color:'#334155'}}>No other PDF templates found yet</div>
-                <div style={{fontSize:'.76rem',color:'#64748B',marginTop:4}}>
-                  You can configure this template directly by clicking <strong>"⚙️ Configure"</strong> on the tab above, or upload letterheads to the Central Media Library.
-                </div>
-              </div>
-            ) : (
-              <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill, minmax(240px, 1fr))',gap:14}}>
-                {candidates.map((cand, idx) => (
-                  <div 
-                    key={cand.id + '_' + idx}
-                    style={{
-                      background:'white',
-                      borderRadius:10,
-                      border:'1.5px solid #E2E8F0',
-                      padding:12,
-                      display:'flex',
-                      flexDirection:'column',
-                      justifyContent:'space-between',
-                      gap:10,
-                      boxShadow:'0 2px 6px rgba(0,0,0,0.04)',
-                      transition:'transform 0.15s, box-shadow 0.15s'
-                    }}
-                  >
-                    <div>
-                      <div style={{width:'100%',height:110,background:'#F1F5F9',borderRadius:6,overflow:'hidden',display:'flex',alignItems:'center',justifyContent:'center',border:'1px solid #CBD5E1',position:'relative'}}>
-                        {cand.bgUrl ? (
-                          <img 
-                            src={resolveMediaUrl(cand.bgUrl, C)} 
-                            alt={cand.name}
-                            style={{width:'100%',height:'100%',objectFit:'cover'}}
-                          />
-                        ) : (
-                          <div style={{fontSize:'1.8rem'}}>📄</div>
-                        )}
-                        <span style={{position:'absolute',top:4,right:4,fontSize:'.62rem',fontWeight:800,background:'rgba(0,0,0,0.65)',color:'white',padding:'1px 6px',borderRadius:4}}>
-                          {cand.orientation === 'landscape' ? '📜 Landscape' : '📄 Portrait'}
-                        </span>
-                      </div>
-                      <div style={{marginTop:8}}>
-                        <strong style={{fontSize:'.84rem',color:'#0F172A',display:'block',lineHeight:1.3}}>
-                          {cand.name}
-                        </strong>
-                        <div style={{fontSize:'.68rem',color:'#059669',fontWeight:700,marginTop:2}}>
-                          📍 Source: {cand.source}
-                        </div>
-                      </div>
-                    </div>
-
-                    <button
-                      type="button"
-                      onClick={() => handleApplyConnect(cand)}
-                      style={{
-                        padding:'7px 12px',
-                        background:'#15803D',
-                        color:'white',
-                        border:'none',
-                        borderRadius:6,
-                        fontSize:'.76rem',
-                        fontWeight:800,
-                        cursor:'pointer',
-                        display:'flex',
-                        alignItems:'center',
-                        justifyContent:'center',
-                        gap:6,
-                        boxShadow:'0 1px 4px rgba(21,128,61,0.2)'
-                      }}
-                    >
-                      <span>🔗</span>
-                      <span>Connect to this Workspace</span>
-                    </button>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-
-          <div style={{padding:'12px 20px',borderTop:'1px solid #E2E8F0',background:'white',display:'flex',justifyContent:'space-between',alignItems:'center'}}>
-            <span style={{fontSize:'.74rem',color:'#64748B'}}>
-              Connecting a template re-uses its design, dimensions, and letterhead without creating duplicate storage.
-            </span>
-            <button 
-              type="button" 
-              onClick={()=>setShowConnectTplModal(false)}
-              style={{padding:'6px 14px',borderRadius:6,background:'#F1F5F9',color:'#475569',border:'1px solid #CBD5E1',fontSize:'.78rem',fontWeight:700,cursor:'pointer'}}
-            >
-              Close
-            </button>
-          </div>
-        </div>
-      </div>
-    );
-  };
 
 
   return (
@@ -30185,7 +30228,18 @@ function AdminCertificates({ mob, C, setC, auth }) {
       )}
 
       {/* Workspace Multi-Template Modal */}
-      {showConnectTplModal && renderConnectTemplateModal()}
+      {showConnectTplModal && (
+        <ConnectExistingTemplateModal
+          isOpen={showConnectTplModal}
+          onClose={() => setShowConnectTplModal(false)}
+          activeEvent={activeEvent}
+          C={C}
+          setC={setC}
+          auth={auth}
+          currentDocTpl={{ id: 'cert', name: 'Certificate Pass' }}
+          onConnected={() => {}}
+        />
+      )}
 
       {showWorkspaceTplModal && (
         <WorkspaceWhatsAppTemplateModal
@@ -30468,6 +30522,7 @@ function AdminInviteLetters({ mob, C, setC, auth }) {
   const [showTemplatesManagerModal, setShowTemplatesManagerModal] = useState(false);
   const [tplModalMode, setTplModalMode] = useState("whatsapp");
   const [selectedPdfTplId, setSelectedPdfTplId] = useState(null);
+  const [showConnectTplModal, setShowConnectTplModal] = useState(false);
 
   // Global guest modals
   const [showGlobalGuestsModal, setShowGlobalGuestsModal] = useState(false);
@@ -30648,6 +30703,15 @@ function AdminInviteLetters({ mob, C, setC, auth }) {
   const inviteEvents = hasDonorWs ? customEvents : [...customEvents, defaultDonorWorkspace];
 
   const activeEvent = inviteEvents.find(e => e.id === selectedEventId) || {};
+  if (typeof window !== 'undefined') {
+    window.__MMP_ACTIVE_EVENT__ = activeEvent;
+    if (C) {
+      window.__MMP_TRUST_CONFIG__ = C;
+      if (Array.isArray(C.mediaLibrary)) {
+        window.__MMP_MEDIA_LIBRARY__ = C.mediaLibrary;
+      }
+    }
+  }
 
   const isDonorWs = Boolean(activeEvent?.isDonorWorkspace || String(activeEvent?.title || "").toLowerCase().includes("donor"));
   const availableDocTemplates = [
@@ -31672,10 +31736,34 @@ This cannot be undone.`)) return;
   const handlePreview = async (r, ev) => {
     const fieldsData = {...r};
     const sName = fieldsData["Full Name"] || fieldsData["Name"] || fieldsData["Participant Name"] || "Student";
+    
+    // Always prioritize the active workspace the user is currently managing
+    const targetEv = activeEvent?.id ? activeEvent : (ev || activeEvent);
+    
+    // Extract background from currentDocTpl, activeEvent, or pdfTemplates
+    const targetBgUrl = currentDocTpl?.bgUrl 
+      || (currentDocTpl?.id === 'cert' ? activeEvent?.certBgUrl : activeEvent?.inviteBgUrl)
+      || (activeEvent?.pdfTemplates || []).find(t => t.id === currentDocTpl?.id || t.name === currentDocTpl?.name)?.bgUrl
+      || (targetEv?.pdfTemplates || []).find(t => t.id === currentDocTpl?.id || t.name === currentDocTpl?.name)?.bgUrl
+      || targetEv?.inviteBgUrl
+      || targetEv?.certBgUrl
+      || (typeof window !== 'undefined' && window.__MMP_ACTIVE_EVENT__?.inviteBgUrl)
+      || "";
+
+    const resolvedDocTpl = {
+      id: currentDocTpl?.id || 'invite',
+      name: currentDocTpl?.name || (currentDocTpl?.id === 'cert' ? 'Certificate' : 'Official Invite Letter'),
+      bgUrl: targetBgUrl,
+      map: currentDocTpl?.customTpl?.map || (currentDocTpl?.id === 'cert' ? targetEv?.certMap : targetEv?.inviteMap) || {},
+      orientation: currentDocTpl?.customTpl?.orientation || (currentDocTpl?.id === 'cert' ? targetEv?.certOrientation : targetEv?.inviteOrientation) || 'portrait',
+      bgFit: currentDocTpl?.customTpl?.bgFit || (currentDocTpl?.id === 'cert' ? targetEv?.certBgFit : targetEv?.inviteBgFit) || 'letterhead',
+      fontSize: currentDocTpl?.customTpl?.fontSize || (currentDocTpl?.id === 'cert' ? targetEv?.certFontSize : targetEv?.inviteFontSize) || 16,
+      fontColor: currentDocTpl?.customTpl?.fontColor || (currentDocTpl?.id === 'cert' ? targetEv?.certFontColor : targetEv?.inviteFontColor) || '#000000',
+      fields: currentDocTpl?.customTpl?.fields || []
+    };
+
     try {
-      const targetDoc = currentDocTpl?.customTpl || currentDocTpl?.id || 'invite';
-      const targetEv = ev || activeEvent;
-      const url = await generateCertificatePDF(targetEv, fieldsData, sName, targetDoc, 'url');
+      const url = await generateCertificatePDF(targetEv, fieldsData, sName, resolvedDocTpl, 'url');
       setPreviewCertUrl(url);
       setPreviewCertRegId(r.id);
     } catch (e) {
@@ -31745,14 +31833,32 @@ This cannot be undone.`)) return;
       const ev = inviteEvents.find(e => e.id === selectedEventId);
       if (!ev) throw new Error("Active event not found.");
       
-      const targetDoc = currentDocTpl?.customTpl || currentDocTpl?.id || 'invite';
+      const targetEv = activeEvent?.id ? activeEvent : (ev || activeEvent);
+      const targetBgUrl = currentDocTpl?.bgUrl 
+        || (currentDocTpl?.id === 'cert' ? targetEv?.certBgUrl : targetEv?.inviteBgUrl)
+        || (targetEv?.pdfTemplates || []).find(t => t.id === currentDocTpl?.id || t.name === currentDocTpl?.name)?.bgUrl
+        || targetEv?.inviteBgUrl
+        || "";
+
+      const resolvedDocTpl = {
+        id: currentDocTpl?.id || 'invite',
+        name: currentDocTpl?.name || (currentDocTpl?.id === 'cert' ? 'Certificate' : 'Official Invite Letter'),
+        bgUrl: targetBgUrl,
+        map: currentDocTpl?.customTpl?.map || (currentDocTpl?.id === 'cert' ? targetEv?.certMap : targetEv?.inviteMap) || {},
+        orientation: currentDocTpl?.customTpl?.orientation || (currentDocTpl?.id === 'cert' ? targetEv?.certOrientation : targetEv?.inviteOrientation) || 'portrait',
+        bgFit: currentDocTpl?.customTpl?.bgFit || (currentDocTpl?.id === 'cert' ? targetEv?.certBgFit : targetEv?.inviteBgFit) || 'letterhead',
+        fontSize: currentDocTpl?.customTpl?.fontSize || (currentDocTpl?.id === 'cert' ? targetEv?.certFontSize : targetEv?.inviteFontSize) || 16,
+        fontColor: currentDocTpl?.customTpl?.fontColor || (currentDocTpl?.id === 'cert' ? targetEv?.certFontColor : targetEv?.inviteFontColor) || '#000000',
+        fields: currentDocTpl?.customTpl?.fields || []
+      };
+
       const docPrefix = (currentDocTpl?.name || "Document").replace(/[^a-zA-Z0-9]/g, '_');
 
       for (const r of targetList) {
         const fieldsData = {...r};
         const sName = fieldsData["Full Name"] || fieldsData["Name"] || fieldsData["Participant Name"] || "Student";
         
-        const pdfBlob = await generateCertificatePDF(ev, fieldsData, sName, targetDoc, "blob");
+        const pdfBlob = await generateCertificatePDF(targetEv, fieldsData, sName, resolvedDocTpl, "blob");
         if (pdfBlob) {
           const safeName = sName.replace(/[^a-z0-9]/gi, '_').toLowerCase();
           zip.file(`${docPrefix}_${safeName}_${r.id.substring(0,5)}.pdf`, pdfBlob);
@@ -32738,6 +32844,20 @@ This cannot be undone.`)) return;
           recipients={filteredRegs}
           C={C}
           onClose={() => setShowBulkWhatsAppModal(false)}
+        />
+      )}
+
+      {/* Connect Existing Template Modal */}
+      {showConnectTplModal && (
+        <ConnectExistingTemplateModal
+          isOpen={showConnectTplModal}
+          onClose={() => setShowConnectTplModal(false)}
+          activeEvent={activeEvent}
+          C={C}
+          setC={setC}
+          auth={auth}
+          currentDocTpl={currentDocTpl}
+          onConnected={(newId) => setActiveDocType(newId)}
         />
       )}
 
@@ -33727,6 +33847,30 @@ This cannot be undone.`)) return;
             <span>📑</span> Manage All Templates
           </button>
 
+          {/* Connect Existing Template Modal Trigger */}
+          <button
+            type="button"
+            onClick={() => setShowConnectTplModal(true)}
+            style={{
+              padding: "10px 14px",
+              borderRadius: 10,
+              fontSize: ".8rem",
+              fontWeight: 800,
+              background: "#0F766E",
+              color: "white",
+              border: "none",
+              cursor: "pointer",
+              display: "flex",
+              alignItems: "center",
+              gap: 6,
+              boxShadow: "0 2px 8px rgba(15,118,110,0.25)",
+              whiteSpace: "nowrap"
+            }}
+            title="Connect an existing letterhead or template from any workspace without duplicate storage"
+          >
+            <span>🔗</span> Connect Existing Template
+          </button>
+
           {/* Sub-Workspace WhatsApp Audit & Dispatch Proof Export */}
           <button
             type="button"
@@ -33751,6 +33895,201 @@ This cannot be undone.`)) return;
             <span>📜</span> Download Sub-Workspace Audit Log (.txt / .doc)
           </button>
         </div>
+
+        {/* Attached PDF Template & Letterhead Status Banner */}
+        {(() => {
+          const currentAttachedBg = currentDocTpl?.bgUrl 
+            || (currentDocTpl?.id === 'cert' ? activeEvent?.certBgUrl : activeEvent?.inviteBgUrl)
+            || (activeEvent?.pdfTemplates || []).find(t => t.id === currentDocTpl?.id || t.name === currentDocTpl?.name)?.bgUrl 
+            || "";
+          const hasLetterheadAttached = Boolean(currentAttachedBg && currentAttachedBg.trim());
+          const resolvedAttachedBgDisplay = resolveMediaUrl(currentAttachedBg, C);
+          const currentOrientation = currentDocTpl?.customTpl?.orientation || (currentDocTpl?.id === 'cert' ? activeEvent?.certOrientation : activeEvent?.inviteOrientation) || 'portrait';
+          const currentMap = currentDocTpl?.customTpl?.map || (currentDocTpl?.id === 'cert' ? activeEvent?.certMap : activeEvent?.inviteMap) || {};
+          const mappedFieldCount = Object.keys(currentMap).length;
+
+          return (
+            <div style={{
+              marginBottom: 16,
+              background: hasLetterheadAttached ? "linear-gradient(135deg, #F0FDF4 0%, #FFFFFF 100%)" : "linear-gradient(135deg, #FFFBEB 0%, #FFFFFF 100%)",
+              border: hasLetterheadAttached ? "1.5px solid #86EFAC" : "1.5px solid #FCD34D",
+              borderRadius: 12,
+              padding: "12px 18px",
+              boxShadow: "0 2px 10px rgba(0,0,0,0.04)",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-between",
+              flexWrap: "wrap",
+              gap: 14
+            }}>
+              {/* Left Section: Icon, Letterhead Thumbnail & Status */}
+              <div style={{display: "flex", alignItems: "center", gap: 14, flex: 1, minWidth: 280}}>
+                {hasLetterheadAttached ? (
+                  <div style={{
+                    width: 52,
+                    height: 52,
+                    borderRadius: 8,
+                    border: "1.5px solid #16A34A",
+                    overflow: "hidden",
+                    background: "#F8FAFC",
+                    flexShrink: 0,
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    boxShadow: "0 2px 6px rgba(0,0,0,0.08)"
+                  }} title="Attached Letterhead Preview">
+                    <img 
+                      src={resolvedAttachedBgDisplay} 
+                      alt="Letterhead" 
+                      style={{width: "100%", height: "100%", objectFit: "contain"}}
+                      onError={(e) => { e.target.style.display = 'none'; }}
+                    />
+                  </div>
+                ) : (
+                  <div style={{
+                    width: 52,
+                    height: 52,
+                    borderRadius: 8,
+                    border: "1.5px dashed #F59E0B",
+                    background: "#FEF3C7",
+                    flexShrink: 0,
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    fontSize: "1.5rem"
+                  }}>
+                    ⚠️
+                  </div>
+                )}
+
+                <div>
+                  <div style={{display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap"}}>
+                    <span style={{
+                      fontSize: ".68rem",
+                      fontWeight: 900,
+                      letterSpacing: "0.5px",
+                      textTransform: "uppercase",
+                      color: hasLetterheadAttached ? "#15803D" : "#B45309",
+                      background: hasLetterheadAttached ? "#DCFCE7" : "#FEF3C7",
+                      padding: "2px 8px",
+                      borderRadius: 20
+                    }}>
+                      📎 ATTACHED PDF TEMPLATE
+                    </span>
+                    <span style={{
+                      fontSize: ".7rem",
+                      fontWeight: 800,
+                      color: hasLetterheadAttached ? "#166534" : "#92400E"
+                    }}>
+                      {hasLetterheadAttached ? "✓ Letterhead Background Connected" : "⚠️ Letterhead Not Connected"}
+                    </span>
+                  </div>
+
+                  <div style={{marginTop: 4, display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap"}}>
+                    <strong style={{fontSize: "1.05rem", color: "#0F172A", display: "flex", alignItems: "center", gap: 6}}>
+                      <span>{currentDocTpl?.icon || '📄'}</span> {currentDocTpl?.name || 'Official Letter'}
+                    </strong>
+                    <span style={{fontSize: ".75rem", color: "#64748B", background: "#F1F5F9", padding: "1px 8px", borderRadius: 6, fontWeight: 600}}>
+                      📐 {currentOrientation === 'landscape' ? 'A4 Landscape' : 'A4 Portrait'}
+                    </span>
+                    <span style={{fontSize: ".75rem", color: "#64748B", background: "#F1F5F9", padding: "1px 8px", borderRadius: 6, fontWeight: 600}}>
+                      📍 {mappedFieldCount} Field{mappedFieldCount === 1 ? '' : 's'} Mapped
+                    </span>
+                    {currentDocTpl?.bgUrl?.startsWith("media://") && (
+                      <span style={{fontSize: ".7rem", color: "#0284C7", background: "#E0F2FE", padding: "1px 8px", borderRadius: 6, fontWeight: 700}}>
+                        📁 Linked via Media Library
+                      </span>
+                    )}
+                  </div>
+
+                  <div style={{fontSize: ".76rem", color: hasLetterheadAttached ? "#475569" : "#B45309", marginTop: 2}}>
+                    {hasLetterheadAttached ? (
+                      <span>Letterhead background is mapped and ready. Clicking preview on any record will generate this template.</span>
+                    ) : (
+                      <span>No letterhead image attached to this sub-workspace yet. Please click "Configure" or "Connect Different Template".</span>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              {/* Right Section: Action Buttons */}
+              <div style={{display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap"}}>
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (currentDocTpl.customTpl) {
+                      setConfigModal({ ev: activeEvent, type: 'custom', customTpl: currentDocTpl.customTpl });
+                    } else {
+                      setConfigModal({ ev: activeEvent, type: currentDocTpl.id });
+                    }
+                  }}
+                  style={{
+                    padding: "8px 14px",
+                    borderRadius: 8,
+                    fontSize: ".78rem",
+                    fontWeight: 800,
+                    background: "#0D4B5E",
+                    color: "white",
+                    border: "none",
+                    cursor: "pointer",
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 6,
+                    boxShadow: "0 2px 6px rgba(13,75,94,0.25)"
+                  }}
+                  title="Open Canvas Editor to edit letterhead, adjust field positions or styles"
+                >
+                  <span>⚙️</span> Edit / Change Attached Letterhead
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setShowConnectTplModal(true)}
+                  style={{
+                    padding: "8px 14px",
+                    borderRadius: 8,
+                    fontSize: ".78rem",
+                    fontWeight: 800,
+                    background: "#EFF6FF",
+                    color: "#1D4ED8",
+                    border: "1.5px solid #93C5FD",
+                    cursor: "pointer",
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 6
+                  }}
+                  title="Link a pre-existing letterhead or template from any subworkspace"
+                >
+                  <span>🔗</span> Connect Different Template
+                </button>
+
+                {filteredRegs.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => handlePreview(filteredRegs[0], activeEvent)}
+                    style={{
+                      padding: "8px 14px",
+                      borderRadius: 8,
+                      fontSize: ".78rem",
+                      fontWeight: 800,
+                      background: "#15803D",
+                      color: "white",
+                      border: "none",
+                      cursor: "pointer",
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 6,
+                      boxShadow: "0 2px 6px rgba(21,128,61,0.25)"
+                    }}
+                    title="Preview letter with first contact in table"
+                  >
+                    <span>👁️</span> Test Preview Template
+                  </button>
+                )}
+              </div>
+            </div>
+          );
+        })()}
 
         {loading ? <p>Loading inviteLetters...</p> : (
           <div style={{borderRadius:12,boxShadow:"0 10px 30px rgba(0,0,0,0.06)",overflow:"hidden",border:"1px solid #E0E0E0",background:"white",overflowX:"auto"}}>
@@ -33808,7 +34147,7 @@ This cannot be undone.`)) return;
                   return (
                     <tr 
                       key={i} 
-                      onClick={() => handlePreview(r, ev)}
+                      onClick={() => handlePreview(r, activeEvent)}
                       style={{
                         borderBottom: "1px solid #E2E8F0",
                         cursor: "pointer",
@@ -33835,9 +34174,9 @@ This cannot be undone.`)) return;
                         <div style={{display:"flex",flexDirection:"column",gap:6,alignItems:"center"}}>
                           <div style={{display:"flex",gap:4,alignItems:"center",justifyContent:"center",flexWrap:"wrap"}}>
                             <button 
-                              onClick={(e)=>{e.stopPropagation(); handlePreview(r, ev);}} 
+                              onClick={(e)=>{e.stopPropagation(); handlePreview(r, activeEvent);}} 
                               style={{padding:"4px 8px",borderRadius:6,fontSize:".74rem",background:"white",border:"1.5px solid #CBD5E1",color:"#334155",cursor:"pointer",fontWeight:700,display:"flex",alignItems:"center",gap:3}}
-                              title="Preview active PDF"
+                              title={`Preview ${currentDocTpl?.name || 'document'}`}
                             >
                               <span>👁️</span> Preview
                             </button>
