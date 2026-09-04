@@ -22856,6 +22856,106 @@ function WorkspaceWhatsAppTemplateModal({ event, C, setC, auth, onClose, initial
     handleUpdateActivePdf("map", curMap);
   };
 
+  // ── On-Badge Variable Connection & Drill-Down Handlers (Excel-like Pivot on Canvas) ──
+  const [activeConnectBadgeKey, setActiveConnectBadgeKey] = useState(null);
+
+  const getDrillDownFieldsForBadge = (badgeKey) => {
+    let baseList = ["Vibhag", "Gender", "Stream", "Status", "Age_year", "Obtained Marks"];
+    const lk = String(badgeKey || "").toLowerCase();
+    if (lk.includes("contact") || lk.includes("guest")) {
+      baseList = ["Group", "Designation", "Vibhag Name", "Address"];
+    } else if (lk.includes("team")) {
+      baseList = ["Committee", "Position", "Level", "Profession", "Qualification"];
+    } else if (lk.includes("donation")) {
+      baseList = ["Payment Mode", "Financial Year", "Purpose"];
+    } else if (lk.includes("monsoon")) {
+      baseList = ["Vibhag", "Location / Area", "Status"];
+    }
+
+    // Exclude dimensions already present in badgeKey
+    const cleanKey = String(badgeKey || "").replace(/[{}]/g, '').toLowerCase();
+    return baseList.filter(f => !cleanKey.includes(f.toLowerCase()));
+  };
+
+  const handleDrillDownBadgeWithField = (oldKey, newField) => {
+    if (!activePdf) return;
+    const curMap = { ...(activePdf.map || {}) };
+    const curPos = curMap[oldKey] || { x: 50, y: 50, visible: true };
+
+    const normKey = String(oldKey || "").replace(/[{}]/g, '').trim();
+    let updatedKey = "";
+
+    if (normKey.startsWith("PIVOT:")) {
+      const rest = normKey.replace(/^PIVOT:?/i, '').trim();
+      let secPrefix = "";
+      let body = rest;
+      if (rest.includes(":")) {
+        const colIdx = rest.indexOf(":");
+        secPrefix = rest.substring(0, colIdx + 1);
+        body = rest.substring(colIdx + 1);
+      }
+      const [dimsPart, metricPart = "Total Count"] = body.split("|").map(s => s.trim());
+      const dims = dimsPart.split(",").map(s => s.trim()).filter(Boolean);
+      if (!dims.some(d => d.toLowerCase() === newField.toLowerCase())) {
+        dims.push(newField);
+      }
+      updatedKey = `{PIVOT:${secPrefix}${dims.join(",")}|${metricPart}}`;
+    } else {
+      // oldKey was a simple field like {Total Count} or {Vibhag}
+      if (normKey.toLowerCase().includes("total count") || normKey.toLowerCase().includes("total_count")) {
+        updatedKey = `{PIVOT:${newField}|Total Count}`;
+      } else {
+        updatedKey = `{PIVOT:${normKey},${newField}|Total Count}`;
+      }
+    }
+
+    delete curMap[oldKey];
+    curMap[updatedKey] = { ...curPos, visible: true };
+    handleUpdateActivePdf("map", curMap);
+    setActiveConnectBadgeKey(null);
+  };
+
+  const handleRemoveDimFromBadge = (badgeKey, dimToRemove) => {
+    if (!activePdf) return;
+    const curMap = { ...(activePdf.map || {}) };
+    const curPos = curMap[badgeKey] || { x: 50, y: 50, visible: true };
+
+    const normKey = String(badgeKey || "").replace(/[{}]/g, '').trim();
+    if (!normKey.startsWith("PIVOT:")) return;
+
+    const rest = normKey.replace(/^PIVOT:?/i, '').trim();
+    let secPrefix = "";
+    let body = rest;
+    if (rest.includes(":")) {
+      const colIdx = rest.indexOf(":");
+      secPrefix = rest.substring(0, colIdx + 1);
+      body = rest.substring(colIdx + 1);
+    }
+    const [dimsPart, metricPart = "Total Count"] = body.split("|").map(s => s.trim());
+    const dims = dimsPart.split(",").map(s => s.trim()).filter(d => d.toLowerCase() !== dimToRemove.toLowerCase());
+
+    delete curMap[badgeKey];
+    let updatedKey = "";
+    if (dims.length === 0) {
+      updatedKey = "{Total Count}";
+    } else {
+      updatedKey = `{PIVOT:${secPrefix}${dims.join(",")}|${metricPart}}`;
+    }
+    curMap[updatedKey] = { ...curPos, visible: true };
+    handleUpdateActivePdf("map", curMap);
+  };
+
+  const handleBadgeDropConnect = (e, targetKey) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const dragged = e.dataTransfer.getData("text/plain");
+    if (!dragged) return;
+    const cleanField = dragged.replace(/[{}]/g, '').trim();
+    if (cleanField) {
+      handleDrillDownBadgeWithField(targetKey, cleanField);
+    }
+  };
+
   const handleCanvasDrop = (e) => {
     e.preventDefault();
     if (!canvasContainerRef.current) return;
@@ -24216,21 +24316,35 @@ function WorkspaceWhatsAppTemplateModal({ event, C, setC, auth, onClose, initial
                       A4 {activePdf.orientation === 'landscape' ? "Landscape (297 × 210 mm)" : "Portrait (210 × 297 mm)"}
                     </div>
 
-                    {/* Positioned Field Badges */}
+                    {/* Positioned Field Badges with Interactive Drill-Down Connection */}
                     {Object.entries(activePdf.map || {}).map(([key, pos]) => {
                       const isBeingDragged = draggingPdfField === key;
-                      const isPivotBadge = key.includes("PIVOT") || key.includes("UNIQUE_LIST");
+                      const isPivotBadge = key.includes("PIVOT");
+                      const isTotalCountBadge = key.toLowerCase().includes("total count") || key.toLowerCase().includes("total_count");
+                      const isConnectOpen = activeConnectBadgeKey === key;
+                      const availableDrillFields = getDrillDownFieldsForBadge(key);
+
+                      // Parse connected dimensions if it's a pivot badge
+                      const connectedDims = (() => {
+                        if (!isPivotBadge) return [];
+                        const clean = key.replace(/[{}]/g, '').replace(/^PIVOT:?/i, '').trim();
+                        const body = clean.includes(':') ? clean.substring(clean.indexOf(':') + 1) : clean;
+                        const dimsPart = body.split('|')[0] || '';
+                        return dimsPart.split(',').map(s => s.trim()).filter(Boolean);
+                      })();
 
                       return (
                         <div
                           key={key}
                           onPointerDown={(e) => handlePointerDownBadge(e, key)}
+                          onDragOver={(e) => e.preventDefault()}
+                          onDrop={(e) => handleBadgeDropConnect(e, key)}
                           style={{
                             position:"absolute",
                             left:`${pos.x}%`,
                             top:`${pos.y}%`,
                             transform:"translate(-50%, -50%)",
-                            background: isBeingDragged ? "#1D4ED8" : isPivotBadge ? "#064E3B" : "rgba(15, 23, 42, 0.90)",
+                            background: isBeingDragged ? "#1D4ED8" : isPivotBadge ? "#064E3B" : "rgba(15, 23, 42, 0.92)",
                             color: "white",
                             padding: isPivotBadge ? "6px 10px" : "4px 8px",
                             borderRadius:6,
@@ -24242,46 +24356,183 @@ function WorkspaceWhatsAppTemplateModal({ event, C, setC, auth, onClose, initial
                             display:"flex",
                             flexDirection: isPivotBadge ? "column" : "row",
                             alignItems: isPivotBadge ? "stretch" : "center",
-                            gap:4,
+                            gap:5,
                             boxShadow:"0 3px 10px rgba(0,0,0,0.35)",
                             border: isBeingDragged ? "2px solid #93C5FD" : isPivotBadge ? "2px solid #6EE7B7" : "1.5px solid rgba(255,255,255,0.8)",
-                            zIndex: isBeingDragged ? 100 : 10,
+                            zIndex: isConnectOpen ? 120 : (isBeingDragged ? 100 : 10),
                             touchAction:"none",
-                            maxWidth: isPivotBadge ? (320 * canvasScale) : undefined
+                            maxWidth: isPivotBadge ? (340 * canvasScale) : undefined
                           }}
-                          title={`Drag to move ${key} (X: ${pos.x}%, Y: ${pos.y}%)`}
+                          title={`Drag to move ${key} (X: ${pos.x}%, Y: ${pos.y}%). Drop another variable on this badge to drill down!`}
                         >
+                          {/* Badge Header: Variable Tag + [+ Connect] Drill-Down Option + [✕ Close] */}
                           <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:6}}>
-                            <span>{isPivotBadge ? "📊 " + key : key}</span>
-                            <button
-                              type="button"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                handleRemoveVariableFromPdf(key);
-                              }}
-                              style={{
-                                background:"rgba(255,255,255,0.2)",
-                                border:"none",
-                                borderRadius:"50%",
-                                width:16,
-                                height:16,
-                                color:"white",
-                                fontSize:".65rem",
-                                fontWeight:800,
-                                cursor:"pointer",
-                                display:"flex",
-                                alignItems:"center",
-                                justifyContent:"center",
-                                marginLeft:2
-                              }}
-                              title={`Remove ${key} from canvas`}
-                            >
-                              ✕
-                            </button>
+                            <span style={{display:"flex",alignItems:"center",gap:4}}>
+                              {isPivotBadge && <span>📊</span>}
+                              <span>{isPivotBadge ? (connectedDims.join(" | ") + " | Total Count") : key}</span>
+                            </span>
+
+                            <div style={{display:"flex",alignItems:"center",gap:3}} onPointerDown={e => e.stopPropagation()}>
+                              {/* 🔗 Option near the red circle to add another variable and drill down */}
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setActiveConnectBadgeKey(isConnectOpen ? null : key);
+                                }}
+                                style={{
+                                  background: isConnectOpen ? "#10B981" : "rgba(255,255,255,0.22)",
+                                  border: isConnectOpen ? "1.5px solid #A7F3D0" : "1px solid rgba(255,255,255,0.45)",
+                                  borderRadius: 4,
+                                  padding: "1px 6px",
+                                  color: "white",
+                                  fontSize: ".68rem",
+                                  fontWeight: 800,
+                                  cursor: "pointer",
+                                  display: "flex",
+                                  alignItems: "center",
+                                  gap: 3
+                                }}
+                                title="Click to add another variable (e.g. Vibhag, Gender) to drill down this into a summary table!"
+                              >
+                                <span>+</span>
+                                <span style={{fontSize:".65rem"}}>Connect</span>
+                              </button>
+
+                              {/* Delete entire badge */}
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleRemoveVariableFromPdf(key);
+                                }}
+                                style={{
+                                  background:"rgba(255,255,255,0.2)",
+                                  border:"none",
+                                  borderRadius:"50%",
+                                  width:16,
+                                  height:16,
+                                  color:"white",
+                                  fontSize:".65rem",
+                                  fontWeight:800,
+                                  cursor:"pointer",
+                                  display:"flex",
+                                  alignItems:"center",
+                                  justifyContent:"center",
+                                  marginLeft:2
+                                }}
+                                title={`Remove ${key} from canvas`}
+                              >
+                                ✕
+                              </button>
+                            </div>
                           </div>
+
+                          {/* Connected Dimension Chips with individual remove */}
+                          {isPivotBadge && connectedDims.length > 0 && (
+                            <div style={{display:"flex",alignItems:"center",gap:4,flexWrap:"wrap",borderTop:"1px solid rgba(255,255,255,0.2)",paddingTop:3}}>
+                              <span style={{fontSize:".62em",color:"#A7F3D0",fontWeight:700}}>Connected:</span>
+                              {connectedDims.map(dim => (
+                                <span
+                                  key={dim}
+                                  style={{
+                                    background:"rgba(16, 185, 129, 0.3)",
+                                    border:"1px solid #34D399",
+                                    borderRadius:3,
+                                    padding:"1px 4px",
+                                    fontSize:".65em",
+                                    fontWeight:700,
+                                    color:"white",
+                                    display:"flex",
+                                    alignItems:"center",
+                                    gap:3
+                                  }}
+                                >
+                                  <span>{dim}</span>
+                                  <span
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      handleRemoveDimFromBadge(key, dim);
+                                    }}
+                                    style={{cursor:"pointer",color:"#FECACA",fontWeight:900}}
+                                    title={`Remove ${dim} from drill down`}
+                                  >
+                                    ✕
+                                  </span>
+                                </span>
+                              ))}
+                            </div>
+                          )}
+
+                          {/* Mini Table Preview for Pivot Badges */}
                           {isPivotBadge && (
-                            <div style={{fontSize:".75em",whiteSpace:"pre",opacity:0.85,borderTop:"1px solid rgba(255,255,255,0.2)",paddingTop:2}}>
-                              {evaluateUniversalPivotTag(key, { allRegs: liveRegs, guests: C?.globalGuests, team: C?.teamItems, format: "pdf_table" })?.slice(0, 120) + "..."}
+                            <div style={{fontSize:".72em",whiteSpace:"pre",opacity:0.9,background:"rgba(0,0,0,0.25)",padding:"4px 6px",borderRadius:4,maxHeight:90,overflowY:"auto",lineHeight:1.3}}>
+                              {evaluateUniversalPivotTag(key, { allRegs: liveRegs, guests: C?.globalGuests, team: C?.teamItems, format: "pdf_table" })}
+                            </div>
+                          )}
+
+                          {/* ── Interactive Dropdown Popup to Connect Another Variable ── */}
+                          {isConnectOpen && (
+                            <div
+                              onClick={(e) => e.stopPropagation()}
+                              onPointerDown={(e) => e.stopPropagation()}
+                              style={{
+                                position: "absolute",
+                                top: "100%",
+                                left: 0,
+                                marginTop: 6,
+                                background: "white",
+                                color: "#0F172A",
+                                borderRadius: 8,
+                                border: "1.5px solid #10B981",
+                                boxShadow: "0 10px 25px rgba(0,0,0,0.3)",
+                                padding: 8,
+                                zIndex: 1500,
+                                minWidth: 210,
+                                maxWidth: 260,
+                                display: "flex",
+                                flexDirection: "column",
+                                gap: 5
+                              }}
+                            >
+                              <div style={{fontSize:".7rem",fontWeight:800,color:"#065F46",display:"flex",justifyContent:"space-between",alignItems:"center",borderBottom:"1px solid #E2E8F0",paddingBottom:3}}>
+                                <span>🔗 CONNECT VARIABLE:</span>
+                                <span style={{cursor:"pointer",fontWeight:800,fontSize:".8rem",color:"#64748B"}} onClick={() => setActiveConnectBadgeKey(null)}>✕</span>
+                              </div>
+                              <div style={{fontSize:".64rem",color:"#64748B",lineHeight:1.25}}>
+                                Connect another variable to drill down this into a <strong>Vibhag | Total Count</strong> summary table:
+                              </div>
+                              <div style={{display:"flex",flexDirection:"column",gap:3,maxHeight:140,overflowY:"auto"}}>
+                                {availableDrillFields.map(field => (
+                                  <button
+                                    key={field}
+                                    type="button"
+                                    onClick={() => handleDrillDownBadgeWithField(key, field)}
+                                    style={{
+                                      textAlign:"left",
+                                      padding:"4px 8px",
+                                      borderRadius:5,
+                                      border:"1px solid #E2E8F0",
+                                      background:"#F8FAFC",
+                                      fontSize:".72rem",
+                                      fontWeight:700,
+                                      color:"#1E293B",
+                                      cursor:"pointer",
+                                      display:"flex",
+                                      alignItems:"center",
+                                      justifyContent:"space-between"
+                                    }}
+                                    onMouseEnter={e => { e.currentTarget.style.background = "#ECFDF5"; e.currentTarget.style.borderColor = "#6EE7B7"; }}
+                                    onMouseLeave={e => { e.currentTarget.style.background = "#F8FAFC"; e.currentTarget.style.borderColor = "#E2E8F0"; }}
+                                  >
+                                    <span>+ {field}</span>
+                                    <span style={{fontSize:".65rem",color:"#059669",fontWeight:700}}>Drill Down ➔</span>
+                                  </button>
+                                ))}
+                              </div>
+                              <div style={{fontSize:".62rem",color:"#059669",borderTop:"1px dashed #E2E8F0",paddingTop:3,fontStyle:"italic"}}>
+                                💡 Tip: You can also drag & drop any variable from the right palette directly onto this badge!
+                              </div>
                             </div>
                           )}
                         </div>
