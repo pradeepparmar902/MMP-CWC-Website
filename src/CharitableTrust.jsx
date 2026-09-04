@@ -22640,7 +22640,7 @@ function WorkspaceWhatsAppTemplateModal({ event, C, setC, auth, onClose, initial
   const initialPdfList = [
     {
       id: "invite",
-      name: isDonorWs ? "Official Thank You Letter" : "Official Invite Letter",
+      name: event.inviteName || event.inviteTitle || (isDonorWs ? "Official Thank You Letter" : "Official Invite Letter"),
       isPrimary: true,
       type: "invite",
       bgUrl: event.inviteBgUrl || "",
@@ -22653,7 +22653,7 @@ function WorkspaceWhatsAppTemplateModal({ event, C, setC, auth, onClose, initial
     ...(event.issueCertificates || event.certBgUrl ? [
       {
         id: "cert",
-        name: isDonorWs ? "Official 80G Receipt PDF" : "Certificate Pass",
+        name: event.certName || event.certTitle || (isDonorWs ? "Official 80G Receipt PDF" : "Certificate Pass"),
         isPrimary: true,
         type: "cert",
         bgUrl: event.certBgUrl || "",
@@ -23064,6 +23064,8 @@ function WorkspaceWhatsAppTemplateModal({ event, C, setC, auth, onClose, initial
             pdfTemplates: customPdfTpls
           };
           if (inviteTpl) {
+            updated.inviteName = inviteTpl.name;
+            updated.inviteTitle = inviteTpl.name;
             updated.inviteBgUrl = inviteTpl.bgUrl;
             updated.inviteMap = inviteTpl.map;
             updated.inviteFontSize = inviteTpl.fontSize;
@@ -23072,6 +23074,8 @@ function WorkspaceWhatsAppTemplateModal({ event, C, setC, auth, onClose, initial
             updated.inviteBgFit = inviteTpl.bgFit || "letterhead";
           }
           if (certTpl) {
+            updated.certName = certTpl.name;
+            updated.certTitle = certTpl.name;
             updated.certBgUrl = certTpl.bgUrl;
             updated.certMap = certTpl.map;
             updated.certFontSize = certTpl.fontSize;
@@ -24026,14 +24030,16 @@ function WorkspaceWhatsAppTemplateModal({ event, C, setC, auth, onClose, initial
                 
                 {/* Template Name & Background Uploader Controls Bar */}
                 <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:12,flexWrap:"wrap",paddingBottom:8,borderBottom:"1px solid #F1F5F9"}}>
-                  <div style={{flex:1,minWidth:200}}>
-                    <label style={{display:"block",fontSize:".72rem",fontWeight:800,color:"#64748B",textTransform:"uppercase",marginBottom:2}}>PDF TEMPLATE NAME</label>
+                  <div style={{flex:1,minWidth:220}}>
+                    <label style={{display:"block",fontSize:".72rem",fontWeight:800,color:"#15803D",textTransform:"uppercase",marginBottom:3}}>
+                      ✏️ PDF TEMPLATE NAME (TYPE HERE TO RENAME)
+                    </label>
                     <input
                       type="text"
-                      value={activePdf.name}
+                      value={activePdf.name || ""}
                       onChange={e => handleUpdateActivePdf("name", e.target.value)}
-                      disabled={activePdf.isPrimary}
-                      style={{width:"100%",padding:"6px 10px",borderRadius:6,border:"1.5px solid #CBD5E1",fontSize:".85rem",fontWeight:700,color:"#0F172A",boxSizing:"border-box"}}
+                      placeholder="e.g. Official Invite Letter, Food Coupon, Gate Pass..."
+                      style={{width:"100%",padding:"7px 12px",borderRadius:8,border:"2px solid #10B981",fontSize:".88rem",fontWeight:800,color:"#0F172A",boxSizing:"border-box",background:"#FAFDF7",outline:"none",boxShadow:"0 1px 4px rgba(16,185,129,0.15)"}}
                     />
                   </div>
 
