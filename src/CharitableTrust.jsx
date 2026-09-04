@@ -4756,13 +4756,42 @@ export const generateCertificatePDF = async (certConfig, fieldsData, fallbackNam
 
       img.onload = () => {
         try {
-          const doc = new jsPDF({ orientation: img.width > img.height ? 'landscape' : 'portrait', unit: 'px', format: [img.width, img.height] });
-          doc.addImage(img, 'JPEG', 0, 0, img.width, img.height);
+          const targetOrientation = customTpl?.orientation || (isInvite ? (certConfig?.inviteOrientation || 'portrait') : (certConfig?.certOrientation || (img.width > img.height ? 'landscape' : 'portrait')));
+          const isLandscape = targetOrientation === 'landscape';
+          const targetW = isLandscape ? 842 : 595;
+          const targetH = isLandscape ? 595 : 842;
+
+          const doc = new jsPDF({ 
+            orientation: targetOrientation, 
+            unit: 'px', 
+            format: [targetW, targetH] 
+          });
+
+          const bgFit = customTpl?.bgFit || (isInvite ? certConfig?.inviteBgFit : certConfig?.certBgFit) || (targetOrientation === 'portrait' && (img.width / img.height > 1.5) ? 'letterhead' : 'full');
+          if (bgFit === 'letterhead') {
+            const imgAspect = img.width / img.height;
+            const renderH = targetW / imgAspect;
+            doc.addImage(img, 'JPEG', 0, 0, targetW, renderH);
+          } else if (bgFit === 'contain') {
+            const imgAspect = img.width / img.height;
+            const pageAspect = targetW / targetH;
+            let w = targetW, h = targetH, x = 0, y = 0;
+            if (imgAspect > pageAspect) {
+              h = targetW / imgAspect;
+              y = (targetH - h) / 2;
+            } else {
+              w = targetH * imgAspect;
+              x = (targetW - w) / 2;
+            }
+            doc.addImage(img, 'JPEG', x, y, w, h);
+          } else {
+            doc.addImage(img, 'JPEG', 0, 0, targetW, targetH);
+          }
           
-          const fontSize = customTpl ? (customTpl.fontSize || 30) : isInvite ? certConfig.inviteFontSize : certConfig.certFontSize;
+          const fontSize = customTpl ? (customTpl.fontSize || (isLandscape ? 26 : 16)) : isInvite ? (certConfig.inviteFontSize || 16) : (certConfig.certFontSize || 26);
           const fontColor = customTpl ? (customTpl.fontColor || "#000000") : isInvite ? certConfig.inviteFontColor : certConfig.certFontColor;
           
-          doc.setFontSize(fontSize || 30);
+          doc.setFontSize(fontSize || (isLandscape ? 26 : 16));
           doc.setTextColor(fontColor || "#000000");
           doc.setFont("helvetica", "bold");
 
@@ -4770,8 +4799,8 @@ export const generateCertificatePDF = async (certConfig, fieldsData, fallbackNam
 
           Object.entries(m).forEach(([key, pos]) => {
             if (pos.visible) {
-              const xPx = (parseFloat(pos.x) / 100) * img.width;
-              const yPx = (parseFloat(pos.y) / 100) * img.height;
+              const xPx = (parseFloat(pos.x) / 100) * targetW;
+              const yPx = (parseFloat(pos.y) / 100) * targetH;
               let val = fieldsData[key] || "";
               
               if (key.startsWith("[TEXT] ")) {
@@ -22190,8 +22219,10 @@ function WorkspaceWhatsAppTemplateModal({ event, C, setC, auth, onClose, initial
       type: "invite",
       bgUrl: event.inviteBgUrl || "",
       map: event.inviteMap || {},
-      fontSize: event.inviteFontSize || 30,
-      fontColor: event.inviteFontColor || "#000000"
+      fontSize: event.inviteFontSize || 16,
+      fontColor: event.inviteFontColor || "#000000",
+      orientation: event.inviteOrientation || "portrait",
+      bgFit: event.inviteBgFit || "letterhead"
     },
     ...(event.issueCertificates || event.certBgUrl ? [
       {
@@ -22201,16 +22232,20 @@ function WorkspaceWhatsAppTemplateModal({ event, C, setC, auth, onClose, initial
         type: "cert",
         bgUrl: event.certBgUrl || "",
         map: event.certMap || {},
-        fontSize: event.certFontSize || 30,
-        fontColor: event.certFontColor || "#000000"
+        fontSize: event.certFontSize || 26,
+        fontColor: event.certFontColor || "#000000",
+        orientation: event.certOrientation || "landscape",
+        bgFit: event.certBgFit || "full"
       }
     ] : []),
     ...(event.pdfTemplates || []).map(t => ({
       ...t,
       type: "custom",
       map: t.map || t.fieldMap || {},
-      fontSize: t.fontSize || 30,
-      fontColor: t.fontColor || "#000000"
+      fontSize: t.fontSize || 16,
+      fontColor: t.fontColor || "#000000",
+      orientation: t.orientation || "portrait",
+      bgFit: t.bgFit || (t.orientation === 'landscape' ? "full" : "letterhead")
     }))
   ];
 
@@ -22223,6 +22258,7 @@ function WorkspaceWhatsAppTemplateModal({ event, C, setC, auth, onClose, initial
   const [uploadingPdfBg, setUploadingPdfBg] = useState(false);
   const canvasContainerRef = useRef(null);
   const pdfBgInputRef = useRef(null);
+  const [canvasScale, setCanvasScale] = useState(1);
 
   const [saving, setSaving] = useState(false);
   const [variableSearch, setVariableSearch] = useState("");
@@ -22424,12 +22460,16 @@ function WorkspaceWhatsAppTemplateModal({ event, C, setC, auth, onClose, initial
             updated.inviteMap = inviteTpl.map;
             updated.inviteFontSize = inviteTpl.fontSize;
             updated.inviteFontColor = inviteTpl.fontColor;
+            updated.inviteOrientation = inviteTpl.orientation || "portrait";
+            updated.inviteBgFit = inviteTpl.bgFit || "letterhead";
           }
           if (certTpl) {
             updated.certBgUrl = certTpl.bgUrl;
             updated.certMap = certTpl.map;
             updated.certFontSize = certTpl.fontSize;
             updated.certFontColor = certTpl.fontColor;
+            updated.certOrientation = certTpl.orientation || "landscape";
+            updated.certBgFit = certTpl.bgFit || "full";
           }
           return updated;
         }
@@ -22930,179 +22970,332 @@ function WorkspaceWhatsAppTemplateModal({ event, C, setC, auth, onClose, initial
                   </div>
                 </div>
 
-                {/* Canvas Formatting Bar */}
-                <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:8,background:"#F8FAFC",padding:"6px 10px",borderRadius:8,border:"1px solid #E2E8F0"}}>
-                  <div style={{display:"flex",alignItems:"center",gap:12}}>
-                    <div style={{display:"flex",alignItems:"center",gap:5}}>
-                      <label style={{fontSize:".72rem",fontWeight:800,color:"#475569"}}>FONT SIZE:</label>
-                      <input
-                        type="range"
-                        min="12"
-                        max="60"
-                        step="1"
-                        value={activePdf.fontSize || 30}
-                        onChange={e => handleUpdateActivePdf("fontSize", parseInt(e.target.value))}
-                        style={{width:90}}
-                      />
-                      <span style={{fontSize:".72rem",fontWeight:800,color:"#0F172A",minWidth:28}}>{activePdf.fontSize || 30}px</span>
+                {/* Canvas Formatting & A4 Controls Bar */}
+                <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:8,background:"#F8FAFC",padding:"8px 12px",borderRadius:8,border:"1px solid #E2E8F0"}}>
+                  <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
+                    {/* Page Orientation */}
+                    <div style={{display:"flex",alignItems:"center",gap:2,background:"#E2E8F0",padding:2,borderRadius:6}}>
+                      <button
+                        type="button"
+                        onClick={() => handleUpdateActivePdf("orientation", "portrait")}
+                        style={{
+                          padding:"4px 9px",
+                          border:"none",
+                          borderRadius:5,
+                          fontSize:".73rem",
+                          fontWeight:800,
+                          cursor:"pointer",
+                          background: activePdf.orientation !== 'landscape' ? "#15803D" : "transparent",
+                          color: activePdf.orientation !== 'landscape' ? "white" : "#475569"
+                        }}
+                        title="Standard A4 Portrait (210 × 297 mm) - Best for Official Letters, Passes & Forms"
+                      >
+                        📄 A4 Portrait
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleUpdateActivePdf("orientation", "landscape")}
+                        style={{
+                          padding:"4px 9px",
+                          border:"none",
+                          borderRadius:5,
+                          fontSize:".73rem",
+                          fontWeight:800,
+                          cursor:"pointer",
+                          background: activePdf.orientation === 'landscape' ? "#15803D" : "transparent",
+                          color: activePdf.orientation === 'landscape' ? "white" : "#475569"
+                        }}
+                        title="A4 Landscape (297 × 210 mm) - Best for Certificates & Wide Passes"
+                      >
+                        📜 A4 Landscape
+                      </button>
                     </div>
 
-                    <div style={{display:"flex",alignItems:"center",gap:5}}>
-                      <label style={{fontSize:".72rem",fontWeight:800,color:"#475569"}}>COLOR:</label>
+                    {/* Background Layout / Fit */}
+                    <div style={{display:"flex",alignItems:"center",gap:2,background:"#E2E8F0",padding:2,borderRadius:6}}>
+                      <button
+                        type="button"
+                        onClick={() => handleUpdateActivePdf("bgFit", "letterhead")}
+                        style={{
+                          padding:"4px 9px",
+                          border:"none",
+                          borderRadius:5,
+                          fontSize:".73rem",
+                          fontWeight:800,
+                          cursor:"pointer",
+                          background: (activePdf.bgFit === 'letterhead' || (!activePdf.bgFit && activePdf.orientation !== 'landscape')) ? "#0D4B5E" : "transparent",
+                          color: (activePdf.bgFit === 'letterhead' || (!activePdf.bgFit && activePdf.orientation !== 'landscape')) ? "white" : "#475569"
+                        }}
+                        title="Places uploaded banner at the top of the A4 page, keeping the rest of the sheet white for text and variables"
+                      >
+                        🏷️ Top Letterhead
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleUpdateActivePdf("bgFit", "full")}
+                        style={{
+                          padding:"4px 9px",
+                          border:"none",
+                          borderRadius:5,
+                          fontSize:".73rem",
+                          fontWeight:800,
+                          cursor:"pointer",
+                          background: (activePdf.bgFit === 'full' || (!activePdf.bgFit && activePdf.orientation === 'landscape')) ? "#0D4B5E" : "transparent",
+                          color: (activePdf.bgFit === 'full' || (!activePdf.bgFit && activePdf.orientation === 'landscape')) ? "white" : "#475569"
+                        }}
+                        title="Stretches background to cover full A4 page (Great for full certificate designs)"
+                      >
+                        🖼️ Full Page
+                      </button>
+                    </div>
+
+                    {/* Font Size */}
+                    <div style={{display:"flex",alignItems:"center",gap:4}}>
+                      <label style={{fontSize:".7rem",fontWeight:800,color:"#475569"}}>FONT:</label>
+                      <input
+                        type="range"
+                        min="10"
+                        max="48"
+                        step="1"
+                        value={activePdf.fontSize || (activePdf.orientation === 'landscape' ? 26 : 16)}
+                        onChange={e => handleUpdateActivePdf("fontSize", parseInt(e.target.value))}
+                        style={{width:75}}
+                      />
+                      <span style={{fontSize:".72rem",fontWeight:800,color:"#0F172A",minWidth:28}}>{activePdf.fontSize || (activePdf.orientation === 'landscape' ? 26 : 16)}px</span>
+                    </div>
+
+                    {/* Color */}
+                    <div style={{display:"flex",alignItems:"center",gap:4}}>
+                      <label style={{fontSize:".7rem",fontWeight:800,color:"#475569"}}>COLOR:</label>
                       <input
                         type="color"
                         value={activePdf.fontColor || "#000000"}
                         onChange={e => handleUpdateActivePdf("fontColor", e.target.value)}
-                        style={{width:32,height:24,border:"none",borderRadius:4,cursor:"pointer",background:"transparent"}}
+                        style={{width:26,height:22,border:"none",borderRadius:4,cursor:"pointer",background:"transparent"}}
                       />
+                    </div>
+
+                    {/* Zoom / Scale */}
+                    <div style={{display:"flex",alignItems:"center",gap:3,background:"#F1F5F9",padding:"2px 5px",borderRadius:6,border:"1px solid #CBD5E1"}}>
+                      <button
+                        type="button"
+                        onClick={() => setCanvasScale(prev => Math.max(0.6, Math.round((prev - 0.1) * 10) / 10))}
+                        style={{border:"none",background:"transparent",cursor:"pointer",fontWeight:800,fontSize:".72rem",padding:"2px 4px"}}
+                        title="Zoom out"
+                      >
+                        🔍-
+                      </button>
+                      <span style={{fontSize:".68rem",fontWeight:800,minWidth:32,textAlign:"center"}}>{Math.round(canvasScale * 100)}%</span>
+                      <button
+                        type="button"
+                        onClick={() => setCanvasScale(prev => Math.min(1.4, Math.round((prev + 0.1) * 10) / 10))}
+                        style={{border:"none",background:"transparent",cursor:"pointer",fontWeight:800,fontSize:".72rem",padding:"2px 4px"}}
+                        title="Zoom in"
+                      >
+                        🔍+
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setCanvasScale(1)}
+                        style={{border:"none",background:"#E2E8F0",borderRadius:4,cursor:"pointer",fontWeight:700,fontSize:".65rem",padding:"2px 5px"}}
+                        title="Reset zoom to 100%"
+                      >
+                        100%
+                      </button>
                     </div>
                   </div>
 
                   <div style={{fontSize:".7rem",color:"#15803D",fontWeight:800,display:"flex",alignItems:"center",gap:4}}>
-                    <span>🎯</span> Drag variables from the right palette and drop onto canvas!
+                    <span>🎯</span> Drag variables from palette & drop anywhere on A4 page!
                   </div>
                 </div>
 
-                {/* Visual Interactive PDF Canvas Area */}
+                {/* Visual Interactive A4 PDF Canvas Area */}
                 <div 
                   style={{
                     flex:1,
                     display:"flex",
                     flexDirection:"column",
                     alignItems:"center",
-                    justifyContent:"center",
-                    background:"#E2E8F0",
+                    justifyContent:"flex-start",
+                    background:"#CBD5E1",
                     borderRadius:10,
-                    padding:16,
-                    minHeight:340,
+                    padding:"24px 16px",
                     overflow:"auto",
                     position:"relative"
                   }}
                   onDragOver={e => e.preventDefault()}
                   onDrop={handleCanvasDrop}
                 >
-                  {activePdf.bgUrl ? (
-                    <div
-                      ref={canvasContainerRef}
-                      style={{
-                        position:"relative",
-                        display:"inline-block",
-                        boxShadow:"0 10px 30px rgba(0,0,0,0.25)",
-                        borderRadius:6,
-                        overflow:"hidden",
-                        userSelect:"none",
-                        lineHeight:0,
-                        maxWidth:"100%"
-                      }}
-                      onPointerMove={handlePointerMoveBadge}
-                      onPointerUp={handlePointerUpBadge}
-                    >
-                      <img
-                        src={activePdf.bgUrl}
-                        alt="Template Background"
+                  {/* Authentic A4 Paper Sheet */}
+                  <div
+                    ref={canvasContainerRef}
+                    style={{
+                      position:"relative",
+                      width: (activePdf.orientation === 'landscape' ? 842 : 595) * canvasScale,
+                      height: (activePdf.orientation === 'landscape' ? 595 : 842) * canvasScale,
+                      minWidth: (activePdf.orientation === 'landscape' ? 842 : 595) * canvasScale,
+                      minHeight: (activePdf.orientation === 'landscape' ? 595 : 842) * canvasScale,
+                      background:"#FFFFFF",
+                      boxShadow:"0 15px 35px rgba(0,0,0,0.22), 0 3px 10px rgba(0,0,0,0.12)",
+                      borderRadius:4,
+                      overflow:"hidden",
+                      userSelect:"none",
+                      border:"1px solid #94A3B8",
+                      transformOrigin:"top center",
+                      transition:"width 0.15s, height 0.15s"
+                    }}
+                    onPointerMove={handlePointerMoveBadge}
+                    onPointerUp={handlePointerUpBadge}
+                    onDragOver={e => e.preventDefault()}
+                    onDrop={handleCanvasDrop}
+                  >
+                    {/* Background layer */}
+                    {activePdf.bgUrl ? (
+                      <>
+                        {(activePdf.bgFit === 'letterhead' || (!activePdf.bgFit && activePdf.orientation !== 'landscape')) ? (
+                          <div style={{position:"absolute",top:0,left:0,right:0,zIndex:1,pointerEvents:"none"}}>
+                            <img
+                              src={activePdf.bgUrl}
+                              alt="Letterhead Header"
+                              style={{
+                                width:"100%",
+                                height:"auto",
+                                display:"block",
+                                borderBottom:"1px dashed #E2E8F0"
+                              }}
+                            />
+                          </div>
+                        ) : (
+                          <div style={{position:"absolute",inset:0,zIndex:1,pointerEvents:"none"}}>
+                            <img
+                              src={activePdf.bgUrl}
+                              alt="Template Background"
+                              style={{
+                                width:"100%",
+                                height:"100%",
+                                objectFit: activePdf.bgFit === 'contain' ? "contain" : "fill",
+                                display:"block"
+                              }}
+                            />
+                          </div>
+                        )}
+                      </>
+                    ) : (
+                      /* Blank A4 Sheet Prompt */
+                      <div
+                        onClick={() => pdfBgInputRef.current?.click()}
                         style={{
-                          display:"block",
-                          maxWidth:"100%",
-                          maxHeight:"520px",
-                          width:"auto",
-                          height:"auto",
-                          pointerEvents:"none"
+                          position:"absolute",
+                          inset:30,
+                          border:"2px dashed #CBD5E1",
+                          borderRadius:8,
+                          display:"flex",
+                          flexDirection:"column",
+                          alignItems:"center",
+                          justifyContent:"center",
+                          cursor:"pointer",
+                          gap:10,
+                          color:"#64748B",
+                          background:"rgba(248, 250, 252, 0.6)",
+                          zIndex:1
                         }}
-                      />
+                      >
+                        <div style={{fontSize:"3rem"}}>📄</div>
+                        <div style={{fontSize:"1.05rem",fontWeight:800,color:"#0F172A"}}>
+                          {activePdf.orientation === 'landscape' ? "A4 Landscape Canvas (297 × 210 mm)" : "A4 Portrait Canvas (210 × 297 mm)"}
+                        </div>
+                        <div style={{fontSize:".78rem",color:"#64748B",maxWidth:360,textAlign:"center",lineHeight:1.4}}>
+                          Click here to upload your Letterhead banner or full Certificate background (JPG/PNG), or drag dynamic variables directly onto this A4 page.
+                        </div>
+                        <button
+                          type="button"
+                          style={{marginTop:6,padding:"8px 18px",background:"#15803D",color:"white",border:"none",borderRadius:8,fontWeight:800,fontSize:".8rem",cursor:"pointer"}}
+                        >
+                          ➕ Upload Letterhead / Background
+                        </button>
+                      </div>
+                    )}
 
-                      {/* Positioned Field Badges */}
-                      {Object.entries(activePdf.map || {}).map(([key, pos]) => {
-                        const isBeingDragged = draggingPdfField === key;
-                        const cleanLabel = key.replace(/[{}]/g, '');
-                        return (
-                          <div
-                            key={key}
-                            onPointerDown={(e) => handlePointerDownBadge(e, key)}
+                    {/* Subtle Watermark/Margin indicator so user sees page bounds */}
+                    <div 
+                      style={{
+                        position:"absolute",
+                        bottom:10,
+                        right:14,
+                        fontSize:".62rem",
+                        color:"#94A3B8",
+                        fontWeight:700,
+                        textTransform:"uppercase",
+                        letterSpacing:1,
+                        pointerEvents:"none",
+                        zIndex:2
+                      }}
+                    >
+                      A4 {activePdf.orientation === 'landscape' ? "Landscape (297 × 210 mm)" : "Portrait (210 × 297 mm)"}
+                    </div>
+
+                    {/* Positioned Field Badges */}
+                    {Object.entries(activePdf.map || {}).map(([key, pos]) => {
+                      const isBeingDragged = draggingPdfField === key;
+                      return (
+                        <div
+                          key={key}
+                          onPointerDown={(e) => handlePointerDownBadge(e, key)}
+                          style={{
+                            position:"absolute",
+                            left:`${pos.x}%`,
+                            top:`${pos.y}%`,
+                            transform:"translate(-50%, -50%)",
+                            background: isBeingDragged ? "#1D4ED8" : "rgba(15, 23, 42, 0.90)",
+                            color: "white",
+                            padding:"4px 8px",
+                            borderRadius:5,
+                            fontSize:`${Math.max(10, Math.min(22, (activePdf.fontSize || (activePdf.orientation === 'landscape' ? 26 : 16)) * 0.9 * canvasScale))}px`,
+                            fontWeight:800,
+                            fontFamily:"monospace",
+                            cursor:"grab",
+                            whiteSpace:"nowrap",
+                            display:"flex",
+                            alignItems:"center",
+                            gap:4,
+                            boxShadow:"0 3px 10px rgba(0,0,0,0.35)",
+                            border: isBeingDragged ? "2px solid #93C5FD" : "1.5px solid rgba(255,255,255,0.8)",
+                            zIndex: isBeingDragged ? 100 : 10,
+                            touchAction:"none"
+                          }}
+                          title={`Drag to move ${key} (X: ${pos.x}%, Y: ${pos.y}%)`}
+                        >
+                          <span>{key}</span>
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleRemoveVariableFromPdf(key);
+                            }}
                             style={{
-                              position:"absolute",
-                              left:`${pos.x}%`,
-                              top:`${pos.y}%`,
-                              transform:"translate(-50%, -50%)",
-                              background: isBeingDragged ? "#1D4ED8" : "rgba(15, 23, 42, 0.88)",
-                              color: "white",
-                              padding:"4px 8px",
-                              borderRadius:5,
-                              fontSize:`${Math.max(11, Math.min(18, (activePdf.fontSize || 30) * 0.45))}px`,
+                              background:"rgba(255,255,255,0.2)",
+                              border:"none",
+                              borderRadius:"50%",
+                              width:16,
+                              height:16,
+                              color:"white",
+                              fontSize:".65rem",
                               fontWeight:800,
-                              fontFamily:"monospace",
-                              cursor:"grab",
-                              whiteSpace:"nowrap",
+                              cursor:"pointer",
                               display:"flex",
                               alignItems:"center",
-                              gap:4,
-                              boxShadow:"0 2px 8px rgba(0,0,0,0.35)",
-                              border: isBeingDragged ? "2px solid #93C5FD" : "1.5px solid rgba(255,255,255,0.7)",
-                              zIndex: isBeingDragged ? 100 : 10,
-                              touchAction:"none"
+                              justifyContent:"center",
+                              marginLeft:2
                             }}
-                            title={`Drag to move ${key} (X: ${pos.x}%, Y: ${pos.y}%)`}
+                            title={`Remove ${key} from canvas`}
                           >
-                            <span>{key}</span>
-                            <button
-                              type="button"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                handleRemoveVariableFromPdf(key);
-                              }}
-                              style={{
-                                background:"rgba(255,255,255,0.2)",
-                                border:"none",
-                                borderRadius:"50%",
-                                width:16,
-                                height:16,
-                                color:"white",
-                                fontSize:".65rem",
-                                fontWeight:800,
-                                cursor:"pointer",
-                                display:"flex",
-                                alignItems:"center",
-                                justifyContent:"center",
-                                marginLeft:2
-                              }}
-                              title={`Remove ${key} from canvas`}
-                            >
-                              ✕
-                            </button>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  ) : (
-                    /* No Background Placeholder */
-                    <div 
-                      onClick={() => pdfBgInputRef.current?.click()}
-                      style={{
-                        padding:"50px 30px",
-                        textAlign:"center",
-                        background:"white",
-                        borderRadius:12,
-                        border:"2px dashed #94A3B8",
-                        cursor:"pointer",
-                        display:"flex",
-                        flexDirection:"column",
-                        alignItems:"center",
-                        gap:10,
-                        maxWidth:460
-                      }}
-                    >
-                      <div style={{fontSize:"2.5rem"}}>🖼️</div>
-                      <div style={{fontSize:".95rem",fontWeight:800,color:"#0F172A"}}>No Background Image Uploaded</div>
-                      <div style={{fontSize:".75rem",color:"#64748B",lineHeight:1.4}}>
-                        Click here to upload your Certificate, Food Pass, or Token Card background (JPG or PNG).
-                      </div>
-                      <button
-                        type="button"
-                        style={{marginTop:6,padding:"8px 16px",background:"#15803D",color:"white",border:"none",borderRadius:8,fontWeight:800,fontSize:".78rem",cursor:"pointer"}}
-                      >
-                        ➕ Upload Background Template
-                      </button>
-                    </div>
-                  )}
+                            ✕
+                          </button>
+                        </div>
+                      );
+                    })}
+                  </div>
                 </div>
 
                 {/* Active Mapped Variables Summary Bar */}
