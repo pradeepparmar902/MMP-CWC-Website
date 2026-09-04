@@ -29788,7 +29788,7 @@ function AdminCertificates({ mob, C, setC, auth }) {
                   return (
                     <tr 
                       key={i} 
-                      onClick={() => handlePreview(r, ev)}
+                      onClick={() => handlePreview(r, activeEvent || ev)}
                       style={{
                         borderBottom:"1px solid #eee",
                         cursor: "pointer",
