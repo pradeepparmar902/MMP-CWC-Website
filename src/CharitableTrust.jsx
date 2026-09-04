@@ -25103,8 +25103,8 @@ function WorkspaceWhatsAppTemplateModal({ event, C, setC, auth, onClose, initial
                     />
                   </div>
 
-                  {/* Upload Background Image / PDF */}
-                  <div style={{display:"flex",alignItems:"center",gap:8,paddingTop:12}}>
+                  {/* Upload Background Image / Fetch from Media Library */}
+                  <div style={{display:"flex",alignItems:"center",gap:8,paddingTop:12,flexWrap:"wrap"}}>
                     <input
                       type="file"
                       ref={pdfBgInputRef}
@@ -25112,25 +25112,54 @@ function WorkspaceWhatsAppTemplateModal({ event, C, setC, auth, onClose, initial
                       onChange={handlePdfBgUpload}
                       style={{display:"none"}}
                     />
+
+                    {/* 📁 Primary Button to Fetch Document/Letterhead from Media Library */}
+                    <button
+                      type="button"
+                      onClick={() => setShowPdfMediaLibrary(true)}
+                      style={{
+                        padding:"7px 14px",
+                        background:"linear-gradient(135deg, #0F766E, #047857)",
+                        color:"white",
+                        border:"1.5px solid #059669",
+                        borderRadius:8,
+                        fontSize:".78rem",
+                        fontWeight:800,
+                        cursor:"pointer",
+                        display:"flex",
+                        alignItems:"center",
+                        gap:6,
+                        boxShadow:"0 2px 8px rgba(15,118,110,0.3)"
+                      }}
+                      title="Fetch existing letterhead or certificate document from the Central Media Library without duplicate storage"
+                    >
+                      <span style={{fontSize:".95rem"}}>📁</span>
+                      <span>Fetch from Media Library</span>
+                      <span style={{fontSize:".62rem",background:"rgba(255,255,255,0.25)",padding:"1px 5px",borderRadius:4}}>Zero Duplicate</span>
+                    </button>
+
+                    {/* ⬆️ Secondary Button to Upload from Computer */}
                     <button
                       type="button"
                       onClick={() => pdfBgInputRef.current?.click()}
                       disabled={uploadingPdfBg}
                       style={{
-                        padding:"6px 12px",
-                        background:"#0D4B5E",
+                        padding:"7px 12px",
+                        background:"#334155",
                         color:"white",
-                        border:"none",
-                        borderRadius:6,
-                        fontSize:".75rem",
+                        border:"1px solid #475569",
+                        borderRadius:8,
+                        fontSize:".76rem",
                         fontWeight:800,
                         cursor:uploadingPdfBg ? "wait" : "pointer",
                         display:"flex",
                         alignItems:"center",
-                        gap:4
+                        gap:5
                       }}
+                      title="Upload a new background image directly from your computer (automatically saved to Media Library)"
                     >
-                      <span>🖼️</span> {uploadingPdfBg ? "Uploading..." : activePdf.bgUrl ? "Change Background" : "Upload Background Image"}
+                      <span>{uploadingPdfBg ? "⏳" : "⬆️"}</span>
+                      <span>{uploadingPdfBg ? "Uploading..." : "Upload from Computer"}</span>
                     </button>
 
                     {activePdf.bgUrl && (
