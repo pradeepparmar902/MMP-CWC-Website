@@ -5027,7 +5027,7 @@ export const generateCertificatePDF = async (certConfig, fieldsData, fallbackNam
 
     if (!srcUrl) {
       const tplName = customTpl ? customTpl.name : isInvite ? 'Invite Letter' : 'Certificate';
-      reject(new Error(`No ${tplName} Template background image has been uploaded for this event. Please go to Admin -> Content Editor -> Events -> Edit Event -> '${tplName} Configure Template' to upload a background image.`));
+      reject(new Error(`No background image configured for "${tplName}". Please click the "⚙️ Configure" button on the "${tplName}" tab above to upload or fetch a background from the Media Library, then click Save.`));
       return;
     }
 
@@ -29037,6 +29037,7 @@ function AdminCertificates({ mob, C, setC, auth }) {
   const [selectedWhatsAppReg, setSelectedWhatsAppReg] = useState(null);
   const [showBulkWhatsAppModal, setShowBulkWhatsAppModal] = useState(false);
   const [showWorkspaceTplModal, setShowWorkspaceTplModal] = useState(false);
+  const [showConnectTplModal, setShowConnectTplModal] = useState(false);
   const [historyModalReg, setHistoryModalReg] = useState(null);
 
   const handleBulkDownload = () => {
@@ -29234,6 +29235,258 @@ function AdminCertificates({ mob, C, setC, auth }) {
       </div>
     );
   }
+
+
+  const renderConnectTemplateModal = () => {
+    const candidates = [];
+    const seenUrls = new Set();
+
+    (C.events || []).forEach(ev => {
+      if (ev.inviteBgUrl && !seenUrls.has(ev.inviteBgUrl)) {
+        seenUrls.add(ev.inviteBgUrl);
+        candidates.push({
+          id: 'tpl_invite_' + (ev.id || ev.title),
+          name: ev.inviteName || ev.inviteTitle || 'Official Invite Letter',
+          source: ev.title || 'Other Event',
+          bgUrl: ev.inviteBgUrl,
+          map: ev.inviteMap || {},
+          fontSize: ev.inviteFontSize || 16,
+          fontColor: ev.inviteFontColor || '#000000',
+          orientation: ev.inviteOrientation || 'portrait',
+          bgFit: ev.inviteBgFit || 'letterhead',
+          targetSection: 'invites',
+          isPrimaryInvite: true
+        });
+      }
+      if (ev.certBgUrl && !seenUrls.has(ev.certBgUrl)) {
+        seenUrls.add(ev.certBgUrl);
+        candidates.push({
+          id: 'tpl_cert_' + (ev.id || ev.title),
+          name: ev.certName || ev.certTitle || 'Certificate Pass',
+          source: ev.title || 'Other Event',
+          bgUrl: ev.certBgUrl,
+          map: ev.certMap || {},
+          fontSize: ev.certFontSize || 26,
+          fontColor: ev.certFontColor || '#000000',
+          orientation: ev.certOrientation || 'landscape',
+          bgFit: ev.certBgFit || 'full',
+          targetSection: 'awards'
+        });
+      }
+      (ev.pdfTemplates || []).forEach(t => {
+        if (t.bgUrl && !seenUrls.has(t.bgUrl)) {
+          seenUrls.add(t.bgUrl);
+          candidates.push({
+            id: t.id,
+            name: t.name,
+            source: ev.title || 'Other Event',
+            bgUrl: t.bgUrl,
+            map: t.map || t.fieldMap || {},
+            fontSize: t.fontSize || 16,
+            fontColor: t.fontColor || '#000000',
+            orientation: t.orientation || 'portrait',
+            bgFit: t.bgFit || 'letterhead',
+            targetSection: t.targetSection || 'invites'
+          });
+        }
+      });
+    });
+
+    (C.mediaLibrary || []).filter(m => m.category === 'letterheads' || m.category === 'certificates' || m.type === 'document' || m.type === 'image').forEach(m => {
+      const resolvedUrl = m.url;
+      if (!seenUrls.has(resolvedUrl)) {
+        seenUrls.add(resolvedUrl);
+        candidates.push({
+          id: 'media_' + m.id,
+          name: m.name || 'Media Library Letterhead',
+          source: 'Central Media Library (' + (m.category || 'Assets') + ')',
+          bgUrl: m.url,
+          map: {},
+          fontSize: 16,
+          fontColor: '#000000',
+          orientation: 'portrait',
+          bgFit: 'letterhead',
+          targetSection: 'invites',
+          isMediaAsset: true
+        });
+      }
+    });
+
+    const handleApplyConnect = async (tpl) => {
+      const defaultName = tpl.name ? tpl.name.replace(/\s*\(.*?\)\s*$/, '') : 'Letterhead Template';
+      const confirmName = prompt('Enter tab name for this template in "' + (activeEvent.title || 'Workspace') + '":', defaultName);
+      if (!confirmName || !confirmName.trim()) return;
+      const cleanName = confirmName.trim();
+
+      const isReplacingInvite = currentDocTpl?.id === 'invite' || !activeEvent.inviteBgUrl;
+      const shouldSetPrimary = isReplacingInvite && window.confirm('Set "' + cleanName + '" as the primary Official Invite Letter background for "' + (activeEvent.title || 'Workspace') + '"?\n\n(Click Cancel to add it as a new separate sub-workspace pass tab instead)');
+
+      try {
+        const currentEvents = C.events || [];
+        let updatedTargetEvent = { ...activeEvent };
+
+        if (shouldSetPrimary) {
+          updatedTargetEvent = {
+            ...updatedTargetEvent,
+            inviteName: cleanName,
+            inviteTitle: cleanName,
+            inviteBgUrl: tpl.bgUrl,
+            inviteMap: tpl.map || {},
+            inviteFontSize: tpl.fontSize || 16,
+            inviteFontColor: tpl.fontColor || '#000000',
+            inviteOrientation: tpl.orientation || 'portrait',
+            inviteBgFit: tpl.bgFit || 'letterhead'
+          };
+          setActiveDocType('invite');
+        } else {
+          const newDocId = 'doc_' + Date.now();
+          const newTplObj = {
+            id: newDocId,
+            name: cleanName,
+            targetSection: tpl.targetSection || 'invites',
+            targetAudience: 'assigned',
+            bgUrl: tpl.bgUrl,
+            map: tpl.map || {},
+            fontSize: tpl.fontSize || 16,
+            fontColor: tpl.fontColor || '#000000',
+            orientation: tpl.orientation || 'portrait',
+            bgFit: tpl.bgFit || 'letterhead'
+          };
+          updatedTargetEvent = {
+            ...updatedTargetEvent,
+            pdfTemplates: [...(updatedTargetEvent.pdfTemplates || []), newTplObj]
+          };
+          setActiveDocType(newDocId);
+        }
+
+        const eventExists = currentEvents.some(e => e.id === activeEvent.id || e.title === activeEvent.title);
+        const updatedEvents = eventExists
+          ? currentEvents.map(e => (e.id === activeEvent.id || e.title === activeEvent.title) ? updatedTargetEvent : e)
+          : [...currentEvents, updatedTargetEvent];
+
+        const updatedC = { ...C, events: updatedEvents };
+        if (setC) setC(updatedC);
+        await fbSave(updatedC, auth?.idToken);
+        alert('✅ "' + cleanName + '" successfully connected to "' + (activeEvent.title || 'Workspace') + '"! You can now preview and issue passes.');
+        setShowConnectTplModal(false);
+      } catch (err) {
+        console.error(err);
+        alert('Failed to connect template: ' + err.message);
+      }
+    };
+
+    return (
+      <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.7)',zIndex:100005,display:'flex',alignItems:'center',justifyContent:'center',padding:16}} onClick={()=>setShowConnectTplModal(false)}>
+        <div style={{background:'white',borderRadius:16,maxWidth:820,width:'100%',maxHeight:'88vh',display:'flex',flexDirection:'column',boxShadow:'0 25px 60px rgba(0,0,0,0.35)',overflow:'hidden'}} onClick={e=>e.stopPropagation()}>
+          <div style={{background:'linear-gradient(135deg, #0F766E, #047857)',color:'white',padding:'14px 20px',display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+            <div>
+              <h3 style={{margin:0,fontSize:'1.1rem',fontWeight:800,display:'flex',alignItems:'center',gap:8}}>
+                <span>🔗</span> Connect Existing PDF Template to "{activeEvent.title}"
+              </h3>
+              <div style={{fontSize:'.74rem',opacity:0.9,marginTop:2}}>
+                Choose any pre-built template from another workspace or letterhead from Central Media Library. Zero duplicate storage!
+              </div>
+            </div>
+            <button onClick={()=>setShowConnectTplModal(false)} style={{background:'rgba(255,255,255,0.2)',border:'none',borderRadius:'50%',width:32,height:32,color:'white',cursor:'pointer',fontWeight:800,fontSize:'1rem'}}>✕</button>
+          </div>
+
+          <div style={{flex:1,overflowY:'auto',padding:18,display:'flex',flexDirection:'column',gap:12,background:'#F8FAFC'}}>
+            {candidates.length === 0 ? (
+              <div style={{padding:32,textAlign:'center',background:'white',borderRadius:10,border:'1px dashed #CBD5E1'}}>
+                <div style={{fontSize:'2rem',marginBottom:8}}>📁</div>
+                <div style={{fontSize:'.9rem',fontWeight:800,color:'#334155'}}>No other PDF templates found yet</div>
+                <div style={{fontSize:'.76rem',color:'#64748B',marginTop:4}}>
+                  You can configure this template directly by clicking <strong>"⚙️ Configure"</strong> on the tab above, or upload letterheads to the Central Media Library.
+                </div>
+              </div>
+            ) : (
+              <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill, minmax(240px, 1fr))',gap:14}}>
+                {candidates.map((cand, idx) => (
+                  <div 
+                    key={cand.id + '_' + idx}
+                    style={{
+                      background:'white',
+                      borderRadius:10,
+                      border:'1.5px solid #E2E8F0',
+                      padding:12,
+                      display:'flex',
+                      flexDirection:'column',
+                      justifyContent:'space-between',
+                      gap:10,
+                      boxShadow:'0 2px 6px rgba(0,0,0,0.04)',
+                      transition:'transform 0.15s, box-shadow 0.15s'
+                    }}
+                  >
+                    <div>
+                      <div style={{width:'100%',height:110,background:'#F1F5F9',borderRadius:6,overflow:'hidden',display:'flex',alignItems:'center',justifyContent:'center',border:'1px solid #CBD5E1',position:'relative'}}>
+                        {cand.bgUrl ? (
+                          <img 
+                            src={resolveMediaUrl(cand.bgUrl, C)} 
+                            alt={cand.name}
+                            style={{width:'100%',height:'100%',objectFit:'cover'}}
+                          />
+                        ) : (
+                          <div style={{fontSize:'1.8rem'}}>📄</div>
+                        )}
+                        <span style={{position:'absolute',top:4,right:4,fontSize:'.62rem',fontWeight:800,background:'rgba(0,0,0,0.65)',color:'white',padding:'1px 6px',borderRadius:4}}>
+                          {cand.orientation === 'landscape' ? '📜 Landscape' : '📄 Portrait'}
+                        </span>
+                      </div>
+                      <div style={{marginTop:8}}>
+                        <strong style={{fontSize:'.84rem',color:'#0F172A',display:'block',lineHeight:1.3}}>
+                          {cand.name}
+                        </strong>
+                        <div style={{fontSize:'.68rem',color:'#059669',fontWeight:700,marginTop:2}}>
+                          📍 Source: {cand.source}
+                        </div>
+                      </div>
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={() => handleApplyConnect(cand)}
+                      style={{
+                        padding:'7px 12px',
+                        background:'#15803D',
+                        color:'white',
+                        border:'none',
+                        borderRadius:6,
+                        fontSize:'.76rem',
+                        fontWeight:800,
+                        cursor:'pointer',
+                        display:'flex',
+                        alignItems:'center',
+                        justifyContent:'center',
+                        gap:6,
+                        boxShadow:'0 1px 4px rgba(21,128,61,0.2)'
+                      }}
+                    >
+                      <span>🔗</span>
+                      <span>Connect to this Workspace</span>
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          <div style={{padding:'12px 20px',borderTop:'1px solid #E2E8F0',background:'white',display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+            <span style={{fontSize:'.74rem',color:'#64748B'}}>
+              Connecting a template re-uses its design, dimensions, and letterhead without creating duplicate storage.
+            </span>
+            <button 
+              type="button" 
+              onClick={()=>setShowConnectTplModal(false)}
+              style={{padding:'6px 14px',borderRadius:6,background:'#F1F5F9',color:'#475569',border:'1px solid #CBD5E1',fontSize:'.78rem',fontWeight:700,cursor:'pointer'}}
+            >
+              Close
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
 
   return (
     <div style={{display:"flex",width:"100%"}}>
@@ -29932,6 +30185,8 @@ function AdminCertificates({ mob, C, setC, auth }) {
       )}
 
       {/* Workspace Multi-Template Modal */}
+      {showConnectTplModal && renderConnectTemplateModal()}
+
       {showWorkspaceTplModal && (
         <WorkspaceWhatsAppTemplateModal
           event={activeEvent}
@@ -31419,7 +31674,8 @@ This cannot be undone.`)) return;
     const sName = fieldsData["Full Name"] || fieldsData["Name"] || fieldsData["Participant Name"] || "Student";
     try {
       const targetDoc = currentDocTpl?.customTpl || currentDocTpl?.id || 'invite';
-      const url = await generateCertificatePDF(ev, fieldsData, sName, targetDoc, 'url');
+      const targetEv = ev || activeEvent;
+      const url = await generateCertificatePDF(targetEv, fieldsData, sName, targetDoc, 'url');
       setPreviewCertUrl(url);
       setPreviewCertRegId(r.id);
     } catch (e) {
@@ -33526,7 +33782,7 @@ This cannot be undone.`)) return;
                   try { if(r._submittedAt) date = new Date(r._submittedAt).toLocaleString().split(',')[0]; } catch(e){}
                   let evName = r.eventName || r.eventTitle || r.eventId || "Unknown Event";
                   let pName = r["Full Name"] || r["Name"] || r["Participant Name"] || r.Email || "-";
-                  let ev = inviteEvents.find(e => e.id === r.eventId || e.title === evName || e.titleGu === evName);
+                  let ev = inviteEvents.find(e => e.id === r.eventId || e.title === evName || e.titleGu === evName) || activeEvent;
                   
                   let vDate = r.inviteViewDate ? new Date(r.inviteViewDate).toLocaleString() : "-";
                   let dDate = r.inviteDownloadDate ? new Date(r.inviteDownloadDate).toLocaleString() : "-";
