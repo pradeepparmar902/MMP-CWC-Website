@@ -4873,6 +4873,34 @@ export const generateCertificatePDF = async (certConfig, fieldsData, fallbackNam
                       val = fieldsData['Receipt No'] || fieldsData['Receipt Number'] || '';
                   } else if (cleanKey === 'FINANCIAL_YEAR') {
                       val = fieldsData['Financial Year'] || '2025-2026';
+                  } else if (cleanKey === 'DONATION_PURPOSE' || cleanKey === 'PURPOSE') {
+                      val = fieldsData['Purpose'] || fieldsData['Donation Purpose'] || certConfig?.title || 'Charitable Trust';
+                  } else if (cleanKey === 'TRUST_PAN') {
+                      val = certConfig?.trustPan || 'AAATV1234F';
+                  } else if (cleanKey === '80G_REG_NO' || cleanKey === 'REG_80G') {
+                      val = certConfig?.reg80G || certConfig?.regNo || 'Regd. No. F-13507 (Mumbai)';
+                  } else if (cleanKey === 'TEAM_MEMBER_NAME') {
+                      val = fieldsData['Member Name'] || fieldsData['Team Member Name'] || fieldsData['Name'] || fallbackName;
+                  } else if (cleanKey === 'TEAM_DESIGNATION' || cleanKey === 'POSITION') {
+                      val = fieldsData['Position'] || fieldsData['Designation'] || fieldsData['Role'] || '';
+                  } else if (cleanKey === 'TEAM_COMMITTEE' || cleanKey === 'WING') {
+                      val = fieldsData['Committee'] || fieldsData['Wing'] || '';
+                  } else if (cleanKey === 'TEAM_VIBHAG') {
+                      val = fieldsData['Vibhag'] || '';
+                  } else if (cleanKey === 'TEAM_MOBILE') {
+                      val = fieldsData['Mobile'] || fieldsData['Mobile Number'] || '';
+                  } else if (cleanKey === 'TEAM_PROFESSION') {
+                      val = fieldsData['Profession'] || '';
+                  } else if (cleanKey === 'TEAM_QUALIFICATION') {
+                      val = fieldsData['Qualification'] || '';
+                  } else if (cleanKey === 'PRESIDENT_NAME') {
+                      val = 'Kishore Parmar';
+                  } else if (cleanKey === 'GENERAL_SECRETARY_NAME' || cleanKey === 'SECRETARY_NAME') {
+                      val = 'Pradeep Parmar';
+                  } else if (cleanKey === 'TREASURER_NAME') {
+                      val = 'Treasurer';
+                  } else if (cleanKey === 'TRUST_NAME') {
+                      val = 'Mumbai Meghwal Panchayat & Vidya Gohil Charitable Trust';
                   } else if (cleanKey === 'EVENT_NAME') {
                       val = certConfig?.title || certConfig?.name || '';
                   } else if (cleanKey === 'EVENT_DATE') {
@@ -21538,7 +21566,17 @@ function BulkWhatsAppBroadcastModal({ event, recipients = [], allRegs = [], C, a
       .replace(/\{WEBSITE_URL\}/g, baseUrl)
       .replace(/\{WEBSITE_HOME\}/g, baseUrl)
       .replace(/\{HELPLINE_PHONES\}/g, C.whatsAppHelpline || C.trust?.phone || "+91 9820785209 / +91 9967821964")
-      .replace(/\{ADMIN_MOBILE\}/g, C.whatsAppHelpline || C.trust?.phone || "+91 9820785209");
+      .replace(/\{ADMIN_MOBILE\}/g, C.whatsAppHelpline || C.trust?.phone || "+91 9820785209")
+      .replace(/\{DONATION_PURPOSE\}/g, reg["Purpose"] || reg["Donation Purpose"] || "General Charitable Fund")
+      .replace(/\{TRUST_PAN\}/g, C.trust?.pan || "AAATV1234F")
+      .replace(/\{80G_REG_NO\}/g, C.trust?.reg80G || C.trust?.regNo || "Regd. No. F-13507 (Mumbai)")
+      .replace(/\{TEAM_MEMBER_NAME\}/g, reg["Member Name"] || participantNameVal)
+      .replace(/\{TEAM_DESIGNATION\}/g, reg["Position"] || reg["Designation"] || "Committee Member")
+      .replace(/\{TEAM_COMMITTEE\}/g, reg["Committee"] || "Central Working Committee")
+      .replace(/\{PRESIDENT_NAME\}/g, C.trust?.president || "Kishore Parmar")
+      .replace(/\{GENERAL_SECRETARY_NAME\}/g, C.trust?.secretary || "Pradeep Parmar")
+      .replace(/\{TREASURER_NAME\}/g, C.trust?.treasurer || "Treasurer")
+      .replace(/\{TRUST_NAME\}/g, C.trust?.name || "Mumbai Meghwal Panchayat");
 
     const customTargetEventId = r?.activeDocTpl?.customTpl?.targetEventId || r?.targetEventId || event?.targetEventId;
     const activeTargetScope = (customTargetEventId && customTargetEventId !== 'current') ? customTargetEventId : 'education2026';
@@ -22710,27 +22748,82 @@ function WorkspaceWhatsAppTemplateModal({ event, C, setC, auth, onClose, initial
         desc: `Actual registration column from Monsoon: ${f}`
       }))
     },
-    ...(sectionFieldMap["Donations"] ? [
-      {
-        title: "💰 Donor & Contribution Registration Fields",
-        color: "#059669",
-        bgColor: "#ECFDF5",
-        borderColor: "#A7F3D0",
-        icon: "💰",
-        vars: Array.from(sectionFieldMap["Donations"] || actualDonorFields).map(f => ({
-          tag: "{" + f + "}",
-          label: f,
-          desc: `Actual donor transaction column: ${f}`
-        }))
-      }
-    ] : []),
+    {
+      title: "👥 Contact Group & Guest Directory Fields",
+      color: "#6D28D9",
+      bgColor: "#F5F3FF",
+      borderColor: "#C4B5FD",
+      icon: "👥",
+      vars: [
+        { tag: "{CONTACT_GROUP}", label: "Contact Group / Committee", desc: "Assigned contact group (e.g. 'new vibhag', 'CWC Member', 'Trustee')" },
+        { tag: "{GROUP}", label: "Group Name", desc: "Primary assigned contact group" },
+        { tag: "{INVITEE_NAME}", label: "Invitee / Guest Name", desc: "Full name of the invited dignitary, guest, or committee member" },
+        { tag: "{DESIGNATION}", label: "Designation / Role", desc: "Official designation (e.g. Trustee, General Secretary, Vibhag Pramukh)" },
+        { tag: "{VIBHAG}", label: "Vibhag / Branch Name", desc: "Assigned MMP Vibhag or branch area" },
+        { tag: "{MOBILE}", label: "Contact Mobile Number", desc: "Registered 10-digit mobile number" },
+        { tag: "{EMAIL}", label: "Contact Email Address", desc: "Registered email address" },
+        { tag: "{ADDRESS}", label: "Address / Location", desc: "Guest residential or office address" },
+        { tag: "{TXN_ID}", label: "Guest Pass / Transaction ID", desc: "Unique entry pass serial number (e.g. GST-631028)" },
+        { tag: "{TOKEN_NO}", label: "Token Number / Food Pass No", desc: "Assigned token or food pass sequence" },
+        { tag: "{SEAT_NO}", label: "Seat / Hall Row Number", desc: "Auditorium assigned seating number" },
+        { tag: "{SUB_WORKSPACE_NAME}", label: "Sub-Workspace Pass Name", desc: "Pass or coupon template name (e.g. 'Food coupon')" },
+        { tag: "{PASS_LINK}", label: "1-Click Digital Pass Link", desc: "Direct personalized invite pass URL" },
+        { tag: "{GATE_PASS}", label: "Gate Pass ID", desc: "Entry gate verification code" },
+        { tag: "{REMARKS}", label: "Committee Remarks / Note", desc: "Verification remarks or special guest instructions" }
+      ]
+    },
+    {
+      title: "👥 Our Team & Leadership Directory Fields",
+      color: "#7C3AED",
+      bgColor: "#FAF5FF",
+      borderColor: "#DDD6FE",
+      icon: "👥",
+      vars: [
+        { tag: "{TEAM_MEMBER_NAME}", label: "Team Member Full Name", desc: "Full name of committee member / trustee" },
+        { tag: "{TEAM_DESIGNATION}", label: "Position / Designation", desc: "Official position (e.g. President, Trustee, General Secretary, Vibhag Pramukh)" },
+        { tag: "{TEAM_COMMITTEE}", label: "Committee / Wing", desc: "Assigned wing (e.g. Central Working Committee (CWC), Education Board, Youth Wing)" },
+        { tag: "{TEAM_VIBHAG}", label: "Team Member Vibhag", desc: "Branch or area represented" },
+        { tag: "{TEAM_MOBILE}", label: "Team Member Mobile", desc: "Official committee contact number" },
+        { tag: "{TEAM_EMAIL}", label: "Team Member Email", desc: "Official contact email address" },
+        { tag: "{TEAM_PROFESSION}", label: "Profession", desc: "Member's professional occupation" },
+        { tag: "{TEAM_QUALIFICATION}", label: "Educational Qualification", desc: "Academic qualification degrees" },
+        { tag: "{PRESIDENT_NAME}", label: "Trust President Name", desc: "Current President of Mumbai Meghwal Panchayat" },
+        { tag: "{GENERAL_SECRETARY_NAME}", label: "General Secretary Name", desc: "Current General Secretary of CWC" },
+        { tag: "{TREASURER_NAME}", label: "Treasurer Name", desc: "Current Treasurer of Trust" },
+        { tag: "{TRUST_NAME}", label: "Trust Name", desc: "Mumbai Meghwal Panchayat & Vidya Gohil Charitable Trust" }
+      ]
+    },
+    {
+      title: "💰 Donation & 80G Tax Exemption Section",
+      color: "#059669",
+      bgColor: "#ECFDF5",
+      borderColor: "#A7F3D0",
+      icon: "💰",
+      vars: [
+        { tag: "{DONOR_NAME}", label: "Donor / Contributor Full Name", desc: "Full name of donor or contributing organization" },
+        { tag: "{DONOR_AMOUNT}", label: "Donation Amount (₹)", desc: "Exact contribution amount in rupees" },
+        { tag: "{AMOUNT_IN_WORDS}", label: "Donation Amount in Words", desc: "Amount spelled out (e.g. Rupees Five Thousand Only)" },
+        { tag: "{PAYMENT_MODE}", label: "Payment Mode / Method", desc: "UPI, Cheque, Bank Transfer, Cash" },
+        { tag: "{PAYMENT_DATE}", label: "Donation Date", desc: "Date contribution was received" },
+        { tag: "{TRANSACTION_REF}", label: "Bank UTR / Cheque Ref No", desc: "Bank transaction reference or cheque number" },
+        { tag: "{PAN_CARD}", label: "Donor PAN Card Number", desc: "PAN number for 80G tax exemption claim" },
+        { tag: "{RECEIPT_NO}", label: "80G Official Receipt No", desc: "Unique serial receipt number" },
+        { tag: "{FINANCIAL_YEAR}", label: "Assessment Financial Year", desc: "Assessment financial year (e.g. 2025-2026)" },
+        { tag: "{DONATION_PURPOSE}", label: "Donation Purpose / Fund", desc: "E.g. Education Felicitation Fund, Medical Aid, General Fund" },
+        { tag: "{DONOR_MOBILE}", label: "Donor Mobile Number", desc: "Contact mobile number of donor" },
+        { tag: "{DONOR_EMAIL}", label: "Donor Email Address", desc: "Email for receipt delivery" },
+        { tag: "{DONOR_ADDRESS}", label: "Donor Postal Address", desc: "Address for official 80G receipt" },
+        { tag: "{TRUST_PAN}", label: "Trust PAN Number", desc: "PAN of Mumbai Meghwal Panchayat & Vidya Gohil Trust" },
+        { tag: "{80G_REG_NO}", label: "80G Registration Number", desc: "Income Tax 80G exemption approval number" }
+      ]
+    },
     ...Object.entries(sectionFieldMap)
       .filter(([sec]) => sec !== "Education 2026" && sec !== "Monsoon" && sec !== "Donations" && sectionFieldMap[sec].size > 0)
       .map(([sec, fieldSet]) => ({
         title: `📋 ${sec} Registration Fields`,
-        color: "#6D28D9",
-        bgColor: "#F5F3FF",
-        borderColor: "#C4B5FD",
+        color: "#4F46E5",
+        bgColor: "#EEF2FF",
+        borderColor: "#C7D2FE",
         icon: "📋",
         vars: Array.from(fieldSet).map(f => ({
           tag: "{" + f + "}",
