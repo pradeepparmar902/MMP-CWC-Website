@@ -29051,6 +29051,665 @@ function BulkSelectionModal({ isOpen, onClose, title, items = [], actionLabel = 
   );
 }
 
+
+// ── IMPORT EVENT & SECTION REGISTRATIONS MODAL ──────────────────────────────────────
+export function ImportEventRegistrationsModal({
+  isOpen,
+  onClose,
+  activeEvent,
+  allEvents = [],
+  allRegs = [],
+  currentDocTpl,
+  availableDocTemplates = [],
+  auth,
+  C = {},
+  onImportSuccess
+}) {
+  if (!isOpen) return null;
+
+  const [selectedSection, setSelectedSection] = useState(() => {
+    // Default to the first event that is NOT the active workspace itself
+    const otherEv = allEvents.find(e => e.id !== activeEvent?.id && e.title !== activeEvent?.title);
+    return otherEv ? otherEv.id : (allEvents[0]?.id || 'all');
+  });
+  const [searchQuery, setSearchQuery] = useState("");
+  const [statusFilter, setStatusFilter] = useState("all"); // "all" | "approved" | "new"
+  const [selectedRegIds, setSelectedRegIds] = useState([]);
+  const [targetSubwsId, setTargetSubwsId] = useState(currentDocTpl?.id || "invite");
+  const [importing, setImporting] = useState(false);
+  const [donationsList, setDonationsList] = useState([]);
+  const [loadingDonations, setLoadingDonations] = useState(false);
+
+  // Fetch donations if donor section is selected
+  useEffect(() => {
+    if (selectedSection === 'donors_db') {
+      if (donationsList.length === 0) {
+        setLoadingDonations(true);
+        const token = auth?.idToken || (typeof localStorage !== 'undefined' && localStorage.getItem("trustPublicAuthToken")) || "";
+        if (typeof fbFetchDonations === 'function') {
+          fbFetchDonations(token).then(dons => {
+            setDonationsList(dons || []);
+          }).catch(err => {
+            console.error(err);
+          }).finally(() => {
+            setLoadingDonations(false);
+          });
+        } else {
+          setLoadingDonations(false);
+        }
+      }
+    }
+  }, [selectedSection]);
+
+  // Compute all available sections (events from C.events + distinct events found in allRegs + Donors)
+  const availableSections = useMemo(() => {
+    const list = [];
+    const seenIds = new Set();
+
+    // 1. Defined events
+    (allEvents || []).forEach(ev => {
+      const evId = ev.id || ev.title;
+      if (!seenIds.has(evId)) {
+        seenIds.add(evId);
+        const count = (allRegs || []).filter(r => {
+          if (r.deleted === true || r.isDeleted === true || r.status === "Deleted" || r.Status === "Deleted") return false;
+          let evName = r.eventName || r.eventTitle || r.eventId;
+          return r.eventId === ev.id || evName === ev.title || evName === ev.titleGu;
+        }).length;
+
+        list.push({
+          id: ev.id,
+          title: ev.title || "Event",
+          titleGu: ev.titleGu || "",
+          type: "event",
+          count: count,
+          icon: String(ev.title || '').toLowerCase().includes("edu") ? "🎓" : String(ev.title || '').toLowerCase().includes("sport") ? "🏆" : "📜"
+        });
+      }
+    });
+
+    // 2. Any additional distinct events found in allRegs
+    const distinctEventNames = new Set();
+    (allRegs || []).forEach(r => {
+      if (r.deleted === true || r.isDeleted === true) return;
+      const name = r.eventName || r.eventTitle;
+      if (name && !seenIds.has(name) && !allEvents.some(e => e.title === name || e.id === r.eventId)) {
+        distinctEventNames.add(name);
+      }
+    });
+    distinctEventNames.forEach(name => {
+      const count = (allRegs || []).filter(r => (r.eventName === name || r.eventTitle === name) && !r.deleted).length;
+      list.push({
+        id: "named_" + name,
+        title: name,
+        type: "event",
+        count: count,
+        icon: "📋"
+      });
+    });
+
+    // 3. Donors section
+    const donorRegsCount = (allRegs || []).filter(r => r.isDonor).length;
+    list.push({
+      id: "donors_db",
+      title: "Donors & Contributions Database",
+      type: "donors",
+      count: donorRegsCount > 0 ? donorRegsCount : (donationsList.length || "Live DB"),
+      icon: "💰"
+    });
+
+    return list;
+  }, [allEvents, allRegs, donationsList]);
+
+  // Active section metadata
+  const currentSectionMeta = availableSections.find(s => s.id === selectedSection) || availableSections[0];
+
+  // Raw items for currently selected section
+  const sectionItems = useMemo(() => {
+    if (selectedSection === 'donors_db') {
+      if (donationsList.length > 0) {
+        return donationsList.map(d => ({
+          id: d._docId || d.id,
+          name: d.name,
+          nameGu: d.nameGu || "",
+          mobile: d.phone || d.mobile || "",
+          vibhag: d.vibhag || "General",
+          amount: d.amount,
+          date: d.date,
+          receiptNo: d.receiptNo || d.internalReceiptNo || d.id,
+          purpose: d.purpose || d.program || "Donation",
+          Status: "Approved",
+          isDonor: true,
+          _rawItem: d
+        }));
+      }
+      return (allRegs || []).filter(r => r.isDonor).map(r => ({
+        ...r,
+        name: r["Full Name"] || r["Donor Name"] || r.name,
+        mobile: r["Mobile Number"] || r.mobile || "",
+        vibhag: r.Vibhag || r.vibhag || "General",
+        amount: r.Amount || r.amount,
+        _rawItem: r
+      }));
+    }
+
+    // Filter registrations for selected event
+    return (allRegs || []).filter(r => {
+      if (r.deleted === true || r.isDeleted === true || r.status === "Deleted" || r.Status === "Deleted") return false;
+      const targetMeta = availableSections.find(s => s.id === selectedSection);
+      if (!targetMeta) return false;
+
+      let evName = r.eventName || r.eventTitle || r.eventId;
+      if (selectedSection.startsWith("named_")) {
+        return evName === targetMeta.title;
+      }
+      return r.eventId === targetMeta.id || evName === targetMeta.title || evName === targetMeta.titleGu;
+    }).map(r => ({
+      ...r,
+      name: r["Full Name"] || r["Name"] || r["Participant Name"] || r.name || "Participant",
+      nameGu: r["Full Name (Gujarati)"] || r.nameGu || "",
+      mobile: r["Mobile Number"] || r["Mobile"] || r["WhatsApp Number"] || r.mobile || r.phone || "",
+      vibhag: r.Vibhag || r.vibhag || r["Vibhag New"] || "-",
+      standard: r["Standard"] || r["Std"] || r["Class"] || r["Course"] || "",
+      percentage: r["Percentage"] || r["%"] || r["Percent"] || "",
+      marks: r["Marks Obtained"] || r["Marks"] || "",
+      school: r["School / College Name"] || r["School"] || r["College"] || "",
+      _rawItem: r
+    }));
+  }, [selectedSection, allRegs, donationsList, availableSections]);
+
+  // Check if item is already in active subworkspace
+  const isAlreadyInWorkspace = (item) => {
+    return (allRegs || []).some(r => {
+      if (r.deleted === true || r.isDeleted === true) return false;
+      const idMatch = (r.id === item.id) || (item.isDonor && r.donationId === item.id);
+      const phoneMatch = item.mobile && (String(r["Mobile Number"] || r.mobile || "").replace(/\D/g, "").slice(-10) === String(item.mobile).replace(/\D/g, "").slice(-10));
+      const nameMatch = item.name && String(r["Full Name"] || r.name || "").trim().toLowerCase() === String(item.name).trim().toLowerCase();
+      
+      const isPerson = idMatch || (phoneMatch && nameMatch);
+      if (!isPerson) return false;
+
+      const inEvent = r.eventId === activeEvent?.id || (Array.isArray(r.assignedWorkspaceIds) && r.assignedWorkspaceIds.includes(activeEvent?.id)) || r.workspaceId === activeEvent?.id;
+      const inSubws = (r.targetTemplateId === targetSubwsId) || (Array.isArray(r.assignedDocTypes) && r.assignedDocTypes.includes(targetSubwsId));
+      return inEvent && inSubws;
+    });
+  };
+
+  // Filter items by search and status
+  const filteredItems = useMemo(() => {
+    return sectionItems.filter(item => {
+      // Status filter
+      if (statusFilter === "approved") {
+        if (item.Status !== "Approved" && item.status !== "Approved") return false;
+      } else if (statusFilter === "new") {
+        if (isAlreadyInWorkspace(item)) return false;
+      }
+
+      // Search query
+      if (searchQuery.trim()) {
+        const q = searchQuery.toLowerCase().trim();
+        const searchable = [
+          item.name,
+          item.nameGu,
+          item.mobile,
+          item.vibhag,
+          item.standard,
+          item.percentage,
+          item.school,
+          item['Transaction ID'],
+          item.transactionId,
+          item.id,
+          item.receiptNo
+        ].filter(Boolean).join(" ").toLowerCase();
+
+        return searchable.includes(q);
+      }
+
+      return true;
+    });
+  }, [sectionItems, searchQuery, statusFilter, targetSubwsId, allRegs, activeEvent]);
+
+  // Toggle selection
+  const toggleSelect = (id) => {
+    setSelectedRegIds(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
+  };
+
+  const selectAllFiltered = () => {
+    setSelectedRegIds(filteredItems.map(item => item.id));
+  };
+
+  const deselectAll = () => {
+    setSelectedRegIds([]);
+  };
+
+  // Target subworkspace name
+  const targetDocObj = availableDocTemplates.find(t => t.id === targetSubwsId) || currentDocTpl;
+  const targetDocName = targetDocObj?.name || "Official Invite Letter";
+
+  // Execute Import
+  const handleExecuteImport = async () => {
+    if (selectedRegIds.length === 0) return alert("Please select at least one registration to import.");
+    if (!activeEvent || !activeEvent.id) return alert("Active workspace is not set.");
+
+    const selectedItems = sectionItems.filter(item => selectedRegIds.includes(item.id));
+    const confirmMsg = `Import ${selectedItems.length} registration(s) from "${currentSectionMeta?.title}" into "${targetDocName}" in "${activeEvent.title}"?`;
+    if (!window.confirm(confirmMsg)) return;
+
+    setImporting(true);
+    let successCount = 0;
+    const newlyUpdatedOrCreatedRegs = [];
+
+    try {
+      for (const item of selectedItems) {
+        if (item.isDonor && item._rawItem && !item._rawItem.eventId) {
+          // Import new donor entry as registration
+          const d = item._rawItem;
+          const targetId = d._docId || d.id;
+          const existing = (allRegs || []).find(r => r.donationId === targetId && r.eventId === activeEvent.id);
+          if (existing) {
+            const curAssigned = Array.isArray(existing.assignedDocTypes) ? existing.assignedDocTypes : [existing.targetTemplateId || "invite"];
+            const updatedAssigned = Array.from(new Set([...curAssigned, targetSubwsId]));
+            const updated = {
+              ...existing,
+              assignedDocTypes: updatedAssigned,
+              targetTemplateId: targetSubwsId
+            };
+            const clean = { ...updated };
+            delete clean.id; delete clean._submittedAt;
+            await fbUpdateRegistration(existing.id, clean, auth?.idToken);
+            newlyUpdatedOrCreatedRegs.push(updated);
+            successCount++;
+            continue;
+          }
+
+          const newRegEntry = {
+            "Full Name": d.name,
+            "Donor Name": d.name,
+            name: d.name,
+            nameGu: d.nameGu || "",
+            "Mobile Number": d.phone || d.mobile || "",
+            mobile: d.phone || d.mobile || "",
+            "Amount": d.amount,
+            amount: d.amount,
+            "Receipt Number": d.receiptNo || d.internalReceiptNo || d.id,
+            receiptNo: d.receiptNo || d.internalReceiptNo || d.id,
+            "Date": d.date,
+            date: d.date,
+            "Vibhag": d.vibhag || "General",
+            vibhag: d.vibhag || "General",
+            "PAN": d.pan || "",
+            pan: d.pan || "",
+            "Program": d.purpose || d.program || activeEvent.title,
+            "Transaction ID": d.receiptNo || `DON-${String(targetId).slice(-6)}`,
+            transactionId: d.receiptNo || `DON-${String(targetId).slice(-6)}`,
+            Status: "Approved",
+            status: "Approved",
+            eventId: activeEvent.id,
+            eventName: activeEvent.title,
+            workspaceId: activeEvent.id,
+            workspaceName: activeEvent.title,
+            assignedDocTypes: [targetSubwsId],
+            targetTemplateId: targetSubwsId,
+            assignedWorkspaceIds: [activeEvent.id],
+            isDonor: true,
+            donationId: targetId,
+            isSpecialGuest: true
+          };
+
+          const savedRes = await fbSubmitRegistration(newRegEntry, auth?.idToken);
+          newRegEntry.id = savedRes?.name ? savedRes.name.split("/").pop() : `reg_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`;
+          newlyUpdatedOrCreatedRegs.push(newRegEntry);
+          successCount++;
+        } else {
+          // Standard Event Registration
+          const r = item._rawItem || item;
+          const curAssignedDocs = Array.isArray(r.assignedDocTypes) ? r.assignedDocTypes : [r.targetTemplateId || "invite"];
+          const updatedAssignedDocs = Array.from(new Set([...curAssignedDocs, targetSubwsId]));
+          const curWsIds = Array.isArray(r.assignedWorkspaceIds) ? r.assignedWorkspaceIds : [r.eventId].filter(Boolean);
+          const updatedWsIds = Array.from(new Set([...curWsIds, activeEvent.id]));
+
+          const updatedReg = {
+            ...r,
+            eventId: r.eventId || activeEvent.id,
+            assignedDocTypes: updatedAssignedDocs,
+            assignedWorkspaceIds: updatedWsIds,
+            workspaceId: activeEvent.id,
+            workspaceName: activeEvent.title,
+            targetTemplateId: targetSubwsId,
+            Status: r.Status || "Approved",
+            status: r.status || "Approved",
+            isSpecialGuest: r.isSpecialGuest !== undefined ? r.isSpecialGuest : true
+          };
+
+          const cleanCopy = { ...updatedReg };
+          delete cleanCopy.id;
+          delete cleanCopy._submittedAt;
+
+          await fbUpdateRegistration(r.id, cleanCopy, auth?.idToken);
+          newlyUpdatedOrCreatedRegs.push(updatedReg);
+          successCount++;
+        }
+      }
+
+      if (typeof onImportSuccess === 'function') {
+        onImportSuccess(newlyUpdatedOrCreatedRegs);
+      }
+
+      alert(`✅ Successfully imported ${successCount} registration(s) into "${targetDocName}" in "${activeEvent.title}"!\n\nThey are now visible in the table and ready for Invite Letter generation, preview, and WhatsApp dispatch.`);
+      onClose();
+    } catch (e) {
+      alert("Error importing registrations: " + e.message);
+    } finally {
+      setImporting(false);
+    }
+  };
+
+  return (
+    <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.7)",zIndex:100015,display:"flex",alignItems:"center",justifyContent:"center",padding:16}} onClick={onClose}>
+      <div style={{background:"white",borderRadius:16,maxWidth:980,width:"100%",maxHeight:"92vh",display:"flex",flexDirection:"column",boxShadow:"0 25px 60px rgba(0,0,0,0.35)",overflow:"hidden"}} onClick={e=>e.stopPropagation()}>
+        
+        {/* Header */}
+        <div style={{background:"linear-gradient(135deg, #1E40AF, #1D4ED8)",color:"white",padding:"16px 22px",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+          <div>
+            <h3 style={{margin:0,fontSize:"1.18rem",fontWeight:800,display:"flex",alignItems:"center",gap:8}}>
+              <span>📥</span> Import Event Registrations into "{activeEvent.title}"
+            </h3>
+            <div style={{fontSize:".76rem",opacity:0.92,marginTop:3}}>
+              Choose any event registration section (e.g. Education 2026, Donors, etc.) to import participants into <strong>{targetDocName}</strong>.
+            </div>
+          </div>
+          <button onClick={onClose} style={{background:"rgba(255,255,255,0.2)",border:"none",borderRadius:"50%",width:32,height:32,color:"white",cursor:"pointer",fontWeight:800,fontSize:"1.1rem"}}>✕</button>
+        </div>
+
+        {/* Section Cards Horizontal Carousel */}
+        <div style={{background:"#F1F5F9",borderBottom:"1.5px solid #CBD5E1",padding:"12px 18px",display:"flex",gap:10,overflowX:"auto",alignItems:"center"}}>
+          <span style={{fontSize:".76rem",fontWeight:800,color:"#475569",textTransform:"uppercase",letterSpacing:"0.5px",whiteSpace:"nowrap"}}>
+            Select Event / Section:
+          </span>
+          {availableSections.map(sec => {
+            const isSelected = selectedSection === sec.id;
+            return (
+              <button
+                key={sec.id}
+                type="button"
+                onClick={() => {
+                  setSelectedSection(sec.id);
+                  setSelectedRegIds([]);
+                }}
+                style={{
+                  padding:"6px 14px",
+                  borderRadius:20,
+                  fontSize:".78rem",
+                  fontWeight:800,
+                  display:"flex",
+                  alignItems:"center",
+                  gap:6,
+                  cursor:"pointer",
+                  whiteSpace:"nowrap",
+                  border: isSelected ? "2px solid #1D4ED8" : "1px solid #CBD5E1",
+                  background: isSelected ? "#EFF6FF" : "white",
+                  color: isSelected ? "#1D4ED8" : "#334155",
+                  boxShadow: isSelected ? "0 2px 8px rgba(29,78,216,0.18)" : "none",
+                  transition: "all 0.15s"
+                }}
+              >
+                <span>{sec.icon}</span>
+                <span>{sec.title}</span>
+                <span style={{
+                  background: isSelected ? "#1D4ED8" : "#E2E8F0",
+                  color: isSelected ? "white" : "#475569",
+                  padding:"1px 6px",
+                  borderRadius:10,
+                  fontSize:".68rem",
+                  fontWeight:800
+                }}>
+                  {sec.count}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+
+        {/* Filter Bar & Target Subworkspace */}
+        <div style={{padding:"12px 18px",background:"white",borderBottom:"1px solid #E2E8F0",display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:10}}>
+          {/* Search Box */}
+          <div style={{flex:1,minWidth:240}}>
+            <input
+              type="text"
+              placeholder="🔍 Search student name, mobile, percentage, vibhag, transaction ID..."
+              value={searchQuery}
+              onChange={e => setSearchQuery(e.target.value)}
+              style={{width:"100%",padding:"7px 12px",borderRadius:6,border:"1.5px solid #CBD5E1",fontSize:".82rem",boxSizing:"border-box"}}
+            />
+          </div>
+
+          {/* Status Filter Pills */}
+          <div style={{display:"flex",gap:6,alignItems:"center"}}>
+            <span style={{fontSize:".72rem",color:"#64748B",fontWeight:700}}>Filter:</span>
+            {[
+              { id: 'all', label: 'All (' + sectionItems.length + ')' },
+              { id: 'approved', label: 'Approved Only' },
+              { id: 'new', label: 'Not in Workspace Yet' }
+            ].map(f => (
+              <button
+                key={f.id}
+                type="button"
+                onClick={() => setStatusFilter(f.id)}
+                style={{
+                  padding:"4px 10px",
+                  borderRadius:6,
+                  fontSize:".74rem",
+                  fontWeight:700,
+                  border: statusFilter === f.id ? "1.5px solid #1D4ED8" : "1px solid #E2E8F0",
+                  background: statusFilter === f.id ? "#EFF6FF" : "#F8FAFC",
+                  color: statusFilter === f.id ? "#1D4ED8" : "#475569",
+                  cursor:"pointer"
+                }}
+              >
+                {f.label}
+              </button>
+            ))}
+          </div>
+
+          {/* Target Subworkspace Dropdown */}
+          <div style={{display:"flex",alignItems:"center",gap:6,background:"#F0FDF4",padding:"4px 10px",borderRadius:6,border:"1px solid #86EFAC"}}>
+            <span style={{fontSize:".72rem",fontWeight:800,color:"#166534"}}>🎯 Destination Tab:</span>
+            <select
+              value={targetSubwsId}
+              onChange={e => setTargetSubwsId(e.target.value)}
+              style={{
+                fontSize:".76rem",
+                fontWeight:800,
+                padding:"3px 8px",
+                borderRadius:4,
+                border:"1px solid #16A34A",
+                background:"white",
+                color:"#166534",
+                cursor:"pointer"
+              }}
+            >
+              {availableDocTemplates.map(tpl => (
+                <option key={tpl.id} value={tpl.id}>
+                  {tpl.icon || '📄'} {tpl.name}
+                </option>
+              ))}
+            </select>
+          </div>
+        </div>
+
+        {/* Selection Bar */}
+        <div style={{padding:"8px 18px",background:"#F8FAFC",borderBottom:"1px solid #E2E8F0",display:"flex",justifyContent:"space-between",alignItems:"center",fontSize:".78rem"}}>
+          <div>
+            Showing <strong>{filteredItems.length}</strong> of <strong>{sectionItems.length}</strong> registrations from <em>"{currentSectionMeta?.title}"</em>
+          </div>
+          <div style={{display:"flex",gap:8}}>
+            <button
+              type="button"
+              onClick={selectAllFiltered}
+              style={{padding:"4px 10px",background:"white",border:"1px solid #93C5FD",borderRadius:4,color:"#1D4ED8",fontSize:".74rem",fontWeight:700,cursor:"pointer"}}
+            >
+              ✓ Select All ({filteredItems.length})
+            </button>
+            <button
+              type="button"
+              onClick={deselectAll}
+              style={{padding:"4px 10px",background:"white",border:"1px solid #CBD5E1",borderRadius:4,color:"#64748B",fontSize:".74rem",fontWeight:700,cursor:"pointer"}}
+            >
+              Deselect All
+            </button>
+          </div>
+        </div>
+
+        {/* Registrations List Table */}
+        <div style={{flex:1,overflowY:"auto",padding:0}}>
+          {loadingDonations ? (
+            <div style={{textAlign:"center",padding:40,color:"#64748B"}}>⏳ Fetching donations database...</div>
+          ) : filteredItems.length === 0 ? (
+            <div style={{textAlign:"center",padding:40,color:"#64748B"}}>
+              <div style={{fontSize:"2rem",marginBottom:8}}>🔍</div>
+              <div style={{fontSize:".9rem",fontWeight:700}}>No registrations found matching the filters</div>
+              <div style={{fontSize:".76rem",marginTop:4}}>Try clearing search terms or select another event section above.</div>
+            </div>
+          ) : (
+            <table style={{width:"100%",borderCollapse:"collapse",fontSize:".78rem"}}>
+              <thead>
+                <tr style={{background:"#F1F5F9",borderBottom:"1.5px solid #CBD5E1",color:"#475569",textAlign:"left"}}>
+                  <th style={{padding:"8px 12px",width:40,textAlign:"center"}}>
+                    <input
+                      type="checkbox"
+                      checked={filteredItems.length > 0 && filteredItems.every(item => selectedRegIds.includes(item.id))}
+                      onChange={e => {
+                        if (e.target.checked) selectAllFiltered();
+                        else deselectAll();
+                      }}
+                      style={{cursor:"pointer",accentColor:"#1D4ED8"}}
+                    />
+                  </th>
+                  <th style={{padding:"8px 12px"}}>Participant & ID</th>
+                  <th style={{padding:"8px 12px"}}>📱 Mobile Number</th>
+                  <th style={{padding:"8px 12px"}}>Vibhag</th>
+                  <th style={{padding:"8px 12px"}}>Academic / Key Info</th>
+                  <th style={{padding:"8px 12px",textAlign:"center"}}>Status</th>
+                </tr>
+              </thead>
+              <tbody>
+                {filteredItems.map((item, idx) => {
+                  const isSelected = selectedRegIds.includes(item.id);
+                  const inSubws = isAlreadyInWorkspace(item);
+
+                  return (
+                    <tr
+                      key={item.id + '_' + idx}
+                      onClick={() => toggleSelect(item.id)}
+                      style={{
+                        borderBottom:"1px solid #E2E8F0",
+                        background: isSelected ? "#EFF6FF" : (idx % 2 === 0 ? "white" : "#F8FAFC"),
+                        cursor:"pointer",
+                        transition:"background 0.12s"
+                      }}
+                    >
+                      <td style={{padding:"8px 12px",textAlign:"center"}} onClick={e => e.stopPropagation()}>
+                        <input
+                          type="checkbox"
+                          checked={isSelected}
+                          onChange={() => toggleSelect(item.id)}
+                          style={{cursor:"pointer",accentColor:"#1D4ED8"}}
+                        />
+                      </td>
+                      <td style={{padding:"8px 12px"}}>
+                        <strong style={{color:"#0F172A",fontSize:".82rem"}}>{item.name}</strong>
+                        {item.nameGu && <span style={{display:"block",fontSize:".7rem",color:"#15803D"}}>{item.nameGu}</span>}
+                        <div style={{fontSize:".68rem",color:"#64748B",fontFamily:"monospace",marginTop:2}}>
+                          ID: {item['Transaction ID'] || item.transactionId || item.id}
+                        </div>
+                      </td>
+                      <td style={{padding:"8px 12px",fontWeight:600,color:"#334155"}}>
+                        {item.mobile ? (
+                          <span>+91 {String(item.mobile).replace(/\D/g, '').slice(-10)}</span>
+                        ) : (
+                          <span style={{color:"#94A3B8"}}>-</span>
+                        )}
+                      </td>
+                      <td style={{padding:"8px 12px"}}>
+                        <span style={{background:"#F1F5F9",color:"#475569",padding:"2px 6px",borderRadius:4,fontSize:".72rem",fontWeight:700}}>
+                          {item.vibhag}
+                        </span>
+                      </td>
+                      <td style={{padding:"8px 12px"}}>
+                        {item.amount ? (
+                          <strong style={{color:"#15803D"}}>₹{Number(item.amount).toLocaleString('en-IN')}</strong>
+                        ) : (item.percentage || item.standard) ? (
+                          <div style={{display:"flex",flexDirection:"column",gap:2}}>
+                            <div style={{fontWeight:700,color:"#0F172A"}}>
+                              {item.standard ? `Std: ${item.standard}` : ''} {item.percentage ? `• ${item.percentage}%` : ''}
+                            </div>
+                            {item.school && <div style={{fontSize:".68rem",color:"#64748B"}}>{item.school}</div>}
+                          </div>
+                        ) : (
+                          <span style={{color:"#94A3B8"}}>-</span>
+                        )}
+                      </td>
+                      <td style={{padding:"8px 12px",textAlign:"center"}}>
+                        {inSubws ? (
+                          <span style={{background:"#DCFCE7",color:"#15803D",padding:"2px 8px",borderRadius:12,fontSize:".68rem",fontWeight:800}}>
+                            ✓ In Workspace
+                          </span>
+                        ) : (
+                          <span style={{background:"#F1F5F9",color:"#475569",padding:"2px 8px",borderRadius:12,fontSize:".68rem",fontWeight:700}}>
+                            Available
+                          </span>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          )}
+        </div>
+
+        {/* Footer Actions */}
+        <div style={{padding:"14px 20px",background:"white",borderTop:"1.5px solid #CBD5E1",display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:10}}>
+          <div style={{fontSize:".82rem",color:"#334155"}}>
+            <strong>{selectedRegIds.length}</strong> registration(s) selected to import into <strong>{targetDocName}</strong>
+          </div>
+          <div style={{display:"flex",gap:10}}>
+            <button
+              type="button"
+              onClick={onClose}
+              disabled={importing}
+              style={{padding:"8px 16px",borderRadius:8,border:"1px solid #CBD5E1",background:"white",fontSize:".82rem",fontWeight:600,cursor:importing?"not-allowed":"pointer"}}
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              disabled={selectedRegIds.length === 0 || importing}
+              onClick={handleExecuteImport}
+              style={{
+                padding:"9px 20px",
+                borderRadius:8,
+                border:"none",
+                background: selectedRegIds.length === 0 ? "#CBD5E1" : "linear-gradient(135deg, #1E40AF, #1D4ED8)",
+                color: selectedRegIds.length === 0 ? "#64748B" : "white",
+                fontSize:".85rem",
+                fontWeight:800,
+                cursor: (selectedRegIds.length === 0 || importing) ? "not-allowed" : "pointer",
+                boxShadow: selectedRegIds.length > 0 ? "0 2px 8px rgba(29,78,216,0.25)" : "none",
+                display:"flex",
+                alignItems:"center",
+                gap:6
+              }}
+            >
+              <span>📥</span> {importing ? "Importing..." : `Import Selected (${selectedRegIds.length}) Registrations`}
+            </button>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  );
+}
 export function ConnectExistingTemplateModal({
   isOpen,
   onClose,
@@ -30538,6 +31197,7 @@ function AdminInviteLetters({ mob, C, setC, auth }) {
   const [directorySearch, setDirectorySearch] = useState("");
   const [expandedCardGroups, setExpandedCardGroups] = useState({});
   const [showImportContactGroupModal, setShowImportContactGroupModal] = useState(false);
+  const [showImportEventRegsModal, setShowImportEventRegsModal] = useState(false);
   const [showImportDonorsModal, setShowImportDonorsModal] = useState(false);
   const [donorImportSearch, setDonorImportSearch] = useState("");
   const [selectedDonorIds, setSelectedDonorIds] = useState([]);
@@ -30872,7 +31532,8 @@ function AdminInviteLetters({ mob, C, setC, auth }) {
     // Check workspace membership
     let evName = r.eventName || r.eventTitle || r.eventId;
     const isExplicitlyAssigned = (r.targetTemplateId === currentDocTpl?.id) || (Array.isArray(r.assignedDocTypes) && r.assignedDocTypes.includes(currentDocTpl?.id));
-    const matchesEvent = r.eventId === ev.id || evName === ev.title || evName === ev.titleGu || isExplicitlyAssigned;
+    const isAssignedToWorkspace = (Array.isArray(r.assignedWorkspaceIds) && r.assignedWorkspaceIds.includes(ev.id)) || r.workspaceId === ev.id;
+    const matchesEvent = r.eventId === ev.id || evName === ev.title || evName === ev.titleGu || isExplicitlyAssigned || isAssignedToWorkspace;
     if (!matchesEvent) return false;
 
     // ── Template / Sub-Workspace Contact Isolation ──
@@ -32847,6 +33508,31 @@ This cannot be undone.`)) return;
         />
       )}
 
+      {/* Import Event & Section Registrations Modal */}
+      {showImportEventRegsModal && (
+        <ImportEventRegistrationsModal
+          isOpen={showImportEventRegsModal}
+          onClose={() => setShowImportEventRegsModal(false)}
+          activeEvent={activeEvent}
+          allEvents={C.events || []}
+          allRegs={regs || []}
+          currentDocTpl={currentDocTpl}
+          availableDocTemplates={availableDocTemplates}
+          auth={auth}
+          C={C}
+          onImportSuccess={(newRegs) => {
+            if (Array.isArray(newRegs) && newRegs.length > 0) {
+              setRegs(prev => {
+                const map = new Map(prev.map(r => [r.id, r]));
+                newRegs.forEach(nr => map.set(nr.id, { ...(map.get(nr.id) || {}), ...nr }));
+                return Array.from(map.values());
+              });
+            }
+            fetchRegs();
+          }}
+        />
+      )}
+
       {/* Connect Existing Template Modal */}
       {showConnectTplModal && (
         <ConnectExistingTemplateModal
@@ -33224,6 +33910,28 @@ This cannot be undone.`)) return;
             </button>
             <button onClick={() => setShowWorkspaceTplModal(true)} style={{padding:"8px 16px",borderRadius:8,fontSize:".85rem",fontWeight:700,display:"flex",alignItems:"center",gap:6,background:"#F0FDF4",border:"1px solid #86EFAC",color:"#15803D",cursor:"pointer",boxShadow:"0 2px 8px rgba(21,128,61,0.15)",whiteSpace:"nowrap"}}>
               📝 Workspace WhatsApp Templates ({((activeEvent?.whatsAppTemplates && activeEvent.whatsAppTemplates.length > 0) ? activeEvent.whatsAppTemplates.length : 3)})
+            </button>
+            <button 
+              type="button"
+              onClick={() => setShowImportEventRegsModal(true)} 
+              style={{
+                padding:"8px 16px",
+                borderRadius:8,
+                fontSize:".85rem",
+                fontWeight:800,
+                display:"flex",
+                alignItems:"center",
+                gap:6,
+                background:"linear-gradient(135deg, #1E40AF, #2563EB)",
+                color:"white",
+                border:"none",
+                cursor:"pointer",
+                boxShadow:"0 2px 8px rgba(37,99,235,0.25)",
+                whiteSpace:"nowrap"
+              }}
+              title="Import registrations from any event (e.g. Education 2026, Donors, Sports, etc.) into this subworkspace"
+            >
+              <span>📥</span> Import Event Registrations
             </button>
             <button 
               onClick={async () => {
@@ -34042,6 +34750,27 @@ This cannot be undone.`)) return;
                   <span>⚙️</span> Edit / Change Attached Letterhead
                 </button>
 
+                <button
+                  type="button"
+                  onClick={() => setShowImportEventRegsModal(true)}
+                  style={{
+                    padding: "8px 14px",
+                    borderRadius: 8,
+                    fontSize: ".78rem",
+                    fontWeight: 800,
+                    background: "linear-gradient(135deg, #1E40AF, #2563EB)",
+                    color: "white",
+                    border: "none",
+                    cursor: "pointer",
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 6,
+                    boxShadow: "0 2px 6px rgba(37,99,235,0.25)"
+                  }}
+                  title="Import student/participant registrations from Education 2026, Donors, etc. directly into this subworkspace"
+                >
+                  <span>📥</span> Import Event Registrations
+                </button>
                 <button
                   type="button"
                   onClick={() => setShowConnectTplModal(true)}
