@@ -4768,6 +4768,16 @@ export function buildUniversalPivotTable({
           v = r['Vibhag New'] || r['Vibhag'] || r.vibhag || r['MMP Vibhag'] || r['Vibhag Name'];
         } else if (lkd === 'gender' || lkd === 'sex') {
           v = r['Gender'] || r['Sex'] || r.gender;
+        } else if (lkd === 'fullname' || lkd === 'name' || lkd === 'studentname' || lkd === 'participantname' || lkd === 'membername') {
+          v = r['Full Name'] || r['Student Name'] || r['Participant Name'] || r['Name'] || r['Donor Name'] || r.name;
+        } else if (lkd === '%obtained' || lkd === 'percentage' || lkd === 'marks' || lkd === 'pct') {
+          v = r['% Obtained'] || r.percentage || r['Marks / Percentage'];
+        } else if (lkd === 'obtainedmarks') {
+          v = r['Obtained Marks'] || r.obtainedMarks;
+        } else if (lkd === 'outofmarks') {
+          v = r['Out Of Marks'] || r.outOfMarks;
+        } else if (lkd === 'ageyear' || lkd === 'age') {
+          v = r['Age_year'] || r['Age'] || r.age;
         } else if (lkd === 'stream' || lkd === 'streamclass') {
           v = r['Stream / Class'] || r['Stream'] || r.stream;
         } else if (lkd === 'status') {
@@ -22858,23 +22868,66 @@ function WorkspaceWhatsAppTemplateModal({ event, C, setC, auth, onClose, initial
 
   // ── On-Badge Variable Connection & Drill-Down Handlers (Excel-like Pivot on Canvas) ──
   const [activeConnectBadgeKey, setActiveConnectBadgeKey] = useState(null);
+  const [badgeConnectSearch, setBadgeConnectSearch] = useState("");
 
   const getDrillDownFieldsForBadge = (badgeKey) => {
-    let baseList = ["Vibhag", "Gender", "Stream", "Status", "Age_year", "Obtained Marks"];
+    let targetSec = "Education 2026";
     const lk = String(badgeKey || "").toLowerCase();
     if (lk.includes("contact") || lk.includes("guest")) {
-      baseList = ["Group", "Designation", "Vibhag Name", "Address"];
+      targetSec = "Contact Groups";
     } else if (lk.includes("team")) {
-      baseList = ["Committee", "Position", "Level", "Profession", "Qualification"];
+      targetSec = "Our Team";
     } else if (lk.includes("donation")) {
-      baseList = ["Payment Mode", "Financial Year", "Purpose"];
+      targetSec = "Donations";
     } else if (lk.includes("monsoon")) {
-      baseList = ["Vibhag", "Location / Area", "Status"];
+      targetSec = "Monsoon";
+    } else if (pivotSection) {
+      targetSec = pivotSection;
+    }
+
+    // Comprehensive list of actual fields for each section
+    let allAvailable = [];
+    if (targetSec === "Education 2026") {
+      allAvailable = [
+        "Full Name", "Vibhag", "% Obtained", "Obtained Marks", "Stream", "Gender", "Status", "Out Of Marks",
+        "Age_year", "Address", "Date", "Event", "Transaction ID", "Unique", "Remarks", "Updated By",
+        "Submitted By", "submitterMob", "Mobile Number", "Email Address", "Alternate Mobile Number",
+        "Other Stream", "Marksheet", "Revised Marksheet", "Supporting Document"
+      ];
+    } else if (targetSec === "Contact Groups") {
+      allAvailable = [
+        "Full Name", "Designation", "Mobile Number", "Group", "Email", "Address", "Vibhag Name",
+        "Transaction ID", "Token No", "Seat No", "Pass Link", "Gate Pass"
+      ];
+    } else if (targetSec === "Our Team") {
+      allAvailable = [
+        "Name", "Position", "Committee", "Level", "Mobile", "Profession", "Qualification", "Address",
+        "ID", "Display Order Index", "Parent Leader Name", "Photo URL", "Description"
+      ];
+    } else if (targetSec === "Donations") {
+      allAvailable = [
+        "Donor Name", "Amount", "Payment Mode", "Payment Date", "Purpose", "Financial Year",
+        "PAN Card", "Receipt No", "Mobile", "Email", "Address", "Transaction Ref"
+      ];
+    } else if (targetSec === "Monsoon") {
+      allAvailable = [
+        "Participant Name", "Full Name", "Mobile Number", "Vibhag", "Location / Area",
+        "Number of Saplings", "Status", "Transaction ID", "Remarks"
+      ];
+    }
+
+    // Also dynamically merge any live record fields detected
+    if (typeof sectionFieldMap !== 'undefined' && sectionFieldMap[targetSec]) {
+      sectionFieldMap[targetSec].forEach(f => {
+        if (!allAvailable.includes(f) && f !== "Total Count") {
+          allAvailable.push(f);
+        }
+      });
     }
 
     // Exclude dimensions already present in badgeKey
     const cleanKey = String(badgeKey || "").replace(/[{}]/g, '').toLowerCase();
-    return baseList.filter(f => !cleanKey.includes(f.toLowerCase()));
+    return allAvailable.filter(f => !cleanKey.includes(f.toLowerCase()));
   };
 
   const handleDrillDownBadgeWithField = (oldKey, newField) => {
@@ -24488,48 +24541,78 @@ function WorkspaceWhatsAppTemplateModal({ event, C, setC, auth, onClose, initial
                                 boxShadow: "0 10px 25px rgba(0,0,0,0.3)",
                                 padding: 8,
                                 zIndex: 1500,
-                                minWidth: 210,
-                                maxWidth: 260,
+                                minWidth: 230,
+                                maxWidth: 280,
                                 display: "flex",
                                 flexDirection: "column",
-                                gap: 5
+                                gap: 6
                               }}
                             >
                               <div style={{fontSize:".7rem",fontWeight:800,color:"#065F46",display:"flex",justifyContent:"space-between",alignItems:"center",borderBottom:"1px solid #E2E8F0",paddingBottom:3}}>
                                 <span>🔗 CONNECT VARIABLE:</span>
-                                <span style={{cursor:"pointer",fontWeight:800,fontSize:".8rem",color:"#64748B"}} onClick={() => setActiveConnectBadgeKey(null)}>✕</span>
+                                <span style={{cursor:"pointer",fontWeight:800,fontSize:".8rem",color:"#64748B"}} onClick={() => { setActiveConnectBadgeKey(null); setBadgeConnectSearch(""); }}>✕</span>
                               </div>
                               <div style={{fontSize:".64rem",color:"#64748B",lineHeight:1.25}}>
-                                Connect another variable to drill down this into a <strong>Vibhag | Total Count</strong> summary table:
+                                Select any field to drill down into a summary table:
                               </div>
-                              <div style={{display:"flex",flexDirection:"column",gap:3,maxHeight:140,overflowY:"auto"}}>
-                                {availableDrillFields.map(field => (
-                                  <button
-                                    key={field}
-                                    type="button"
-                                    onClick={() => handleDrillDownBadgeWithField(key, field)}
-                                    style={{
-                                      textAlign:"left",
-                                      padding:"4px 8px",
-                                      borderRadius:5,
-                                      border:"1px solid #E2E8F0",
-                                      background:"#F8FAFC",
-                                      fontSize:".72rem",
-                                      fontWeight:700,
-                                      color:"#1E293B",
-                                      cursor:"pointer",
-                                      display:"flex",
-                                      alignItems:"center",
-                                      justifyContent:"space-between"
-                                    }}
-                                    onMouseEnter={e => { e.currentTarget.style.background = "#ECFDF5"; e.currentTarget.style.borderColor = "#6EE7B7"; }}
-                                    onMouseLeave={e => { e.currentTarget.style.background = "#F8FAFC"; e.currentTarget.style.borderColor = "#E2E8F0"; }}
-                                  >
-                                    <span>+ {field}</span>
-                                    <span style={{fontSize:".65rem",color:"#059669",fontWeight:700}}>Drill Down ➔</span>
-                                  </button>
-                                ))}
+
+                              {/* Search input for fields */}
+                              <input
+                                type="text"
+                                placeholder="🔍 Filter fields (e.g. marks, %)..."
+                                value={badgeConnectSearch}
+                                onChange={e => setBadgeConnectSearch(e.target.value)}
+                                style={{
+                                  padding:"4px 8px",
+                                  borderRadius:5,
+                                  border:"1px solid #CBD5E1",
+                                  fontSize:".7rem",
+                                  background:"#FAFDF7",
+                                  outline:"none",
+                                  boxSizing:"border-box",
+                                  width:"100%"
+                                }}
+                              />
+
+                              <div style={{display:"flex",flexDirection:"column",gap:3,maxHeight:200,overflowY:"auto",paddingRight:2}}>
+                                {availableDrillFields
+                                  .filter(f => !badgeConnectSearch.trim() || f.toLowerCase().includes(badgeConnectSearch.toLowerCase().trim()))
+                                  .map(field => (
+                                    <button
+                                      key={field}
+                                      type="button"
+                                      onClick={() => {
+                                        handleDrillDownBadgeWithField(key, field);
+                                        setBadgeConnectSearch("");
+                                      }}
+                                      style={{
+                                        textAlign:"left",
+                                        padding:"4px 8px",
+                                        borderRadius:5,
+                                        border:"1px solid #E2E8F0",
+                                        background:"#F8FAFC",
+                                        fontSize:".72rem",
+                                        fontWeight:700,
+                                        color:"#1E293B",
+                                        cursor:"pointer",
+                                        display:"flex",
+                                        alignItems:"center",
+                                        justifyContent:"space-between"
+                                      }}
+                                      onMouseEnter={e => { e.currentTarget.style.background = "#ECFDF5"; e.currentTarget.style.borderColor = "#6EE7B7"; }}
+                                      onMouseLeave={e => { e.currentTarget.style.background = "#F8FAFC"; e.currentTarget.style.borderColor = "#E2E8F0"; }}
+                                    >
+                                      <span>+ {field}</span>
+                                      <span style={{fontSize:".65rem",color:"#059669",fontWeight:700}}>Drill Down ➔</span>
+                                    </button>
+                                  ))}
+                                {availableDrillFields.filter(f => !badgeConnectSearch.trim() || f.toLowerCase().includes(badgeConnectSearch.toLowerCase().trim())).length === 0 && (
+                                  <div style={{fontSize:".68rem",color:"#94A3B8",padding:"8px 4px",textAlign:"center"}}>
+                                    No fields match "{badgeConnectSearch}"
+                                  </div>
+                                )}
                               </div>
+
                               <div style={{fontSize:".62rem",color:"#059669",borderTop:"1px dashed #E2E8F0",paddingTop:3,fontStyle:"italic"}}>
                                 💡 Tip: You can also drag & drop any variable from the right palette directly onto this badge!
                               </div>
