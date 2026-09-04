@@ -22377,6 +22377,33 @@ function WorkspaceWhatsAppTemplateModal({ event, C, setC, auth, onClose, initial
 
   const [saving, setSaving] = useState(false);
   const [variableSearch, setVariableSearch] = useState("");
+  const isEduWs = Boolean(event?.id === 'education2026' || String(event?.title || "").toLowerCase().includes("education"));
+  const [collapsedCategories, setCollapsedCategories] = useState(() => {
+    return {
+      "🌱 Monsoon Registration Fields": true,
+      "👥 Contact Group & Guest Directory": !isEduWs,
+      "👥 Our Team & Leadership Directory": true,
+      "💰 Donation & 80G Tax Exemption Section": true,
+      "🎟️ Passes, Tokens & Custom Fields": false,
+      "🏛️ Event & Trust Info": true,
+      "📅 Live Current Date & Time": true,
+      "🎓 Education 2026 Summaries & Lists": true
+    };
+  });
+
+  const toggleCategory = (title) => {
+    setCollapsedCategories(prev => ({
+      ...prev,
+      [title]: !prev[title]
+    }));
+  };
+
+  const handleExpandAll = () => setCollapsedCategories({});
+  const handleCollapseAll = () => {
+    const allCollapsed = {};
+    variableCategories.forEach(cat => { allCollapsed[cat.title] = true; });
+    setCollapsedCategories(allCollapsed);
+  };
 
   const activeTpl = templates.find(t => t.id === activeTplId) || templates[0];
   const activePdf = pdfTemplates.find(p => p.id === activePdfId) || pdfTemplates[0];
@@ -22643,39 +22670,53 @@ function WorkspaceWhatsAppTemplateModal({ event, C, setC, auth, onClose, initial
     insertPlaceholderAtCursor(draggedText);
   };
 
-  // ── Extract Actual Fields per Registration Section (Education 2026, Monsoon, etc.) ──
+  // ── Extract Actual Fields per Registration Section (Education, Contact Groups, Our Team, Donations) ──
   const sectionFieldMap = {};
 
-  // Standard actual fields from Education 2026 registration section
-  const actualEduFields = [
-    "Full Name", "Student Name", "Mobile Number", "Alternate Mobile Number",
-    "Stream / Class", "% Obtained", "Vibhag", "Native Village", "School / College Name",
-    "Father's Name", "Mother's Name", "Surname", "Transaction ID", "Address", "Pin Code",
-    "Date of Birth", "Gender", "Status", "Remarks"
+  // 1. EXACT Education Registration Fields (from actual table export)
+  const exactEduFields = [
+    "Date", "Event", "Transaction ID", "Unique", "Status", "Remarks", "Updated By",
+    "Full Name", "Mobile Number", "Email Address", "% Obtained", "Address", "Age_year",
+    "Alternate Mobile Number", "Gender", "Marksheet", "Obtained Marks", "Other Stream",
+    "Out Of Marks", "Revised Marksheet", "Stream", "Submitted By", "submitterMob",
+    "Supporting Document", "Vibhag",
+    // Backend tracking fields for this section (clearly identified)
+    "passOpenCount", "firstPassOpenedAt", "lastPassOpenedAt", "whatsAppCount",
+    "lastWhatsAppAt", "lastWhatsAppType", "certificateReleased", "inviteLetterReleased"
   ];
-  sectionFieldMap["Education 2026"] = new Set(actualEduFields);
+  sectionFieldMap["Education 2026"] = new Set(exactEduFields);
 
-  // Standard actual fields from Monsoon registration section
-  const actualMonsoonFields = [
+  // 2. EXACT Contact Groups Fields (from actual table export)
+  const exactContactGroupFields = [
+    "Full Name", "Designation", "Mobile Number", "Group", "Email", "Address", "Vibhag Name",
+    "Transaction ID", "Token No", "Seat No", "Pass Link", "Gate Pass"
+  ];
+  sectionFieldMap["Contact Groups"] = new Set(exactContactGroupFields);
+
+  // 3. EXACT Our Team Fields (from actual table export)
+  const exactOurTeamFields = [
+    "Level", "ID", "Display Order Index", "Name", "Position", "Parent Leader Name",
+    "Committee", "Mobile", "Profession", "Qualification", "Address", "Photo URL", "Description"
+  ];
+  sectionFieldMap["Our Team"] = new Set(exactOurTeamFields);
+
+  // 4. EXACT Donation Section Fields
+  const exactDonationFields = [
+    "Donor Name", "Amount", "Amount in Words", "Payment Mode", "Payment Date",
+    "Transaction Ref", "PAN Card", "Receipt No", "Financial Year", "Purpose",
+    "Mobile", "Email", "Address", "Trust PAN", "80G Registration No"
+  ];
+  sectionFieldMap["Donations"] = new Set(exactDonationFields);
+
+  // 5. EXACT Monsoon Registration Fields
+  const exactMonsoonFields = [
     "Participant Name", "Full Name", "Mobile Number", "Vibhag",
     "Location / Area", "Number of Saplings", "Transaction ID", "Status", "Remarks"
   ];
-  sectionFieldMap["Monsoon"] = new Set(actualMonsoonFields);
+  sectionFieldMap["Monsoon"] = new Set(exactMonsoonFields);
 
-  // Standard actual fields from Donor registration section
-  const actualDonorFields = [
-    "Donor Name", "Amount", "Amount in Words", "Payment Mode",
-    "UTR / Ref No", "PAN Card", "Receipt No", "Date", "Remarks"
-  ];
-  sectionFieldMap["Donations"] = new Set(actualDonorFields);
-
-  // Dynamically inspect live registrations and assign real submitted fields to their respective sections
-  const ignoreFieldKeys = [
-    'id', 'eventId', 'eventTitle', 'eventName', '_submittedAt', 'Status', 'Remarks',
-    'Updated By', 'logHistory', 'status', 'remarks', 'isGlobalGuest', 'isSpecialGuest',
-    'deleted', 'isDeleted', 'isTrash', 'inTrash', 'formId', 'deletedAt', 'deletedBy'
-  ];
-
+  // ── DYNAMIC LINKING: Automatically detect any added/renamed fields in live data ──
+  // A) Link dynamically to actual Education & Monsoon registrations
   if (Array.isArray(liveRegs) && liveRegs.length > 0) {
     liveRegs.forEach(r => {
       if (!r || typeof r !== 'object') return;
@@ -22684,45 +22725,68 @@ function WorkspaceWhatsAppTemplateModal({ event, C, setC, auth, onClose, initial
       const txn = String(r['Transaction ID'] || r.transactionId || '').toUpperCase();
       const combined = `${rEvId} ${rEvTitle} ${String(r.program || '')} ${String(r.purpose || '')}`.toLowerCase();
 
-      let sec = "Other Registrations";
+      let targetSec = null;
       if (txn.startsWith('EDU') || txn.startsWith('VG-') || combined.includes('education') || combined.includes('student') || Boolean(r['Stream / Class'] || r['% Obtained'])) {
-        sec = "Education 2026";
+        targetSec = "Education 2026";
       } else if (combined.includes('monsoon') || combined.includes('tree') || txn.startsWith('MON-')) {
-        sec = "Monsoon";
-      } else if (combined.includes('donor') || combined.includes('donation') || txn.startsWith('DON-')) {
-        sec = "Donations";
-      } else if (r.eventName || r.eventTitle) {
-        sec = r.eventName || r.eventTitle;
+        targetSec = "Monsoon";
       }
 
-      if (!sectionFieldMap[sec]) sectionFieldMap[sec] = new Set();
-
-      Object.keys(r).forEach(k => {
-        if (!ignoreFieldKeys.includes(k) && !k.startsWith('_') && k.length < 35) {
-          const cleanK = k.trim();
-          const normK = cleanK.toLowerCase().replace(/[\s_-]+/g, '');
-          if (normK === 'vibhagnew' || cleanK === 'Vibhag New') {
-            sectionFieldMap[sec].add('Vibhag');
-          } else {
-            sectionFieldMap[sec].add(cleanK);
+      if (targetSec && sectionFieldMap[targetSec]) {
+        Object.keys(r).forEach(k => {
+          if (!k.startsWith('_') && k.length < 35 && !['id', 'eventId', 'eventTitle', 'eventName', 'deleted', 'isDeleted', 'isTrash', 'inTrash', 'formId'].includes(k)) {
+            const cleanK = k.trim();
+            const normK = cleanK.toLowerCase().replace(/[\s_-]+/g, '');
+            if (normK === 'vibhagnew' || cleanK === 'Vibhag New') {
+              sectionFieldMap[targetSec].add('Vibhag');
+            } else {
+              sectionFieldMap[targetSec].add(cleanK);
+            }
           }
-        }
-      });
+        });
+      }
     });
   }
 
-  // Also include custom form builder fields if configured on current event
-  const currentEventForm = (C.forms || []).find(f => f.id === event.formId || f.name === event.title || f.title === event.title);
-  if (currentEventForm && Array.isArray(currentEventForm.fields)) {
-    const secKey = event.title || "Current Event";
-    if (!sectionFieldMap[secKey]) sectionFieldMap[secKey] = new Set();
-    currentEventForm.fields.forEach(f => {
-      const fName = f.label || f.name || f.dataKey;
-      if (fName && fName.length < 35) sectionFieldMap[secKey].add(fName.trim());
+  // B) Link dynamically to actual Contact Groups & Global Guests
+  const guestsList = Array.isArray(C.globalGuests) ? C.globalGuests : [];
+  guestsList.forEach(g => {
+    if (!g || typeof g !== 'object') return;
+    Object.keys(g).forEach(k => {
+      if (!k.startsWith('_') && k.length < 35 && !['id', 'globalGuestId', 'deleted', 'formId'].includes(k)) {
+        sectionFieldMap["Contact Groups"].add(k.trim());
+      }
     });
-  }
+  });
 
-  // Construct Simplified Variable Categories by Registration Section
+  // C) Link dynamically to actual Our Team items
+  const teamList = Array.isArray(C.teamItems) ? C.teamItems : [];
+  teamList.forEach(t => {
+    if (!t || typeof t !== 'object') return;
+    Object.keys(t).forEach(k => {
+      if (!k.startsWith('_') && k.length < 35 && !['id', 'deleted', 'isSeparator', 'order'].includes(k)) {
+        sectionFieldMap["Our Team"].add(k.trim());
+      }
+    });
+  });
+
+  // Helper to describe backend tracking fields clearly for user
+  const getFieldDescription = (f, secName) => {
+    if (f === 'passOpenCount') return 'Backend Field: Total count of times digital pass was opened';
+    if (f === 'firstPassOpenedAt') return 'Backend Field: Timestamp when pass was first viewed';
+    if (f === 'lastPassOpenedAt') return 'Backend Field: Timestamp when pass was last viewed';
+    if (f === 'whatsAppCount') return 'Backend Field: Number of WhatsApp messages dispatched';
+    if (f === 'lastWhatsAppAt') return 'Backend Field: Timestamp of latest WhatsApp dispatch';
+    if (f === 'lastWhatsAppType') return 'Backend Field: Template type of latest WhatsApp message';
+    if (f === 'certificateReleased') return 'Backend Field: Certificate release status flag';
+    if (f === 'inviteLetterReleased') return 'Backend Field: Official invite letter release flag';
+    if (f === 'submitterMob') return 'Mobile number of registration submitter';
+    if (f === 'Age_year') return 'Calculated applicant age in years';
+    if (f === 'Unique') return 'Duplicate detection status flag';
+    return `Actual ${secName} field: ${f}`;
+  };
+
+  // Construct Simplified, Dynamically Linked Variable Categories by Exact Section
   const variableCategories = [
     {
       title: "🎓 Education 2026 Registration Fields",
@@ -22730,10 +22794,47 @@ function WorkspaceWhatsAppTemplateModal({ event, C, setC, auth, onClose, initial
       bgColor: "#F0FDF4",
       borderColor: "#86EFAC",
       icon: "🎓",
-      vars: Array.from(sectionFieldMap["Education 2026"] || actualEduFields).map(f => ({
+      vars: Array.from(sectionFieldMap["Education 2026"]).map(f => ({
         tag: "{" + f + "}",
         label: f,
-        desc: `Actual registration column from Education 2026: ${f}`
+        desc: getFieldDescription(f, "Education 2026"),
+        isBackend: ['passOpenCount', 'firstPassOpenedAt', 'lastPassOpenedAt', 'whatsAppCount', 'lastWhatsAppAt', 'lastWhatsAppType', 'certificateReleased', 'inviteLetterReleased'].includes(f)
+      }))
+    },
+    {
+      title: "👥 Contact Group & Guest Directory",
+      color: "#6D28D9",
+      bgColor: "#F5F3FF",
+      borderColor: "#C4B5FD",
+      icon: "👥",
+      vars: Array.from(sectionFieldMap["Contact Groups"]).map(f => ({
+        tag: "{" + f + "}",
+        label: f,
+        desc: `Actual Contact Group field: ${f}`
+      }))
+    },
+    {
+      title: "👥 Our Team & Leadership Directory",
+      color: "#7C3AED",
+      bgColor: "#FAF5FF",
+      borderColor: "#DDD6FE",
+      icon: "👥",
+      vars: Array.from(sectionFieldMap["Our Team"]).map(f => ({
+        tag: "{" + f + "}",
+        label: f,
+        desc: `Actual Our Team member field: ${f}`
+      }))
+    },
+    {
+      title: "💰 Donation & 80G Tax Exemption Section",
+      color: "#059669",
+      bgColor: "#ECFDF5",
+      borderColor: "#A7F3D0",
+      icon: "💰",
+      vars: Array.from(sectionFieldMap["Donations"]).map(f => ({
+        tag: "{" + f + "}",
+        label: f,
+        desc: `Actual Donation field: ${f}`
       }))
     },
     {
@@ -22742,97 +22843,14 @@ function WorkspaceWhatsAppTemplateModal({ event, C, setC, auth, onClose, initial
       bgColor: "#F0F9FF",
       borderColor: "#BAE6FD",
       icon: "🌱",
-      vars: Array.from(sectionFieldMap["Monsoon"] || actualMonsoonFields).map(f => ({
+      vars: Array.from(sectionFieldMap["Monsoon"]).map(f => ({
         tag: "{" + f + "}",
         label: f,
-        desc: `Actual registration column from Monsoon: ${f}`
+        desc: `Actual Monsoon field: ${f}`
       }))
     },
     {
-      title: "👥 Contact Group & Guest Directory Fields",
-      color: "#6D28D9",
-      bgColor: "#F5F3FF",
-      borderColor: "#C4B5FD",
-      icon: "👥",
-      vars: [
-        { tag: "{CONTACT_GROUP}", label: "Contact Group / Committee", desc: "Assigned contact group (e.g. 'new vibhag', 'CWC Member', 'Trustee')" },
-        { tag: "{GROUP}", label: "Group Name", desc: "Primary assigned contact group" },
-        { tag: "{INVITEE_NAME}", label: "Invitee / Guest Name", desc: "Full name of the invited dignitary, guest, or committee member" },
-        { tag: "{DESIGNATION}", label: "Designation / Role", desc: "Official designation (e.g. Trustee, General Secretary, Vibhag Pramukh)" },
-        { tag: "{VIBHAG}", label: "Vibhag / Branch Name", desc: "Assigned MMP Vibhag or branch area" },
-        { tag: "{MOBILE}", label: "Contact Mobile Number", desc: "Registered 10-digit mobile number" },
-        { tag: "{EMAIL}", label: "Contact Email Address", desc: "Registered email address" },
-        { tag: "{ADDRESS}", label: "Address / Location", desc: "Guest residential or office address" },
-        { tag: "{TXN_ID}", label: "Guest Pass / Transaction ID", desc: "Unique entry pass serial number (e.g. GST-631028)" },
-        { tag: "{TOKEN_NO}", label: "Token Number / Food Pass No", desc: "Assigned token or food pass sequence" },
-        { tag: "{SEAT_NO}", label: "Seat / Hall Row Number", desc: "Auditorium assigned seating number" },
-        { tag: "{SUB_WORKSPACE_NAME}", label: "Sub-Workspace Pass Name", desc: "Pass or coupon template name (e.g. 'Food coupon')" },
-        { tag: "{PASS_LINK}", label: "1-Click Digital Pass Link", desc: "Direct personalized invite pass URL" },
-        { tag: "{GATE_PASS}", label: "Gate Pass ID", desc: "Entry gate verification code" },
-        { tag: "{REMARKS}", label: "Committee Remarks / Note", desc: "Verification remarks or special guest instructions" }
-      ]
-    },
-    {
-      title: "👥 Our Team & Leadership Directory Fields",
-      color: "#7C3AED",
-      bgColor: "#FAF5FF",
-      borderColor: "#DDD6FE",
-      icon: "👥",
-      vars: [
-        { tag: "{TEAM_MEMBER_NAME}", label: "Team Member Full Name", desc: "Full name of committee member / trustee" },
-        { tag: "{TEAM_DESIGNATION}", label: "Position / Designation", desc: "Official position (e.g. President, Trustee, General Secretary, Vibhag Pramukh)" },
-        { tag: "{TEAM_COMMITTEE}", label: "Committee / Wing", desc: "Assigned wing (e.g. Central Working Committee (CWC), Education Board, Youth Wing)" },
-        { tag: "{TEAM_VIBHAG}", label: "Team Member Vibhag", desc: "Branch or area represented" },
-        { tag: "{TEAM_MOBILE}", label: "Team Member Mobile", desc: "Official committee contact number" },
-        { tag: "{TEAM_EMAIL}", label: "Team Member Email", desc: "Official contact email address" },
-        { tag: "{TEAM_PROFESSION}", label: "Profession", desc: "Member's professional occupation" },
-        { tag: "{TEAM_QUALIFICATION}", label: "Educational Qualification", desc: "Academic qualification degrees" },
-        { tag: "{PRESIDENT_NAME}", label: "Trust President Name", desc: "Current President of Mumbai Meghwal Panchayat" },
-        { tag: "{GENERAL_SECRETARY_NAME}", label: "General Secretary Name", desc: "Current General Secretary of CWC" },
-        { tag: "{TREASURER_NAME}", label: "Treasurer Name", desc: "Current Treasurer of Trust" },
-        { tag: "{TRUST_NAME}", label: "Trust Name", desc: "Mumbai Meghwal Panchayat & Vidya Gohil Charitable Trust" }
-      ]
-    },
-    {
-      title: "💰 Donation & 80G Tax Exemption Section",
-      color: "#059669",
-      bgColor: "#ECFDF5",
-      borderColor: "#A7F3D0",
-      icon: "💰",
-      vars: [
-        { tag: "{DONOR_NAME}", label: "Donor / Contributor Full Name", desc: "Full name of donor or contributing organization" },
-        { tag: "{DONOR_AMOUNT}", label: "Donation Amount (₹)", desc: "Exact contribution amount in rupees" },
-        { tag: "{AMOUNT_IN_WORDS}", label: "Donation Amount in Words", desc: "Amount spelled out (e.g. Rupees Five Thousand Only)" },
-        { tag: "{PAYMENT_MODE}", label: "Payment Mode / Method", desc: "UPI, Cheque, Bank Transfer, Cash" },
-        { tag: "{PAYMENT_DATE}", label: "Donation Date", desc: "Date contribution was received" },
-        { tag: "{TRANSACTION_REF}", label: "Bank UTR / Cheque Ref No", desc: "Bank transaction reference or cheque number" },
-        { tag: "{PAN_CARD}", label: "Donor PAN Card Number", desc: "PAN number for 80G tax exemption claim" },
-        { tag: "{RECEIPT_NO}", label: "80G Official Receipt No", desc: "Unique serial receipt number" },
-        { tag: "{FINANCIAL_YEAR}", label: "Assessment Financial Year", desc: "Assessment financial year (e.g. 2025-2026)" },
-        { tag: "{DONATION_PURPOSE}", label: "Donation Purpose / Fund", desc: "E.g. Education Felicitation Fund, Medical Aid, General Fund" },
-        { tag: "{DONOR_MOBILE}", label: "Donor Mobile Number", desc: "Contact mobile number of donor" },
-        { tag: "{DONOR_EMAIL}", label: "Donor Email Address", desc: "Email for receipt delivery" },
-        { tag: "{DONOR_ADDRESS}", label: "Donor Postal Address", desc: "Address for official 80G receipt" },
-        { tag: "{TRUST_PAN}", label: "Trust PAN Number", desc: "PAN of Mumbai Meghwal Panchayat & Vidya Gohil Trust" },
-        { tag: "{80G_REG_NO}", label: "80G Registration Number", desc: "Income Tax 80G exemption approval number" }
-      ]
-    },
-    ...Object.entries(sectionFieldMap)
-      .filter(([sec]) => sec !== "Education 2026" && sec !== "Monsoon" && sec !== "Donations" && sectionFieldMap[sec].size > 0)
-      .map(([sec, fieldSet]) => ({
-        title: `📋 ${sec} Registration Fields`,
-        color: "#4F46E5",
-        bgColor: "#EEF2FF",
-        borderColor: "#C7D2FE",
-        icon: "📋",
-        vars: Array.from(fieldSet).map(f => ({
-          tag: "{" + f + "}",
-          label: f,
-          desc: `Actual registration column from ${sec}: ${f}`
-        }))
-      })),
-    {
-      title: "🎟️ Passes, Tokens & Custom Fields",
+      title: "🎟️ Workspace Passes & Tokens",
       color: "#D97706",
       bgColor: "#FFFBEB",
       borderColor: "#FCD34D",
@@ -22841,7 +22859,7 @@ function WorkspaceWhatsAppTemplateModal({ event, C, setC, auth, onClose, initial
         { tag: "{TOKEN_NO}", label: "Token Number / Food Pass No", desc: "Token number or food pass counter" },
         { tag: "{SEAT_NO}", label: "Seat / Hall Number", desc: "Assigned auditorium seat or row" },
         { tag: "{GATE_PASS}", label: "Gate / Entry Pass ID", desc: "Entry gate verification tag" },
-        { tag: "{SUB_WORKSPACE_NAME}", label: "Sub-Workspace Pass Name", desc: "Name of active pass/coupon (e.g. 'Food coupon')" },
+        { tag: "{SUB_WORKSPACE_NAME}", label: "Sub-Workspace Pass Name", desc: "Pass or coupon template name (e.g. 'Food coupon')" },
         { tag: "{PASS_LINK}", label: "1-Click Digital Pass Link", desc: "Direct personalized invitation pass URL" }
       ]
     },
@@ -23621,6 +23639,29 @@ function WorkspaceWhatsAppTemplateModal({ event, C, setC, auth, onClose, initial
                 onChange={e => setVariableSearch(e.target.value)}
                 style={{width:"100%",padding:"5px 10px",borderRadius:6,border:"1px solid #CBD5E1",fontSize:".78rem",boxSizing:"border-box",background:"#FAFDF7"}}
               />
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",fontSize:".7rem",padding:"2px 2px",marginTop:2}}>
+                <span style={{color:"#64748B",fontWeight:700}}>
+                  {variableCategories.length} Sections ({variableCategories.reduce((acc, c) => acc + c.vars.length, 0)} Fields)
+                </span>
+                <div style={{display:"flex",gap:6}}>
+                  <button
+                    type="button"
+                    onClick={handleExpandAll}
+                    style={{background:"#F1F5F9",border:"1px solid #CBD5E1",borderRadius:4,padding:"2px 7px",fontSize:".68rem",fontWeight:700,color:"#1E293B",cursor:"pointer"}}
+                    title="Expand all sections"
+                  >
+                    ▾ Expand All
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleCollapseAll}
+                    style={{background:"#F1F5F9",border:"1px solid #CBD5E1",borderRadius:4,padding:"2px 7px",fontSize:".68rem",fontWeight:700,color:"#1E293B",cursor:"pointer"}}
+                    title="Collapse all sections to focus on one"
+                  >
+                    ▴ Collapse All
+                  </button>
+                </div>
+              </div>
             </div>
 
             <div style={{flex:1,overflowY:"auto",padding:10,display:"flex",flexDirection:"column",gap:10}}>
@@ -23634,13 +23675,42 @@ function WorkspaceWhatsAppTemplateModal({ event, C, setC, auth, onClose, initial
 
                 if (filteredVars.length === 0) return null;
 
+                const isCollapsed = Boolean(collapsedCategories[cat.title]);
+                const shouldShowVars = !isCollapsed || Boolean(variableSearch.trim());
+
                 return (
-                  <div key={idx} style={{background:cat.bgColor,border:`1.5px solid ${cat.borderColor}`,borderRadius:10,padding:10,display:"flex",flexDirection:"column",gap:6}}>
-                    <div style={{fontSize:".74rem",fontWeight:800,color:cat.color,display:"flex",alignItems:"center",gap:4,textTransform:"uppercase"}}>
-                      <span>{cat.icon}</span> {cat.title}
+                  <div key={idx} style={{background:cat.bgColor,border:`1.5px solid ${cat.borderColor}`,borderRadius:10,padding:"8px 10px",display:"flex",flexDirection:"column",gap:6,boxShadow:"0 1px 3px rgba(0,0,0,0.03)"}}>
+                    {/* Collapsible Header */}
+                    <div 
+                      onClick={() => toggleCategory(cat.title)}
+                      style={{
+                        fontSize:".74rem",
+                        fontWeight:800,
+                        color:cat.color,
+                        display:"flex",
+                        justifyContent:"space-between",
+                        alignItems:"center",
+                        cursor:"pointer",
+                        userSelect:"none",
+                        padding:"2px 0"
+                      }}
+                      title="Click to Expand / Collapse this section"
+                    >
+                      <div style={{display:"flex",alignItems:"center",gap:6,textTransform:"uppercase"}}>
+                        <span>{cat.icon}</span>
+                        <span>{cat.title}</span>
+                        <span style={{fontSize:".65rem",background:"rgba(255,255,255,0.7)",padding:"1px 6px",borderRadius:10,fontWeight:700,border:`1px solid ${cat.borderColor}`}}>
+                          {filteredVars.length}
+                        </span>
+                      </div>
+                      <span style={{fontSize:".75rem",fontWeight:800,color:cat.color,padding:"0 4px"}}>
+                        {shouldShowVars ? "▼" : "▶"}
+                      </span>
                     </div>
 
-                    <div style={{display:"flex",flexDirection:"column",gap:4}}>
+                    {/* Collapsible Body */}
+                    {shouldShowVars && (
+                      <div style={{display:"flex",flexDirection:"column",gap:4,paddingTop:2}}>
                       {filteredVars.map(v => (
                         <div
                           key={v.tag}
@@ -23675,7 +23745,8 @@ function WorkspaceWhatsAppTemplateModal({ event, C, setC, auth, onClose, initial
                           </span>
                         </div>
                       ))}
-                    </div>
+                      </div>
+                    )}
                   </div>
                 );
               })}
