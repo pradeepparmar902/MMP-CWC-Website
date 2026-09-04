@@ -22221,7 +22221,7 @@ function BulkWhatsAppBroadcastModal({ event, recipients = [], allRegs = [], C, a
 }
 
 // ── Workspace-Specific Multi-Template Manager Modal (Unified WhatsApp & PDF Studio) ─────────
-function WorkspaceWhatsAppTemplateModal({ event, C, setC, auth, onClose, initialTab = "whatsapp", initialPdfTplId = null }) {
+function WorkspaceWhatsAppTemplateModal({ event, C, setC, auth, onClose, initialTab = "whatsapp", initialPdfTplId = null, allRegs = [] }) {
   if (!event) return null;
 
   const defaultTemplates = [
@@ -22262,6 +22262,29 @@ function WorkspaceWhatsAppTemplateModal({ event, C, setC, auth, onClose, initial
   const [templates, setTemplates] = useState(JSON.parse(JSON.stringify(currentTemplates)));
   const [activeTplId, setActiveTplId] = useState(templates[0]?.id || "tpl_student_pass");
   const textareaRef = useRef(null);
+
+  // Live registrations state for extracting actual section fields
+  const [liveRegs, setLiveRegs] = useState(() => {
+    if (Array.isArray(allRegs) && allRegs.length > 0) return allRegs;
+    try {
+      const cached = JSON.parse(localStorage.getItem("mmp_cached_registrations") || "[]");
+      if (Array.isArray(cached) && cached.length > 0) return cached;
+    } catch(e) {}
+    return [];
+  });
+
+  useEffect(() => {
+    if (Array.isArray(allRegs) && allRegs.length > 0) {
+      setLiveRegs(allRegs);
+    } else if (auth?.idToken) {
+      fbFetchRegistrations(auth.idToken).then(d => {
+        if (d && Array.isArray(d)) {
+          setLiveRegs(d);
+          try { localStorage.setItem("mmp_cached_registrations", JSON.stringify(d)); } catch(e){}
+        }
+      }).catch(e => console.error(e));
+    }
+  }, [allRegs, auth]);
 
   // PDF Passes & Templates State
   const isDonorWs = Boolean(event?.isDonorWorkspace || String(event?.title || "").toLowerCase().includes("donor"));
@@ -22582,169 +22605,151 @@ function WorkspaceWhatsAppTemplateModal({ event, C, setC, auth, onClose, initial
     insertPlaceholderAtCursor(draggedText);
   };
 
-  // Dynamic extraction of form fields & registration keys for this workspace
-  const targetForm = (C.forms || []).find(f => f.id === event.formId || f.name === event.title || f.title === event.title);
-  const dynamicFormFields = [];
-  const registeredTags = new Set();
+  // ── Extract Actual Fields per Registration Section (Education 2026, Monsoon, etc.) ──
+  const sectionFieldMap = {};
 
-  if (targetForm && Array.isArray(targetForm.fields)) {
-    targetForm.fields.forEach(f => {
-      const rawName = f.label || f.name || f.dataKey || "";
-      if (!rawName) return;
-      const cleanTag = "{" + rawName.trim().replace(/\s+/g, '_').replace(/[^a-zA-Z0-9_]/g, '').toUpperCase() + "}";
-      if (!registeredTags.has(cleanTag)) {
-        registeredTags.add(cleanTag);
-        dynamicFormFields.push({
-          tag: cleanTag,
-          label: `📋 ${rawName}`,
-          desc: f.helpText || `Form Field: ${rawName}`
-        });
+  // Standard actual fields from Education 2026 registration section
+  const actualEduFields = [
+    "Full Name", "Student Name", "Mobile Number", "Alternate Mobile Number",
+    "Stream / Class", "% Obtained", "Vibhag", "Native Village", "School / College Name",
+    "Father's Name", "Mother's Name", "Surname", "Transaction ID", "Address", "Pin Code",
+    "Date of Birth", "Gender", "Status", "Remarks"
+  ];
+  sectionFieldMap["Education 2026"] = new Set(actualEduFields);
+
+  // Standard actual fields from Monsoon registration section
+  const actualMonsoonFields = [
+    "Participant Name", "Full Name", "Mobile Number", "Vibhag",
+    "Location / Area", "Number of Saplings", "Transaction ID", "Status", "Remarks"
+  ];
+  sectionFieldMap["Monsoon"] = new Set(actualMonsoonFields);
+
+  // Standard actual fields from Donor registration section
+  const actualDonorFields = [
+    "Donor Name", "Amount", "Amount in Words", "Payment Mode",
+    "UTR / Ref No", "PAN Card", "Receipt No", "Date", "Remarks"
+  ];
+  sectionFieldMap["Donations"] = new Set(actualDonorFields);
+
+  // Dynamically inspect live registrations and assign real submitted fields to their respective sections
+  const ignoreFieldKeys = [
+    'id', 'eventId', 'eventTitle', 'eventName', '_submittedAt', 'Status', 'Remarks',
+    'Updated By', 'logHistory', 'status', 'remarks', 'isGlobalGuest', 'isSpecialGuest',
+    'deleted', 'isDeleted', 'isTrash', 'inTrash', 'formId', 'deletedAt', 'deletedBy'
+  ];
+
+  if (Array.isArray(liveRegs) && liveRegs.length > 0) {
+    liveRegs.forEach(r => {
+      if (!r || typeof r !== 'object') return;
+      const rEvId = String(r.eventId || '').trim().toLowerCase();
+      const rEvTitle = String(r.eventName || r.eventTitle || '').trim().toLowerCase();
+      const txn = String(r['Transaction ID'] || r.transactionId || '').toUpperCase();
+      const combined = `${rEvId} ${rEvTitle} ${String(r.program || '')} ${String(r.purpose || '')}`.toLowerCase();
+
+      let sec = "Other Registrations";
+      if (txn.startsWith('EDU') || txn.startsWith('VG-') || combined.includes('education') || combined.includes('student') || Boolean(r['Stream / Class'] || r['% Obtained'])) {
+        sec = "Education 2026";
+      } else if (combined.includes('monsoon') || combined.includes('tree') || txn.startsWith('MON-')) {
+        sec = "Monsoon";
+      } else if (combined.includes('donor') || combined.includes('donation') || txn.startsWith('DON-')) {
+        sec = "Donations";
+      } else if (r.eventName || r.eventTitle) {
+        sec = r.eventName || r.eventTitle;
       }
+
+      if (!sectionFieldMap[sec]) sectionFieldMap[sec] = new Set();
+
+      Object.keys(r).forEach(k => {
+        if (!ignoreFieldKeys.includes(k) && !k.startsWith('_') && k.length < 35) {
+          const cleanK = k.trim();
+          const normK = cleanK.toLowerCase().replace(/[\s_-]+/g, '');
+          if (normK === 'vibhagnew' || cleanK === 'Vibhag New') {
+            sectionFieldMap[sec].add('Vibhag');
+          } else {
+            sectionFieldMap[sec].add(cleanK);
+          }
+        }
+      });
     });
   }
 
-  // Also collect any extra fields present in actual registrations of this event
-  const eventRegs = (C.registrations || []).filter(r => {
-    if (!r || typeof r !== 'object') return false;
-    const rEv = r.event || r['Event Name'] || r.eventId || r.formId;
-    return rEv === event.id || rEv === event.title || r.formId === event.formId;
-  });
-
-  const dynamicRegFields = [];
-  eventRegs.slice(0, 40).forEach(r => {
-    Object.keys(r).forEach(k => {
-      if (!k || k.startsWith('_') || k === 'deleted' || k === 'isDeleted' || k === 'id' || k === 'formId' || k === 'eventId') return;
-      if (k.length > 35) return;
-      const cleanTag = "{" + k.trim().replace(/\s+/g, '_').replace(/[^a-zA-Z0-9_]/g, '').toUpperCase() + "}";
-      if (!registeredTags.has(cleanTag) && !['{STUDENT_NAME}', '{FULL_NAME}', '{MOBILE}', '{VIBHAG}', '{TXN_ID}', '{STREAM}', '{PERCENTAGE}'].includes(cleanTag)) {
-        registeredTags.add(cleanTag);
-        dynamicRegFields.push({
-          tag: cleanTag,
-          label: `📝 ${k}`,
-          desc: `Submitted Registration Field: ${k}`
-        });
-      }
+  // Also include custom form builder fields if configured on current event
+  const currentEventForm = (C.forms || []).find(f => f.id === event.formId || f.name === event.title || f.title === event.title);
+  if (currentEventForm && Array.isArray(currentEventForm.fields)) {
+    const secKey = event.title || "Current Event";
+    if (!sectionFieldMap[secKey]) sectionFieldMap[secKey] = new Set();
+    currentEventForm.fields.forEach(f => {
+      const fName = f.label || f.name || f.dataKey;
+      if (fName && fName.length < 35) sectionFieldMap[secKey].add(fName.trim());
     });
-  });
+  }
 
-  // Variable Palettes Configuration
+  // Construct Simplified Variable Categories by Registration Section
   const variableCategories = [
     {
-      title: "📋 Individual Student & Applicant Registration Fields",
-      color: "#2563EB",
-      bgColor: "#EFF6FF",
-      borderColor: "#93C5FD",
-      icon: "📋",
-      vars: [
-        { tag: "{STUDENT_NAME}", label: "🎓 Student / Candidate Full Name", desc: "Full registered name of the applicant" },
-        { tag: "{FATHER_NAME}", label: "👨 Father's Name", desc: "Father's or guardian's full name" },
-        { tag: "{MOTHER_NAME}", label: "👩 Mother's Name", desc: "Mother's full name" },
-        { tag: "{SURNAME}", label: "🏷️ Surname / Family Name", desc: "Applicant surname" },
-        { tag: "{STREAM}", label: "📚 Stream / Class / Course", desc: "Academic standard, degree, or course (e.g. 10th, 12th, B.Com, B.E.)" },
-        { tag: "{PERCENTAGE}", label: "🏆 Marks / Percentage (%)", desc: "Academic percentage or marks obtained" },
-        { tag: "{GRADE}", label: "🥇 Grade / Rank / Division", desc: "Academic grade, class division or merit rank" },
-        { tag: "{SCHOOL_COLLEGE_NAME}", label: "🏫 School / College / Institute", desc: "Name of the school, college, or university" },
-        { tag: "{PASSING_YEAR}", label: "📅 Passing / Academic Year", desc: "Year of passing or examination session (e.g. 2025-2026)" },
-        { tag: "{DOB}", label: "🎂 Date of Birth", desc: "Applicant birth date (DD-MM-YYYY)" },
-        { tag: "{AGE}", label: "🔢 Age", desc: "Applicant age in years" },
-        { tag: "{GENDER}", label: "⚧️ Gender", desc: "Gender (Male / Female)" },
-        { tag: "{VIBHAG}", label: "📍 Vibhag / Branch Name", desc: "Assigned Mumbai Meghwal Panchayat Vibhag (e.g. 10 MAHALAXMI)" },
-        { tag: "{NATIVE_VILLAGE}", label: "🏡 Native Village / Gam", desc: "Native village or ancestral hometown" },
-        { tag: "{DISTRICT}", label: "🗺️ District / State", desc: "Native district or hometown state" },
-        { tag: "{MOBILE}", label: "📱 Primary Mobile Number", desc: "Registered 10-digit mobile number (+91...)" },
-        { tag: "{ALT_MOBILE}", label: "📞 Alternate Mobile Number", desc: "Secondary family/contact number" },
-        { tag: "{EMAIL}", label: "✉️ Email Address", desc: "Registered email address" },
-        { tag: "{ADDRESS}", label: "🏠 Residential Address", desc: "Current residential home address" },
-        { tag: "{PIN_CODE}", label: "📮 Pin Code", desc: "Postal area pin code" },
-        { tag: "{TXN_ID}", label: "🎫 Entry Pass / Reg ID", desc: "Unique registration transaction ID (e.g. GST-631028)" },
-        { tag: "{TOKEN_NO}", label: "🔢 Token Number / Food Pass No", desc: "Assigned token number or coupon sequence" },
-        { tag: "{SEAT_NO}", label: "🪑 Seat / Hall Number", desc: "Assigned auditorium seat or row" },
-        { tag: "{STATUS}", label: "⚡ Registration Status", desc: "Status (Approved, Pending, Needs Info)" },
-        { tag: "{SUBMISSION_DATE}", label: "📅 Registration Submission Date", desc: "Date applicant registered on the portal" },
-        { tag: "{REMARKS}", label: "📝 Committee Remarks", desc: "Verification remarks or special instructions" }
-      ]
-    },
-    ...(isDonorWs ? [
-      {
-        title: "💰 Individual Donor & Contribution Fields",
-        color: "#059669",
-        bgColor: "#ECFDF5",
-        borderColor: "#A7F3D0",
-        icon: "💰",
-        vars: [
-          { tag: "{DONOR_NAME}", label: "👤 Donor Full Name", desc: "Full name of the donor or contributing organization" },
-          { tag: "{DONOR_AMOUNT}", label: "💵 Donation Amount (₹)", desc: "Exact contribution amount in rupees" },
-          { tag: "{AMOUNT_IN_WORDS}", label: "🔤 Amount in Words", desc: "Amount spelled out in words (e.g. Rupees Five Thousand Only)" },
-          { tag: "{PAYMENT_MODE}", label: "💳 Payment Method / Mode", desc: "Payment mode (UPI, Cheque, Bank Transfer, Cash)" },
-          { tag: "{PAYMENT_DATE}", label: "📅 Payment Date", desc: "Date contribution was received" },
-          { tag: "{TRANSACTION_REF}", label: "🏦 UTR / Cheque / Bank Ref No", desc: "Bank reference, UTR, or cheque number" },
-          { tag: "{PAN_CARD}", label: "🆔 Donor PAN Card", desc: "PAN number for 80G tax exemption claim" },
-          { tag: "{RECEIPT_NO}", label: "🧾 80G Official Receipt No", desc: "Unique serial receipt number" },
-          { tag: "{FINANCIAL_YEAR}", label: "📆 Financial Year", desc: "Current financial assessment year (e.g. 2025-2026)" }
-        ]
-      }
-    ] : []),
-    ...(dynamicFormFields.length > 0 ? [
-      {
-        title: `📑 Form Fields: ${targetForm?.name || 'Registration Form'}`,
-        color: "#4F46E5",
-        bgColor: "#EEF2FF",
-        borderColor: "#C7D2FE",
-        icon: "📑",
-        vars: dynamicFormFields
-      }
-    ] : []),
-    ...(dynamicRegFields.length > 0 ? [
-      {
-        title: "📝 Additional Submitted Registration Fields",
-        color: "#0D9488",
-        bgColor: "#F0FDFA",
-        borderColor: "#99F6E4",
-        icon: "📝",
-        vars: dynamicRegFields
-      }
-    ] : []),
-    {
-      title: "👤 Participant, Contact & Group Details",
-      color: "#6D28D9",
-      bgColor: "#F5F3FF",
-      borderColor: "#C4B5FD",
-      icon: "👤",
-      vars: [
-        { tag: "{CONTACT_GROUP}", label: "👥 Contact Group / Committee", desc: "Assigned contact group (e.g. 'new vibhag', 'CWC Member', 'Trustee')" },
-        { tag: "{GROUP}", label: "🏷️ Group Name", desc: "Primary assigned group of recipient" },
-        { tag: "{INVITEE_NAME}", label: "👤 Invitee / Member Name", desc: "Full name of the invited participant or guest" },
-        { tag: "{DESIGNATION}", label: "💼 Designation / Role", desc: "Guest designation (e.g. General Secretary, Trustee, Vibhag Pramukh)" },
-        { tag: "{SUB_WORKSPACE_NAME}", label: "🎟️ Sub-Workspace / Template Name", desc: "Name of the pass/template (e.g. 'Food coupon')" },
-        { tag: "{PASS_LINK}", label: "🔗 1-Click Digital Pass Link", desc: "Direct personalized invitation pass URL" },
-        { tag: "{GATE_PASS}", label: "🚪 Gate / Entry Pass ID", desc: "Entry gate verification tag" }
-      ]
-    },
-    {
-      title: "📅 Live Current Date & Time",
-      color: "#0891B2",
-      bgColor: "#ECFEFF",
-      borderColor: "#A5F3FC",
-      icon: "📅",
-      vars: [
-        { tag: "{CURRENT_DATE}", label: "📅 Current Date (DD-MM-YYYY)", desc: "Today's live date (e.g. 04-09-2026)" },
-        { tag: "{CURRENT_TIME}", label: "⏰ Current Time (HH:mm AM/PM)", desc: "Live current time (e.g. 09:30 AM)" },
-        { tag: "{CURRENT_DATETIME}", label: "🗓️ Current Date & Time", desc: "Full timestamp (e.g. 04-09-2026, 09:30 AM)" },
-        { tag: "{TODAY}", label: "📅 Today Shortcut", desc: "Alias for today's date" }
-      ]
-    },
-    {
-      title: "🎓 Education 2026 Summaries & Lists",
+      title: "🎓 Education 2026 Registration Fields",
       color: "#15803D",
       bgColor: "#F0FDF4",
       borderColor: "#86EFAC",
       icon: "🎓",
+      vars: Array.from(sectionFieldMap["Education 2026"] || actualEduFields).map(f => ({
+        tag: "{" + f + "}",
+        label: f,
+        desc: `Actual registration column from Education 2026: ${f}`
+      }))
+    },
+    {
+      title: "🌱 Monsoon Registration Fields",
+      color: "#0284C7",
+      bgColor: "#F0F9FF",
+      borderColor: "#BAE6FD",
+      icon: "🌱",
+      vars: Array.from(sectionFieldMap["Monsoon"] || actualMonsoonFields).map(f => ({
+        tag: "{" + f + "}",
+        label: f,
+        desc: `Actual registration column from Monsoon: ${f}`
+      }))
+    },
+    ...(sectionFieldMap["Donations"] ? [
+      {
+        title: "💰 Donor & Contribution Registration Fields",
+        color: "#059669",
+        bgColor: "#ECFDF5",
+        borderColor: "#A7F3D0",
+        icon: "💰",
+        vars: Array.from(sectionFieldMap["Donations"] || actualDonorFields).map(f => ({
+          tag: "{" + f + "}",
+          label: f,
+          desc: `Actual donor transaction column: ${f}`
+        }))
+      }
+    ] : []),
+    ...Object.entries(sectionFieldMap)
+      .filter(([sec]) => sec !== "Education 2026" && sec !== "Monsoon" && sec !== "Donations" && sectionFieldMap[sec].size > 0)
+      .map(([sec, fieldSet]) => ({
+        title: `📋 ${sec} Registration Fields`,
+        color: "#6D28D9",
+        bgColor: "#F5F3FF",
+        borderColor: "#C4B5FD",
+        icon: "📋",
+        vars: Array.from(fieldSet).map(f => ({
+          tag: "{" + f + "}",
+          label: f,
+          desc: `Actual registration column from ${sec}: ${f}`
+        }))
+      })),
+    {
+      title: "🎟️ Passes, Tokens & Custom Fields",
+      color: "#D97706",
+      bgColor: "#FFFBEB",
+      borderColor: "#FCD34D",
+      icon: "🎟️",
       vars: [
-        { tag: "{VIBHAG_STUDENT_LIST}", label: "📋 Education Vibhag Student List", desc: "Numbered list of Education 2026 students from recipient's Vibhag" },
-        { tag: "{VIBHAG_STUDENT_SUMMARY}", label: "📊 Education Vibhag Summary", desc: "Education 2026 counts & stream breakdown for recipient's Vibhag" },
-        { tag: "{ALL_STUDENTS_LIST}", label: "👥 All Education 2026 Students", desc: "Complete list of all 75 registered students in Education 2026" },
-        { tag: "{TOTAL_STUDENTS_COUNT}", label: "🔢 Education Total Count", desc: "Total count of registered students in Education 2026" },
-        { tag: "{EVENT_REGISTRATION_SUMMARY}", label: "📈 Education Stats Breakdown", desc: "Overall Education 2026 stats (Approved, Pending, Needs Info)" }
+        { tag: "{TOKEN_NO}", label: "Token Number / Food Pass No", desc: "Token number or food pass counter" },
+        { tag: "{SEAT_NO}", label: "Seat / Hall Number", desc: "Assigned auditorium seat or row" },
+        { tag: "{GATE_PASS}", label: "Gate / Entry Pass ID", desc: "Entry gate verification tag" },
+        { tag: "{SUB_WORKSPACE_NAME}", label: "Sub-Workspace Pass Name", desc: "Name of active pass/coupon (e.g. 'Food coupon')" },
+        { tag: "{PASS_LINK}", label: "1-Click Digital Pass Link", desc: "Direct personalized invitation pass URL" }
       ]
     },
     {
@@ -22759,6 +22764,33 @@ function WorkspaceWhatsAppTemplateModal({ event, C, setC, auth, onClose, initial
         { tag: "{DATE}", label: "Event Date", desc: "Official date of the ceremony" },
         { tag: "{VENUE}", label: "Venue Location", desc: "Event venue location" },
         { tag: "{HELPLINE_PHONES}", label: "Helpline Phone Numbers", desc: "Committee helpline contact numbers" }
+      ]
+    },
+    {
+      title: "📅 Live Current Date & Time",
+      color: "#0891B2",
+      bgColor: "#ECFEFF",
+      borderColor: "#A5F3FC",
+      icon: "📅",
+      vars: [
+        { tag: "{CURRENT_DATE}", label: "Current Date (DD-MM-YYYY)", desc: "Today's live date (e.g. 04-09-2026)" },
+        { tag: "{CURRENT_TIME}", label: "Current Time (HH:mm AM/PM)", desc: "Live current time (e.g. 09:30 AM)" },
+        { tag: "{CURRENT_DATETIME}", label: "Current Date & Time", desc: "Full timestamp (e.g. 04-09-2026, 09:30 AM)" },
+        { tag: "{TODAY}", label: "Today Shortcut", desc: "Alias for today's date" }
+      ]
+    },
+    {
+      title: "🎓 Education 2026 Summaries & Lists",
+      color: "#15803D",
+      bgColor: "#F0FDF4",
+      borderColor: "#86EFAC",
+      icon: "🎓",
+      vars: [
+        { tag: "{VIBHAG_STUDENT_LIST}", label: "Education Vibhag Student List", desc: "Numbered list of Education 2026 students from recipient's Vibhag" },
+        { tag: "{VIBHAG_STUDENT_SUMMARY}", label: "Education Vibhag Summary", desc: "Education 2026 counts & stream breakdown for recipient's Vibhag" },
+        { tag: "{ALL_STUDENTS_LIST}", label: "All Education 2026 Students", desc: "Complete list of all registered students in Education 2026" },
+        { tag: "{TOTAL_STUDENTS_COUNT}", label: "Education Total Count", desc: "Total count of registered students in Education 2026" },
+        { tag: "{EVENT_REGISTRATION_SUMMARY}", label: "Education Stats Breakdown", desc: "Overall Education 2026 stats (Approved, Pending, Needs Info)" }
       ]
     }
   ];
@@ -23773,6 +23805,16 @@ function WhatsAppApplicantMessengerModal({ reg, onClose, C, auth, onLogSent, all
       .replace(/\{WEBSITE_HOME\}/g, baseUrl)
       .replace(/\{HELPLINE_PHONES\}/g, C.whatsAppHelpline || C.trust?.phone || "+91 9820785209 / +91 9967821964")
       .replace(/\{ADMIN_MOBILE\}/g, C.whatsAppHelpline || C.trust?.phone || "+91 9820785209");
+
+    // Universal replacement for all exact registration fields from any section (e.g. {Stream / Class}, {% Obtained}, {Native Village})
+    Object.entries(reg || {}).forEach(([k, v]) => {
+      if (v !== undefined && v !== null && typeof v !== 'object') {
+        const valStr = String(v);
+        processed = processed.replaceAll(`{${k}}`, valStr);
+        const cleanK = k.trim().replace(/\s+/g, '_').replace(/[^a-zA-Z0-9_]/g, '').toUpperCase();
+        if (cleanK) processed = processed.replaceAll(`{${cleanK}}`, valStr);
+      }
+    });
 
     // 1. Evaluate Active Target Event Placeholders with Vibhag Scope
     const activeTargetScope = (chosenScope && chosenScope !== 'current') ? chosenScope : 'education2026';
@@ -27579,6 +27621,7 @@ function AdminCertificates({ mob, C, setC, auth }) {
           C={C}
           setC={setC}
           auth={auth}
+          allRegs={regs || []}
           initialTab={tplModalMode || "whatsapp"}
           initialPdfTplId={selectedPdfTplId || null}
           onClose={() => {
@@ -30132,6 +30175,7 @@ This cannot be undone.`)) return;
           C={C}
           setC={setC}
           auth={auth}
+          allRegs={regs || []}
           initialTab={tplModalMode || "whatsapp"}
           initialPdfTplId={selectedPdfTplId || null}
           onClose={() => {
@@ -31585,6 +31629,7 @@ This cannot be undone.`)) return;
           C={C}
           setC={setC}
           auth={auth}
+          allRegs={regs || []}
           initialTab={tplModalMode || "whatsapp"}
           initialPdfTplId={selectedPdfTplId || null}
           onClose={() => {
