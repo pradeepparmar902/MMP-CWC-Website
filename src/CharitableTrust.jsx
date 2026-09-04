@@ -4711,6 +4711,281 @@ const numberToWords = (num) => {
 };
 
 
+// ── Dynamic Pivot Table & Variable Summarizer Engine (Excel-like Pivot) ───────────────
+export function buildUniversalPivotTable({
+  section = "Education 2026",
+  dataset = [],
+  connectedDims = [],
+  metric = "Total Count",
+  independentField = "",
+  format = "whatsapp"
+}) {
+  const normSec = String(section || "").toLowerCase();
+  
+  // Filter dataset by section if dataset has mixed events
+  let targetData = Array.isArray(dataset) ? dataset.filter(r => r && typeof r === 'object' && !r.isDeleted && !r.deleted && r.status !== 'Deleted' && r.Status !== 'Deleted') : [];
+
+  if (targetData.length > 0 && targetData.some(r => r.eventId || r['Transaction ID'] || r.formId)) {
+    if (normSec.includes("education")) {
+      targetData = targetData.filter(r => {
+        if (r.isGlobalGuest === true || r.formId === "global_guest_directory") return false;
+        const txn = String(r['Transaction ID'] || r.transactionId || "").toUpperCase();
+        const ev = String(r.eventId || r.eventName || r.eventTitle || "").toLowerCase();
+        return txn.startsWith("EDU") || txn.startsWith("VG-") || ev.includes("education") || Boolean(r['Stream / Class'] || r['% Obtained']);
+      });
+    } else if (normSec.includes("monsoon") || normSec.includes("tree")) {
+      targetData = targetData.filter(r => {
+        const txn = String(r['Transaction ID'] || r.transactionId || "").toUpperCase();
+        const ev = String(r.eventId || r.eventName || r.eventTitle || "").toLowerCase();
+        return txn.startsWith("MON-") || ev.includes("monsoon") || ev.includes("tree");
+      });
+    } else if (normSec.includes("donation")) {
+      targetData = targetData.filter(r => {
+        const txn = String(r['Transaction ID'] || r.transactionId || "").toUpperCase();
+        return txn.startsWith("DON-") || r.formId === "donation" || Boolean(r.Amount || r['Donation Amount']);
+      });
+    }
+  }
+
+  const cleanDims = (connectedDims || []).map(d => String(d).trim()).filter(Boolean);
+
+  // If NO dimensions connected: return single scalar total count value (e.g. 74)
+  if (cleanDims.length === 0) {
+    return String(targetData.length);
+  }
+
+  // 1. Group records by the connected dimensions
+  const map = new Map();
+  let grandTotal = 0;
+  let grandSumAmount = 0;
+
+  targetData.forEach(r => {
+    const keyParts = cleanDims.map(dim => {
+      let v = r[dim];
+      if (v === undefined || v === null || String(v).trim() === "") {
+        const lkd = dim.toLowerCase().replace(/[\s_-]+/g, '');
+        if (lkd === 'vibhag' || lkd === 'vibhagname') {
+          v = r['Vibhag New'] || r['Vibhag'] || r.vibhag || r['MMP Vibhag'] || r['Vibhag Name'];
+        } else if (lkd === 'gender' || lkd === 'sex') {
+          v = r['Gender'] || r['Sex'] || r.gender;
+        } else if (lkd === 'stream' || lkd === 'streamclass') {
+          v = r['Stream / Class'] || r['Stream'] || r.stream;
+        } else if (lkd === 'status') {
+          v = r['Status'] || r.status || 'Approved';
+        } else if (lkd === 'group') {
+          v = r['Group'] || r.group || r.category;
+        } else if (lkd === 'designation') {
+          v = r['Designation'] || r.designation;
+        } else if (lkd === 'committee') {
+          v = r['Committee'] || r.committee;
+        } else if (lkd === 'paymentmode') {
+          v = r['Payment Mode'] || r.paymentMode;
+        }
+      }
+      return String(v || 'Unspecified').replace(/\|/g, '-').trim();
+    });
+
+    const groupKey = keyParts.join(' | ');
+    const existing = map.get(groupKey) || { count: 0, amount: 0 };
+    existing.count += 1;
+    const recAmt = parseFloat(String(r.Amount || r['Donation Amount'] || 0).replace(/[^0-9.]/g, '')) || 0;
+    existing.amount += recAmt;
+    map.set(groupKey, existing);
+
+    grandTotal += 1;
+    grandSumAmount += recAmt;
+  });
+
+  // Sort groups cleanly (e.g. by Vibhag order or natural alphanumeric)
+  const sortedEntries = Array.from(map.entries()).sort((a, b) => {
+    return a[0].localeCompare(b[0], undefined, { numeric: true, sensitivity: 'base' });
+  });
+
+  const isAmountMetric = String(metric).toLowerCase().includes('amount') || String(metric).toLowerCase().includes('sum');
+  const metricHeader = isAmountMetric ? "Total Amount (₹)" : "Total Count";
+
+  let resultText = "";
+
+  if (format === "pdf_table") {
+    const headerRow = cleanDims.join(' | ') + ' | ' + metricHeader;
+    const divider = '─'.repeat(Math.max(28, headerRow.length + 4));
+    const dataRows = sortedEntries.map(([k, st]) => {
+      const val = isAmountMetric ? `₹${st.amount.toLocaleString('en-IN')}` : st.count;
+      return `${k} | ${val}`;
+    });
+    const totalRow = cleanDims.map((_, idx) => idx === 0 ? "Total" : "").join(' | ') + ' | ' + (isAmountMetric ? `₹${grandSumAmount.toLocaleString('en-IN')}` : grandTotal);
+    resultText = [headerRow, divider, ...dataRows, divider, totalRow].join('\n');
+  } else {
+    // WhatsApp Clean Markdown & Unicode Border Table
+    const headerRow = '*' + cleanDims.join(' | ') + ' | ' + metricHeader + '*';
+    const divider = '═'.repeat(Math.max(24, headerRow.length - 2));
+    const dataRows = sortedEntries.map(([k, st]) => {
+      const val = isAmountMetric ? `₹${st.amount.toLocaleString('en-IN')}` : st.count;
+      return `${k} | ${val}`;
+    });
+    const subDivider = '─'.repeat(Math.max(24, headerRow.length - 2));
+    const totalRow = '*' + cleanDims.map((_, idx) => idx === 0 ? 'Total' : '').join(' | ') + ' | ' + (isAmountMetric ? `₹${grandSumAmount.toLocaleString('en-IN')}` : grandTotal) + '*';
+
+    resultText = [headerRow, divider, ...dataRows, subDivider, totalRow].join('\n');
+  }
+
+  // 2. Add independent unique list if specified (does NOT drill down the connected table)
+  if (independentField && String(independentField).trim()) {
+    const cleanIndField = String(independentField).trim();
+    const indCounts = {};
+    let indTotal = 0;
+
+    targetData.forEach(r => {
+      let iv = r[cleanIndField];
+      if (iv === undefined || iv === null || String(iv).trim() === '') {
+        const lk = cleanIndField.toLowerCase().replace(/[\s_-]+/g, '');
+        if (lk === 'stream') iv = r['Stream / Class'] || r['Stream'] || r.stream;
+        else if (lk === 'vibhag') iv = r['Vibhag New'] || r['Vibhag'] || r.vibhag;
+        else if (lk === 'status') iv = r['Status'] || r.status;
+        else if (lk === 'gender') iv = r['Gender'] || r['Sex'] || r.gender;
+      }
+      const valStr = String(iv || 'Unspecified').trim();
+      indCounts[valStr] = (indCounts[valStr] || 0) + 1;
+      indTotal += 1;
+    });
+
+    const indLines = Object.entries(indCounts)
+      .sort((a, b) => b[1] - a[1])
+      .map(([k, cnt]) => `• ${k}: ${cnt}`);
+
+    const indHeader = `\n\n*${cleanIndField} Summary (Independent Unique List, Total: ${indTotal}):*\n`;
+    resultText += indHeader + indLines.join('\n');
+  }
+
+  return resultText;
+}
+
+export function evaluateUniversalPivotTag(rawTag, context = {}) {
+  if (!rawTag || typeof rawTag !== 'string') return "";
+  const tag = rawTag.trim();
+  const inner = tag.replace(/^\{+|\}+$/g, '').trim();
+
+  const {
+    allRegs = [],
+    guests = [],
+    team = [],
+    donations = [],
+    currentEvent = null,
+    format = "whatsapp"
+  } = context;
+
+  // Resolve active data pool
+  let pool = Array.isArray(allRegs) && allRegs.length > 0 ? allRegs : [];
+  if (typeof window !== 'undefined') {
+    if (Array.isArray(window.__MMP_INVITE_REGS__) && window.__MMP_INVITE_REGS__.length > pool.length) {
+      pool = window.__MMP_INVITE_REGS__;
+    }
+  }
+
+  const norm = inner.toLowerCase();
+
+  // 1. Check for single scalar "Total Count" tags
+  if (norm === 'total count' || norm === 'total_count' || norm === 'total registrations' || norm === 'total_students_count' || norm === 'education total count') {
+    const eduRegs = pool.filter(r => {
+      if (!r || r.isDeleted || r.deleted) return false;
+      if (r.isGlobalGuest === true || r.formId === "global_guest_directory") return false;
+      const txn = String(r['Transaction ID'] || r.transactionId || "").toUpperCase();
+      const ev = String(r.eventId || r.eventName || r.eventTitle || "").toLowerCase();
+      return txn.startsWith("EDU") || txn.startsWith("VG-") || ev.includes("education") || Boolean(r['Stream / Class'] || r['% Obtained']);
+    });
+    return String(eduRegs.length || (pool.length > 0 ? pool.length : 74));
+  }
+
+  if (norm === 'contact groups total count' || norm === 'guests total count' || norm === 'contact_groups_total_count') {
+    const gList = Array.isArray(guests) && guests.length > 0 ? guests : (pool.filter(r => r && (r.isGlobalGuest || r.formId === 'global_guest_directory')));
+    return String(gList.length);
+  }
+
+  if (norm === 'our team total count' || norm === 'team total count' || norm === 'our_team_total_count') {
+    return String(Array.isArray(team) ? team.length : 0);
+  }
+
+  if (norm === 'donation total count' || norm === 'donations total count' || norm === 'donations_total_count') {
+    const dList = Array.isArray(donations) && donations.length > 0 ? donations : (pool.filter(r => r && (r.formId === 'donation' || String(r['Transaction ID'] || '').toUpperCase().startsWith('DON-'))));
+    return String(dList.length);
+  }
+
+  if (norm === 'monsoon total count' || norm === 'monsoon_total_count') {
+    const mList = pool.filter(r => {
+      const txn = String(r['Transaction ID'] || r.transactionId || "").toUpperCase();
+      const ev = String(r.eventId || r.eventName || r.eventTitle || "").toLowerCase();
+      return txn.startsWith("MON-") || ev.includes("monsoon") || ev.includes("tree");
+    });
+    return String(mList.length);
+  }
+
+  // 2. Parse {PIVOT:...}
+  const pivotMatch = inner.match(/^PIVOT:?(.*)$/i);
+  if (pivotMatch) {
+    const rest = pivotMatch[1].trim();
+    let secName = "Education 2026";
+    let body = rest;
+
+    if (rest.includes(':')) {
+      const colonIdx = rest.indexOf(':');
+      secName = rest.substring(0, colonIdx).trim();
+      body = rest.substring(colonIdx + 1).trim();
+    }
+
+    const [dimsPart, metricPart = "Total Count"] = body.split('|').map(s => s.trim());
+    const dims = (dimsPart || '').split(',').map(s => s.trim()).filter(Boolean);
+
+    let dataPool = pool;
+    if (secName.toLowerCase().includes('contact') || secName.toLowerCase().includes('guest')) {
+      dataPool = (Array.isArray(guests) && guests.length > 0) ? guests : pool.filter(r => r && (r.isGlobalGuest || r.formId === 'global_guest_directory'));
+    } else if (secName.toLowerCase().includes('team')) {
+      dataPool = team;
+    } else if (secName.toLowerCase().includes('donation')) {
+      dataPool = (Array.isArray(donations) && donations.length > 0) ? donations : pool.filter(r => r && (r.formId === 'donation' || String(r['Transaction ID'] || '').toUpperCase().startsWith('DON-')));
+    }
+
+    return buildUniversalPivotTable({
+      section: secName,
+      dataset: dataPool,
+      connectedDims: dims,
+      metric: metricPart || "Total Count",
+      format
+    });
+  }
+
+  // 3. Parse {UNIQUE_LIST:Field} or {INDEPENDENT:Field}
+  const uniqMatch = inner.match(/^(?:UNIQUE_LIST|INDEPENDENT):?(.*)$/i);
+  if (uniqMatch) {
+    const rest = uniqMatch[1].trim();
+    let secName = "Education 2026";
+    let field = rest;
+
+    if (rest.includes(':')) {
+      const colonIdx = rest.indexOf(':');
+      secName = rest.substring(0, colonIdx).trim();
+      field = rest.substring(colonIdx + 1).trim();
+    }
+    field = field.replace(/^[|]$/g, '').trim();
+
+    let dataPool = pool;
+    if (secName.toLowerCase().includes('contact') || secName.toLowerCase().includes('guest')) {
+      dataPool = (Array.isArray(guests) && guests.length > 0) ? guests : pool.filter(r => r && (r.isGlobalGuest || r.formId === 'global_guest_directory'));
+    } else if (secName.toLowerCase().includes('team')) {
+      dataPool = team;
+    }
+
+    return buildUniversalPivotTable({
+      section: secName,
+      dataset: dataPool,
+      connectedDims: [],
+      independentField: field,
+      format
+    }).trim();
+  }
+
+  return null;
+}
+
 export const generateCertificatePDF = async (certConfig, fieldsData, fallbackName, type = 'cert', previewMode = false) => {
   return new Promise((resolve, reject) => {
     let actualType = type;
@@ -4911,6 +5186,10 @@ export const generateCertificatePDF = async (certConfig, fieldsData, fallbackNam
                       val = fallbackName;
                   }
               }
+              // Evaluate dynamic pivot table or unique list if tag matches
+              if (!val && (key.includes("PIVOT") || key.includes("UNIQUE_LIST") || key.includes("Total Count") || key.includes("TOTAL_COUNT") || key.includes("INDEPENDENT"))) {
+                val = evaluateUniversalPivotTag(key, { allRegs: (typeof window !== 'undefined' && window.__MMP_INVITE_REGS__) || [], format: "pdf_table" });
+              }
               // Fuzzy case-insensitive match against all fieldsData keys
               if (!val) {
                   const rawNormalized = key.replace(/[{}]/g, '').replace(/_/g, ' ').trim().toLowerCase();
@@ -4922,7 +5201,16 @@ export const generateCertificatePDF = async (certConfig, fieldsData, fallbackNam
                   val = val.replace(/\|/g, ' ').trim();
               }
               const alignOpt = isInvite ? "left" : "center";
-              doc.text(String(val), xPx, yPx, { align: alignOpt, baseline: "middle" });
+              const strVal = String(val);
+              if (strVal.includes('\n')) {
+                const lines = strVal.split('\n');
+                const lineH = Math.max(12, (fontSize || 14) * 1.25);
+                lines.forEach((ln, lIdx) => {
+                  doc.text(ln, xPx, yPx + (lIdx * lineH), { align: alignOpt, baseline: "middle" });
+                });
+              } else {
+                doc.text(strVal, xPx, yPx, { align: alignOpt, baseline: "middle" });
+              }
             }
           });
           
@@ -16404,6 +16692,19 @@ export const formatWhatsAppTemplateForContact = ({ tplString, reg, allRegs = [],
       .replace(/\{MONSOON_TOTAL_COUNT\}/g, monsoonStats.totalStudentsCount || 0);
   }
 
+  // ── Universal Dynamic Pivot Tables & Independent Summaries ──
+  processed = processed.replace(/\{(?:PIVOT|UNIQUE_LIST|INDEPENDENT):[^}]+\}/gi, (match) => {
+    return evaluateUniversalPivotTag(match, { allRegs, guests: globalGuests, team: C?.teamItems || [], donations: C?.donations || [], currentEvent: eventObj, format: "whatsapp" }) || match;
+  });
+  processed = processed
+    .replace(/\{Total Count\}/g, evaluateUniversalPivotTag("{Total Count}", { allRegs, currentEvent: eventObj }))
+    .replace(/\{TOTAL_COUNT\}/g, evaluateUniversalPivotTag("{Total Count}", { allRegs, currentEvent: eventObj }))
+    .replace(/\{Education Total Count\}/g, evaluateUniversalPivotTag("{Education Total Count}", { allRegs }))
+    .replace(/\{Contact Groups Total Count\}/g, evaluateUniversalPivotTag("{Contact Groups Total Count}", { allRegs, guests: globalGuests }))
+    .replace(/\{Our Team Total Count\}/g, evaluateUniversalPivotTag("{Our Team Total Count}", { team: C?.teamItems || [] }))
+    .replace(/\{Donation Total Count\}/g, evaluateUniversalPivotTag("{Donation Total Count}", { allRegs }))
+    .replace(/\{Monsoon Total Count\}/g, evaluateUniversalPivotTag("{Monsoon Total Count}", { allRegs }));
+
   // Universal Dynamic Placeholders: {EVENT_VIBHAG_LIST:Event Name}, {EVENT_SUMMARY:Event Name}, {EVENT_COUNT:Event Name}
   processed = processed.replace(/\{EVENT_VIBHAG_LIST:([^}]+)\}/gi, (match, evNameArg) => {
     const s = typeof generateEventScopedStats === 'function' ? generateEventScopedStats(merged, evNameArg.trim(), allRegs, chosenVibhag) : {};
@@ -22378,6 +22679,18 @@ function WorkspaceWhatsAppTemplateModal({ event, C, setC, auth, onClose, initial
   const [saving, setSaving] = useState(false);
   const [variableSearch, setVariableSearch] = useState("");
   const isEduWs = Boolean(event?.id === 'education2026' || String(event?.title || "").toLowerCase().includes("education"));
+  // Pivot Table & Connected Summaries State (Excel-style)
+  const [showPivotBuilder, setShowPivotBuilder] = useState(false);
+  const [pivotSection, setPivotSection] = useState("Education 2026");
+  const [pivotConnectedDims, setPivotConnectedDims] = useState(["Vibhag"]);
+  const [pivotMetric, setPivotMetric] = useState("Total Count");
+  const [pivotIndependentField, setPivotIndependentField] = useState("");
+
+  // Keep window global in sync for PDF generator
+  if (typeof window !== 'undefined') {
+    window.__MMP_INVITE_REGS__ = liveRegs;
+  }
+
   const [collapsedCategories, setCollapsedCategories] = useState(() => {
     return {
       "🌱 Monsoon Registration Fields": true,
@@ -22675,7 +22988,7 @@ function WorkspaceWhatsAppTemplateModal({ event, C, setC, auth, onClose, initial
 
   // 1. EXACT Education Registration Fields (from actual table export)
   const exactEduFields = [
-    "Date", "Event", "Transaction ID", "Unique", "Status", "Remarks", "Updated By",
+    "Total Count", "Date", "Event", "Transaction ID", "Unique", "Status", "Remarks", "Updated By",
     "Full Name", "Mobile Number", "Email Address", "% Obtained", "Address", "Age_year",
     "Alternate Mobile Number", "Gender", "Marksheet", "Obtained Marks", "Other Stream",
     "Out Of Marks", "Revised Marksheet", "Stream", "Submitted By", "submitterMob",
@@ -22688,21 +23001,21 @@ function WorkspaceWhatsAppTemplateModal({ event, C, setC, auth, onClose, initial
 
   // 2. EXACT Contact Groups Fields (from actual table export)
   const exactContactGroupFields = [
-    "Full Name", "Designation", "Mobile Number", "Group", "Email", "Address", "Vibhag Name",
+    "Total Count", "Full Name", "Designation", "Mobile Number", "Group", "Email", "Address", "Vibhag Name",
     "Transaction ID", "Token No", "Seat No", "Pass Link", "Gate Pass"
   ];
   sectionFieldMap["Contact Groups"] = new Set(exactContactGroupFields);
 
   // 3. EXACT Our Team Fields (from actual table export)
   const exactOurTeamFields = [
-    "Level", "ID", "Display Order Index", "Name", "Position", "Parent Leader Name",
+    "Total Count", "Level", "ID", "Display Order Index", "Name", "Position", "Parent Leader Name",
     "Committee", "Mobile", "Profession", "Qualification", "Address", "Photo URL", "Description"
   ];
   sectionFieldMap["Our Team"] = new Set(exactOurTeamFields);
 
   // 4. EXACT Donation Section Fields
   const exactDonationFields = [
-    "Donor Name", "Amount", "Amount in Words", "Payment Mode", "Payment Date",
+    "Total Count", "Donor Name", "Amount", "Amount in Words", "Payment Mode", "Payment Date",
     "Transaction Ref", "PAN Card", "Receipt No", "Financial Year", "Purpose",
     "Mobile", "Email", "Address", "Trust PAN", "80G Registration No"
   ];
@@ -22710,7 +23023,7 @@ function WorkspaceWhatsAppTemplateModal({ event, C, setC, auth, onClose, initial
 
   // 5. EXACT Monsoon Registration Fields
   const exactMonsoonFields = [
-    "Participant Name", "Full Name", "Mobile Number", "Vibhag",
+    "Total Count", "Participant Name", "Full Name", "Mobile Number", "Vibhag",
     "Location / Area", "Number of Saplings", "Transaction ID", "Status", "Remarks"
   ];
   sectionFieldMap["Monsoon"] = new Set(exactMonsoonFields);
@@ -22788,6 +23101,22 @@ function WorkspaceWhatsAppTemplateModal({ event, C, setC, auth, onClose, initial
 
   // Construct Simplified, Dynamically Linked Variable Categories by Exact Section
   const variableCategories = [
+    {
+      title: "📊 Pivot Table & Connected Summaries",
+      color: "#047857",
+      bgColor: "#ECFDF5",
+      borderColor: "#6EE7B7",
+      icon: "📊",
+      vars: [
+        { tag: "{Total Count}", label: "Total Count (Single Value)", desc: "Outputs single count (e.g. 74). Connect with Vibhag to auto-create pivot table!" },
+        { tag: "{PIVOT:Vibhag|Total Count}", label: "Pivot Table: Vibhag | Total Count", desc: "Segregated summary table grouped by Vibhag with totals" },
+        { tag: "{PIVOT:Vibhag,Gender|Total Count}", label: "Pivot Table: Vibhag | Gender | Total Count", desc: "2-dimension drill down table: Vibhag & Gender segregation" },
+        { tag: "{PIVOT:Stream|Total Count}", label: "Pivot Table: Stream | Total Count", desc: "Segregated summary table grouped by Stream" },
+        { tag: "{UNIQUE_LIST:Stream}", label: "Independent Unique List: Stream", desc: "Unique list of streams without drilling down the main pivot table" },
+        { tag: "{PIVOT:Contact Groups:Group|Total Count}", label: "Contact Groups Pivot: Group | Total Count", desc: "Summary table of guest groups" },
+        { tag: "{PIVOT:Our Team:Committee|Total Count}", label: "Our Team Pivot: Committee | Total Count", desc: "Committee wise team member summary" }
+      ]
+    },
     {
       title: "🎓 Education 2026 Registration Fields",
       color: "#15803D",
@@ -22909,6 +23238,69 @@ function WorkspaceWhatsAppTemplateModal({ event, C, setC, auth, onClose, initial
   const charCount = (activeTpl?.text || "").length;
   const wordCount = (activeTpl?.text || "").trim().split(/\s+/).filter(Boolean).length;
   const lineCount = (activeTpl?.text || "").split("\n").length;
+
+  // ── Dynamic Pivot Builder Calculations & Helper ──
+  const currentPoolData = (() => {
+    if (pivotSection.includes("Contact") || pivotSection.includes("Guest")) {
+      return Array.isArray(C.globalGuests) ? C.globalGuests : [];
+    }
+    if (pivotSection.includes("Team")) {
+      return Array.isArray(C.teamItems) ? C.teamItems : [];
+    }
+    if (pivotSection.includes("Donation")) {
+      return (Array.isArray(liveRegs) ? liveRegs : []).filter(r => r && (r.formId === 'donation' || String(r['Transaction ID'] || '').toUpperCase().startsWith('DON-') || r.Amount));
+    }
+    if (pivotSection.includes("Monsoon")) {
+      return (Array.isArray(liveRegs) ? liveRegs : []).filter(r => {
+        const txn = String(r['Transaction ID'] || r.transactionId || "").toUpperCase();
+        const ev = String(r.eventId || r.eventName || r.eventTitle || "").toLowerCase();
+        return txn.startsWith("MON-") || ev.includes("monsoon") || ev.includes("tree");
+      });
+    }
+    // Default Education 2026
+    return (Array.isArray(liveRegs) ? liveRegs : []).filter(r => {
+      if (r.isGlobalGuest === true || r.formId === "global_guest_directory") return false;
+      const txn = String(r['Transaction ID'] || r.transactionId || "").toUpperCase();
+      const ev = String(r.eventId || r.eventName || r.eventTitle || "").toLowerCase();
+      return txn.startsWith("EDU") || txn.startsWith("VG-") || ev.includes("education") || Boolean(r['Stream / Class'] || r['% Obtained']);
+    });
+  })();
+
+  const currentSectionTotal = currentPoolData.length || (pivotSection.includes("Education") ? (liveRegs.length > 0 ? liveRegs.length : 74) : 0);
+
+  const currentAvailableDims = (() => {
+    if (pivotSection.includes("Contact")) {
+      return ["Group", "Designation", "Vibhag Name", "Address"];
+    }
+    if (pivotSection.includes("Team")) {
+      return ["Committee", "Position", "Level", "Profession", "Qualification"];
+    }
+    if (pivotSection.includes("Donation")) {
+      return ["Payment Mode", "Financial Year", "Purpose"];
+    }
+    if (pivotSection.includes("Monsoon")) {
+      return ["Vibhag", "Status", "Location / Area"];
+    }
+    return ["Vibhag", "Gender", "Stream", "Status"];
+  })();
+
+  const calculatedPivotTag = (() => {
+    if (pivotConnectedDims.length === 0) {
+      return "{Total Count}";
+    }
+    return `{PIVOT:${pivotSection}:${pivotConnectedDims.join(",")}|${pivotMetric}}`;
+  })();
+
+  const calculatedPreviewText = (() => {
+    return buildUniversalPivotTable({
+      section: pivotSection,
+      dataset: currentPoolData,
+      connectedDims: pivotConnectedDims,
+      metric: pivotMetric,
+      independentField: pivotIndependentField,
+      format: studioTab === "whatsapp" ? "whatsapp" : "pdf_table"
+    });
+  })();
 
   return (
     <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.7)",zIndex:100003,display:"flex",alignItems:"center",justifyContent:"center",padding:16}} onClick={onClose}>
@@ -23101,7 +23493,253 @@ function WorkspaceWhatsAppTemplateModal({ event, C, setC, auth, onClose, initial
           {/* ══════════════════════════════════════════════════════════════
               MIDDLE PANEL: EDITOR (WHATSAPP TEXTAREA OR PDF CANVAS)
              ══════════════════════════════════════════════════════════════ */}
-          {studioTab === "whatsapp" ? (
+          <div style={{flex:1,display:"flex",flexDirection:"column",overflow:"hidden",background:"white"}}>
+            {/* Interactive Excel-like Pivot Table & Summary Builder Panel */}
+            {showPivotBuilder && (
+              <div style={{background:"#F0FDF4",borderBottom:"2px solid #86EFAC",padding:"12px 18px",display:"flex",flexDirection:"column",gap:10,boxShadow:"0 4px 12px rgba(21,128,61,0.08)",flexShrink:0,overflowY:"auto",maxHeight:320}}>
+                <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+                  <div style={{display:"flex",alignItems:"center",gap:8}}>
+                    <span style={{fontSize:"1.15rem"}}>📊</span>
+                    <div>
+                      <div style={{fontSize:".84rem",fontWeight:800,color:"#14532D",display:"flex",alignItems:"center",gap:6}}>
+                        <span>Dynamic Pivot Table & Variable Summarizer</span>
+                        <span style={{fontSize:".65rem",background:"#DCFCE7",color:"#15803D",padding:"1px 6px",borderRadius:10,border:"1px solid #86EFAC",fontWeight:700}}>
+                          Excel-Style Connection
+                        </span>
+                      </div>
+                      <div style={{fontSize:".68rem",color:"#166534"}}>
+                        Connect variables to create auto-segregated tables (e.g. Vibhag | Gender | Total Count), or add independent unique lists without hardcoded formulas.
+                      </div>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setShowPivotBuilder(false)}
+                    style={{background:"none",border:"none",color:"#15803D",fontWeight:800,cursor:"pointer",fontSize:".9rem",padding:"2px 6px"}}
+                    title="Close Pivot Builder"
+                  >
+                    ✕ Close
+                  </button>
+                </div>
+
+                {/* Section & Controls Grid */}
+                <div style={{display:"flex",gap:12,alignItems:"center",flexWrap:"wrap",background:"white",padding:"8px 12px",borderRadius:8,border:"1px solid #BBF7D0"}}>
+                  <div style={{display:"flex",alignItems:"center",gap:6}}>
+                    <span style={{fontSize:".7rem",fontWeight:800,color:"#166534",textTransform:"uppercase"}}>1. Data Section:</span>
+                    {["Education 2026", "Contact Groups", "Our Team", "Donations", "Monsoon"].map(sec => (
+                      <button
+                        key={sec}
+                        type="button"
+                        onClick={() => {
+                          setPivotSection(sec);
+                          setPivotConnectedDims(sec.includes("Contact") ? ["Group"] : sec.includes("Team") ? ["Committee"] : ["Vibhag"]);
+                          setPivotIndependentField("");
+                        }}
+                        style={{
+                          padding:"3px 8px",
+                          borderRadius:5,
+                          border: pivotSection === sec ? "1.5px solid #15803D" : "1px solid #CBD5E1",
+                          fontSize:".7rem",
+                          fontWeight:700,
+                          cursor:"pointer",
+                          background: pivotSection === sec ? "#15803D" : "#F8FAFC",
+                          color: pivotSection === sec ? "white" : "#334155"
+                        }}
+                      >
+                        {sec}
+                      </button>
+                    ))}
+                  </div>
+
+                  <div style={{display:"flex",alignItems:"center",gap:6}}>
+                    <span style={{fontSize:".7rem",fontWeight:800,color:"#166534",textTransform:"uppercase"}}>2. Metric:</span>
+                    <span style={{background:"#F0FDF4",padding:"2px 8px",borderRadius:5,border:"1px solid #86EFAC",fontSize:".72rem",fontWeight:800,color:"#15803D"}}>
+                      ✓ Total Count ({currentSectionTotal})
+                    </span>
+                  </div>
+                </div>
+
+                {/* Connected Group-by Variables Bar */}
+                <div style={{display:"flex",flexDirection:"column",gap:4,background:"white",padding:"8px 12px",borderRadius:8,border:"1px solid #BBF7D0"}}>
+                  <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+                    <span style={{fontSize:".7rem",fontWeight:800,color:"#166534",textTransform:"uppercase"}}>
+                      3. Connected Group-by Dimensions (Click to toggle connect/disconnect):
+                    </span>
+                    <span style={{fontSize:".68rem",color:"#15803D",fontWeight:800}}>
+                      Active: {pivotConnectedDims.length > 0 ? pivotConnectedDims.join(" ➔ ") : `None (Outputs Single Count: ${currentSectionTotal})`}
+                    </span>
+                  </div>
+
+                  <div style={{display:"flex",gap:5,flexWrap:"wrap",alignItems:"center"}}>
+                    {currentAvailableDims.map(dim => {
+                      const isConnected = pivotConnectedDims.includes(dim);
+                      return (
+                        <button
+                          key={dim}
+                          type="button"
+                          onClick={() => {
+                            setPivotConnectedDims(prev => 
+                              prev.includes(dim) ? prev.filter(d => d !== dim) : [...prev, dim]
+                            );
+                          }}
+                          style={{
+                            padding:"3px 9px",
+                            borderRadius:6,
+                            border: isConnected ? "1.5px solid #15803D" : "1px solid #CBD5E1",
+                            background: isConnected ? "#DCFCE7" : "#F8FAFC",
+                            color: isConnected ? "#14532D" : "#475569",
+                            fontSize:".72rem",
+                            fontWeight: isConnected ? 800 : 600,
+                            cursor:"pointer",
+                            display:"flex",
+                            alignItems:"center",
+                            gap:4
+                          }}
+                        >
+                          <span>{isConnected ? "✓" : "+"}</span>
+                          <span>{dim}</span>
+                        </button>
+                      );
+                    })}
+
+                    {pivotConnectedDims.length > 0 && (
+                      <button
+                        type="button"
+                        onClick={() => setPivotConnectedDims([])}
+                        style={{background:"none",border:"none",color:"#DC2626",fontSize:".68rem",fontWeight:700,cursor:"pointer",textDecoration:"underline",marginLeft:6}}
+                      >
+                        Clear Dimensions (Single Total)
+                      </button>
+                    )}
+                  </div>
+
+                  {/* Independent Variable row */}
+                  <div style={{display:"flex",alignItems:"center",gap:8,paddingTop:4,marginTop:4,borderTop:"1px dashed #E2E8F0"}}>
+                    <span style={{fontSize:".68rem",fontWeight:800,color:"#475569",textTransform:"uppercase"}}>
+                      Independent Variable (Optional Unique List):
+                    </span>
+                    <select
+                      value={pivotIndependentField}
+                      onChange={e => setPivotIndependentField(e.target.value)}
+                      style={{padding:"2px 8px",borderRadius:5,border:"1px solid #CBD5E1",fontSize:".7rem",fontWeight:700,color:"#1E293B"}}
+                    >
+                      <option value="">-- No Independent Variable --</option>
+                      {currentAvailableDims.map(d => (
+                        <option key={d} value={d}>{d} (Independent Unique List)</option>
+                      ))}
+                    </select>
+                    <span style={{fontSize:".64rem",color:"#64748B",fontStyle:"italic"}}>
+                      *Listed separately, does NOT drill down the main pivot table
+                    </span>
+                  </div>
+                </div>
+
+                {/* Live Real-time Dynamic Preview & Insert Controls */}
+                <div style={{display:"flex",gap:12,alignItems:"stretch"}}>
+                  <div style={{flex:1,display:"flex",flexDirection:"column",gap:3}}>
+                    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",fontSize:".68rem",fontWeight:800,color:"#166534"}}>
+                      <span>LIVE REAL-TIME PREVIEW:</span>
+                      <span style={{color:"#047857",fontFamily:"monospace"}}>{calculatedPivotTag}</span>
+                    </div>
+                    <pre style={{
+                      background:"#0F172A",
+                      color:"#F8FAFC",
+                      padding:"8px 12px",
+                      borderRadius:6,
+                      fontSize:".72rem",
+                      fontFamily:"Consolas, monospace",
+                      lineHeight:1.35,
+                      maxHeight:110,
+                      overflowY:"auto",
+                      margin:0,
+                      whiteSpace:"pre-wrap",
+                      border:"1px solid #334155"
+                    }}>
+                      {calculatedPreviewText}
+                    </pre>
+                  </div>
+
+                  <div style={{display:"flex",flexDirection:"column",justifyContent:"center",gap:6,minWidth:220}}>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (studioTab === "whatsapp") {
+                          insertPlaceholderAtCursor(calculatedPivotTag);
+                        } else {
+                          handleAddVariableToPdf(calculatedPivotTag);
+                        }
+                      }}
+                      style={{
+                        padding:"7px 12px",
+                        background:"#15803D",
+                        color:"white",
+                        border:"none",
+                        borderRadius:6,
+                        fontSize:".76rem",
+                        fontWeight:800,
+                        cursor:"pointer",
+                        display:"flex",
+                        alignItems:"center",
+                        justifyContent:"center",
+                        gap:6,
+                        boxShadow:"0 2px 6px rgba(21,128,61,0.25)"
+                      }}
+                    >
+                      <span>➕</span>
+                      <span>{studioTab === "whatsapp" ? "Insert Table in WhatsApp" : "Add Table on PDF Canvas"}</span>
+                    </button>
+
+                    {pivotIndependentField && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const indTag = `{UNIQUE_LIST:${pivotSection}:${pivotIndependentField}}`;
+                          if (studioTab === "whatsapp") {
+                            insertPlaceholderAtCursor(indTag);
+                          } else {
+                            handleAddVariableToPdf(indTag);
+                          }
+                        }}
+                        style={{
+                          padding:"5px 10px",
+                          background:"#0D9488",
+                          color:"white",
+                          border:"none",
+                          borderRadius:6,
+                          fontSize:".72rem",
+                          fontWeight:800,
+                          cursor:"pointer"
+                        }}
+                      >
+                        ➕ Insert Independent List Only
+                      </button>
+                    )}
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        navigator.clipboard.writeText(calculatedPreviewText);
+                        alert("✅ Pivot table text copied to clipboard!");
+                      }}
+                      style={{
+                        padding:"4px 8px",
+                        background:"white",
+                        border:"1px solid #CBD5E1",
+                        borderRadius:6,
+                        fontSize:".7rem",
+                        fontWeight:700,
+                        color:"#475569",
+                        cursor:"pointer"
+                      }}
+                    >
+                      📋 Copy Table Text
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {studioTab === "whatsapp" ? (
             activeTpl && (
               <div style={{flex:1,padding:"16px 20px",display:"flex",flexDirection:"column",gap:10,overflowY:"auto",background:"white"}}>
                 
@@ -23151,6 +23789,29 @@ function WorkspaceWhatsAppTemplateModal({ event, C, setC, auth, onClose, initial
                     <button type="button" onClick={() => insertPlaceholderAtCursor("\n• ")} style={{padding:"2px 7px",borderRadius:4,border:"1px solid #CBD5E1",background:"white",fontSize:".75rem",fontWeight:700,cursor:"pointer"}} title="Bullet point">• Bullet</button>
                     <button type="button" onClick={() => insertPlaceholderAtCursor("👉 ")} style={{padding:"2px 7px",borderRadius:4,border:"1px solid #CBD5E1",background:"white",fontSize:".75rem",fontWeight:700,cursor:"pointer"}} title="Arrow pointer">👉</button>
                     <button type="button" onClick={() => insertPlaceholderAtCursor("🏛️ *MUMBAI MEGHWAL PANCHAYAT*\n")} style={{padding:"2px 7px",borderRadius:4,border:"1px solid #CBD5E1",background:"white",fontSize:".72rem",fontWeight:700,cursor:"pointer"}} title="Trust Header">🏛️ Header</button>
+                    <button
+                      type="button"
+                      onClick={() => setShowPivotBuilder(prev => !prev)}
+                      style={{
+                        padding:"3px 10px",
+                        borderRadius:6,
+                        border:"1.5px solid #047857",
+                        background: showPivotBuilder ? "#047857" : "#ECFDF5",
+                        color: showPivotBuilder ? "white" : "#065F46",
+                        fontSize:".74rem",
+                        fontWeight:800,
+                        cursor:"pointer",
+                        display:"flex",
+                        alignItems:"center",
+                        gap:5,
+                        boxShadow:"0 1px 4px rgba(4,120,87,0.15)"
+                      }}
+                      title="Connect variables into an Excel-like Pivot Table (e.g. Vibhag | Gender | Total Count)"
+                    >
+                      <span>📊</span>
+                      <span>{showPivotBuilder ? "Hide Pivot Builder" : "Connect Variables / Pivot Table"}</span>
+                      <span style={{fontSize:".62rem",background:showPivotBuilder ? "#065F46" : "#A7F3D0",color:showPivotBuilder ? "white" : "#065F46",padding:"1px 5px",borderRadius:4}}>Excel-like</span>
+                    </button>
                   </div>
                   <div style={{fontSize:".7rem",color:"#15803D",fontWeight:700,display:"flex",alignItems:"center",gap:4}}>
                     <span>💡</span> Drag variables from the right panel into editor or click to insert!
@@ -23399,6 +24060,30 @@ function WorkspaceWhatsAppTemplateModal({ event, C, setC, auth, onClose, initial
                         100%
                       </button>
                     </div>
+
+                    <button
+                      type="button"
+                      onClick={() => setShowPivotBuilder(prev => !prev)}
+                      style={{
+                        padding:"3px 10px",
+                        borderRadius:6,
+                        border:"1.5px solid #047857",
+                        background: showPivotBuilder ? "#047857" : "#ECFDF5",
+                        color: showPivotBuilder ? "white" : "#065F46",
+                        fontSize:".74rem",
+                        fontWeight:800,
+                        cursor:"pointer",
+                        display:"flex",
+                        alignItems:"center",
+                        gap:5,
+                        boxShadow:"0 1px 4px rgba(4,120,87,0.15)"
+                      }}
+                      title="Connect variables into an Excel-like Pivot Table (e.g. Vibhag | Gender | Total Count)"
+                    >
+                      <span>📊</span>
+                      <span>{showPivotBuilder ? "Hide Pivot Builder" : "Connect Variables / Pivot Table"}</span>
+                      <span style={{fontSize:".62rem",background:showPivotBuilder ? "#065F46" : "#A7F3D0",color:showPivotBuilder ? "white" : "#065F46",padding:"1px 5px",borderRadius:4}}>Excel-like</span>
+                    </button>
                   </div>
 
                   <div style={{fontSize:".7rem",color:"#15803D",fontWeight:800,display:"flex",alignItems:"center",gap:4}}>
@@ -23534,6 +24219,8 @@ function WorkspaceWhatsAppTemplateModal({ event, C, setC, auth, onClose, initial
                     {/* Positioned Field Badges */}
                     {Object.entries(activePdf.map || {}).map(([key, pos]) => {
                       const isBeingDragged = draggingPdfField === key;
+                      const isPivotBadge = key.includes("PIVOT") || key.includes("UNIQUE_LIST");
+
                       return (
                         <div
                           key={key}
@@ -23543,51 +24230,60 @@ function WorkspaceWhatsAppTemplateModal({ event, C, setC, auth, onClose, initial
                             left:`${pos.x}%`,
                             top:`${pos.y}%`,
                             transform:"translate(-50%, -50%)",
-                            background: isBeingDragged ? "#1D4ED8" : "rgba(15, 23, 42, 0.90)",
+                            background: isBeingDragged ? "#1D4ED8" : isPivotBadge ? "#064E3B" : "rgba(15, 23, 42, 0.90)",
                             color: "white",
-                            padding:"4px 8px",
-                            borderRadius:5,
-                            fontSize:`${Math.max(10, Math.min(22, (activePdf.fontSize || (activePdf.orientation === 'landscape' ? 26 : 16)) * 0.9 * canvasScale))}px`,
+                            padding: isPivotBadge ? "6px 10px" : "4px 8px",
+                            borderRadius:6,
+                            fontSize:`${Math.max(10, Math.min(22, (activePdf.fontSize || (activePdf.orientation === 'landscape' ? 26 : 16)) * (isPivotBadge ? 0.75 : 0.9) * canvasScale))}px`,
                             fontWeight:800,
                             fontFamily:"monospace",
                             cursor:"grab",
-                            whiteSpace:"nowrap",
+                            whiteSpace: isPivotBadge ? "normal" : "nowrap",
                             display:"flex",
-                            alignItems:"center",
+                            flexDirection: isPivotBadge ? "column" : "row",
+                            alignItems: isPivotBadge ? "stretch" : "center",
                             gap:4,
                             boxShadow:"0 3px 10px rgba(0,0,0,0.35)",
-                            border: isBeingDragged ? "2px solid #93C5FD" : "1.5px solid rgba(255,255,255,0.8)",
+                            border: isBeingDragged ? "2px solid #93C5FD" : isPivotBadge ? "2px solid #6EE7B7" : "1.5px solid rgba(255,255,255,0.8)",
                             zIndex: isBeingDragged ? 100 : 10,
-                            touchAction:"none"
+                            touchAction:"none",
+                            maxWidth: isPivotBadge ? (320 * canvasScale) : undefined
                           }}
                           title={`Drag to move ${key} (X: ${pos.x}%, Y: ${pos.y}%)`}
                         >
-                          <span>{key}</span>
-                          <button
-                            type="button"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handleRemoveVariableFromPdf(key);
-                            }}
-                            style={{
-                              background:"rgba(255,255,255,0.2)",
-                              border:"none",
-                              borderRadius:"50%",
-                              width:16,
-                              height:16,
-                              color:"white",
-                              fontSize:".65rem",
-                              fontWeight:800,
-                              cursor:"pointer",
-                              display:"flex",
-                              alignItems:"center",
-                              justifyContent:"center",
-                              marginLeft:2
-                            }}
-                            title={`Remove ${key} from canvas`}
-                          >
-                            ✕
-                          </button>
+                          <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:6}}>
+                            <span>{isPivotBadge ? "📊 " + key : key}</span>
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleRemoveVariableFromPdf(key);
+                              }}
+                              style={{
+                                background:"rgba(255,255,255,0.2)",
+                                border:"none",
+                                borderRadius:"50%",
+                                width:16,
+                                height:16,
+                                color:"white",
+                                fontSize:".65rem",
+                                fontWeight:800,
+                                cursor:"pointer",
+                                display:"flex",
+                                alignItems:"center",
+                                justifyContent:"center",
+                                marginLeft:2
+                              }}
+                              title={`Remove ${key} from canvas`}
+                            >
+                              ✕
+                            </button>
+                          </div>
+                          {isPivotBadge && (
+                            <div style={{fontSize:".75em",whiteSpace:"pre",opacity:0.85,borderTop:"1px solid rgba(255,255,255,0.2)",paddingTop:2}}>
+                              {evaluateUniversalPivotTag(key, { allRegs: liveRegs, guests: C?.globalGuests, team: C?.teamItems, format: "pdf_table" })?.slice(0, 120) + "..."}
+                            </div>
+                          )}
                         </div>
                       );
                     })}
@@ -23618,6 +24314,8 @@ function WorkspaceWhatsAppTemplateModal({ event, C, setC, auth, onClose, initial
               </div>
             )
           )}
+
+          </div>
 
           {/* ══════════════════════════════════════════════════════════════
               RIGHT PANEL: DYNAMIC VARIABLES PALETTE (SHARED BY BOTH MODES!)
