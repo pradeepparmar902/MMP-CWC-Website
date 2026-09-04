@@ -31531,19 +31531,31 @@ function AdminInviteLetters({ mob, C, setC, auth }) {
 
     // Check workspace membership
     let evName = r.eventName || r.eventTitle || r.eventId;
+    const activeDocId = currentDocTpl?.id || "invite";
+    const activeTplObj = currentDocTpl?.customTpl;
+    const targetEventScope = activeTplObj?.targetEventId;
+
+    // Check if this subworkspace is configured to pull from a specific target event (e.g. Education 2026)
+    const matchesTargetEvent = Boolean(
+      targetEventScope && targetEventScope !== 'current' && (
+        targetEventScope === 'all' ||
+        r.eventId === targetEventScope ||
+        evName === targetEventScope ||
+        (C.events || []).some(ae => (ae.id === targetEventScope || ae.title === targetEventScope) && (r.eventId === ae.id || evName === ae.title || evName === ae.titleGu))
+      )
+    );
+
     const isExplicitlyAssigned = (r.targetTemplateId === currentDocTpl?.id) || (Array.isArray(r.assignedDocTypes) && r.assignedDocTypes.includes(currentDocTpl?.id));
     const isAssignedToWorkspace = (Array.isArray(r.assignedWorkspaceIds) && r.assignedWorkspaceIds.includes(ev.id)) || r.workspaceId === ev.id;
-    const matchesEvent = r.eventId === ev.id || evName === ev.title || evName === ev.titleGu || isExplicitlyAssigned || isAssignedToWorkspace;
+    const matchesEvent = r.eventId === ev.id || evName === ev.title || evName === ev.titleGu || isExplicitlyAssigned || isAssignedToWorkspace || matchesTargetEvent;
     if (!matchesEvent) return false;
 
     // ── Template / Sub-Workspace Contact Isolation ──
-    const activeDocId = currentDocTpl?.id || "invite";
-    const activeTplObj = currentDocTpl?.customTpl;
-
-    // If viewing a custom template (e.g. Local Vibhag Panchyat, Gate Pass, abcd, etc.)
+    // If viewing a custom template (e.g. Education 2026 Student Invite, new vibhag, etc.)
     if (activeDocId !== "invite" && activeDocId !== "cert") {
-      const targetAudienceMode = activeTplObj?.targetAudience || "assigned"; // "assigned" | "group" | "all"
+      const targetAudienceMode = activeTplObj?.targetAudience || "assigned"; // "assigned" | "event" | "group" | "all"
       if (targetAudienceMode === "all") return true;
+      if (targetAudienceMode === "event" || matchesTargetEvent) return true;
       
       // Check if contact was explicitly imported/assigned to this sub-workspace
       const isAssigned = r.targetTemplateId === activeDocId || (Array.isArray(r.assignedDocTypes) && r.assignedDocTypes.includes(activeDocId));
@@ -36252,6 +36264,45 @@ This cannot be undone.`)) return;
           </div>
         </div>
       )}
+      {/* Import Event & Section Registrations Modal */}
+      {showImportEventRegsModal && (
+        <ImportEventRegistrationsModal
+          isOpen={showImportEventRegsModal}
+          onClose={() => setShowImportEventRegsModal(false)}
+          activeEvent={activeEvent}
+          allEvents={C.events || []}
+          allRegs={regs || []}
+          currentDocTpl={currentDocTpl}
+          availableDocTemplates={availableDocTemplates}
+          auth={auth}
+          C={C}
+          onImportSuccess={(newRegs) => {
+            if (Array.isArray(newRegs) && newRegs.length > 0) {
+              setRegs(prev => {
+                const map = new Map(prev.map(r => [r.id, r]));
+                newRegs.forEach(nr => map.set(nr.id, { ...(map.get(nr.id) || {}), ...nr }));
+                return Array.from(map.values());
+              });
+            }
+            fetchRegs();
+          }}
+        />
+      )}
+
+      {/* Connect Existing Template Modal */}
+      {showConnectTplModal && (
+        <ConnectExistingTemplateModal
+          isOpen={showConnectTplModal}
+          onClose={() => setShowConnectTplModal(false)}
+          activeEvent={activeEvent}
+          C={C}
+          setC={setC}
+          auth={auth}
+          currentDocTpl={currentDocTpl}
+          onConnected={(newId) => setActiveDocType(newId)}
+        />
+      )}
+
       {/* Bulk Download & Envelope Print Selection Modal */}
       <BulkSelectionModal 
         isOpen={Boolean(bulkSelectMode)} 
