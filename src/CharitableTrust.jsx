@@ -23729,7 +23729,7 @@ function WorkspaceWhatsAppTemplateModal({ event, C, setC, auth, onClose, initial
   const [showPdfMediaLibrary, setShowPdfMediaLibrary] = useState(false);
   const canvasContainerRef = useRef(null);
   const pdfBgInputRef = useRef(null);
-  const [canvasScale, setCanvasScale] = useState(1);
+  const [canvasScale, setCanvasScale] = useState(0.85);
 
   const [saving, setSaving] = useState(false);
   const [variableSearch, setVariableSearch] = useState("");
@@ -25086,25 +25086,25 @@ function WorkspaceWhatsAppTemplateModal({ event, C, setC, auth, onClose, initial
           ) : (
             /* ── PDF PASSES & TEMPLATES VISUAL CANVAS EDITOR ── */
             activePdf && (
-              <div style={{flex:1,padding:"14px 18px",display:"flex",flexDirection:"column",gap:10,overflowY:"auto",background:"white"}}>
+              <div style={{flex:1,padding:"6px 12px",display:"flex",flexDirection:"column",gap:6,overflowY:"auto",background:"white"}}>
                 
-                {/* Template Name & Background Uploader Controls Bar */}
-                <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:12,flexWrap:"wrap",paddingBottom:8,borderBottom:"1px solid #F1F5F9"}}>
-                  <div style={{flex:1,minWidth:220}}>
-                    <label style={{display:"block",fontSize:".72rem",fontWeight:800,color:"#15803D",textTransform:"uppercase",marginBottom:3}}>
-                      ✏️ PDF TEMPLATE NAME (TYPE HERE TO RENAME)
+                {/* Compact Template Name & Media Bar */}
+                <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,flexWrap:"wrap",padding:"2px 0 6px 0",borderBottom:"1px solid #E2E8F0"}}>
+                  <div style={{display:"flex",alignItems:"center",gap:6,flex:1,minWidth:220}}>
+                    <label style={{fontSize:".74rem",fontWeight:800,color:"#15803D",whiteSpace:"nowrap"}}>
+                      ✏️ TEMPLATE:
                     </label>
                     <input
                       type="text"
                       value={activePdf.name || ""}
                       onChange={e => handleUpdateActivePdf("name", e.target.value)}
                       placeholder="e.g. Official Invite Letter, Food Coupon, Gate Pass..."
-                      style={{width:"100%",padding:"7px 12px",borderRadius:8,border:"2px solid #10B981",fontSize:".88rem",fontWeight:800,color:"#0F172A",boxSizing:"border-box",background:"#FAFDF7",outline:"none",boxShadow:"0 1px 4px rgba(16,185,129,0.15)"}}
+                      style={{flex:1,maxWidth:340,padding:"4px 8px",borderRadius:6,border:"1.5px solid #10B981",fontSize:".82rem",fontWeight:700,color:"#0F172A",background:"#FAFDF7",outline:"none"}}
                     />
                   </div>
 
                   {/* Upload Background Image / Fetch from Media Library */}
-                  <div style={{display:"flex",alignItems:"center",gap:8,paddingTop:12,flexWrap:"wrap"}}>
+                  <div style={{display:"flex",alignItems:"center",gap:6,flexWrap:"wrap"}}>
                     <input
                       type="file"
                       ref={pdfBgInputRef}
@@ -25118,24 +25118,23 @@ function WorkspaceWhatsAppTemplateModal({ event, C, setC, auth, onClose, initial
                       type="button"
                       onClick={() => setShowPdfMediaLibrary(true)}
                       style={{
-                        padding:"7px 14px",
+                        padding:"4px 10px",
                         background:"linear-gradient(135deg, #0F766E, #047857)",
                         color:"white",
-                        border:"1.5px solid #059669",
-                        borderRadius:8,
-                        fontSize:".78rem",
+                        border:"none",
+                        borderRadius:6,
+                        fontSize:".73rem",
                         fontWeight:800,
                         cursor:"pointer",
                         display:"flex",
                         alignItems:"center",
-                        gap:6,
-                        boxShadow:"0 2px 8px rgba(15,118,110,0.3)"
+                        gap:5,
+                        boxShadow:"0 1px 4px rgba(15,118,110,0.25)"
                       }}
-                      title="Fetch existing letterhead or certificate document from the Central Media Library without duplicate storage"
+                      title="Fetch existing letterhead or certificate document from Central Media Library (Zero Duplicate Storage)"
                     >
-                      <span style={{fontSize:".95rem"}}>📁</span>
+                      <span style={{fontSize:".85rem"}}>📁</span>
                       <span>Fetch from Media Library</span>
-                      <span style={{fontSize:".62rem",background:"rgba(255,255,255,0.25)",padding:"1px 5px",borderRadius:4}}>Zero Duplicate</span>
                     </button>
 
                     {/* ⬆️ Secondary Button to Upload from Computer */}
@@ -25144,29 +25143,29 @@ function WorkspaceWhatsAppTemplateModal({ event, C, setC, auth, onClose, initial
                       onClick={() => pdfBgInputRef.current?.click()}
                       disabled={uploadingPdfBg}
                       style={{
-                        padding:"7px 12px",
+                        padding:"4px 9px",
                         background:"#334155",
                         color:"white",
-                        border:"1px solid #475569",
-                        borderRadius:8,
-                        fontSize:".76rem",
-                        fontWeight:800,
+                        border:"none",
+                        borderRadius:6,
+                        fontSize:".73rem",
+                        fontWeight:700,
                         cursor:uploadingPdfBg ? "wait" : "pointer",
                         display:"flex",
                         alignItems:"center",
-                        gap:5
+                        gap:4
                       }}
-                      title="Upload a new background image directly from your computer (automatically saved to Media Library)"
+                      title="Upload a new background image directly from your computer (auto-saved to Media Library)"
                     >
                       <span>{uploadingPdfBg ? "⏳" : "⬆️"}</span>
-                      <span>{uploadingPdfBg ? "Uploading..." : "Upload from Computer"}</span>
+                      <span>{uploadingPdfBg ? "Uploading..." : "Upload File"}</span>
                     </button>
 
                     {activePdf.bgUrl && (
                       <button
                         type="button"
                         onClick={() => handleUpdateActivePdf("bgUrl", "")}
-                        style={{padding:"6px 10px",background:"#FEF2F2",border:"1px solid #FECACA",color:"#DC2626",borderRadius:6,fontSize:".75rem",fontWeight:700,cursor:"pointer"}}
+                        style={{padding:"3px 8px",background:"#FEF2F2",border:"1px solid #FECACA",color:"#DC2626",borderRadius:6,fontSize:".71rem",fontWeight:700,cursor:"pointer"}}
                         title="Remove background image"
                       >
                         ✕ Remove
@@ -25175,88 +25174,90 @@ function WorkspaceWhatsAppTemplateModal({ event, C, setC, auth, onClose, initial
                   </div>
                 </div>
 
-                {/* Canvas Formatting & A4 Controls Bar */}
-                <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:8,background:"#F8FAFC",padding:"8px 12px",borderRadius:8,border:"1px solid #E2E8F0"}}>
-                  <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
+                {/* Compact Canvas Formatting & A4 Controls Toolbar */}
+                <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:6,background:"#F8FAFC",padding:"4px 8px",borderRadius:6,border:"1px solid #E2E8F0"}}>
+                  <div style={{display:"flex",alignItems:"center",gap:6,flexWrap:"wrap"}}>
                     {/* Page Orientation */}
-                    <div style={{display:"flex",alignItems:"center",gap:2,background:"#E2E8F0",padding:2,borderRadius:6}}>
+                    <div style={{display:"flex",alignItems:"center",gap:1,background:"#E2E8F0",padding:2,borderRadius:5}}>
                       <button
                         type="button"
                         onClick={() => handleUpdateActivePdf("orientation", "portrait")}
                         style={{
-                          padding:"4px 9px",
+                          padding:"3px 7px",
                           border:"none",
-                          borderRadius:5,
-                          fontSize:".73rem",
+                          borderRadius:4,
+                          fontSize:".7rem",
                           fontWeight:800,
                           cursor:"pointer",
                           background: activePdf.orientation !== 'landscape' ? "#15803D" : "transparent",
                           color: activePdf.orientation !== 'landscape' ? "white" : "#475569"
                         }}
-                        title="Standard A4 Portrait (210 × 297 mm) - Best for Official Letters, Passes & Forms"
+                        title="Standard A4 Portrait (210 × 297 mm)"
                       >
-                        📄 A4 Portrait
+                        📄 Portrait
                       </button>
                       <button
                         type="button"
                         onClick={() => handleUpdateActivePdf("orientation", "landscape")}
                         style={{
-                          padding:"4px 9px",
+                          padding:"3px 7px",
                           border:"none",
-                          borderRadius:5,
-                          fontSize:".73rem",
+                          borderRadius:4,
+                          fontSize:".7rem",
                           fontWeight:800,
                           cursor:"pointer",
                           background: activePdf.orientation === 'landscape' ? "#15803D" : "transparent",
                           color: activePdf.orientation === 'landscape' ? "white" : "#475569"
                         }}
-                        title="A4 Landscape (297 × 210 mm) - Best for Certificates & Wide Passes"
+                        title="A4 Landscape (297 × 210 mm)"
                       >
-                        📜 A4 Landscape
+                        📜 Landscape
                       </button>
                     </div>
 
                     {/* Background Layout / Fit */}
-                    <div style={{display:"flex",alignItems:"center",gap:2,background:"#E2E8F0",padding:2,borderRadius:6}}>
+                    <div style={{display:"flex",alignItems:"center",gap:1,background:"#E2E8F0",padding:2,borderRadius:5}}>
                       <button
                         type="button"
                         onClick={() => handleUpdateActivePdf("bgFit", "letterhead")}
                         style={{
-                          padding:"4px 9px",
+                          padding:"3px 7px",
                           border:"none",
-                          borderRadius:5,
-                          fontSize:".73rem",
+                          borderRadius:4,
+                          fontSize:".7rem",
                           fontWeight:800,
                           cursor:"pointer",
                           background: (activePdf.bgFit === 'letterhead' || (!activePdf.bgFit && activePdf.orientation !== 'landscape')) ? "#0D4B5E" : "transparent",
                           color: (activePdf.bgFit === 'letterhead' || (!activePdf.bgFit && activePdf.orientation !== 'landscape')) ? "white" : "#475569"
                         }}
-                        title="Places uploaded banner at the top of the A4 page, keeping the rest of the sheet white for text and variables"
+                        title="Places uploaded banner at top of A4 page"
                       >
-                        🏷️ Top Letterhead
+                        🏷️ Header
                       </button>
                       <button
                         type="button"
                         onClick={() => handleUpdateActivePdf("bgFit", "full")}
                         style={{
-                          padding:"4px 9px",
+                          padding:"3px 7px",
                           border:"none",
-                          borderRadius:5,
-                          fontSize:".73rem",
+                          borderRadius:4,
+                          fontSize:".7rem",
                           fontWeight:800,
                           cursor:"pointer",
                           background: (activePdf.bgFit === 'full' || (!activePdf.bgFit && activePdf.orientation === 'landscape')) ? "#0D4B5E" : "transparent",
                           color: (activePdf.bgFit === 'full' || (!activePdf.bgFit && activePdf.orientation === 'landscape')) ? "white" : "#475569"
                         }}
-                        title="Stretches background to cover full A4 page (Great for full certificate designs)"
+                        title="Stretches background to cover full A4 page"
                       >
                         🖼️ Full Page
                       </button>
                     </div>
 
+                    <span style={{color:"#CBD5E1"}}>|</span>
+
                     {/* Font Size */}
-                    <div style={{display:"flex",alignItems:"center",gap:4}}>
-                      <label style={{fontSize:".7rem",fontWeight:800,color:"#475569"}}>FONT:</label>
+                    <div style={{display:"flex",alignItems:"center",gap:3}}>
+                      <label style={{fontSize:".68rem",fontWeight:800,color:"#475569"}}>FONT:</label>
                       <input
                         type="range"
                         min="10"
@@ -25264,78 +25265,90 @@ function WorkspaceWhatsAppTemplateModal({ event, C, setC, auth, onClose, initial
                         step="1"
                         value={activePdf.fontSize || (activePdf.orientation === 'landscape' ? 26 : 16)}
                         onChange={e => handleUpdateActivePdf("fontSize", parseInt(e.target.value))}
-                        style={{width:75}}
+                        style={{width:60,cursor:"pointer"}}
                       />
-                      <span style={{fontSize:".72rem",fontWeight:800,color:"#0F172A",minWidth:28}}>{activePdf.fontSize || (activePdf.orientation === 'landscape' ? 26 : 16)}px</span>
+                      <span style={{fontSize:".68rem",fontWeight:800,color:"#0F172A",minWidth:24}}>{activePdf.fontSize || (activePdf.orientation === 'landscape' ? 26 : 16)}px</span>
                     </div>
 
                     {/* Color */}
-                    <div style={{display:"flex",alignItems:"center",gap:4}}>
-                      <label style={{fontSize:".7rem",fontWeight:800,color:"#475569"}}>COLOR:</label>
+                    <div style={{display:"flex",alignItems:"center",gap:2}}>
                       <input
                         type="color"
                         value={activePdf.fontColor || "#000000"}
                         onChange={e => handleUpdateActivePdf("fontColor", e.target.value)}
-                        style={{width:26,height:22,border:"none",borderRadius:4,cursor:"pointer",background:"transparent"}}
+                        style={{width:22,height:20,border:"1px solid #CBD5E1",borderRadius:4,cursor:"pointer",padding:0,background:"transparent"}}
+                        title="Badge font color"
                       />
                     </div>
 
+                    <span style={{color:"#CBD5E1"}}>|</span>
+
                     {/* Zoom / Scale */}
-                    <div style={{display:"flex",alignItems:"center",gap:3,background:"#F1F5F9",padding:"2px 5px",borderRadius:6,border:"1px solid #CBD5E1"}}>
+                    <div style={{display:"flex",alignItems:"center",gap:2,background:"#F1F5F9",padding:"1px 4px",borderRadius:5,border:"1px solid #CBD5E1"}}>
                       <button
                         type="button"
-                        onClick={() => setCanvasScale(prev => Math.max(0.6, Math.round((prev - 0.1) * 10) / 10))}
-                        style={{border:"none",background:"transparent",cursor:"pointer",fontWeight:800,fontSize:".72rem",padding:"2px 4px"}}
+                        onClick={() => setCanvasScale(prev => Math.max(0.5, Math.round((prev - 0.1) * 10) / 10))}
+                        style={{border:"none",background:"transparent",cursor:"pointer",fontWeight:800,fontSize:".7rem",padding:"1px 3px"}}
                         title="Zoom out"
                       >
-                        🔍-
+                        -
                       </button>
-                      <span style={{fontSize:".68rem",fontWeight:800,minWidth:32,textAlign:"center"}}>{Math.round(canvasScale * 100)}%</span>
+                      <span style={{fontSize:".67rem",fontWeight:800,minWidth:28,textAlign:"center"}}>{Math.round(canvasScale * 100)}%</span>
                       <button
                         type="button"
-                        onClick={() => setCanvasScale(prev => Math.min(1.4, Math.round((prev + 0.1) * 10) / 10))}
-                        style={{border:"none",background:"transparent",cursor:"pointer",fontWeight:800,fontSize:".72rem",padding:"2px 4px"}}
+                        onClick={() => setCanvasScale(prev => Math.min(1.5, Math.round((prev + 0.1) * 10) / 10))}
+                        style={{border:"none",background:"transparent",cursor:"pointer",fontWeight:800,fontSize:".7rem",padding:"1px 3px"}}
                         title="Zoom in"
                       >
-                        🔍+
+                        +
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setCanvasScale(0.85)}
+                        style={{border:"none",background: canvasScale === 0.85 ? "#CBD5E1" : "#E2E8F0",borderRadius:3,cursor:"pointer",fontWeight:700,fontSize:".62rem",padding:"1px 4px"}}
+                        title="Fit to Screen (85%)"
+                      >
+                        Fit
                       </button>
                       <button
                         type="button"
                         onClick={() => setCanvasScale(1)}
-                        style={{border:"none",background:"#E2E8F0",borderRadius:4,cursor:"pointer",fontWeight:700,fontSize:".65rem",padding:"2px 5px"}}
-                        title="Reset zoom to 100%"
+                        style={{border:"none",background: canvasScale === 1 ? "#CBD5E1" : "#E2E8F0",borderRadius:3,cursor:"pointer",fontWeight:700,fontSize:".62rem",padding:"1px 4px"}}
+                        title="Original 100% size"
                       >
                         100%
                       </button>
                     </div>
 
+                    <span style={{color:"#CBD5E1"}}>|</span>
+
+                    {/* Pivot Table Connection */}
                     <button
                       type="button"
                       onClick={() => setShowPivotBuilder(prev => !prev)}
                       style={{
-                        padding:"3px 10px",
-                        borderRadius:6,
-                        border:"1.5px solid #047857",
+                        padding:"3px 8px",
+                        borderRadius:5,
+                        border:"1.2px solid #047857",
                         background: showPivotBuilder ? "#047857" : "#ECFDF5",
                         color: showPivotBuilder ? "white" : "#065F46",
-                        fontSize:".74rem",
+                        fontSize:".7rem",
                         fontWeight:800,
                         cursor:"pointer",
                         display:"flex",
                         alignItems:"center",
-                        gap:5,
-                        boxShadow:"0 1px 4px rgba(4,120,87,0.15)"
+                        gap:4,
+                        boxShadow:"0 1px 3px rgba(4,120,87,0.15)"
                       }}
                       title="Connect variables into an Excel-like Pivot Table (e.g. Vibhag | Gender | Total Count)"
                     >
                       <span>📊</span>
-                      <span>{showPivotBuilder ? "Hide Pivot Builder" : "Connect Variables / Pivot Table"}</span>
-                      <span style={{fontSize:".62rem",background:showPivotBuilder ? "#065F46" : "#A7F3D0",color:showPivotBuilder ? "white" : "#065F46",padding:"1px 5px",borderRadius:4}}>Excel-like</span>
+                      <span>{showPivotBuilder ? "Hide Pivot" : "Pivot Table"}</span>
                     </button>
                   </div>
 
-                  <div style={{fontSize:".7rem",color:"#15803D",fontWeight:800,display:"flex",alignItems:"center",gap:4}}>
-                    <span>🎯</span> Drag variables from palette & drop anywhere on A4 page!
+                  <div style={{fontSize:".68rem",color:"#15803D",fontWeight:700,display:"flex",alignItems:"center",gap:3}}>
+                    <span>🎯</span> Drag variables & drop on A4 page
                   </div>
                 </div>
 
