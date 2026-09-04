@@ -23875,8 +23875,44 @@ function AdminRegistrations({ mob, C, setC, auth }) {
     return true;
   };
 
+  const getRecordSection = (r) => {
+    if (!r) return "Default";
+    // 1. Direct match on C.events
+    const rEvId = String(r.eventId || '').trim().toLowerCase();
+    const rEvTitle = String(r.eventName || r.eventTitle || '').trim().toLowerCase();
+    const ev = (C.events || []).find(e => {
+      const eId = String(e.id || '').trim().toLowerCase();
+      const eTitle = String(e.title || '').trim().toLowerCase();
+      const eTitleGu = String(e.titleGu || '').trim().toLowerCase();
+      return (eId && (eId === rEvId || rEvId.includes(eId))) ||
+             (eTitle && (eTitle === rEvTitle || rEvTitle.includes(eTitle))) ||
+             (eTitleGu && (eTitleGu === rEvTitle));
+    });
+    if (ev && ev.section) return ev.section;
+
+    // 2. Smart fallback: if title or Txn ID belongs to Education Felicitation
+    const txn = String(r['Transaction ID'] || r.transactionId || '').toUpperCase();
+    const combined = `${rEvId} ${rEvTitle} ${String(r.program || '')} ${String(r.purpose || '')}`.toLowerCase();
+
+    if (txn.startsWith('EDU') || txn.startsWith('VG-') || combined.includes('education') || combined.includes('felicitation') || combined.includes('vidya') || combined.includes('student') || Boolean(r['Stream / Class'] || r['Stream'] || r['% Obtained'])) {
+      const eduSection = (C.eventSections || []).find(s => s.toLowerCase().includes('education')) || 
+                         (C.events || []).map(e => e.section).find(s => s && s.toLowerCase().includes('education')) || 
+                         "Education 2026";
+      return eduSection;
+    }
+
+    return ev?.section || "Default";
+  };
+
   const activeRegsList = regs.filter(isPublicEventRegistration);
   const deletedRegsList = regs.filter(r => (r.deleted === true || r.deleted === "true" || r.isDeleted === true || r.status === "Deleted" || r.Status === "Deleted") && !r.isGlobalGuest && !r.isSpecialGuest);
+
+  // Compute live section distribution counts
+  const sectionCounts = { "All": activeRegsList.length };
+  activeRegsList.forEach(r => {
+    const sec = getRecordSection(r);
+    sectionCounts[sec] = (sectionCounts[sec] || 0) + 1;
+  });
 
   // ── Duplicate Detection Engine (Matches Full Name & Mobile Number) ──
   const dupMap = {};
@@ -23933,9 +23969,8 @@ function AdminRegistrations({ mob, C, setC, auth }) {
   const filteredRegs = activeRegsList.filter(r => {
     if(!r) return false;
     
-    // Group section filter
-    const ev = C.events?.find(e => e.id === r.eventId || e.title === r.eventTitle || e.title === r.eventName || e.titleGu === r.eventName);
-    const evSection = ev?.section || "Default";
+    // Group section filter using smart section resolver
+    const evSection = getRecordSection(r);
     if (selectedSection !== "All") {
       if (selectedSection === "Default") {
         if (evSection !== "Default" && evSection !== "") return false;
@@ -24117,8 +24152,10 @@ function AdminRegistrations({ mob, C, setC, auth }) {
                 padding:"4px 12px", borderRadius:16, border:"none",
                 background:viewMode==="active"?"var(--dt)":"transparent", color:viewMode==="active"?"white":"var(--tm2)",
                 fontSize:".78rem", fontWeight:viewMode==="active"?700:500, cursor:"pointer"
-              }}>
-                📋 Active ({activeRegsList.length})
+              }}
+              title={selectedSection !== "All" ? `Showing ${filteredRegs.length} entries in ${selectedSection} (Total active across website: ${activeRegsList.length})` : `Total ${activeRegsList.length} active registrations`}
+              >
+                📋 Active ({selectedSection === "All" ? activeRegsList.length : `${filteredRegs.length} / ${activeRegsList.length}`})
               </button>
               <button onClick={()=>setViewMode("trash")} style={{
                 padding:"4px 12px", borderRadius:16, border:"none",
@@ -24138,13 +24175,18 @@ function AdminRegistrations({ mob, C, setC, auth }) {
                   ...(C.events || []).map(e => e.section).filter(Boolean)
                 ])).map(sec => {
                   const isSelected = selectedSection === sec;
+                  const count = sectionCounts[sec] || 0;
+                  const label = sec === "Default" ? "Default Section" : sec === "All" ? "All Groups" : sec;
                   return (
                     <button key={sec} onClick={()=>setSelectedSection(sec)} style={{
                       padding:"4px 12px", borderRadius:16, border:"none",
                       background:isSelected?"var(--dt)":"transparent", color:isSelected?"white":"var(--tm2)",
-                      fontSize:".78rem", fontWeight:isSelected?700:500, cursor:"pointer", transition:"all 0.2s"
-                    }}>
-                      {sec === "Default" ? "Default Section" : sec === "All" ? "All Groups" : sec}
+                      fontSize:".78rem", fontWeight:isSelected?700:500, cursor:"pointer", transition:"all 0.2s",
+                      boxShadow: isSelected ? "0 1px 4px rgba(0,0,0,0.18)" : "none"
+                    }}
+                    title={`Filter to ${label} (${count} registrations)`}
+                    >
+                      {label} ({count})
                     </button>
                   );
                 })}
@@ -24158,8 +24200,7 @@ function AdminRegistrations({ mob, C, setC, auth }) {
             {(() => {
               // Base candidates before status / open pill filters to show accurate bucket counts
               const basePool = activeRegsList.filter(r => {
-                const ev = (C.events || []).find(e => e.id === r.eventId || e.title === r.eventName || e.titleGu === r.eventName);
-                const evSection = ev?.section || "Default";
+                const evSection = getRecordSection(r);
                 if (selectedSection !== "All") {
                   if (selectedSection === "Default") {
                     if (evSection !== "Default" && evSection !== "") return false;
@@ -24372,8 +24413,13 @@ function AdminRegistrations({ mob, C, setC, auth }) {
             <button onClick={handleRefresh} disabled={refreshing} style={{padding:"6px 12px",borderRadius:8,fontSize:".8rem",fontWeight:600,display:"flex",alignItems:"center",gap:4,background:"white",border:"1px solid var(--bd)",color:"var(--dt)",cursor:refreshing?"wait":"pointer",whiteSpace:"nowrap"}}>
               {refreshing ? "..." : "↻"} Refresh
             </button>
-            <button onClick={handleExportCSV} className="bt" style={{padding:"6px 12px",borderRadius:8,fontSize:".8rem",fontWeight:600,display:"flex",alignItems:"center",gap:4,whiteSpace:"nowrap"}}>
-              <span>📥</span> Export CSV
+            <button 
+              onClick={handleExportCSV} 
+              className="bt" 
+              style={{padding:"6px 12px",borderRadius:8,fontSize:".8rem",fontWeight:600,display:"flex",alignItems:"center",gap:4,whiteSpace:"nowrap"}}
+              title={`Export ${filteredRegs.length} rows to CSV (${selectedSection === "All" ? "All Groups" : selectedSection})`}
+            >
+              <span>📥</span> Export CSV ({filteredRegs.length})
             </button>
             {selectedIds.length > 0 && (
               <button
