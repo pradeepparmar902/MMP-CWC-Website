@@ -29183,7 +29183,245 @@ This cannot be undone.`)) return;
           onClose={() => setShowWorkspaceTplModal(false)}
         />
       )}
-      {/* WhatsApp Invite Letter Template Modal */}
+            {/* Visual PDF Template Configuration & Variable Mapper Modal */}
+      {configModal && (
+        <CertificateConfigModal
+          ev={configModal.ev || activeEvent}
+          auth={auth}
+          forms={C.forms}
+          type={configModal.type || 'cert'}
+          customTpl={configModal.customTpl}
+          onClose={() => setConfigModal(null)}
+          onSave={handleSaveTemplateConfig}
+        />
+      )}
+
+      {/* PDF Templates & Passes Manager Modal (Directly in Workspace) */}
+      {showTemplatesManagerModal && (
+        <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.65)",zIndex:100005,display:"flex",alignItems:"center",justifyContent:"center",padding:16}} onClick={()=>setShowTemplatesManagerModal(false)}>
+          <div style={{background:"white",borderRadius:16,maxWidth:780,width:"100%",maxHeight:"90vh",overflowY:"auto",padding:24,boxShadow:"0 20px 45px rgba(0,0,0,0.35)"}} onClick={e=>e.stopPropagation()}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:16,borderBottom:"1px solid #E2E8F0",paddingBottom:12}}>
+              <div>
+                <h3 style={{fontSize:"1.15rem",fontWeight:800,color:"#0D4B5E",margin:0,display:"flex",alignItems:"center",gap:8}}>
+                  <span>📑</span> PDF Templates & Passes Manager
+                </h3>
+                <div style={{fontSize:".8rem",color:"#64748B",marginTop:3}}>
+                  Manage, upload backgrounds, map variables, and release PDF passes for: <strong>{activeEvent.title}</strong>
+                </div>
+              </div>
+              <button onClick={()=>setShowTemplatesManagerModal(false)} style={{background:"#F1F5F9",border:"none",borderRadius:"50%",width:32,height:32,cursor:"pointer",fontWeight:800,fontSize:"1rem"}}>✕</button>
+            </div>
+
+            {/* Standard Built-in Templates Section */}
+            <div style={{marginBottom:16,background:"#F8FAFC",border:"1px solid #E2E8F0",borderRadius:10,padding:14}}>
+              <div style={{fontSize:".82rem",fontWeight:800,color:"#1E293B",marginBottom:10,display:"flex",alignItems:"center",gap:6}}>
+                <span>📜</span> Primary Event Documents
+              </div>
+
+              <div style={{display:"flex",flexDirection:"column",gap:8}}>
+                {/* Official Invite Letter */}
+                <div style={{background:"white",padding:"10px 14px",borderRadius:8,border:"1px solid #CBD5E1",display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:8}}>
+                  <div style={{display:"flex",alignItems:"center",gap:8}}>
+                    <span style={{fontSize:"1.2rem"}}>💌</span>
+                    <div>
+                      <strong style={{fontSize:".85rem",color:"#0F172A"}}>Official Invite Letter</strong>
+                      <div style={{fontSize:".7rem",color:"#64748B"}}>Primary invitation letter & entry pass</div>
+                    </div>
+                    {activeEvent.inviteBgUrl ? (
+                      <span style={{fontSize:".68rem",background:"#DCFCE7",color:"#15803D",padding:"2px 6px",borderRadius:4,fontWeight:800}}>✓ Configured</span>
+                    ) : (
+                      <span style={{fontSize:".68rem",background:"#FEF3C7",color:"#B45309",padding:"2px 6px",borderRadius:4,fontWeight:800}}>⚠️ Needs Background Image</span>
+                    )}
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowTemplatesManagerModal(false);
+                      setConfigModal({ ev: activeEvent, type: 'invite' });
+                    }}
+                    style={{padding:"6px 14px",borderRadius:6,fontSize:".76rem",fontWeight:800,background:"#0D4B5E",color:"white",border:"none",cursor:"pointer",display:"flex",alignItems:"center",gap:4}}
+                  >
+                    ⚙️ Configure Template
+                  </button>
+                </div>
+
+                {/* Certificate Pass */}
+                {(activeEvent.issueCertificates || activeEvent.certBgUrl) && (
+                  <div style={{background:"white",padding:"10px 14px",borderRadius:8,border:"1px solid #CBD5E1",display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:8}}>
+                    <div style={{display:"flex",alignItems:"center",gap:8}}>
+                      <span style={{fontSize:"1.2rem"}}>🎓</span>
+                      <div>
+                        <strong style={{fontSize:".85rem",color:"#0F172A"}}>Certificate Pass</strong>
+                        <div style={{fontSize:".7rem",color:"#64748B"}}>Award felicitation & certificate of honor</div>
+                      </div>
+                      {activeEvent.certBgUrl ? (
+                        <span style={{fontSize:".68rem",background:"#DCFCE7",color:"#15803D",padding:"2px 6px",borderRadius:4,fontWeight:800}}>✓ Configured</span>
+                      ) : (
+                        <span style={{fontSize:".68rem",background:"#FEF3C7",color:"#B45309",padding:"2px 6px",borderRadius:4,fontWeight:800}}>⚠️ Needs Background Image</span>
+                      )}
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setShowTemplatesManagerModal(false);
+                        setConfigModal({ ev: activeEvent, type: 'cert' });
+                      }}
+                      style={{padding:"6px 14px",borderRadius:6,fontSize:".76rem",fontWeight:800,background:"#0D4B5E",color:"white",border:"none",cursor:"pointer",display:"flex",alignItems:"center",gap:4}}
+                    >
+                      ⚙️ Configure Template
+                    </button>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Additional Custom PDF Templates & Passes Section */}
+            <div style={{background:"#F0FDF4",border:"1.5px solid #86EFAC",borderRadius:12,padding:16}}>
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8,flexWrap:"wrap",gap:8}}>
+                <div>
+                  <div style={{fontSize:".88rem",fontWeight:800,color:"#166534",display:"flex",alignItems:"center",gap:6}}>
+                    <span>📑</span> Additional Custom PDF Templates & Passes ({(activeEvent.pdfTemplates || []).length})
+                  </div>
+                  <div style={{fontSize:".72rem",color:"#15803D",marginTop:2}}>
+                    Create unlimited extra PDF passes (e.g. Food Coupons, Gate Passes, ID Cards, Parent Passes) with direct WhatsApp URL links.
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    const name = prompt("Enter Name for new PDF Template (e.g. Food Coupon & Dinner Pass, Token Number, Gate Pass):");
+                    if (name && name.trim()) {
+                      const cleanName = name.trim();
+                      const tplId = "doc_" + Date.now();
+                      const newTpl = {
+                        id: tplId,
+                        name: cleanName,
+                        targetSection: "invites",
+                        targetAudience: "assigned",
+                        bgUrl: "",
+                        map: {},
+                        fontSize: 30,
+                        fontColor: "#000000"
+                      };
+                      const updatedTpls = [...(activeEvent.pdfTemplates || []), newTpl];
+                      const currentEvents = C.events || [];
+                      const eventExists = currentEvents.some(e => e.id === activeEvent.id || e.title === activeEvent.title);
+                      const updatedTargetEvent = { ...activeEvent, pdfTemplates: updatedTpls };
+                      const updatedEvents = eventExists 
+                        ? currentEvents.map(e => (e.id === activeEvent.id || e.title === activeEvent.title) ? updatedTargetEvent : e)
+                        : [...currentEvents, updatedTargetEvent];
+                      const updatedC = { ...C, events: updatedEvents };
+                      if (setC) setC(updatedC);
+                      fbSave(updatedC, auth?.idToken);
+                      setActiveDocType(tplId);
+                      setShowTemplatesManagerModal(false);
+                      setConfigModal({
+                        ev: updatedTargetEvent,
+                        type: 'custom',
+                        customTpl: newTpl
+                      });
+                    }
+                  }}
+                  style={{padding:"8px 14px",borderRadius:8,fontSize:".78rem",fontWeight:800,background:"#15803D",color:"white",border:"none",cursor:"pointer",display:"flex",alignItems:"center",gap:5,boxShadow:"0 2px 6px rgba(21,128,61,0.25)"}}
+                >
+                  <span>➕</span> Add New PDF Template
+                </button>
+              </div>
+
+              {/* Template Items */}
+              <div style={{display:"flex",flexDirection:"column",gap:8,marginTop:12}}>
+                {(activeEvent.pdfTemplates || []).map((tpl, tplIdx) => {
+                  const directUrl = `https://www.mmp-cwc.com/?doc=${tpl.id}&pass={TXN_ID}`;
+                  return (
+                    <div key={tpl.id} style={{background:"white",padding:"12px 14px",borderRadius:8,border:"1px solid #CBD5E1",display:"flex",flexDirection:"column",gap:8,boxShadow:"0 1px 4px rgba(0,0,0,0.04)"}}>
+                      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:8}}>
+                        <div style={{display:"flex",alignItems:"center",gap:8}}>
+                          <span style={{fontSize:"1.2rem"}}>📄</span>
+                          <strong style={{fontSize:".88rem",color:"#0F172A"}}>{tpl.name}</strong>
+                          {tpl.bgUrl ? (
+                            <span style={{fontSize:".68rem",background:"#DCFCE7",color:"#15803D",padding:"2px 6px",borderRadius:4,fontWeight:800}}>
+                              ✓ Configured
+                            </span>
+                          ) : (
+                            <span style={{fontSize:".68rem",background:"#FEF3C7",color:"#B45309",padding:"2px 6px",borderRadius:4,fontWeight:800}}>
+                              ⚠️ Needs Background Image
+                            </span>
+                          )}
+                        </div>
+
+                        <div style={{display:"flex",gap:6}}>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setActiveDocType(tpl.id);
+                              setShowTemplatesManagerModal(false);
+                              setConfigModal({ ev: activeEvent, type: 'custom', customTpl: tpl });
+                            }}
+                            style={{padding:"6px 12px",borderRadius:6,fontSize:".75rem",fontWeight:800,background:"#0D4B5E",color:"white",border:"none",cursor:"pointer",display:"flex",alignItems:"center",gap:4}}
+                          >
+                            ⚙️ Configure Template
+                          </button>
+                          <button
+                            type="button"
+                            onClick={async () => {
+                              if (!window.confirm(`Delete PDF template "${tpl.name}"?`)) return;
+                              const updatedTpls = (activeEvent.pdfTemplates || []).filter((_, k) => k !== tplIdx);
+                              const currentEvents = C.events || [];
+                              const updatedTargetEvent = { ...activeEvent, pdfTemplates: updatedTpls };
+                              const updatedEvents = currentEvents.map(e => (e.id === activeEvent.id || e.title === activeEvent.title) ? updatedTargetEvent : e);
+                              const updatedC = { ...C, events: updatedEvents };
+                              if (setC) setC(updatedC);
+                              await fbSave(updatedC, auth?.idToken);
+                              if (activeDocType === tpl.id) setActiveDocType('invite');
+                            }}
+                            style={{padding:"6px 10px",borderRadius:6,fontSize:".75rem",fontWeight:800,background:"#FEE2E2",color:"#DC2626",border:"1px solid #FCA5A5",cursor:"pointer"}}
+                          >
+                            🗑️ Delete
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* URL Box */}
+                      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:8,background:"#F8FAFC",padding:"6px 10px",borderRadius:6,border:"1px dashed #CBD5E1"}}>
+                        <span style={{fontSize:".72rem",color:"#475569",fontFamily:"monospace",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>
+                          🔗 <strong>URL:</strong> {directUrl}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            navigator.clipboard.writeText(directUrl);
+                            alert(`Copied direct URL for "${tpl.name}"!`);
+                          }}
+                          style={{padding:"3px 10px",background:"#EFF6FF",color:"#1D4ED8",border:"1px solid #BFDBFE",borderRadius:4,fontSize:".72rem",fontWeight:800,cursor:"pointer",whiteSpace:"nowrap"}}
+                        >
+                          📋 Copy URL
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
+
+                {(!activeEvent.pdfTemplates || activeEvent.pdfTemplates.length === 0) && (
+                  <div style={{fontSize:".78rem",color:"#64748B",fontStyle:"italic",textAlign:"center",padding:"14px 0"}}>
+                    No custom PDF templates added yet. Click "+ Add New PDF Template" above to create Food Passes, Gate Passes, etc.
+                  </div>
+                )}
+              </div>
+            </div>
+
+            <div style={{display:"flex",justifyContent:"flex-end",marginTop:16}}>
+              <button onClick={()=>setShowTemplatesManagerModal(false)} style={{padding:"8px 20px",borderRadius:8,background:"#F1F5F9",color:"#334155",border:"1px solid #CBD5E1",fontSize:".85rem",cursor:"pointer",fontWeight:700}}>
+                Done
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+         {/* WhatsApp Invite Letter Template Modal */}
          {showInviteTplModal && (
            <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.6)",zIndex:100002,display:"flex",alignItems:"center",justifyContent:"center",padding:16}} onClick={()=>setShowInviteTplModal(false)}>
              <div style={{background:"white",borderRadius:16,maxWidth:700,width:"100%",maxHeight:"90vh",overflowY:"auto",padding:24,boxShadow:"0 20px 40px rgba(0,0,0,0.3)"}} onClick={e=>e.stopPropagation()}>
@@ -30397,6 +30635,244 @@ This cannot be undone.`)) return;
 
       {/* Global Guests Modal */}
       {showGlobalGuestsModal && renderGlobalGuestsModal()}
+
+            {/* Visual PDF Template Configuration & Variable Mapper Modal */}
+      {configModal && (
+        <CertificateConfigModal
+          ev={configModal.ev || activeEvent}
+          auth={auth}
+          forms={C.forms}
+          type={configModal.type || 'cert'}
+          customTpl={configModal.customTpl}
+          onClose={() => setConfigModal(null)}
+          onSave={handleSaveTemplateConfig}
+        />
+      )}
+
+      {/* PDF Templates & Passes Manager Modal (Directly in Workspace) */}
+      {showTemplatesManagerModal && (
+        <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.65)",zIndex:100005,display:"flex",alignItems:"center",justifyContent:"center",padding:16}} onClick={()=>setShowTemplatesManagerModal(false)}>
+          <div style={{background:"white",borderRadius:16,maxWidth:780,width:"100%",maxHeight:"90vh",overflowY:"auto",padding:24,boxShadow:"0 20px 45px rgba(0,0,0,0.35)"}} onClick={e=>e.stopPropagation()}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:16,borderBottom:"1px solid #E2E8F0",paddingBottom:12}}>
+              <div>
+                <h3 style={{fontSize:"1.15rem",fontWeight:800,color:"#0D4B5E",margin:0,display:"flex",alignItems:"center",gap:8}}>
+                  <span>📑</span> PDF Templates & Passes Manager
+                </h3>
+                <div style={{fontSize:".8rem",color:"#64748B",marginTop:3}}>
+                  Manage, upload backgrounds, map variables, and release PDF passes for: <strong>{activeEvent.title}</strong>
+                </div>
+              </div>
+              <button onClick={()=>setShowTemplatesManagerModal(false)} style={{background:"#F1F5F9",border:"none",borderRadius:"50%",width:32,height:32,cursor:"pointer",fontWeight:800,fontSize:"1rem"}}>✕</button>
+            </div>
+
+            {/* Standard Built-in Templates Section */}
+            <div style={{marginBottom:16,background:"#F8FAFC",border:"1px solid #E2E8F0",borderRadius:10,padding:14}}>
+              <div style={{fontSize:".82rem",fontWeight:800,color:"#1E293B",marginBottom:10,display:"flex",alignItems:"center",gap:6}}>
+                <span>📜</span> Primary Event Documents
+              </div>
+
+              <div style={{display:"flex",flexDirection:"column",gap:8}}>
+                {/* Official Invite Letter */}
+                <div style={{background:"white",padding:"10px 14px",borderRadius:8,border:"1px solid #CBD5E1",display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:8}}>
+                  <div style={{display:"flex",alignItems:"center",gap:8}}>
+                    <span style={{fontSize:"1.2rem"}}>💌</span>
+                    <div>
+                      <strong style={{fontSize:".85rem",color:"#0F172A"}}>Official Invite Letter</strong>
+                      <div style={{fontSize:".7rem",color:"#64748B"}}>Primary invitation letter & entry pass</div>
+                    </div>
+                    {activeEvent.inviteBgUrl ? (
+                      <span style={{fontSize:".68rem",background:"#DCFCE7",color:"#15803D",padding:"2px 6px",borderRadius:4,fontWeight:800}}>✓ Configured</span>
+                    ) : (
+                      <span style={{fontSize:".68rem",background:"#FEF3C7",color:"#B45309",padding:"2px 6px",borderRadius:4,fontWeight:800}}>⚠️ Needs Background Image</span>
+                    )}
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowTemplatesManagerModal(false);
+                      setConfigModal({ ev: activeEvent, type: 'invite' });
+                    }}
+                    style={{padding:"6px 14px",borderRadius:6,fontSize:".76rem",fontWeight:800,background:"#0D4B5E",color:"white",border:"none",cursor:"pointer",display:"flex",alignItems:"center",gap:4}}
+                  >
+                    ⚙️ Configure Template
+                  </button>
+                </div>
+
+                {/* Certificate Pass */}
+                {(activeEvent.issueCertificates || activeEvent.certBgUrl) && (
+                  <div style={{background:"white",padding:"10px 14px",borderRadius:8,border:"1px solid #CBD5E1",display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:8}}>
+                    <div style={{display:"flex",alignItems:"center",gap:8}}>
+                      <span style={{fontSize:"1.2rem"}}>🎓</span>
+                      <div>
+                        <strong style={{fontSize:".85rem",color:"#0F172A"}}>Certificate Pass</strong>
+                        <div style={{fontSize:".7rem",color:"#64748B"}}>Award felicitation & certificate of honor</div>
+                      </div>
+                      {activeEvent.certBgUrl ? (
+                        <span style={{fontSize:".68rem",background:"#DCFCE7",color:"#15803D",padding:"2px 6px",borderRadius:4,fontWeight:800}}>✓ Configured</span>
+                      ) : (
+                        <span style={{fontSize:".68rem",background:"#FEF3C7",color:"#B45309",padding:"2px 6px",borderRadius:4,fontWeight:800}}>⚠️ Needs Background Image</span>
+                      )}
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setShowTemplatesManagerModal(false);
+                        setConfigModal({ ev: activeEvent, type: 'cert' });
+                      }}
+                      style={{padding:"6px 14px",borderRadius:6,fontSize:".76rem",fontWeight:800,background:"#0D4B5E",color:"white",border:"none",cursor:"pointer",display:"flex",alignItems:"center",gap:4}}
+                    >
+                      ⚙️ Configure Template
+                    </button>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Additional Custom PDF Templates & Passes Section */}
+            <div style={{background:"#F0FDF4",border:"1.5px solid #86EFAC",borderRadius:12,padding:16}}>
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8,flexWrap:"wrap",gap:8}}>
+                <div>
+                  <div style={{fontSize:".88rem",fontWeight:800,color:"#166534",display:"flex",alignItems:"center",gap:6}}>
+                    <span>📑</span> Additional Custom PDF Templates & Passes ({(activeEvent.pdfTemplates || []).length})
+                  </div>
+                  <div style={{fontSize:".72rem",color:"#15803D",marginTop:2}}>
+                    Create unlimited extra PDF passes (e.g. Food Coupons, Gate Passes, ID Cards, Parent Passes) with direct WhatsApp URL links.
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    const name = prompt("Enter Name for new PDF Template (e.g. Food Coupon & Dinner Pass, Token Number, Gate Pass):");
+                    if (name && name.trim()) {
+                      const cleanName = name.trim();
+                      const tplId = "doc_" + Date.now();
+                      const newTpl = {
+                        id: tplId,
+                        name: cleanName,
+                        targetSection: "invites",
+                        targetAudience: "assigned",
+                        bgUrl: "",
+                        map: {},
+                        fontSize: 30,
+                        fontColor: "#000000"
+                      };
+                      const updatedTpls = [...(activeEvent.pdfTemplates || []), newTpl];
+                      const currentEvents = C.events || [];
+                      const eventExists = currentEvents.some(e => e.id === activeEvent.id || e.title === activeEvent.title);
+                      const updatedTargetEvent = { ...activeEvent, pdfTemplates: updatedTpls };
+                      const updatedEvents = eventExists 
+                        ? currentEvents.map(e => (e.id === activeEvent.id || e.title === activeEvent.title) ? updatedTargetEvent : e)
+                        : [...currentEvents, updatedTargetEvent];
+                      const updatedC = { ...C, events: updatedEvents };
+                      if (setC) setC(updatedC);
+                      fbSave(updatedC, auth?.idToken);
+                      setActiveDocType(tplId);
+                      setShowTemplatesManagerModal(false);
+                      setConfigModal({
+                        ev: updatedTargetEvent,
+                        type: 'custom',
+                        customTpl: newTpl
+                      });
+                    }
+                  }}
+                  style={{padding:"8px 14px",borderRadius:8,fontSize:".78rem",fontWeight:800,background:"#15803D",color:"white",border:"none",cursor:"pointer",display:"flex",alignItems:"center",gap:5,boxShadow:"0 2px 6px rgba(21,128,61,0.25)"}}
+                >
+                  <span>➕</span> Add New PDF Template
+                </button>
+              </div>
+
+              {/* Template Items */}
+              <div style={{display:"flex",flexDirection:"column",gap:8,marginTop:12}}>
+                {(activeEvent.pdfTemplates || []).map((tpl, tplIdx) => {
+                  const directUrl = `https://www.mmp-cwc.com/?doc=${tpl.id}&pass={TXN_ID}`;
+                  return (
+                    <div key={tpl.id} style={{background:"white",padding:"12px 14px",borderRadius:8,border:"1px solid #CBD5E1",display:"flex",flexDirection:"column",gap:8,boxShadow:"0 1px 4px rgba(0,0,0,0.04)"}}>
+                      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:8}}>
+                        <div style={{display:"flex",alignItems:"center",gap:8}}>
+                          <span style={{fontSize:"1.2rem"}}>📄</span>
+                          <strong style={{fontSize:".88rem",color:"#0F172A"}}>{tpl.name}</strong>
+                          {tpl.bgUrl ? (
+                            <span style={{fontSize:".68rem",background:"#DCFCE7",color:"#15803D",padding:"2px 6px",borderRadius:4,fontWeight:800}}>
+                              ✓ Configured
+                            </span>
+                          ) : (
+                            <span style={{fontSize:".68rem",background:"#FEF3C7",color:"#B45309",padding:"2px 6px",borderRadius:4,fontWeight:800}}>
+                              ⚠️ Needs Background Image
+                            </span>
+                          )}
+                        </div>
+
+                        <div style={{display:"flex",gap:6}}>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setActiveDocType(tpl.id);
+                              setShowTemplatesManagerModal(false);
+                              setConfigModal({ ev: activeEvent, type: 'custom', customTpl: tpl });
+                            }}
+                            style={{padding:"6px 12px",borderRadius:6,fontSize:".75rem",fontWeight:800,background:"#0D4B5E",color:"white",border:"none",cursor:"pointer",display:"flex",alignItems:"center",gap:4}}
+                          >
+                            ⚙️ Configure Template
+                          </button>
+                          <button
+                            type="button"
+                            onClick={async () => {
+                              if (!window.confirm(`Delete PDF template "${tpl.name}"?`)) return;
+                              const updatedTpls = (activeEvent.pdfTemplates || []).filter((_, k) => k !== tplIdx);
+                              const currentEvents = C.events || [];
+                              const updatedTargetEvent = { ...activeEvent, pdfTemplates: updatedTpls };
+                              const updatedEvents = currentEvents.map(e => (e.id === activeEvent.id || e.title === activeEvent.title) ? updatedTargetEvent : e);
+                              const updatedC = { ...C, events: updatedEvents };
+                              if (setC) setC(updatedC);
+                              await fbSave(updatedC, auth?.idToken);
+                              if (activeDocType === tpl.id) setActiveDocType('invite');
+                            }}
+                            style={{padding:"6px 10px",borderRadius:6,fontSize:".75rem",fontWeight:800,background:"#FEE2E2",color:"#DC2626",border:"1px solid #FCA5A5",cursor:"pointer"}}
+                          >
+                            🗑️ Delete
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* URL Box */}
+                      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:8,background:"#F8FAFC",padding:"6px 10px",borderRadius:6,border:"1px dashed #CBD5E1"}}>
+                        <span style={{fontSize:".72rem",color:"#475569",fontFamily:"monospace",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>
+                          🔗 <strong>URL:</strong> {directUrl}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            navigator.clipboard.writeText(directUrl);
+                            alert(`Copied direct URL for "${tpl.name}"!`);
+                          }}
+                          style={{padding:"3px 10px",background:"#EFF6FF",color:"#1D4ED8",border:"1px solid #BFDBFE",borderRadius:4,fontSize:".72rem",fontWeight:800,cursor:"pointer",whiteSpace:"nowrap"}}
+                        >
+                          📋 Copy URL
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
+
+                {(!activeEvent.pdfTemplates || activeEvent.pdfTemplates.length === 0) && (
+                  <div style={{fontSize:".78rem",color:"#64748B",fontStyle:"italic",textAlign:"center",padding:"14px 0"}}>
+                    No custom PDF templates added yet. Click "+ Add New PDF Template" above to create Food Passes, Gate Passes, etc.
+                  </div>
+                )}
+              </div>
+            </div>
+
+            <div style={{display:"flex",justifyContent:"flex-end",marginTop:16}}>
+              <button onClick={()=>setShowTemplatesManagerModal(false)} style={{padding:"8px 20px",borderRadius:8,background:"#F1F5F9",color:"#334155",border:"1px solid #CBD5E1",fontSize:".85rem",cursor:"pointer",fontWeight:700}}>
+                Done
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* WhatsApp Applicant Messenger Modal */}
       {selectedWhatsAppReg && (
