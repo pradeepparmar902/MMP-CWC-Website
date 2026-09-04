@@ -31535,27 +31535,50 @@ function AdminInviteLetters({ mob, C, setC, auth }) {
     const activeTplObj = currentDocTpl?.customTpl;
     const targetEventScope = activeTplObj?.targetEventId;
 
+    // Helper: Normalize and match registration against target event scope
+    const isEventMatchingScope = (record, scope) => {
+      if (!scope || scope === 'current') return false;
+      if (scope === 'all') return true;
+      const cleanScope = String(scope).toLowerCase().trim();
+      const rEvId = String(record.eventId || '').toLowerCase().trim();
+      const rEvName = String(record.eventName || record.eventTitle || '').toLowerCase().trim();
+      const rFormId = String(record.formId || '').toLowerCase().trim();
+
+      if (rEvId === cleanScope || rEvName === cleanScope || rFormId === cleanScope) return true;
+      if (cleanScope.includes('education') && (rEvId.includes('education') || rEvName.includes('education') || rEvId.includes('1785425112515'))) return true;
+      if (cleanScope.includes('1785425112515') && (rEvId.includes('1785425112515') || rEvName.includes('education'))) return true;
+
+      const matchedCEvent = (C.events || []).find(e => 
+        String(e.id || '').toLowerCase().trim() === cleanScope || 
+        String(e.title || '').toLowerCase().trim() === cleanScope
+      );
+      if (matchedCEvent) {
+        const mId = String(matchedCEvent.id || '').toLowerCase().trim();
+        const mTitle = String(matchedCEvent.title || '').toLowerCase().trim();
+        if (mId && (rEvId === mId || rEvName === mId)) return true;
+        if (mTitle && (rEvId === mTitle || rEvName === mTitle)) return true;
+      }
+      return false;
+    };
+
     // Check if this subworkspace is configured to pull from a specific target event (e.g. Education 2026)
     const matchesTargetEvent = Boolean(
-      targetEventScope && targetEventScope !== 'current' && (
-        targetEventScope === 'all' ||
-        r.eventId === targetEventScope ||
-        evName === targetEventScope ||
-        (C.events || []).some(ae => (ae.id === targetEventScope || ae.title === targetEventScope) && (r.eventId === ae.id || evName === ae.title || evName === ae.titleGu))
-      )
+      targetEventScope && targetEventScope !== 'current' && isEventMatchingScope(r, targetEventScope)
     );
 
     const isExplicitlyAssigned = (r.targetTemplateId === currentDocTpl?.id) || (Array.isArray(r.assignedDocTypes) && r.assignedDocTypes.includes(currentDocTpl?.id));
     const isAssignedToWorkspace = (Array.isArray(r.assignedWorkspaceIds) && r.assignedWorkspaceIds.includes(ev.id)) || r.workspaceId === ev.id;
-    const matchesEvent = r.eventId === ev.id || evName === ev.title || evName === ev.titleGu || isExplicitlyAssigned || isAssignedToWorkspace || matchesTargetEvent;
+    const matchesEvent = matchesTargetEvent || r.eventId === ev.id || evName === ev.title || evName === ev.titleGu || isExplicitlyAssigned || isAssignedToWorkspace;
     if (!matchesEvent) return false;
 
     // ── Template / Sub-Workspace Contact Isolation ──
     // If viewing a custom template (e.g. Education 2026 Student Invite, new vibhag, etc.)
     if (activeDocId !== "invite" && activeDocId !== "cert") {
+      // Direct streaming: When an event is selected in the Subworkspace Card, its registrations stream immediately
+      if (matchesTargetEvent) return true;
+
       const targetAudienceMode = activeTplObj?.targetAudience || "assigned"; // "assigned" | "event" | "group" | "all"
-      if (targetAudienceMode === "all") return true;
-      if (targetAudienceMode === "event" || matchesTargetEvent) return true;
+      if (targetAudienceMode === "all" || targetAudienceMode === "event") return true;
       
       // Check if contact was explicitly imported/assigned to this sub-workspace
       const isAssigned = r.targetTemplateId === activeDocId || (Array.isArray(r.assignedDocTypes) && r.assignedDocTypes.includes(activeDocId));
@@ -33923,28 +33946,7 @@ This cannot be undone.`)) return;
             <button onClick={() => setShowWorkspaceTplModal(true)} style={{padding:"8px 16px",borderRadius:8,fontSize:".85rem",fontWeight:700,display:"flex",alignItems:"center",gap:6,background:"#F0FDF4",border:"1px solid #86EFAC",color:"#15803D",cursor:"pointer",boxShadow:"0 2px 8px rgba(21,128,61,0.15)",whiteSpace:"nowrap"}}>
               📝 Workspace WhatsApp Templates ({((activeEvent?.whatsAppTemplates && activeEvent.whatsAppTemplates.length > 0) ? activeEvent.whatsAppTemplates.length : 3)})
             </button>
-            <button 
-              type="button"
-              onClick={() => setShowImportEventRegsModal(true)} 
-              style={{
-                padding:"8px 16px",
-                borderRadius:8,
-                fontSize:".85rem",
-                fontWeight:800,
-                display:"flex",
-                alignItems:"center",
-                gap:6,
-                background:"linear-gradient(135deg, #1E40AF, #2563EB)",
-                color:"white",
-                border:"none",
-                cursor:"pointer",
-                boxShadow:"0 2px 8px rgba(37,99,235,0.25)",
-                whiteSpace:"nowrap"
-              }}
-              title="Import registrations from any event (e.g. Education 2026, Donors, Sports, etc.) into this subworkspace"
-            >
-              <span>📥</span> Import Event Registrations
-            </button>
+
             <button 
               onClick={async () => {
                 setLoadingDonations(true);
@@ -34388,7 +34390,7 @@ This cannot be undone.`)) return;
                         </select>
                       </div>
 
-                      <div style={{display:"flex",alignItems:"center",gap:4}}>
+                      <div style={{display:"flex",alignItems:"center",gap:4,flexWrap:"wrap"}}>
                         <span style={{fontSize:".68rem",fontWeight:800,color:"#0D4B5E"}}>🎯 Event:</span>
                         <select
                           value={tab.customTpl?.targetEventId || "current"}
@@ -34396,7 +34398,8 @@ This cannot be undone.`)) return;
                             e.stopPropagation();
                             setActiveDocType(tab.id);
                             const newEvId = e.target.value;
-                            const updatedTpls = (activeEvent.pdfTemplates || []).map(t => t.id === tab.id ? { ...t, targetEventId: newEvId } : t);
+                            const newAud = (newEvId && newEvId !== 'current') ? 'event' : (tab.customTpl?.targetAudience || 'assigned');
+                            const updatedTpls = (activeEvent.pdfTemplates || []).map(t => t.id === tab.id ? { ...t, targetEventId: newEvId, targetAudience: newAud } : t);
                             const updatedEvents = (C.events || []).map(ev => (ev.id === activeEvent.id || ev.title === activeEvent.title) ? { ...ev, pdfTemplates: updatedTpls } : ev);
                             const updatedC = { ...C, events: updatedEvents };
                             if (setC) setC(updatedC);
@@ -34411,19 +34414,26 @@ This cannot be undone.`)) return;
                             background: "#F0FDF4",
                             color: "#166534",
                             cursor: "pointer",
-                            maxWidth: 150
+                            maxWidth: 160
                           }}
                           title="Select specific event registrations data source for this template & WhatsApp reports"
                         >
-                          <option value="current">🔄 Current Event (Auto)</option>
-                          <option value="education2026">🎓 Education 2026</option>
-                          {(C.events || []).filter(e => e.id !== 'education2026' && e.title !== 'Education Felicitation 2026').map(evItem => (
-                            <option key={evItem.id || evItem.title} value={evItem.id || evItem.title}>
-                              📌 {evItem.title || evItem.id}
-                            </option>
-                          ))}
+                          <option value="current">🔄 Current Workspace Only</option>
+                          {(C.events || []).filter(e => e.id !== activeEvent.id && e.title !== activeEvent.title).map(evItem => {
+                            const isEdu = String(evItem.title || evItem.id || '').toLowerCase().includes('edu');
+                            return (
+                              <option key={evItem.id || evItem.title} value={evItem.id || evItem.title}>
+                                {isEdu ? '🎓' : '📌'} {evItem.title || evItem.id}
+                              </option>
+                            );
+                          })}
                           <option value="all">🌐 All Events Combined</option>
                         </select>
+                        {tab.id === activeDocType && (
+                          <span style={{fontSize:".64rem",fontWeight:800,color:"#15803D",background:"#DCFCE7",padding:"2px 6px",borderRadius:4,border:"1px solid #86EFAC",whiteSpace:"nowrap"}}>
+                            🟢 {uniqueInviteRegs.length} ready
+                          </span>
+                        )}
                       </div>
 
                       {/* Vibhag Scope Toggle Button: "Specific Vibhag" | "All" */}
@@ -34762,27 +34772,42 @@ This cannot be undone.`)) return;
                   <span>⚙️</span> Edit / Change Attached Letterhead
                 </button>
 
-                <button
-                  type="button"
-                  onClick={() => setShowImportEventRegsModal(true)}
+                <div
                   style={{
-                    padding: "8px 14px",
+                    padding: "6px 12px",
                     borderRadius: 8,
-                    fontSize: ".78rem",
+                    fontSize: ".75rem",
                     fontWeight: 800,
-                    background: "linear-gradient(135deg, #1E40AF, #2563EB)",
-                    color: "white",
-                    border: "none",
-                    cursor: "pointer",
+                    background: currentDocTpl?.customTpl?.targetEventId && currentDocTpl.customTpl.targetEventId !== 'current' ? "#ECFDF5" : "#F8FAFC",
+                    color: currentDocTpl?.customTpl?.targetEventId && currentDocTpl.customTpl.targetEventId !== 'current' ? "#065F46" : "#475569",
+                    border: currentDocTpl?.customTpl?.targetEventId && currentDocTpl.customTpl.targetEventId !== 'current' ? "1.5px solid #86EFAC" : "1px solid #CBD5E1",
                     display: "flex",
                     alignItems: "center",
-                    gap: 6,
-                    boxShadow: "0 2px 6px rgba(37,99,235,0.25)"
+                    gap: 6
                   }}
-                  title="Import student/participant registrations from Education 2026, Donors, etc. directly into this subworkspace"
+                  title="Registrations are dynamically streamed directly via the 🎯 Event dropdown on the subworkspace card above"
                 >
-                  <span>📥</span> Import Event Registrations
-                </button>
+                  <span>📡</span>
+                  <span>
+                    Stream: {
+                      currentDocTpl?.customTpl?.targetEventId && currentDocTpl.customTpl.targetEventId !== 'current'
+                        ? (
+                          (C.events || []).find(e => e.id === currentDocTpl.customTpl.targetEventId || e.title === currentDocTpl.customTpl.targetEventId)?.title 
+                          || (currentDocTpl.customTpl.targetEventId === 'all' ? 'All Events Combined' : currentDocTpl.customTpl.targetEventId)
+                        )
+                        : (activeEvent?.title || 'Current Workspace')
+                    }
+                  </span>
+                  <span style={{
+                    background: currentDocTpl?.customTpl?.targetEventId && currentDocTpl.customTpl.targetEventId !== 'current' ? "#059669" : "#64748B",
+                    color: "white",
+                    borderRadius: 12,
+                    padding: "1px 7px",
+                    fontSize: ".7rem"
+                  }}>
+                    {uniqueInviteRegs.length}
+                  </span>
+                </div>
                 <button
                   type="button"
                   onClick={() => setShowConnectTplModal(true)}
