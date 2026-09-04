@@ -4807,24 +4807,72 @@ export const generateCertificatePDF = async (certConfig, fieldsData, fallbackNam
                   val = key.replace("[TEXT] ", "");
               } else if (!val) {
                   const cleanKey = key.replace(/[{}]/g, '').trim().toUpperCase();
-                  if (cleanKey === 'STUDENT_NAME' || cleanKey === 'INVITEE_NAME' || cleanKey === 'NAME' || cleanKey === 'DONOR_NAME') {
+                  if (cleanKey === 'STUDENT_NAME' || cleanKey === 'INVITEE_NAME' || cleanKey === 'NAME' || cleanKey === 'DONOR_NAME' || cleanKey === 'FULL_NAME' || cleanKey === 'CANDIDATE_NAME') {
                       val = fallbackName || fieldsData['Student Name'] || fieldsData['Participant Name'] || fieldsData['Full Name'] || fieldsData['Candidate Name'] || fieldsData['Name'] || '';
-                  } else if (cleanKey === 'TXN_ID' || cleanKey === 'PASS_ID') {
+                  } else if (cleanKey === 'FATHER_NAME' || cleanKey === 'FATHERS_NAME' || cleanKey === 'FATHER_S_NAME') {
+                      val = fieldsData["Father's Name"] || fieldsData['Father Name'] || fieldsData['Fathers Name'] || '';
+                  } else if (cleanKey === 'MOTHER_NAME' || cleanKey === 'MOTHERS_NAME' || cleanKey === 'MOTHER_S_NAME') {
+                      val = fieldsData["Mother's Name"] || fieldsData['Mother Name'] || fieldsData['Mothers Name'] || '';
+                  } else if (cleanKey === 'SURNAME' || cleanKey === 'LAST_NAME') {
+                      val = fieldsData['Surname'] || fieldsData['Last Name'] || '';
+                  } else if (cleanKey === 'GENDER' || cleanKey === 'SEX') {
+                      val = fieldsData['Gender'] || fieldsData['Sex'] || '';
+                  } else if (cleanKey === 'DOB' || cleanKey === 'DATE_OF_BIRTH' || cleanKey === 'BIRTH_DATE') {
+                      val = fieldsData['Date of Birth'] || fieldsData['DOB'] || fieldsData['Birth Date'] || '';
+                  } else if (cleanKey === 'AGE') {
+                      val = fieldsData['Age'] || '';
+                  } else if (cleanKey === 'SCHOOL_COLLEGE_NAME' || cleanKey === 'COLLEGE_NAME' || cleanKey === 'SCHOOL_NAME' || cleanKey === 'INSTITUTE_NAME') {
+                      val = fieldsData['School / College Name'] || fieldsData['School Name'] || fieldsData['College Name'] || fieldsData['Institution'] || fieldsData['College'] || '';
+                  } else if (cleanKey === 'PASSING_YEAR' || cleanKey === 'ACADEMIC_YEAR' || cleanKey === 'YEAR') {
+                      val = fieldsData['Passing Year'] || fieldsData['Year'] || fieldsData['Academic Year'] || '';
+                  } else if (cleanKey === 'GRADE' || cleanKey === 'RANK' || cleanKey === 'DIVISION') {
+                      val = fieldsData['Grade'] || fieldsData['Rank'] || fieldsData['Division'] || '';
+                  } else if (cleanKey === 'NATIVE_VILLAGE' || cleanKey === 'GAM' || cleanKey === 'VILLAGE' || cleanKey === 'NATIVE_PLACE') {
+                      val = fieldsData['Native Village'] || fieldsData['Native Place'] || fieldsData['Gam'] || fieldsData['Village'] || '';
+                  } else if (cleanKey === 'DISTRICT' || cleanKey === 'STATE') {
+                      val = fieldsData['District'] || fieldsData['State'] || '';
+                  } else if (cleanKey === 'PIN_CODE' || cleanKey === 'PINCODE' || cleanKey === 'PIN') {
+                      val = fieldsData['Pin Code'] || fieldsData['Pincode'] || fieldsData['Pin'] || '';
+                  } else if (cleanKey === 'ALT_MOBILE' || cleanKey === 'ALTERNATE_MOBILE') {
+                      val = fieldsData['Alternate Mobile Number'] || fieldsData['Alternate Mobile'] || fieldsData['Alt Mobile'] || '';
+                  } else if (cleanKey === 'RESIDENTIAL_ADDRESS' || cleanKey === 'ADDRESS') {
+                      val = fieldsData['Address'] || fieldsData['Residential Address'] || fieldsData['Permanent Address'] || '';
+                  } else if (cleanKey === 'STATUS') {
+                      val = fieldsData['Status'] || 'Approved';
+                  } else if (cleanKey === 'SUBMISSION_DATE' || cleanKey === 'REGISTRATION_DATE') {
+                      val = fieldsData['Timestamp'] || fieldsData['Submission Date'] || fieldsData['Date'] || '';
+                  } else if (cleanKey === 'TXN_ID' || cleanKey === 'PASS_ID' || cleanKey === 'ENTRY_PASS_ID') {
                       val = fieldsData['Transaction ID'] || fieldsData['transactionId'] || fieldsData['Txn ID'] || '';
-                  } else if (cleanKey === 'VIBHAG') {
-                      val = fieldsData['Vibhag'] || fieldsData['vibhag'] || '';
-                  } else if (cleanKey === 'STREAM' || cleanKey === 'CLASS') {
-                      val = fieldsData['Stream / Class'] || fieldsData['Stream'] || fieldsData['Class'] || '';
-                  } else if (cleanKey === 'PERCENTAGE' || cleanKey === 'MARKS') {
-                      val = fieldsData['% Obtained'] || fieldsData['percentage'] || fieldsData['Percentage'] || '';
-                  } else if (cleanKey === 'TOKEN_NO' || cleanKey === 'TOKEN') {
+                  } else if (cleanKey === 'VIBHAG' || cleanKey === 'BRANCH') {
+                      val = fieldsData['Vibhag'] || fieldsData['vibhag'] || fieldsData['MMP Vibhag'] || '';
+                  } else if (cleanKey === 'STREAM' || cleanKey === 'CLASS' || cleanKey === 'COURSE' || cleanKey === 'STANDARD') {
+                      val = fieldsData['Stream / Class'] || fieldsData['Stream'] || fieldsData['Class'] || fieldsData['Course'] || '';
+                  } else if (cleanKey === 'PERCENTAGE' || cleanKey === 'MARKS' || cleanKey === 'PERCENT') {
+                      val = fieldsData['% Obtained'] || fieldsData['percentage'] || fieldsData['Percentage'] || fieldsData['Marks / Percentage'] || '';
+                  } else if (cleanKey === 'TOKEN_NO' || cleanKey === 'TOKEN' || cleanKey === 'TOKEN_NUMBER') {
                       val = fieldsData['Token No'] || fieldsData['Token Number'] || fieldsData['tokenNo'] || fieldsData['Token'] || '';
-                  } else if (cleanKey === 'SEAT_NO' || cleanKey === 'SEAT') {
+                  } else if (cleanKey === 'SEAT_NO' || cleanKey === 'SEAT' || cleanKey === 'SEAT_NUMBER') {
                       val = fieldsData['Seat No'] || fieldsData['seatNo'] || fieldsData['Seat Number'] || '';
                   } else if (cleanKey === 'DESIGNATION' || cleanKey === 'ROLE') {
                       val = fieldsData['Designation'] || fieldsData['designation'] || fieldsData['Role'] || '';
                   } else if (cleanKey === 'GROUP' || cleanKey === 'CONTACT_GROUP') {
                       val = fieldsData['Group'] || fieldsData['group'] || fieldsData['Contact Group'] || '';
+                  } else if (cleanKey === 'DONOR_AMOUNT' || cleanKey === 'AMOUNT') {
+                      val = fieldsData['Amount'] || fieldsData['Donation Amount'] || fieldsData['Donor Amount'] || '';
+                  } else if (cleanKey === 'AMOUNT_IN_WORDS') {
+                      val = fieldsData['Amount in Words'] || fieldsData['Amount In Words'] || '';
+                  } else if (cleanKey === 'PAYMENT_MODE' || cleanKey === 'PAYMENT_METHOD') {
+                      val = fieldsData['Payment Mode'] || fieldsData['Payment Method'] || fieldsData['Mode'] || '';
+                  } else if (cleanKey === 'PAYMENT_DATE') {
+                      val = fieldsData['Payment Date'] || fieldsData['Date'] || '';
+                  } else if (cleanKey === 'TRANSACTION_REF' || cleanKey === 'UTR' || cleanKey === 'CHEQUE_NO' || cleanKey === 'REF_NO') {
+                      val = fieldsData['UTR / Ref No'] || fieldsData['Transaction Ref'] || fieldsData['Cheque No'] || fieldsData['Ref No'] || '';
+                  } else if (cleanKey === 'PAN_CARD' || cleanKey === 'PAN_NO') {
+                      val = fieldsData['PAN Card'] || fieldsData['PAN Number'] || fieldsData['PAN'] || '';
+                  } else if (cleanKey === 'RECEIPT_NO') {
+                      val = fieldsData['Receipt No'] || fieldsData['Receipt Number'] || '';
+                  } else if (cleanKey === 'FINANCIAL_YEAR') {
+                      val = fieldsData['Financial Year'] || '2025-2026';
                   } else if (cleanKey === 'EVENT_NAME') {
                       val = certConfig?.title || certConfig?.name || '';
                   } else if (cleanKey === 'EVENT_DATE') {
@@ -4834,6 +4882,12 @@ export const generateCertificatePDF = async (certConfig, fieldsData, fallbackNam
                   } else if (cleanKey.toLowerCase().includes("name") && !cleanKey.toLowerCase().includes("event")) {
                       val = fallbackName;
                   }
+              }
+              // Fuzzy case-insensitive match against all fieldsData keys
+              if (!val) {
+                  const rawNormalized = key.replace(/[{}]/g, '').replace(/_/g, ' ').trim().toLowerCase();
+                  const foundKey = Object.keys(fieldsData).find(k => k.trim().toLowerCase() === rawNormalized || k.replace(/[^a-zA-Z0-9]/g, '').toLowerCase() === rawNormalized.replace(/[^a-zA-Z0-9]/g, ''));
+                  if (foundKey) val = fieldsData[foundKey];
               }
               
               if (typeof val === 'string') {
@@ -22528,8 +22582,128 @@ function WorkspaceWhatsAppTemplateModal({ event, C, setC, auth, onClose, initial
     insertPlaceholderAtCursor(draggedText);
   };
 
+  // Dynamic extraction of form fields & registration keys for this workspace
+  const targetForm = (C.forms || []).find(f => f.id === event.formId || f.name === event.title || f.title === event.title);
+  const dynamicFormFields = [];
+  const registeredTags = new Set();
+
+  if (targetForm && Array.isArray(targetForm.fields)) {
+    targetForm.fields.forEach(f => {
+      const rawName = f.label || f.name || f.dataKey || "";
+      if (!rawName) return;
+      const cleanTag = "{" + rawName.trim().replace(/\s+/g, '_').replace(/[^a-zA-Z0-9_]/g, '').toUpperCase() + "}";
+      if (!registeredTags.has(cleanTag)) {
+        registeredTags.add(cleanTag);
+        dynamicFormFields.push({
+          tag: cleanTag,
+          label: `📋 ${rawName}`,
+          desc: f.helpText || `Form Field: ${rawName}`
+        });
+      }
+    });
+  }
+
+  // Also collect any extra fields present in actual registrations of this event
+  const eventRegs = (C.registrations || []).filter(r => {
+    if (!r || typeof r !== 'object') return false;
+    const rEv = r.event || r['Event Name'] || r.eventId || r.formId;
+    return rEv === event.id || rEv === event.title || r.formId === event.formId;
+  });
+
+  const dynamicRegFields = [];
+  eventRegs.slice(0, 40).forEach(r => {
+    Object.keys(r).forEach(k => {
+      if (!k || k.startsWith('_') || k === 'deleted' || k === 'isDeleted' || k === 'id' || k === 'formId' || k === 'eventId') return;
+      if (k.length > 35) return;
+      const cleanTag = "{" + k.trim().replace(/\s+/g, '_').replace(/[^a-zA-Z0-9_]/g, '').toUpperCase() + "}";
+      if (!registeredTags.has(cleanTag) && !['{STUDENT_NAME}', '{FULL_NAME}', '{MOBILE}', '{VIBHAG}', '{TXN_ID}', '{STREAM}', '{PERCENTAGE}'].includes(cleanTag)) {
+        registeredTags.add(cleanTag);
+        dynamicRegFields.push({
+          tag: cleanTag,
+          label: `📝 ${k}`,
+          desc: `Submitted Registration Field: ${k}`
+        });
+      }
+    });
+  });
+
   // Variable Palettes Configuration
   const variableCategories = [
+    {
+      title: "📋 Individual Student & Applicant Registration Fields",
+      color: "#2563EB",
+      bgColor: "#EFF6FF",
+      borderColor: "#93C5FD",
+      icon: "📋",
+      vars: [
+        { tag: "{STUDENT_NAME}", label: "🎓 Student / Candidate Full Name", desc: "Full registered name of the applicant" },
+        { tag: "{FATHER_NAME}", label: "👨 Father's Name", desc: "Father's or guardian's full name" },
+        { tag: "{MOTHER_NAME}", label: "👩 Mother's Name", desc: "Mother's full name" },
+        { tag: "{SURNAME}", label: "🏷️ Surname / Family Name", desc: "Applicant surname" },
+        { tag: "{STREAM}", label: "📚 Stream / Class / Course", desc: "Academic standard, degree, or course (e.g. 10th, 12th, B.Com, B.E.)" },
+        { tag: "{PERCENTAGE}", label: "🏆 Marks / Percentage (%)", desc: "Academic percentage or marks obtained" },
+        { tag: "{GRADE}", label: "🥇 Grade / Rank / Division", desc: "Academic grade, class division or merit rank" },
+        { tag: "{SCHOOL_COLLEGE_NAME}", label: "🏫 School / College / Institute", desc: "Name of the school, college, or university" },
+        { tag: "{PASSING_YEAR}", label: "📅 Passing / Academic Year", desc: "Year of passing or examination session (e.g. 2025-2026)" },
+        { tag: "{DOB}", label: "🎂 Date of Birth", desc: "Applicant birth date (DD-MM-YYYY)" },
+        { tag: "{AGE}", label: "🔢 Age", desc: "Applicant age in years" },
+        { tag: "{GENDER}", label: "⚧️ Gender", desc: "Gender (Male / Female)" },
+        { tag: "{VIBHAG}", label: "📍 Vibhag / Branch Name", desc: "Assigned Mumbai Meghwal Panchayat Vibhag (e.g. 10 MAHALAXMI)" },
+        { tag: "{NATIVE_VILLAGE}", label: "🏡 Native Village / Gam", desc: "Native village or ancestral hometown" },
+        { tag: "{DISTRICT}", label: "🗺️ District / State", desc: "Native district or hometown state" },
+        { tag: "{MOBILE}", label: "📱 Primary Mobile Number", desc: "Registered 10-digit mobile number (+91...)" },
+        { tag: "{ALT_MOBILE}", label: "📞 Alternate Mobile Number", desc: "Secondary family/contact number" },
+        { tag: "{EMAIL}", label: "✉️ Email Address", desc: "Registered email address" },
+        { tag: "{ADDRESS}", label: "🏠 Residential Address", desc: "Current residential home address" },
+        { tag: "{PIN_CODE}", label: "📮 Pin Code", desc: "Postal area pin code" },
+        { tag: "{TXN_ID}", label: "🎫 Entry Pass / Reg ID", desc: "Unique registration transaction ID (e.g. GST-631028)" },
+        { tag: "{TOKEN_NO}", label: "🔢 Token Number / Food Pass No", desc: "Assigned token number or coupon sequence" },
+        { tag: "{SEAT_NO}", label: "🪑 Seat / Hall Number", desc: "Assigned auditorium seat or row" },
+        { tag: "{STATUS}", label: "⚡ Registration Status", desc: "Status (Approved, Pending, Needs Info)" },
+        { tag: "{SUBMISSION_DATE}", label: "📅 Registration Submission Date", desc: "Date applicant registered on the portal" },
+        { tag: "{REMARKS}", label: "📝 Committee Remarks", desc: "Verification remarks or special instructions" }
+      ]
+    },
+    ...(isDonorWs ? [
+      {
+        title: "💰 Individual Donor & Contribution Fields",
+        color: "#059669",
+        bgColor: "#ECFDF5",
+        borderColor: "#A7F3D0",
+        icon: "💰",
+        vars: [
+          { tag: "{DONOR_NAME}", label: "👤 Donor Full Name", desc: "Full name of the donor or contributing organization" },
+          { tag: "{DONOR_AMOUNT}", label: "💵 Donation Amount (₹)", desc: "Exact contribution amount in rupees" },
+          { tag: "{AMOUNT_IN_WORDS}", label: "🔤 Amount in Words", desc: "Amount spelled out in words (e.g. Rupees Five Thousand Only)" },
+          { tag: "{PAYMENT_MODE}", label: "💳 Payment Method / Mode", desc: "Payment mode (UPI, Cheque, Bank Transfer, Cash)" },
+          { tag: "{PAYMENT_DATE}", label: "📅 Payment Date", desc: "Date contribution was received" },
+          { tag: "{TRANSACTION_REF}", label: "🏦 UTR / Cheque / Bank Ref No", desc: "Bank reference, UTR, or cheque number" },
+          { tag: "{PAN_CARD}", label: "🆔 Donor PAN Card", desc: "PAN number for 80G tax exemption claim" },
+          { tag: "{RECEIPT_NO}", label: "🧾 80G Official Receipt No", desc: "Unique serial receipt number" },
+          { tag: "{FINANCIAL_YEAR}", label: "📆 Financial Year", desc: "Current financial assessment year (e.g. 2025-2026)" }
+        ]
+      }
+    ] : []),
+    ...(dynamicFormFields.length > 0 ? [
+      {
+        title: `📑 Form Fields: ${targetForm?.name || 'Registration Form'}`,
+        color: "#4F46E5",
+        bgColor: "#EEF2FF",
+        borderColor: "#C7D2FE",
+        icon: "📑",
+        vars: dynamicFormFields
+      }
+    ] : []),
+    ...(dynamicRegFields.length > 0 ? [
+      {
+        title: "📝 Additional Submitted Registration Fields",
+        color: "#0D9488",
+        bgColor: "#F0FDFA",
+        borderColor: "#99F6E4",
+        icon: "📝",
+        vars: dynamicRegFields
+      }
+    ] : []),
     {
       title: "👤 Participant, Contact & Group Details",
       color: "#6D28D9",
@@ -22540,30 +22714,9 @@ function WorkspaceWhatsAppTemplateModal({ event, C, setC, auth, onClose, initial
         { tag: "{CONTACT_GROUP}", label: "👥 Contact Group / Committee", desc: "Assigned contact group (e.g. 'new vibhag', 'CWC Member', 'Trustee')" },
         { tag: "{GROUP}", label: "🏷️ Group Name", desc: "Primary assigned group of recipient" },
         { tag: "{INVITEE_NAME}", label: "👤 Invitee / Member Name", desc: "Full name of the invited participant or guest" },
-        { tag: "{STUDENT_NAME}", label: "🎓 Student / Invitee Name", desc: "Full name of the recipient" },
         { tag: "{DESIGNATION}", label: "💼 Designation / Role", desc: "Guest designation (e.g. General Secretary, Trustee, Vibhag Pramukh)" },
-        { tag: "{VIBHAG}", label: "📍 Vibhag / Branch Name", desc: "Vibhag or area name (e.g. 15 RAMDEV NAGAR)" },
-        { tag: "{TXN_ID}", label: "🎫 Entry Pass / Transaction ID", desc: "Unique registration pass ID (e.g. GST-631028)" },
         { tag: "{SUB_WORKSPACE_NAME}", label: "🎟️ Sub-Workspace / Template Name", desc: "Name of the pass/template (e.g. 'Food coupon')" },
         { tag: "{PASS_LINK}", label: "🔗 1-Click Digital Pass Link", desc: "Direct personalized invitation pass URL" },
-        { tag: "{MOBILE}", label: "📱 Recipient Mobile Number", desc: "Registered mobile number (+91...)" },
-        { tag: "{EMAIL}", label: "✉️ Recipient Email", desc: "Registered email address" },
-        { tag: "{ADDRESS}", label: "🏠 Address / Location", desc: "Recipient address" },
-        { tag: "{CURRENT_DATE}", label: "📅 Current Date", desc: "Today's date in DD-MM-YYYY format" },
-        { tag: "{REMARKS}", label: "📝 Committee Remarks", desc: "Verification remarks or instructions" }
-      ]
-    },
-    {
-      title: "🎟️ Passes, Tokens & Custom Fields",
-      color: "#D97706",
-      bgColor: "#FFFBEB",
-      borderColor: "#FCD34D",
-      icon: "🎟️",
-      vars: [
-        { tag: "{TOKEN_NO}", label: "🔢 Token Number / Food Pass No", desc: "Token number or food pass counter" },
-        { tag: "{SEAT_NO}", label: "🪑 Seat / Hall Number", desc: "Assigned seat or auditorium row" },
-        { tag: "{STREAM}", label: "📚 Stream / Class / Course", desc: "Academic standard or course" },
-        { tag: "{PERCENTAGE}", label: "🏆 Marks / Percentage", desc: "Academic marks percentage" },
         { tag: "{GATE_PASS}", label: "🚪 Gate / Entry Pass ID", desc: "Entry gate verification tag" }
       ]
     },
@@ -23581,11 +23734,35 @@ function WhatsAppApplicantMessengerModal({ reg, onClose, C, auth, onLogSent, all
       .replace(/\{TEMPLATE_NAME\}/g, rSubWsName)
       .replace(/\{EMAIL\}/g, rEmail)
       .replace(/\{ADDRESS\}/g, rAddress)
+      .replace(/\{RESIDENTIAL_ADDRESS\}/g, rAddress)
       .replace(/\{PHONE\}/g, rMobile || "")
       .replace(/\{STREAM\}/g, rStream || "N/A")
       .replace(/\{PERCENTAGE\}/g, rPct || "N/A")
       .replace(/\{REMARKS\}/g, rRemarks || "Application under review")
       .replace(/\{MOBILE\}/g, rMobile || "")
+      .replace(/\{FATHER_NAME\}/g, reg["Father's Name"] || reg["Father Name"] || "")
+      .replace(/\{MOTHER_NAME\}/g, reg["Mother's Name"] || reg["Mother Name"] || "")
+      .replace(/\{SURNAME\}/g, reg["Surname"] || "")
+      .replace(/\{GENDER\}/g, reg["Gender"] || "")
+      .replace(/\{DOB\}/g, reg["Date of Birth"] || reg["DOB"] || "")
+      .replace(/\{AGE\}/g, reg["Age"] || "")
+      .replace(/\{SCHOOL_COLLEGE_NAME\}/g, reg["School / College Name"] || reg["College Name"] || reg["School Name"] || "")
+      .replace(/\{PASSING_YEAR\}/g, reg["Passing Year"] || "")
+      .replace(/\{GRADE\}/g, reg["Grade"] || reg["Rank"] || "")
+      .replace(/\{NATIVE_VILLAGE\}/g, reg["Native Village"] || reg["Gam"] || "")
+      .replace(/\{DISTRICT\}/g, reg["District"] || "")
+      .replace(/\{PIN_CODE\}/g, reg["Pin Code"] || "")
+      .replace(/\{ALT_MOBILE\}/g, reg["Alternate Mobile Number"] || "")
+      .replace(/\{TOKEN_NO\}/g, reg["Token No"] || reg["Token Number"] || "")
+      .replace(/\{SEAT_NO\}/g, reg["Seat No"] || reg["Seat Number"] || "")
+      .replace(/\{STATUS\}/g, reg["Status"] || "Approved")
+      .replace(/\{SUBMISSION_DATE\}/g, reg["Timestamp"] || reg["Submission Date"] || "")
+      .replace(/\{DONOR_NAME\}/g, reg["Donor Name"] || reg["Full Name"] || participantNameVal)
+      .replace(/\{DONOR_AMOUNT\}/g, reg["Amount"] || reg["Donation Amount"] || "")
+      .replace(/\{PAYMENT_MODE\}/g, reg["Payment Mode"] || "")
+      .replace(/\{TRANSACTION_REF\}/g, reg["UTR / Ref No"] || reg["Cheque No"] || "")
+      .replace(/\{PAN_CARD\}/g, reg["PAN Card"] || "")
+      .replace(/\{RECEIPT_NO\}/g, reg["Receipt No"] || "")
       .replace(/\{CERTIFICATE_LINK\}/g, certUrl)
       .replace(/\{CERTIFICATE_URL\}/g, certUrl)
       .replace(/\{INVITE_PDF_LINK\}/g, inviteUrl)
