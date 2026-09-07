@@ -185,6 +185,17 @@ const SearchableDropdown = ({ value, onChange, options, placeholder, required, i
         onClick={() => setOpen(!open)}
         style={{position:"absolute", right:8, top:"50%", transform:"translateY(-50%)", cursor:"pointer", color:"#64748B", fontSize:".7rem", padding:"6px", display:"flex", alignItems:"center", justifyContent:"center", background:"#F8FAFC", borderRadius:4}}
       >▼</div>
+
+              <div style={{marginTop: 8, paddingTop: 8, borderTop: "1px dashed #CBD5E1"}}>
+                <label style={{display:"block",fontSize:".7rem",color:"#15803D",fontWeight:800,marginBottom:4}}>Appreciation Certificate Message:</label>
+                <p style={{fontSize:".65rem",color:"#64748B",marginBottom:4}}>Use variables: {NAME}, {AMOUNT}, {RECEIPT}, {VIBHAG}, {DATE}, {PURPOSE}</p>
+                <textarea
+                  rows={8}
+                  value={customAppreciationMsg}
+                  onChange={e=>setCustomAppreciationMsg(e.target.value)}
+                  style={{width:"100%",padding:"6px 8px",borderRadius:6,border:"1px solid #CBD5E1",fontSize:".72rem",boxSizing:"border-box"}}
+                />
+              </div>
       {open && (
         <div style={{position:"absolute", top:"100%", left:0, right:0, zIndex:1000, background:"white", border:"1px solid var(--bd)", borderRadius:8, maxHeight:200, overflowY:"auto", boxShadow:"0 4px 12px rgba(0,0,0,0.1)", marginTop:4}}>
           {filtered.length === 0 ? <div style={{padding:"10px", color:"var(--mu)", fontSize:".9rem"}}>No matches</div> : null}
@@ -37969,14 +37980,27 @@ export const getAppreciationTemplateDefaultUrl = () => {
 
 // ── Canvas-based Donor Appreciation Poster Generator ──
 export const generateDonorPosterCanvas = (donation, templateImgUrl, customPositions) => {
-  return new Promise((resolve, reject) => {
-    const canvas = document.createElement("canvas");
-    canvas.width = 994;
-    canvas.height = 1024;
-    const ctx = canvas.getContext("2d");
-
+  return new Promise(async (resolve, reject) => {
     const activeTpl = templateImgUrl || getAppreciationTemplateDefaultUrl();
     const defaultTpl = getAppreciationTemplateDefaultUrl();
+
+    let objectUrl = null;
+    try {
+      if (activeTpl.startsWith('data:')) {
+        objectUrl = activeTpl;
+      } else {
+        let fetchUrl = activeTpl;
+        if (fetchUrl.includes('firebasestorage.googleapis.com')) {
+          fetchUrl = 'https://wsrv.nl/?url=' + encodeURIComponent(fetchUrl);
+        }
+        const resp = await fetch(fetchUrl, { mode: 'cors' });
+        if (!resp.ok) throw new Error('HTTP ' + resp.status);
+        const blob = await resp.blob();
+        objectUrl = URL.createObjectURL(blob);
+      }
+    } catch (e) {
+      return reject(e);
+    }
 
     // Default percentage positions if not customized
     const pos = {
@@ -37989,12 +38013,17 @@ export const generateDonorPosterCanvas = (donation, templateImgUrl, customPositi
       vibhag: { x: 30, y: 84.5, fontSize: 13, color: "#334155", visible: false, ...customPositions?.vibhag },
     };
 
+    const canvas = document.createElement("canvas");
+    canvas.width = 994;
+    canvas.height = 1024;
+    const ctx = canvas.getContext("2d");
+
     const img = new Image();
-    img.crossOrigin = "anonymous";
     img.onload = () => {
+      if (!objectUrl.startsWith('data:')) URL.revokeObjectURL(objectUrl);
       try {
         ctx.drawImage(img, 0, 0, 994, 1024);
-
+        
         const dName = String(donation.name || donation['Full Name'] || 'Respected Donor').trim().toUpperCase();
         const dNameGuRaw = String(donation.nameGu || donation.donorNameGu || '').trim();
         const dNameGu = (dNameGuRaw && dNameGuRaw.toLowerCase() !== dName.toLowerCase()) ? dNameGuRaw : '';
@@ -38099,20 +38128,21 @@ export const generateDonorPosterCanvas = (donation, templateImgUrl, customPositi
       }
     };
     img.onerror = () => {
+      if (!objectUrl.startsWith('data:')) URL.revokeObjectURL(objectUrl);
       if (activeTpl !== defaultTpl) {
         const fallbackImg = new Image();
-        fallbackImg.crossOrigin = "anonymous";
+        fallbackImg.crossOrigin = 'anonymous';
         fallbackImg.onload = () => {
           ctx.drawImage(fallbackImg, 0, 0, 994, 1024);
-          resolve(canvas.toDataURL("image/png"));
+          resolve(canvas.toDataURL('image/png'));
         };
         fallbackImg.onerror = reject;
         fallbackImg.src = defaultTpl;
       } else {
-        reject(new Error("Failed to load poster template image"));
+        reject(new Error('Failed to load poster template image'));
       }
     };
-    img.src = activeTpl;
+    img.src = objectUrl;
   });
 };
 
@@ -38681,7 +38711,24 @@ function OfflineDonationSuccessCard({ donation, C, setC, auth, onReload }) {
         setPosterUrl(certUrl);
       }
     } catch(err) {
-      console.warn("Poster generation error:", err);
+      const tplUrlForLog = (typeof C !== "undefined" && C && C.donorPosterTemplateUrl) ? C.donorPosterTemplateUrl : "(default)";
+      console.error("Poster generation error:", err, "Template URL:", tplUrlForLog);
+      // Show an error canvas so user sees something rather than blank
+      const errCanvas = document.createElement("canvas");
+      errCanvas.width = 994; errCanvas.height = 1024;
+      const errCtx = errCanvas.getContext("2d");
+      errCtx.fillStyle = "#FFF8F0"; errCtx.fillRect(0,0,994,1024);
+      errCtx.strokeStyle = "#FCA5A5"; errCtx.lineWidth = 8;
+      errCtx.strokeRect(8,8,978,1008);
+      errCtx.fillStyle = "#991B1B"; errCtx.font = "bold 28px Arial"; errCtx.textAlign = "center";
+      errCtx.fillText("Poster template could not be loaded.", 497, 460);
+      errCtx.fillStyle = "#475569"; errCtx.font = "20px Arial";
+      const errMsg = err && err.message ? err.message.substring(0,70) : String(err).substring(0,70);
+      errCtx.fillText(errMsg, 497, 510);
+      errCtx.fillText("Check browser console (F12) for full error.", 497, 555);
+      errCtx.fillStyle = "#0369A1"; errCtx.font = "18px Arial";
+      errCtx.fillText("Template URL: " + tplUrlForLog.substring(0,60), 497, 600);
+      setPosterUrl(errCanvas.toDataURL("image/png"));
     } finally {
       setGenerating(false);
     }
@@ -38718,15 +38765,24 @@ function OfflineDonationSuccessCard({ donation, C, setC, auth, onReload }) {
     document.body.removeChild(link);
   };
 
-  const getThankYouWhatsAppMsg = () => {
-    const dName = donation.name || "Respected Donor";
-    const amt = Number(donation.amount || 0).toLocaleString('en-IN');
-    const rNo = donation.receiptNo || donation.internalReceiptNo || donation.id || 'N/A';
-    const vib = donation.vibhag || "General";
-    const dt = donation.date || new Date().toISOString().split('T')[0];
+      const getThankYouWhatsAppMsg = () => {
+      const dName = donation.name || "Respected Donor";
+      const amt = Number(donation.amount || 0).toLocaleString('en-IN');
+      const rNo = donation.receiptNo || donation.internalReceiptNo || donation.id || 'N/A';
+      const vib = donation.vibhag || "General";
+      const dt = donation.date || new Date().toISOString().split('T')[0];
+  
+      const defaultMsg = "🌷 || મુંબઈ મેઘવાળ પંચાયત || 🌷\n         [NGO]\n   •••• સેન્ટ્રલ વર્કિંગ કમિટી ••••\n☸~~~~~~~~~~~~~~~~~☸\n\nવિષય: શૈક્ષણિક કાર્યક્રમ દાન રસીદ & સન્માન પત્રક\n\nનમસ્તે શ્રીમાન/શ્રીમતી *{NAME}*,\nવિદ્યાર્થી ગુણગૌરવ પુરસ્કાર ૨૦૨૬ માટે આપના ઉદાર દાન બદલ મુંબઈ મેઘવાળ પંચાયત આપનો હૃદયપૂર્વક આભાર માને છે.\n\n🧾 *દાન પાવતી વિગત:*\n• દાતા: *{NAME}*\n• રકમ: *₹{AMOUNT}/-*\n• પાવતી નં.: *{RECEIPT}*\n• વિભાગ: *{VIBHAG}*\n• તારીખ: *{DATE}*\n• હેતુ: *{PURPOSE}*\n\n📜 આપનું ડિજિટલ સન્માન પ્રમાણપત્ર (Certificate of Appreciation) તૈયાર થઈ ગયું છે.\n\nલિ. સેન્ટ્રલ વર્કિંગ કમિટી\nમુંબઈ મેઘવાળ પંચાયત\n🌐 https://www.mmp-cwc.com";
 
-    return `🌷 || મુંબઈ મેઘવાળ પંચાયત || 🌷\n         [NGO]\n   •••• સેન્ટ્રલ વર્કિંગ કમિટી ••••\n☸~~~~~~~~~~~~~~~~~☸\n\nવિષય: શૈક્ષણિક કાર્યક્રમ દાન રસીદ & સન્માન પત્રક\n\nનમસ્તે શ્રીમાન/શ્રીમતી *${dName}*,\nવિદ્યાર્થી ગુણગૌરવ પુરસ્કાર ૨૦૨૬ માટે આપના ઉદાર દાન બદલ મુંબઈ મેઘવાળ પંચાયત આપનો હૃદયપૂર્વક આભાર માને છે.\n\n🧾 *દાન પાવતી વિગત:*\n• દાતા: *${dName}*\n• રકમ: *₹${amt}/-*\n• પાવતી નં.: *${rNo}*\n• વિભાગ: *${vib}*\n• તારીખ: *${dt}*\n• હેતુ: *${donation.purpose || donation.program || 'Education Activity 2026'}*\n\n📜 આપનું ડિજિટલ સન્માન પ્રમાણપત્ર (Certificate of Appreciation) તૈયાર થઈ ગયું છે.\n\nલિ. સેન્ટ્રલ વર્કિંગ કમિટી\nમુંબઈ મેઘવાળ પંચાયત\n🌐 https://www.mmp-cwc.com`;
-  };
+      const tpl = C?.whatsappTemplates?.appreciationMsg || defaultMsg;
+      return tpl
+        .split('{NAME}').join(dName)
+        .split('{AMOUNT}').join(amt)
+        .split('{RECEIPT}').join(rNo)
+        .split('{VIBHAG}').join(vib)
+        .split('{DATE}').join(dt)
+        .split('{PURPOSE}').join(donation.purpose || donation.program || 'Education Activity 2026');
+    };
 
   const handleCopyText = () => {
     navigator.clipboard.writeText(getThankYouWhatsAppMsg());
@@ -39376,7 +39432,16 @@ function DonorListCard({ donorData, auth, onRefresh, C, setC }) {
     const dt = d.date || new Date().toISOString().split('T')[0];
     const pur = d.purpose || d.program || "Education Felicitation 2026";
 
-    return `🌷 || મુંબઈ મેઘવાળ પંચાયત || 🌷\n         [NGO]\n   •••• સેન્ટ્રલ વર્કિંગ કમિટી ••••\n☸~~~~~~~~~~~~~~~~~☸\n\nવિષય: શૈક્ષણિક કાર્યક્રમ દાન રસીદ & સન્માન પત્રક\n\nનમસ્તે શ્રીમાન/શ્રીમતી *${dName}*,\nવિદ્યાર્થી ગુણગૌરવ પુરસ્કાર ૨૦૨૬ માટે આપના ઉદાર દાન બદલ મુંબઈ મેઘવાળ પંચાયત આપનો હૃદયપૂર્વક આભાર માને છે.\n\n🧾 *દાન પાવતી વિગત:*\n• દાતા: *${dName}*\n• રકમ: *₹${amt}/-*\n• પાવતી નં.: *${rNo}*\n• વિભાગ: *${vib}*\n• તારીખ: *${dt}*\n• હેતુ: *${pur}*\n\n📜 આપનું ડિજિટલ સન્માન પ્રમાણપત્ર (Certificate of Appreciation) તૈયાર થઈ ગયું છે.\n\nલિ. સેન્ટ્રલ વર્કિંગ કમિટી\nમુંબઈ મેઘવાળ પંચાયત\n🌐 https://www.mmp-cwc.com`;
+    const defaultMsg = "🌷 || મુંબઈ મેઘવાળ પંચાયત || 🌷\n         [NGO]\n   •••• સેન્ટ્રલ વર્કિંગ કમિટી ••••\n☸~~~~~~~~~~~~~~~~~☸\n\nવિષય: શૈક્ષણિક કાર્યક્રમ દાન રસીદ & સન્માન પત્રક\n\nનમસ્તે શ્રીમાન/શ્રીમતી *{NAME}*,\nવિદ્યાર્થી ગુણગૌરવ પુરસ્કાર ૨૦૨૬ માટે આપના ઉદાર દાન બદલ મુંબઈ મેઘવાળ પંચાયત આપનો હૃદયપૂર્વક આભાર માને છે.\n\n🧾 *દાન પાવતી વિગત:*\n• દાતા: *{NAME}*\n• રકમ: *₹{AMOUNT}/-*\n• પાવતી નં.: *{RECEIPT}*\n• વિભાગ: *{VIBHAG}*\n• તારીખ: *{DATE}*\n• હેતુ: *{PURPOSE}*\n\n📜 આપનું ડિજિટલ સન્માન પ્રમાણપત્ર (Certificate of Appreciation) તૈયાર થઈ ગયું છે.\n\nલિ. સેન્ટ્રલ વર્કિંગ કમિટી\nમુંબઈ મેઘવાળ પંચાયત\n🌐 https://www.mmp-cwc.com";
+
+    const tpl = C?.whatsappTemplates?.appreciationMsg || defaultMsg;
+    return tpl
+      .split('{NAME}').join(dName)
+      .split('{AMOUNT}').join(amt)
+      .split('{RECEIPT}').join(rNo)
+      .split('{VIBHAG}').join(vib)
+      .split('{DATE}').join(dt)
+      .split('{PURPOSE}').join(pur);
   };
 
   const handleDirectDonorSavePoster = async (d) => {
@@ -39485,6 +39550,7 @@ function DonorListCard({ donorData, auth, onRefresh, C, setC }) {
   const [customSignatory, setCustomSignatory] = useState(tpls.gujaratiSignatory !== undefined ? tpls.gujaratiSignatory : "લિ. વિનોદભાઈ મકવાણા / સેન્ટ્રલ વર્કિંગ કમિટી");
   const [customQrHeader, setCustomQrHeader] = useState(tpls.qrHeader || "💳 *GPay / BHIM QR સ્કેનર & Direct Pay:*");
   const [customUpiId, setCustomUpiId] = useState(tpls.upiId || "mumba98697331@barodampay");
+    const [customAppreciationMsg, setCustomAppreciationMsg] = useState(tpls.appreciationMsg || "🌷 || મુંબઈ મેઘવાળ પંચાયત || 🌷\n         [NGO]\n   •••• સેન્ટ્રલ વર્કિંગ કમિટી ••••\n☸~~~~~~~~~~~~~~~~~☸\n\nવિષય: શૈક્ષણિક કાર્યક્રમ દાન રસીદ & સન્માન પત્રક\n\nનમસ્તે શ્રીમાન/શ્રીમતી *{NAME}*,\nવિદ્યાર્થી ગુણગૌરવ પુરસ્કાર ૨૦૨૬ માટે આપના ઉદાર દાન બદલ મુંબઈ મેઘવાળ પંચાયત આપનો હૃદયપૂર્વક આભાર માને છે.\n\n🧾 *દાન પાવતી વિગત:*\n• દાતા: *{NAME}*\n• રકમ: *₹{AMOUNT}/-*\n• પાવતી નં.: *{RECEIPT}*\n• વિભાગ: *{VIBHAG}*\n• તારીખ: *{DATE}*\n• હેતુ: *{PURPOSE}*\n\n📜 આપનું ડિજિટલ સન્માન પ્રમાણપત્ર (Certificate of Appreciation) તૈયાર થઈ ગયું છે.\n\nલિ. સેન્ટ્રલ વર્કિંગ કમિટી\nમુંબઈ મેઘવાળ પંચાયત\n🌐 https://www.mmp-cwc.com");
 
   const handleSaveTemplate = async () => {
     setSavingTemplate(true);
@@ -39496,7 +39562,8 @@ function DonorListCard({ donorData, auth, onRefresh, C, setC }) {
         rowPattern: customRowPattern,
         gujaratiSignatory: customSignatory,
         qrHeader: customQrHeader,
-        upiId: customUpiId
+        upiId: customUpiId,
+        appreciationMsg: customAppreciationMsg
       };
       if (C) {
         C.whatsappTemplates = updatedTpls;
@@ -39951,14 +40018,39 @@ function DonorListCard({ donorData, auth, onRefresh, C, setC }) {
                 }
                 setUploadingPosterTpl(true);
                 try {
-                  const downloadUrl = await fbUploadPhoto(file, auth?.idToken);
+                  // ── Convert to base64 DataURL (avoids Firebase Storage CORS issues on canvas) ──
+                  const dataUrl = await new Promise((resolve, reject) => {
+                    const reader = new FileReader();
+                    reader.onload = (ev) => {
+                      // Compress via canvas
+                      const img = new Image();
+                      img.onload = () => {
+                        const maxDim = 1800;
+                        let w = img.width, h = img.height;
+                        if (w > maxDim || h > maxDim) {
+                          if (w >= h) { h = Math.round((maxDim / w) * h); w = maxDim; }
+                          else { w = Math.round((maxDim / h) * w); h = maxDim; }
+                        }
+                        const cvs = document.createElement('canvas');
+                        cvs.width = w; cvs.height = h;
+                        const cx = cvs.getContext('2d');
+                        cx.drawImage(img, 0, 0, w, h);
+                        resolve(cvs.toDataURL('image/jpeg', 0.88));
+                      };
+                      img.onerror = reject;
+                      img.src = ev.target.result;
+                    };
+                    reader.onerror = reject;
+                    reader.readAsDataURL(file);
+                  });
 
                   if (C) {
-                    const newC = { ...C, donorPosterTemplateUrl: downloadUrl };
+                    // Save the data URL directly into Firestore config - no CORS issues!
+                    const newC = { ...C, donorPosterTemplateUrl: dataUrl };
                     if (typeof setC === "function") setC(newC);
                     await fbSave(newC, auth?.idToken);
                   }
-                  alert("✅ New appreciation poster template uploaded & saved successfully!");
+                  alert("✅ New appreciation poster template saved successfully!");
                   setShowPosterTplUploadModal(false);
                 } catch(err) {
                   alert("Upload failed: " + err.message);
@@ -40013,7 +40105,7 @@ function DonorListCard({ donorData, auth, onRefresh, C, setC }) {
             <div>
               <label style={{display:"block",fontSize:".68rem",color:"#475569",fontWeight:700,marginBottom:2}}>Header Banner:</label>
               <textarea
-                rows={3}
+                rows={8}
                 value={customHeader}
                 onChange={e=>setCustomHeader(e.target.value)}
                 style={{width:"100%",padding:"6px 8px",borderRadius:6,border:"1px solid #CBD5E1",fontSize:".72rem",boxSizing:"border-box"}}
@@ -40023,7 +40115,7 @@ function DonorListCard({ donorData, auth, onRefresh, C, setC }) {
             <div>
               <label style={{display:"block",fontSize:".68rem",color:"#475569",fontWeight:700,marginBottom:2}}>Appeal Body Text:</label>
               <textarea
-                rows={3}
+                rows={8}
                 value={customAppeal}
                 onChange={e=>setCustomAppeal(e.target.value)}
                 style={{width:"100%",padding:"6px 8px",borderRadius:6,border:"1px solid #CBD5E1",fontSize:".72rem",boxSizing:"border-box"}}
@@ -40072,6 +40164,21 @@ function DonorListCard({ donorData, auth, onRefresh, C, setC }) {
                   style={{width:"100%",padding:"6px 8px",borderRadius:6,border:"1px solid #CBD5E1",fontSize:".72rem",boxSizing:"border-box",background:"white",fontWeight:700,color:"#2563EB"}}
                 />
               </div>
+            </div>
+
+            <div style={{marginTop: 6, paddingTop: 8, borderTop: "1.5px dashed #86EFAC"}}>
+              <label style={{display:"block",fontSize:".72rem",color:"#15803D",fontWeight:800,marginBottom:3}}>
+                🌷 1-on-1 Donor Appreciation WhatsApp Message Template:
+              </label>
+              <p style={{fontSize:".65rem",color:"#64748B",marginBottom:4,lineHeight:"1.3"}}>
+                Variables: <code>{'{NAME}'}</code>, <code>{'{AMOUNT}'}</code>, <code>{'{RECEIPT}'}</code>, <code>{'{VIBHAG}'}</code>, <code>{'{DATE}'}</code>, <code>{'{PURPOSE}'}</code>
+              </p>
+              <textarea
+                rows={8}
+                value={customAppreciationMsg}
+                onChange={e=>setCustomAppreciationMsg(e.target.value)}
+                style={{width:"100%",padding:"6px 8px",borderRadius:6,border:"1px solid #CBD5E1",fontSize:".72rem",boxSizing:"border-box",lineHeight:"1.4"}}
+              />
             </div>
 
             <div style={{display:"flex",justifyContent:"flex-end",gap:6}}>
