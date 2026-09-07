@@ -38108,7 +38108,10 @@ export const generateDonorPosterCanvas = (donation, templateImgUrl, customPositi
 
         // 5. Receipt details line
         if (pos.receiptDetails.visible !== false) {
-          const receiptNo = donation.receiptNo || donation.internalReceiptNo || donation.id || 'N/A';
+          const rawRNo = donation.receiptNo || donation.internalReceiptNo || '';
+          const receiptNo = (rawRNo && String(rawRNo).trim() !== '' && String(rawRNo).trim().toUpperCase() !== 'N/A')
+            ? String(rawRNo).trim()
+            : 'Receipt under process';
           const vibhag = donation.vibhag || donation.Vibhag || 'General';
           const dateStr = donation.date || new Date().toISOString().split('T')[0];
 
@@ -38768,7 +38771,10 @@ function OfflineDonationSuccessCard({ donation, C, setC, auth, onReload }) {
       const getThankYouWhatsAppMsg = () => {
       const dName = donation.name || "Respected Donor";
       const amt = Number(donation.amount || 0).toLocaleString('en-IN');
-      const rNo = donation.receiptNo || donation.internalReceiptNo || donation.id || 'N/A';
+      const rawRNo = donation.receiptNo || donation.internalReceiptNo || '';
+      const rNo = (rawRNo && String(rawRNo).trim() !== '' && String(rawRNo).trim().toUpperCase() !== 'N/A')
+        ? String(rawRNo).trim()
+        : 'Receipt under process';
       const vib = donation.vibhag || "General";
       const dt = donation.date || new Date().toISOString().split('T')[0];
   
@@ -38843,7 +38849,7 @@ function OfflineDonationSuccessCard({ donation, C, setC, auth, onReload }) {
         <div><span style={{color:"#64748B"}}>Amount:</span> <strong style={{color:"#15803D"}}>₹{Number(donation.amount).toLocaleString('en-IN')}</strong></div>
         <div><span style={{color:"#64748B"}}>Date:</span> <strong>{donation.date}</strong></div>
         <div><span style={{color:"#64748B"}}>Vibhag:</span> <strong>{donation.vibhag}</strong></div>
-        <div><span style={{color:"#64748B"}}>Receipt #:</span> <strong>{donation.receiptNo || donation.internalReceiptNo || donation.id}</strong></div>
+        <div><span style={{color:"#64748B"}}>Receipt #:</span> <strong>{donation.receiptNo || donation.internalReceiptNo || "Receipt under process"}</strong></div>
         <div><span style={{color:"#64748B"}}>WhatsApp:</span> <strong style={{color:"#15803D"}}>{targetPhone ? ("+91 " + String(targetPhone).replace(/\D/g,'').slice(-10)) : "Not provided"}</strong></div>
         <div><span style={{color:"#64748B"}}>Event Code:</span> <strong>{donation.eventCode || 'EDU26'}</strong></div>
       </div>
@@ -39427,7 +39433,10 @@ function DonorListCard({ donorData, auth, onRefresh, C, setC }) {
   const getIndividualDonorMsg = (d) => {
     const dName = d.name || "Respected Donor";
     const amt = Number(d.amount || 0).toLocaleString('en-IN');
-    const rNo = d.receiptNo || d.internalReceiptNo || d.id || 'N/A';
+    const rawRNo = d.receiptNo || d.internalReceiptNo || '';
+    const rNo = (rawRNo && String(rawRNo).trim() !== '' && String(rawRNo).trim().toUpperCase() !== 'N/A')
+      ? String(rawRNo).trim()
+      : 'Receipt under process';
     const vib = d.vibhag || "General";
     const dt = d.date || new Date().toISOString().split('T')[0];
     const pur = d.purpose || d.program || "Education Felicitation 2026";
