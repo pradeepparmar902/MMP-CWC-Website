@@ -39509,6 +39509,7 @@ function DonorListCard({ donorData, auth, onRefresh, C, setC }) {
   const [activePosterDonor, setActivePosterDonor] = useState(null);
   const [showPosterTplUploadModal, setShowPosterTplUploadModal] = useState(false);
   const [showPosterMapperModal, setShowPosterMapperModal] = useState(false);
+  const [showWhatsAppEditorModal, setShowWhatsAppEditorModal] = useState(false);
   const [uploadingPosterTpl, setUploadingPosterTpl] = useState(false);
   const posterTplInputRef = useRef(null);
   const [savingEdit, setSavingEdit] = useState(false);
@@ -39723,6 +39724,14 @@ function DonorListCard({ donorData, auth, onRefresh, C, setC }) {
             title="Upload or change Appreciation Certificate background template"
           >
             <span>🎨</span> Poster Template
+          </button>
+          <button
+            type="button"
+            onClick={() => setShowWhatsAppEditorModal(true)}
+            style={{padding:"3px 8px",borderRadius:5,background:"#FEF3C7",border:"1.5px solid #F59E0B",color:"#B45309",fontSize:".68rem",fontWeight:800,cursor:"pointer",display:"flex",alignItems:"center",gap:3}}
+            title="Customize WhatsApp Templates & Variables"
+          >
+            <span>💬</span> WhatsApp Editor
           </button>
           <span style={{fontSize:".78rem",fontWeight:800,color:"#15803D"}}>₹{donorData.totalAmount.toLocaleString('en-IN')} Total</span>
         </div>
@@ -39975,6 +39984,152 @@ function DonorListCard({ donorData, auth, onRefresh, C, setC }) {
             if (onRefresh) onRefresh();
           }}
         />
+      )}
+
+      {/* WhatsApp Message & Variables Editor Modal */}
+      {showWhatsAppEditorModal && (
+        <div style={{position:"fixed",top:0,left:0,right:0,bottom:0,background:"rgba(15,23,42,0.75)",backdropFilter:"blur(4px)",zIndex:999999,display:"flex",alignItems:"center",justifyContent:"center",padding:16}}>
+          <div style={{background:"white",borderRadius:16,maxWidth:580,width:"100%",padding:20,boxShadow:"0 25px 50px rgba(0,0,0,0.3)",maxHeight:"92vh",overflowY:"auto",display:"flex",flexDirection:"column",gap:12}}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",borderBottom:"1.5px solid #E2E8F0",paddingBottom:10}}>
+              <div style={{fontSize:"1rem",fontWeight:800,color:"#15803D",display:"flex",alignItems:"center",gap:8}}>
+                <span style={{fontSize:"1.25rem"}}>💬</span> WhatsApp Template & Message Editor
+              </div>
+              <button 
+                onClick={() => setShowWhatsAppEditorModal(false)}
+                style={{background:"#F1F5F9",border:"none",borderRadius:"50%",width:32,height:32,cursor:"pointer",fontWeight:800,fontSize:"1rem",color:"#475569"}}
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* Section 1: 1-on-1 Appreciation Message */}
+            <div style={{background:"#F0FDF4",border:"1.5px solid #86EFAC",borderRadius:10,padding:14}}>
+              <div style={{fontWeight:800,fontSize:".88rem",color:"#166534",marginBottom:4,display:"flex",alignItems:"center",gap:6}}>
+                <span>🌷</span> 1. Individual Donor Appreciation & Certificate Message:
+              </div>
+              <p style={{fontSize:".72rem",color:"#475569",margin:"0 0 8px 0"}}>
+                Sent when clicking <strong>Poster &gt; Send WhatsApp</strong> or <strong>Copy Message</strong> for any donor.
+              </p>
+
+              {/* Variable badges */}
+              <div style={{marginBottom:8}}>
+                <span style={{fontSize:".7rem",fontWeight:700,color:"#334155",marginRight:6}}>Click variable to insert:</span>
+                <div style={{display:"flex",gap:4,flexWrap:"wrap",marginTop:4}}>
+                  {["{NAME}", "{AMOUNT}", "{RECEIPT}", "{VIBHAG}", "{DATE}", "{PURPOSE}"].map(v => (
+                    <button 
+                      key={v}
+                      type="button"
+                      onClick={() => setCustomAppreciationMsg(prev => prev + " " + v)}
+                      title={"Click to insert " + v}
+                      style={{background:"#DCFCE7",color:"#15803D",border:"1px solid #86EFAC",padding:"3px 8px",borderRadius:4,fontSize:".72rem",fontFamily:"monospace",fontWeight:800,cursor:"pointer"}}
+                    >
+                      +{v}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <textarea
+                rows={10}
+                value={customAppreciationMsg}
+                onChange={e => setCustomAppreciationMsg(e.target.value)}
+                style={{width:"100%",padding:"10px",borderRadius:8,border:"1px solid #CBD5E1",fontSize:".8rem",boxSizing:"border-box",lineHeight:"1.5",fontFamily:"inherit"}}
+              />
+            </div>
+
+            {/* Section 2: Bulk Appeal Broadcast Settings */}
+            <div style={{background:"#F8FAFC",border:"1.5px solid #E2E8F0",borderRadius:10,padding:14}}>
+              <div style={{fontWeight:800,fontSize:".88rem",color:"#334155",marginBottom:4,display:"flex",alignItems:"center",gap:6}}>
+                <span>📢</span> 2. Bulk Donor List Broadcast Settings:
+              </div>
+
+              <div style={{display:"flex",flexDirection:"column",gap:10,marginTop:8}}>
+                <div>
+                  <label style={{display:"block",fontSize:".74rem",color:"#475569",fontWeight:700,marginBottom:2}}>Header Banner:</label>
+                  <textarea
+                    rows={4}
+                    value={customHeader}
+                    onChange={e => setCustomHeader(e.target.value)}
+                    style={{width:"100%",padding:"8px",borderRadius:6,border:"1px solid #CBD5E1",fontSize:".76rem",boxSizing:"border-box"}}
+                  />
+                </div>
+
+                <div>
+                  <label style={{display:"block",fontSize:".74rem",color:"#475569",fontWeight:700,marginBottom:2}}>Appeal Body Text:</label>
+                  <textarea
+                    rows={4}
+                    value={customAppeal}
+                    onChange={e => setCustomAppeal(e.target.value)}
+                    style={{width:"100%",padding:"8px",borderRadius:6,border:"1px solid #CBD5E1",fontSize:".76rem",boxSizing:"border-box"}}
+                  />
+                </div>
+
+                <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
+                  <div>
+                    <label style={{display:"block",fontSize:".72rem",color:"#475569",fontWeight:700,marginBottom:2}}>Row Format ({'{AMOUNT}'}, {'{NAME}'}):</label>
+                    <input
+                      type="text"
+                      value={customRowPattern}
+                      onChange={e => setCustomRowPattern(e.target.value)}
+                      style={{width:"100%",padding:"6px 8px",borderRadius:6,border:"1px solid #CBD5E1",fontSize:".74rem",boxSizing:"border-box"}}
+                    />
+                  </div>
+                  <div>
+                    <label style={{display:"block",fontSize:".72rem",color:"#475569",fontWeight:700,marginBottom:2}}>Signatory / Footer:</label>
+                    <input
+                      type="text"
+                      value={customSignatory}
+                      onChange={e => setCustomSignatory(e.target.value)}
+                      style={{width:"100%",padding:"6px 8px",borderRadius:6,border:"1px solid #CBD5E1",fontSize:".74rem",boxSizing:"border-box"}}
+                    />
+                  </div>
+                </div>
+
+                <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
+                  <div>
+                    <label style={{display:"block",fontSize:".72rem",color:"#475569",fontWeight:700,marginBottom:2}}>QR Scanner Header:</label>
+                    <input
+                      type="text"
+                      value={customQrHeader || "💳 *GPay / BHIM QR સ્કેનર & Direct Pay:*"}
+                      onChange={e => setCustomQrHeader(e.target.value)}
+                      style={{width:"100%",padding:"6px 8px",borderRadius:6,border:"1px solid #CBD5E1",fontSize:".74rem",boxSizing:"border-box"}}
+                    />
+                  </div>
+                  <div>
+                    <label style={{display:"block",fontSize:".72rem",color:"#475569",fontWeight:700,marginBottom:2}}>UPI ID (VPA):</label>
+                    <input
+                      type="text"
+                      value={customUpiId || "mumba98697331@barodampay"}
+                      onChange={e => setCustomUpiId(e.target.value)}
+                      style={{width:"100%",padding:"6px 8px",borderRadius:6,border:"1px solid #CBD5E1",fontSize:".74rem",boxSizing:"border-box",fontWeight:700,color:"#2563EB"}}
+                    />
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div style={{display:"flex",justifyContent:"flex-end",gap:8,marginTop:4}}>
+              <button
+                type="button"
+                onClick={() => setShowWhatsAppEditorModal(false)}
+                style={{padding:"8px 16px",background:"#F1F5F9",color:"#475569",border:"1px solid #CBD5E1",borderRadius:8,fontSize:".82rem",fontWeight:700,cursor:"pointer"}}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={async () => {
+                  await handleSaveTemplate();
+                  setShowWhatsAppEditorModal(false);
+                }}
+                disabled={savingTemplate}
+                style={{padding:"8px 22px",background:"#15803D",color:"white",border:"none",borderRadius:8,fontSize:".84rem",fontWeight:800,cursor:savingTemplate?"wait":"pointer",boxShadow:"0 2px 6px rgba(21,128,61,0.25)"}}
+              >
+                {savingTemplate ? "Saving..." : "💾 Save Templates to Database"}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
       {/* Template Upload Modal */}
