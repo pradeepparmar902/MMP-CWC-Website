@@ -669,20 +669,41 @@ const fbUpdateDonation = async (docId, newData, idToken) => {
 };
 
 const fbFetchRegistrations = async (idToken) => {
-  const REG_URL = `https://firestore.googleapis.com/v1/projects/${getFB().projectId}/databases/(default)/documents/registrations?pageSize=300`;
+  const projectId = getFB().projectId;
   const headers = {};
   if (idToken) headers["Authorization"] = `Bearer ${idToken}`;
-  let res = await fetch(REG_URL, { headers });
-  if (res.status === 401 && idToken) {
-    res = await fetch(REG_URL);
+
+  let allDocs = [];
+  let pageToken = "";
+  let hasMore = true;
+
+  while (hasMore) {
+    let url = `https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents/registrations?pageSize=300${pageToken ? `&pageToken=${encodeURIComponent(pageToken)}` : ""}`;
+    let res = await fetch(url, { headers });
+    if (res.status === 401 && idToken) {
+      res = await fetch(url);
+    }
+    if (!res.ok) {
+      if (allDocs.length > 0) {
+        console.warn(`Partial registrations fetch (${res.status}), returning collected documents`);
+        break;
+      }
+      const errText = await res.text();
+      throw new Error(`Failed to fetch registrations (${res.status}): ${errText}`);
+    }
+    const data = await res.json();
+    if (data.documents && data.documents.length > 0) {
+      allDocs = allDocs.concat(data.documents);
+    }
+    if (data.nextPageToken) {
+      pageToken = data.nextPageToken;
+    } else {
+      hasMore = false;
+    }
   }
-  if (!res.ok) {
-    const errText = await res.text();
-    throw new Error(`Failed to fetch registrations (${res.status}): ${errText}`);
-  }
-  const data = await res.json();
-  if (!data.documents) return [];
-  const list = data.documents.map(doc => {
+
+  if (allDocs.length === 0) return [];
+  const list = allDocs.map(doc => {
     try {
       const parsed = JSON.parse(doc.fields.data.stringValue);
       let flatData = parsed.formData ? { ...parsed, ...parsed.formData } : parsed;
