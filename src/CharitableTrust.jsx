@@ -138,6 +138,67 @@ export const getRecordVibhag = (r) => {
   return 'Unspecified';
 };
 
+export const findOfficialVibhagMatch = (raw, officialList = OFFICIAL_VIBHAGS) => {
+  if (!raw || typeof raw !== 'string') return "";
+  const trimmed = raw.trim();
+  if (!trimmed) return "";
+  const isNonGeo = ['general', 'cwc member', 'committee', 'trustee', 'general committee', 'unspecified', 'cwc', '-', 'blank', 'none', 'null', 'na', 'n/a'].includes(trimmed.toLowerCase());
+  if (isNonGeo) return "";
+
+  // 1. Exact match (case-insensitive)
+  const exact = officialList.find(v => v.trim().toLowerCase() === trimmed.toLowerCase());
+  if (exact) return exact;
+
+  // 2. Match by leading number e.g. "10", "10.", "10 - MAHALAXMI", "Vibhag 10"
+  const rawNumMatch = trimmed.match(/(?:vibhag\s*)?(\d+)/i);
+  const rawNum = rawNumMatch ? rawNumMatch[1] : null;
+  if (rawNum) {
+    const numMatch = officialList.find(v => {
+      const vNumMatch = v.match(/^(\d+)/);
+      return vNumMatch && vNumMatch[1] === rawNum;
+    });
+    if (numMatch) return numMatch;
+  }
+
+  // 3. Match by name substring (e.g. "Mahalaxmi" -> "10 MAHALAXMI", "Umerkhadi" -> "1 UMERKHADI")
+  const cleanRaw = trimmed.replace(/^\d+[\s._-]*/, '').replace(/vibhag/gi, '').trim().toLowerCase();
+  if (cleanRaw.length >= 3) {
+    const nameMatch = officialList.find(v => {
+      const cleanV = v.replace(/^\d+[\s._-]*/, '').trim().toLowerCase();
+      return cleanV === cleanRaw || cleanV.includes(cleanRaw) || cleanRaw.includes(cleanV);
+    });
+    if (nameMatch) return nameMatch;
+  }
+
+  return trimmed;
+};
+
+export const getExcelCol = (row, ...candidateNames) => {
+  if (!row || typeof row !== 'object') return "";
+  const keys = Object.keys(row);
+  for (const c of candidateNames) {
+    if (row[c] !== undefined && row[c] !== null && String(row[c]).trim() !== "") {
+      return String(row[c]).trim();
+    }
+  }
+  for (const c of candidateNames) {
+    const normC = c.toLowerCase().replace(/[\s_.-]+/g, '');
+    const found = keys.find(k => k.toLowerCase().replace(/[\s_.-]+/g, '') === normC);
+    if (found && row[found] !== undefined && row[found] !== null && String(row[found]).trim() !== "") {
+      return String(row[found]).trim();
+    }
+  }
+  for (const c of candidateNames) {
+    if (c.toLowerCase().includes('vibhag')) {
+      const found = keys.find(k => k.toLowerCase().includes('vibhag'));
+      if (found && row[found] !== undefined && row[found] !== null && String(row[found]).trim() !== "") {
+        return String(row[found]).trim();
+      }
+    }
+  }
+  return "";
+};
+
 
 
 const SearchableDropdown = ({ value, onChange, options, placeholder, required, isError }) => {
@@ -17845,7 +17906,7 @@ export const formatWhatsAppTemplateForContact = ({ tplString, reg, allRegs = [],
   const rawContactName = String(merged['Submitted By'] || merged['Contact User Name'] || merged['Contact Person'] || merged['Contact Name'] || merged['Submitter Name'] || merged['Full Name'] || 'Member').replace(/\|/g, ' ').replace(/\s+/g, ' ').trim();
   const rawMobile = String(merged['Mobile Number'] || merged.Mobile || merged.mobile || merged.submitterMob || merged['Alternate Mobile Number'] || merged.phone || '').replace(/\D/g, '').slice(-10);
   const txnId = merged['Transaction ID'] || merged.transactionId || merged.id || 'N/A';
-  const vibhag = merged['Vibhag'] || merged.vibhag || merged['MMP Vibhag'] || merged['Vibhag New'] || (master ? (master.vibhag || master['Vibhag']) : 'All Vibhags');
+  const vibhag = merged['Vibhag_Name'] || merged['Vibhag Name'] || merged['Vibhag'] || merged.vibhag || merged['MMP Vibhag'] || merged['Vibhag New'] || (master ? (master['Vibhag_Name'] || master['Vibhag Name'] || master.vibhag || master['Vibhag']) : 'All Vibhags');
   const designation = String(merged['Designation'] || merged.designation || merged['Designation / Role'] || merged['Post'] || merged.role || (master ? (master.Designation || master.designation) : '') || '').trim();
   
   // Resolve contact groups
@@ -17932,6 +17993,8 @@ export const formatWhatsAppTemplateForContact = ({ tplString, reg, allRegs = [],
     .replace(/\{ENTRY_PASS_ID\}/g, txnId || "N/A")
     .replace(/\{VIBHAG\}/g, vibhag || "All Vibhags")
     .replace(/\{VIBHAG_NAME\}/g, vibhag || "All Vibhags")
+    .replace(/\{Vibhag Name\}/g, vibhag || "All Vibhags")
+    .replace(/\{Vibhag\}/g, vibhag || "All Vibhags")
     .replace(/\{SUB_WORKSPACE_NAME\}/g, subWsName)
     .replace(/\{TEMPLATE_NAME\}/g, subWsName)
     .replace(/\{EMAIL\}/g, email)
@@ -22817,7 +22880,7 @@ export const generateEventScopedStats = (reg, eventKeyOrObj, allRegs = [], vibha
     if (!r) return "";
 
     // 1. Direct Vibhag field on recipient
-    const rawV = String(r['Vibhag New'] || r['Vibhag'] || r.vibhag || r['MMP Vibhag'] || r['Vibhag Name'] || r.assignedVibhag || r.selectedVibhag || "").trim();
+    const rawV = String(r['Vibhag_Name'] || r['Vibhag Name'] || r['Vibhag New'] || r['Vibhag'] || r.vibhag || r['MMP Vibhag'] || r.assignedVibhag || r.selectedVibhag || "").trim();
     if (rawV && rawV !== '-' && rawV.toLowerCase() !== 'unspecified' && rawV.toLowerCase() !== 'blank') {
       const matchDirect = distinctVibhags.find(dv => 
         dv.toLowerCase() === rawV.toLowerCase() || 
@@ -28004,7 +28067,7 @@ function WhatsAppApplicantMessengerModal({ reg, onClose, C, auth, onLogSent, all
   const rawMobile = String(reg['Mobile Number'] || reg.submitterMob || reg['Alternate Mobile Number'] || reg.phone || '').replace(/\D/g, '').slice(-10);
   const [recipientMobile, setRecipientMobile] = useState(rawMobile);
   const txnId = reg['Transaction ID'] || reg.transactionId || reg.id || 'N/A';
-  const vibhag = reg['Vibhag'] || reg.vibhag || reg['MMP Vibhag'] || 'All Vibhags';
+  const vibhag = reg['Vibhag_Name'] || reg['Vibhag Name'] || reg['Vibhag'] || reg.vibhag || reg['Vibhag New'] || reg['MMP Vibhag'] || 'All Vibhags';
   const stream = reg['Stream / Class'] || reg['Stream'] || reg['Course'] || 'N/A';
   const percentage = reg['% Obtained'] || reg.percentage || reg['Marks / Percentage'] || 'N/A';
   const currentStatus = reg['Status'] || reg.status || 'Pending';
@@ -28128,6 +28191,8 @@ function WhatsAppApplicantMessengerModal({ reg, onClose, C, auth, onLogSent, all
       .replace(/\{ENTRY_PASS_ID\}/g, rTxn || "N/A")
       .replace(/\{VIBHAG\}/g, rVibhag || "All Vibhags")
       .replace(/\{VIBHAG_NAME\}/g, rVibhag || "All Vibhags")
+      .replace(/\{Vibhag Name\}/g, rVibhag || "All Vibhags")
+      .replace(/\{Vibhag\}/g, rVibhag || "All Vibhags")
       .replace(/\{SUB_WORKSPACE_NAME\}/g, rSubWsName)
       .replace(/\{TEMPLATE_NAME\}/g, rSubWsName)
       .replace(/\{EMAIL\}/g, rEmail)
@@ -33447,7 +33512,7 @@ function AdminInviteLetters({ mob, C, setC, auth }) {
             groups: combinedGroups.length > 0 ? combinedGroups : existingGroups,
             Designation: existing.Designation || existing.designation || r.Designation || r.designation || "",
             Mobile: existing.Mobile || existing.mobile || r['Mobile Number'] || r.Mobile || r.mobile || "",
-            Vibhag: existing.Vibhag || existing.vibhag || r['Vibhag New'] || r.Vibhag || r.vibhag || ""
+            Vibhag: existing['Vibhag_Name'] || existing['Vibhag Name'] || existing.Vibhag || existing.vibhag || r['Vibhag_Name'] || r['Vibhag Name'] || r['Vibhag New'] || r.Vibhag || r.vibhag || ""
           });
         } else {
           const rGroups = typeof getContactGroups === 'function' ? getContactGroups(r) : (r.groups || []);
@@ -33604,17 +33669,20 @@ function AdminInviteLetters({ mob, C, setC, auth }) {
 
   const resolveGuestVibhag = (r) => {
     if (!r) return "";
+    const officialVList = typeof getStandardVibhagsList === 'function' ? getStandardVibhagsList(C) : OFFICIAL_VIBHAGS;
     const cleanDirect = String(r['Vibhag_Name'] || r['Vibhag Name'] || r.vibhag || r['Vibhag'] || r['Vibhag New'] || '').trim();
-    const isNonGeo = ['cwc member', 'committee', 'trustee', 'general committee', 'unspecified', 'cwc', '-', 'blank'].includes(cleanDirect.toLowerCase());
-    if (cleanDirect && !isNonGeo) {
-      return cleanDirect;
+    const matchedDirect = typeof findOfficialVibhagMatch === 'function' ? findOfficialVibhagMatch(cleanDirect, officialVList) : cleanDirect;
+    const isNonGeo = ['general', 'cwc member', 'committee', 'trustee', 'general committee', 'unspecified', 'cwc', '-', 'blank', 'none', 'null'].includes(cleanDirect.toLowerCase());
+    if (matchedDirect && !isNonGeo && matchedDirect !== 'General') {
+      return matchedDirect;
     }
     const globalList = regs.filter(x => x.isGlobalGuest);
     if (r.globalGuestId) {
       const g = globalList.find(x => x.id === r.globalGuestId);
       const gV = String(g?.['Vibhag_Name'] || g?.['Vibhag Name'] || g?.vibhag || g?.['Vibhag'] || g?.['Vibhag New'] || '').trim();
-      if (gV && !['cwc member', 'committee', 'trustee', 'general committee', 'unspecified', 'cwc', '-', 'blank'].includes(gV.toLowerCase())) {
-        return gV;
+      const matchedGV = typeof findOfficialVibhagMatch === 'function' ? findOfficialVibhagMatch(gV, officialVList) : gV;
+      if (matchedGV && !['general', 'cwc member', 'committee', 'trustee', 'general committee', 'unspecified', 'cwc', '-', 'blank', 'none', 'null'].includes(matchedGV.toLowerCase())) {
+        return matchedGV;
       }
     }
     const rName = String(r['Full Name'] || r['Participant Name'] || r.name || '').trim().toLowerCase();
@@ -33624,19 +33692,26 @@ function AdminInviteLetters({ mob, C, setC, auth }) {
     });
     if (gByName) {
       const gV = String(gByName['Vibhag_Name'] || gByName['Vibhag Name'] || gByName.vibhag || gByName['Vibhag'] || gByName['Vibhag New'] || '').trim();
-      if (gV && !['cwc member', 'committee', 'trustee', 'general committee', 'unspecified', 'cwc', '-', 'blank'].includes(gV.toLowerCase())) {
-        return gV;
+      const matchedGV = typeof findOfficialVibhagMatch === 'function' ? findOfficialVibhagMatch(gV, officialVList) : gV;
+      if (matchedGV && !['general', 'cwc member', 'committee', 'trustee', 'general committee', 'unspecified', 'cwc', '-', 'blank', 'none', 'null'].includes(matchedGV.toLowerCase())) {
+        return matchedGV;
       }
     }
 
+    // Check contact's groups for any official Vibhag name
+    const rGroups = Array.isArray(r.groups) ? r.groups : Array.isArray(r.Groups) ? r.Groups : [];
+    for (const grp of rGroups) {
+      const matchedG = typeof findOfficialVibhagMatch === 'function' ? findOfficialVibhagMatch(String(grp).trim(), officialVList) : "";
+      if (matchedG) return matchedG;
+    }
+
     const bio = `${r.Address || ''} ${r.address || ''} ${r.Designation || ''} ${r.designation || ''}`.toLowerCase();
-    const knownVibhags = getStandardVibhagsList(C);
-    for (const kv of knownVibhags) {
+    for (const kv of officialVList) {
       const kvClean = kv.replace(/^\d+[\s_-]*/, '').trim().toLowerCase();
       if (kvClean.length >= 4 && bio.includes(kvClean)) return kv;
     }
 
-    return cleanDirect && !isNonGeo ? cleanDirect : "";
+    return (cleanDirect && !isNonGeo && cleanDirect !== 'General') ? cleanDirect : "";
   };
 
   const getDocReleaseStatus = (r, docId) => {
@@ -33886,6 +33961,10 @@ function AdminInviteLetters({ mob, C, setC, auth }) {
     try {
       if (editingGuest) {
         // Update existing contact
+        const targetVibhag = guestForm.vibhag?.trim() || "";
+        const finalContactGroups = targetVibhag && targetVibhag !== "General"
+          ? Array.from(new Set([...assignedGroups, targetVibhag])).filter(Boolean)
+          : assignedGroups;
         const updatedData = {
           ...editingGuest,
           "Full Name": guestForm.fullName.trim(),
@@ -33897,13 +33976,15 @@ function AdminInviteLetters({ mob, C, setC, auth }) {
           "Address": guestForm.address?.trim() || "",
           "Designation": guestForm.designation?.trim() || "",
           "Organization": guestForm.designation?.trim() || "",
-          "Group": groupStr,
-          "Category": groupStr,
-          "Vibhag": guestForm.vibhag || editingGuest.vibhag || editingGuest['Vibhag'] || assignedGroups[0] || "General Committee",
-          "Vibhag New": guestForm.vibhag || editingGuest.vibhag || editingGuest['Vibhag'] || assignedGroups[0] || "General Committee",
-          vibhag: guestForm.vibhag || editingGuest.vibhag || editingGuest['Vibhag'] || assignedGroups[0] || "General Committee",
-          groups: assignedGroups,
-          Groups: assignedGroups
+          "Group": finalContactGroups.join(", "),
+          "Category": finalContactGroups.join(", "),
+          "Vibhag": targetVibhag,
+          "Vibhag New": targetVibhag,
+          "Vibhag Name": targetVibhag,
+          "Vibhag_Name": targetVibhag,
+          vibhag: targetVibhag,
+          groups: finalContactGroups,
+          Groups: finalContactGroups
         };
         const cleanCopy = { ...updatedData };
         delete cleanCopy.id;
@@ -33919,7 +34000,7 @@ function AdminInviteLetters({ mob, C, setC, auth }) {
             const otherPhone = String(otherR['Mobile Number'] || otherR.mobile || '').replace(/\D/g, '').slice(-10);
             const otherName = String(otherR['Full Name'] || otherR.name || '').trim().toLowerCase();
             if ((targetPhone && targetPhone === otherPhone) || (oldName && oldName === otherName)) {
-              const otherAssignedGroups = Array.from(new Set([...(otherR.groups || []), ...assignedGroups]));
+              const otherAssignedGroups = Array.from(new Set([...(otherR.groups || []), ...finalContactGroups]));
               const updatedOther = {
                 ...otherR,
                 "Full Name": guestForm.fullName.trim(),
@@ -33928,6 +34009,11 @@ function AdminInviteLetters({ mob, C, setC, auth }) {
                 Designation: guestForm.designation?.trim() || otherR.Designation,
                 Mobile: guestForm.mobile?.trim() || otherR.Mobile,
                 "Mobile Number": guestForm.mobile?.trim() || otherR['Mobile Number'],
+                Vibhag: targetVibhag || otherR.Vibhag,
+                "Vibhag New": targetVibhag || otherR['Vibhag New'],
+                "Vibhag Name": targetVibhag || otherR['Vibhag Name'],
+                "Vibhag_Name": targetVibhag || otherR['Vibhag_Name'],
+                vibhag: targetVibhag || otherR.vibhag,
                 groups: otherAssignedGroups,
                 Groups: otherAssignedGroups,
                 Group: otherAssignedGroups.join(", ")
@@ -33940,12 +34026,16 @@ function AdminInviteLetters({ mob, C, setC, auth }) {
           }
         }
 
-        alert("✅ Contact details and groups updated successfully across directory & workspaces!");
+        alert("✅ Contact details, Vibhag, and groups updated successfully across directory & workspaces!");
         setEditingGuest(null);
         setGuestForm({ fullName: "", mobile: "", email: "", address: "", designation: "", vibhag: "", group: "CWC Member", groups: ["CWC Member"] });
         fetchRegs();
       } else {
         // Create new contact
+        const targetVibhag = guestForm.vibhag?.trim() || "";
+        const finalContactGroups = targetVibhag && targetVibhag !== "General"
+          ? Array.from(new Set([...assignedGroups, targetVibhag])).filter(Boolean)
+          : assignedGroups;
         const newGlobalGuest = {
           "Transaction ID": "GST-" + Date.now().toString().slice(-6),
           "Full Name": guestForm.fullName.trim(),
@@ -33957,13 +34047,15 @@ function AdminInviteLetters({ mob, C, setC, auth }) {
           "Address": guestForm.address?.trim() || "",
           "Designation": guestForm.designation?.trim() || "",
           "Organization": guestForm.designation?.trim() || "",
-          "Group": groupStr,
-          "Category": groupStr,
-          "Vibhag": guestForm.vibhag || assignedGroups[0] || "General Committee",
-          "Vibhag New": guestForm.vibhag || assignedGroups[0] || "General Committee",
-          vibhag: guestForm.vibhag || assignedGroups[0] || "General Committee",
-          groups: assignedGroups,
-          Groups: assignedGroups,
+          "Group": finalContactGroups.join(", "),
+          "Category": finalContactGroups.join(", "),
+          "Vibhag": targetVibhag,
+          "Vibhag New": targetVibhag,
+          "Vibhag Name": targetVibhag,
+          "Vibhag_Name": targetVibhag,
+          vibhag: targetVibhag,
+          groups: finalContactGroups,
+          Groups: finalContactGroups,
           isGlobalGuest: true,
           _submittedAt: Date.now(),
           formId: "global_guest_directory"
@@ -34162,83 +34254,121 @@ function AdminInviteLetters({ mob, C, setC, auth }) {
       const rows = XLSX.utils.sheet_to_json(firstSheet);
       
       let successCount = 0;
+      let updatedCount = 0;
+      let createdCount = 0;
       const allOfficialVibhags = typeof getStandardVibhagsList === 'function' ? getStandardVibhagsList(C) : OFFICIAL_VIBHAGS;
 
       for (const row of rows) {
-        const fullName = row["Full Name"] || row["Name"] || row["Participant Name"] || "";
+        const fullName = typeof getExcelCol === 'function'
+          ? getExcelCol(row, "Full Name", "Participant Name", "Name", "Contact Name", "Member Name", "Full_Name")
+          : (row["Full Name"] || row["Name"] || row["Participant Name"] || "");
         if (!fullName || !String(fullName).trim()) continue;
 
-        const mobile = row["Mobile"] || row["Mobile Number"] || row["Phone"] || "";
-        const email = row["Email"] || row["Email Address"] || "";
-        const designation = row["Designation"] || row["Organization"] || row["Company"] || row["Role"] || "";
-        const address = row["Address"] || row["Location"] || "";
+        const mobile = typeof getExcelCol === 'function'
+          ? getExcelCol(row, "Mobile Number", "Mobile", "Phone", "Phone Number", "Contact Number", "Mobile_Number")
+          : (row["Mobile"] || row["Mobile Number"] || row["Phone"] || "");
+        const email = typeof getExcelCol === 'function'
+          ? getExcelCol(row, "Email", "Email Address", "Mail", "Email_Address")
+          : (row["Email"] || row["Email Address"] || "");
+        const designation = typeof getExcelCol === 'function'
+          ? getExcelCol(row, "Designation", "Role", "Designation / Role", "Organization", "Company")
+          : (row["Designation"] || row["Organization"] || row["Company"] || row["Role"] || "");
+        const address = typeof getExcelCol === 'function'
+          ? getExcelCol(row, "Address", "Location", "City", "Address / Location")
+          : (row["Address"] || row["Location"] || "");
 
-        // Parse and match Vibhag
-        const rawVibhag = String(row["Vibhag"] || row["Vibhag New"] || row["vibhag"] || row["Assigned Vibhag"] || "").trim();
-        let matchedVibhag = "";
-        if (rawVibhag) {
-          // Exact match
-          const exact = allOfficialVibhags.find(v => v.toLowerCase() === rawVibhag.toLowerCase());
-          if (exact) {
-            matchedVibhag = exact;
-          } else {
-            // Number match
-            const rowNum = (rawVibhag.match(/^\d+/) || [])[0];
-            if (rowNum) {
-              const numMatch = allOfficialVibhags.find(v => (v.match(/^\d+/) || [])[0] === rowNum);
-              if (numMatch) matchedVibhag = numMatch;
-            }
-            // Name substring match
-            if (!matchedVibhag) {
-              const cleanRowV = rawVibhag.replace(/^\d+[\s_-]*/, '').trim().toLowerCase();
-              if (cleanRowV.length >= 3) {
-                const nameMatch = allOfficialVibhags.find(v => v.toLowerCase().includes(cleanRowV));
-                if (nameMatch) matchedVibhag = nameMatch;
-              }
-            }
-          }
-        }
-        const finalVibhag = matchedVibhag || rawVibhag || "General";
+        // Parse and match Vibhag with robust helper
+        const rawVibhag = typeof getExcelCol === 'function'
+          ? getExcelCol(row, "Vibhag_Name", "Vibhag Name", "vibhag_name", "Vibhag", "Vibhag New", "vibhag", "Assigned Vibhag", "VibhagName", "Vibhag No", "Vibhag No.")
+          : String(row["Vibhag_Name"] || row["Vibhag Name"] || row["Vibhag"] || "").trim();
 
-        const rawGroup = row.Group || row.group || row.Groups || row.groups || row["Contact Group"] || row.Category || row.category || row.Team || row.team || "";
-        // Build groups array: use explicit group from Excel, or fall back to vibhag name, or "CWC Member"
+        const matchedVibhag = typeof findOfficialVibhagMatch === 'function'
+          ? findOfficialVibhagMatch(rawVibhag, allOfficialVibhags)
+          : "";
+        const finalVibhag = matchedVibhag || (rawVibhag && !['general', 'cwc member', 'committee', 'trustee', 'general committee', 'unspecified', 'cwc', '-', 'blank', 'none', 'null'].includes(rawVibhag.toLowerCase()) ? rawVibhag : "");
+
+        const rawGroup = typeof getExcelCol === 'function'
+          ? getExcelCol(row, "Group", "group", "Groups", "groups", "Contact Group", "Category", "category", "Team", "team")
+          : (row.Group || row.group || "");
+
         const baseGroups = rawGroup ? getContactGroups({ group: String(rawGroup) }) : [];
-        // Always include the vibhag as a group so contacts appear in the right vibhag tab
         const vibhagGroup = (finalVibhag && finalVibhag !== "General") ? [finalVibhag] : [];
         const assignedGroups = Array.from(new Set([...baseGroups, ...vibhagGroup])).filter(Boolean);
         const finalGroups = assignedGroups.length > 0 ? assignedGroups : ["CWC Member"];
         const groupStr = finalGroups.join(", ");
 
-        const newGlobalGuest = {
-          "Transaction ID": "GST-" + Date.now().toString().slice(-6) + "-" + (successCount + 1),
-          "Full Name": String(fullName).trim(),
-          "Participant Name": String(fullName).trim(),
-          "Name": String(fullName).trim(),
-          "Mobile": mobile ? String(mobile).trim() : "",
-          "Mobile Number": mobile ? String(mobile).trim() : "",
-          "Email": email ? String(email).trim() : "",
-          "Address": address ? String(address).trim() : "",
-          "Designation": designation ? String(designation).trim() : "",
-          "Organization": designation ? String(designation).trim() : "",
-          "Group": groupStr,
-          "Category": groupStr,
-          "Vibhag": finalVibhag,
-          "Vibhag New": finalVibhag,
-          "Vibhag Name": finalVibhag,
-          "Vibhag_Name": finalVibhag,
-          vibhag: finalVibhag,
-          groups: finalGroups,
-          Groups: finalGroups,
-          isGlobalGuest: true,
-          _submittedAt: Date.now() + successCount,
-          formId: "global_guest_directory_import"
-        };
+        // Check if contact already exists in global directory (by 10-digit mobile or by full name)
+        const cleanMobile = String(mobile).replace(/\D/g, '').slice(-10);
+        const cleanName = String(fullName).trim().toLowerCase();
+        const existingContact = (globalGuests || []).find(g => {
+          const gPhone = String(g.Mobile || g['Mobile Number'] || '').replace(/\D/g, '').slice(-10);
+          if (cleanMobile && gPhone && cleanMobile === gPhone) return true;
+          const gName = String(g['Full Name'] || g.Name || '').trim().toLowerCase();
+          return cleanName && gName && cleanName === gName;
+        });
 
-        await fbSubmitRegistration(newGlobalGuest, auth?.idToken);
+        if (existingContact && existingContact.id) {
+          // Update existing contact in place!
+          const existingGroups = getContactGroups(existingContact);
+          const combinedGroups = Array.from(new Set([...existingGroups, ...finalGroups])).filter(Boolean);
+          const updatedPayload = {
+            ...existingContact,
+            "Full Name": String(fullName).trim(),
+            "Participant Name": String(fullName).trim(),
+            "Name": String(fullName).trim(),
+            Mobile: mobile ? String(mobile).trim() : (existingContact.Mobile || ""),
+            "Mobile Number": mobile ? String(mobile).trim() : (existingContact['Mobile Number'] || ""),
+            Email: email ? String(email).trim() : (existingContact.Email || ""),
+            Address: address ? String(address).trim() : (existingContact.Address || ""),
+            Designation: designation ? String(designation).trim() : (existingContact.Designation || ""),
+            Organization: designation ? String(designation).trim() : (existingContact.Organization || ""),
+            Group: combinedGroups.join(", "),
+            Category: combinedGroups.join(", "),
+            Vibhag: finalVibhag || existingContact.Vibhag || existingContact.vibhag || "",
+            "Vibhag New": finalVibhag || existingContact['Vibhag New'] || existingContact.Vibhag || "",
+            "Vibhag Name": finalVibhag || existingContact['Vibhag Name'] || existingContact.Vibhag || "",
+            "Vibhag_Name": finalVibhag || existingContact['Vibhag_Name'] || existingContact.Vibhag || "",
+            vibhag: finalVibhag || existingContact.vibhag || existingContact.Vibhag || "",
+            groups: combinedGroups,
+            Groups: combinedGroups
+          };
+          delete updatedPayload.id;
+          delete updatedPayload._submittedAt;
+          await fbUpdateRegistration(existingContact.id, updatedPayload, auth?.idToken);
+          updatedCount++;
+        } else {
+          // Create new global guest
+          const newGlobalGuest = {
+            "Transaction ID": "GST-" + Date.now().toString().slice(-6) + "-" + (successCount + 1),
+            "Full Name": String(fullName).trim(),
+            "Participant Name": String(fullName).trim(),
+            "Name": String(fullName).trim(),
+            "Mobile": mobile ? String(mobile).trim() : "",
+            "Mobile Number": mobile ? String(mobile).trim() : "",
+            "Email": email ? String(email).trim() : "",
+            "Address": address ? String(address).trim() : "",
+            "Designation": designation ? String(designation).trim() : "",
+            "Organization": designation ? String(designation).trim() : "",
+            "Group": groupStr,
+            "Category": groupStr,
+            "Vibhag": finalVibhag,
+            "Vibhag New": finalVibhag,
+            "Vibhag Name": finalVibhag,
+            "Vibhag_Name": finalVibhag,
+            vibhag: finalVibhag,
+            groups: finalGroups,
+            Groups: finalGroups,
+            isGlobalGuest: true,
+            _submittedAt: Date.now() + successCount,
+            formId: "global_guest_directory_import"
+          };
+          await fbSubmitRegistration(newGlobalGuest, auth?.idToken);
+          createdCount++;
+        }
         successCount++;
       }
 
-      alert(`✅ Successfully imported ${successCount} contact(s) with assigned Vibhag into Directory!`);
+      alert(`✅ Successfully processed ${successCount} contact(s) (${updatedCount} updated with official Vibhag, ${createdCount} newly added)!`);
       fetchRegs();
     } catch (err) {
       alert("Error reading file: " + err.message);
@@ -35102,6 +35232,9 @@ This cannot be undone.`)) return;
                       style={{width:"100%",padding:"8px 12px",borderRadius:8,border:"1.5px solid #16A34A",background:"#F0FDF4",color:"#15803D",fontWeight:800,fontSize:".85rem",cursor:"pointer",boxSizing:"border-box"}}
                     >
                       <option value="">-- Select Assigned Vibhag (e.g. 15 RAMDEV NAGAR) --</option>
+                      {guestForm.vibhag && !getStandardVibhagsList(C).includes(guestForm.vibhag) && (
+                        <option value={guestForm.vibhag}>📍 {guestForm.vibhag}</option>
+                      )}
                       {getStandardVibhagsList(C).map(v => (
                         <option key={v} value={v}>📍 {v}</option>
                       ))}
@@ -35566,13 +35699,13 @@ This cannot be undone.`)) return;
                               </div>
                               <div style={{fontSize:".74rem",color:"#64748B",marginTop:2,display:"flex",alignItems:"center",gap:6,flexWrap:"wrap"}}>
                                 <span style={{fontWeight:600,color:"#334155"}}>📱 {g.Mobile || g['Mobile Number'] || "No Mobile"}</span>
-                                {resolvedV ? (
+                                {resolvedV && !['general', 'cwc member', 'committee', 'trustee', 'general committee', 'unspecified', 'cwc', '-', 'blank', 'none', 'null'].includes(resolvedV.toLowerCase()) ? (
                                   <span style={{background:"#F0FDF4",color:"#15803D",border:"1px solid #BBF7D0",padding:"1px 6px",borderRadius:4,fontSize:".68rem",fontWeight:800}}>
                                     📍 {resolvedV}
                                   </span>
                                 ) : (
                                   <span style={{background:"#FFFBEB",color:"#B45309",border:"1px solid #FDE68A",padding:"1px 5px",borderRadius:4,fontSize:".65rem",fontWeight:700}}>
-                                    📍 No Vibhag
+                                    📍 No Vibhag Assigned
                                   </span>
                                 )}
                                 {g.Address ? <span style={{color:"#94A3B8"}}>• 🏠 {g.Address}</span> : null}
@@ -35585,6 +35718,13 @@ This cannot be undone.`)) return;
                             <button 
                               type="button" 
                               onClick={() => {
+                                const matchedV = typeof findOfficialVibhagMatch === 'function'
+                                  ? findOfficialVibhagMatch(
+                                      g['Vibhag_Name'] || g['Vibhag Name'] || g.vibhag || g['Vibhag'] || g['Vibhag New'] || resolvedV || '',
+                                      getStandardVibhagsList(C)
+                                    )
+                                  : (resolvedV || g.vibhag || g['Vibhag'] || "");
+                                const cleanMatchedV = (matchedV && !['general', 'cwc member', 'committee', 'trustee', 'general committee', 'unspecified', 'cwc', '-', 'blank', 'none', 'null'].includes(matchedV.toLowerCase())) ? matchedV : (resolvedV && !['general', 'cwc member', 'committee', 'trustee', 'general committee', 'unspecified', 'cwc', '-', 'blank', 'none', 'null'].includes(resolvedV.toLowerCase()) ? resolvedV : "");
                                 setEditingGuest(g);
                                 setGuestForm({
                                   fullName: g["Full Name"] || g.Name || "",
@@ -35592,7 +35732,7 @@ This cannot be undone.`)) return;
                                   email: g.Email || "",
                                   address: g.Address || "",
                                   designation: g.Designation || "",
-                                  vibhag: resolvedV || g.vibhag || g['Vibhag'] || g['Vibhag New'] || "",
+                                  vibhag: cleanMatchedV,
                                   group: cGroups.join(", "),
                                   groups: cGroups
                                 });
