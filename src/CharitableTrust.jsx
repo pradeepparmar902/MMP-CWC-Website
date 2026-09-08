@@ -5094,8 +5094,12 @@ export const generateCertificatePDF = async (certConfig, fieldsData, fallbackNam
             format: [targetW, targetH] 
           });
 
-          let safeTopMargin = (customTpl && customTpl.marginTop !== undefined && customTpl.marginTop !== "") ? parseInt(customTpl.marginTop) : 30;
-          let safeBottomMargin = (customTpl && customTpl.marginBottom !== undefined && customTpl.marginBottom !== "") ? parseInt(customTpl.marginBottom) : 20;
+          let safeTopMargin = (customTpl && customTpl.marginTop !== undefined && customTpl.marginTop !== "") ? parseInt(customTpl.marginTop) : 
+                              (mapObj && mapObj._marginTop !== undefined && mapObj._marginTop !== "") ? parseInt(mapObj._marginTop) :
+                              (certConfig && certConfig._marginTop !== undefined && certConfig._marginTop !== "") ? parseInt(certConfig._marginTop) : 160;
+          let safeBottomMargin = (customTpl && customTpl.marginBottom !== undefined && customTpl.marginBottom !== "") ? parseInt(customTpl.marginBottom) : 
+                                 (mapObj && mapObj._marginBottom !== undefined && mapObj._marginBottom !== "") ? parseInt(mapObj._marginBottom) :
+                                 (certConfig && certConfig._marginBottom !== undefined && certConfig._marginBottom !== "") ? parseInt(certConfig._marginBottom) : 20;
 
           const drawBackground = () => {
             const bgFit = customTpl?.bgFit || (isInvite ? certConfig?.inviteBgFit : certConfig?.certBgFit) || (targetOrientation === 'portrait' && (img.width / img.height > 1.5) ? 'letterhead' : 'full');
@@ -5272,7 +5276,7 @@ export const generateCertificatePDF = async (certConfig, fieldsData, fallbackNam
               if (typeof val === 'string') {
                   val = val.replace(/\|/g, ' ').trim();
               }
-              const alignOpt = pos.align || (isInvite ? "left" : "center");
+              const alignOpt = pos.align || ((parseFloat(pos.x) >= 35 && parseFloat(pos.x) <= 65) ? "center" : (parseFloat(pos.x) > 65 ? "right" : "left"));
               const currentFontSize = pos.fontSize ? parseInt(pos.fontSize) : (fontSize || (isLandscape ? 26 : 16));
               const currentFontColor = pos.fontColor || (fontColor || "#000000");
 
@@ -5282,18 +5286,60 @@ export const generateCertificatePDF = async (certConfig, fieldsData, fallbackNam
               const strVal = String(val);
               
               if (pos.isStatic || key.includes("Static_Text_")) {
-                  // Perform variable replacement
+                  // Robust variable replacement inside static text box (stripping internal '|' name delimiters)
                   let finalVal = strVal;
+                  const escapeRegex = (s) => String(s).replace(/[-/\\^$*+?.()|[\]{}]/g, '\\$&');
+
                   if (fieldsData) {
                     Object.entries(fieldsData).forEach(([fKey, fVal]) => {
-                        finalVal = finalVal.replace(new RegExp(`{${fKey}}`, 'gi'), String(fVal));
+                      if (fVal !== undefined && fVal !== null && fVal !== '') {
+                        try {
+                          const cleanVal = String(fVal).replace(/\|/g, ' ').replace(/\s+/g, ' ').trim();
+                          finalVal = finalVal.replace(new RegExp('\\{' + escapeRegex(fKey) + '\\}', 'gi'), () => cleanVal);
+                          const normalizedKey = fKey.replace(/[^a-zA-Z0-9]/g, '');
+                          if (normalizedKey && normalizedKey !== fKey) {
+                            finalVal = finalVal.replace(new RegExp('\\{' + escapeRegex(normalizedKey) + '\\}', 'gi'), () => cleanVal);
+                          }
+                        } catch(e) {}
+                      }
                     });
                   }
-                  finalVal = finalVal.replace(/{STUDENT_NAME}/gi, fallbackName || fieldsData?.['Student Name'] || fieldsData?.['Full Name'] || fieldsData?.['Name'] || '');
-                  finalVal = finalVal.replace(/{EVENT_NAME}/gi, certConfig?.title || '');
+
+                  const recipientName = String(fallbackName || fieldsData?.['Full Name'] || fieldsData?.['Student Name'] || fieldsData?.['Participant Name'] || fieldsData?.['Name'] || fieldsData?.['Member Name'] || fieldsData?.['Candidate Name'] || '').replace(/\|/g, ' ').replace(/\s+/g, ' ').trim();
+                  finalVal = finalVal.replace(/\{(STUDENT_NAME|STUDENT|FULL_NAME|FULL NAME|NAME|INVITEE_NAME|PARTICIPANT_NAME)\}/gi, () => recipientName);
+
+                  const vibhagVal = String(fieldsData?.['Vibhag'] || fieldsData?.['vibhag'] || fieldsData?.['MMP Vibhag'] || '').replace(/\|/g, ' ').replace(/\s+/g, ' ').trim();
+                  finalVal = finalVal.replace(/\{(VIBHAG|BRANCH|MMP_VIBHAG)\}/gi, () => vibhagVal);
+
+                  const streamVal = String(fieldsData?.['Stream / Class'] || fieldsData?.['Stream'] || fieldsData?.['Class'] || fieldsData?.['Course'] || '').replace(/\|/g, ' ').replace(/\s+/g, ' ').trim();
+                  finalVal = finalVal.replace(/\{(STREAM|STREAM \/ CLASS|CLASS|COURSE)\}/gi, () => streamVal);
+
+                  const gamVal = String(fieldsData?.['Native Village'] || fieldsData?.['Gam'] || fieldsData?.['Village'] || fieldsData?.['Native Place'] || '').replace(/\|/g, ' ').replace(/\s+/g, ' ').trim();
+                  finalVal = finalVal.replace(/\{(NATIVE_VILLAGE|NATIVE VILLAGE|GAM|VILLAGE)\}/gi, () => gamVal);
+
+                  const addrVal = String(fieldsData?.['Address'] || fieldsData?.['Residential Address'] || fieldsData?.['Permanent Address'] || '').replace(/\|/g, ' ').replace(/\s+/g, ' ').trim();
+                  finalVal = finalVal.replace(/\{(ADDRESS|RESIDENTIAL_ADDRESS|RESIDENTIAL ADDRESS)\}/gi, () => addrVal);
+
+                  const txnVal = String(fieldsData?.['Transaction ID'] || fieldsData?.['transactionId'] || fieldsData?.['Txn ID'] || '').replace(/\|/g, ' ').replace(/\s+/g, ' ').trim();
+                  finalVal = finalVal.replace(/\{(TRANSACTION_ID|TRANSACTION ID|TXN_ID|PASS_ID)\}/gi, () => txnVal);
+
+                  finalVal = finalVal.replace(/\{(EVENT_NAME|EVENT NAME|EVENT)\}/gi, () => (certConfig?.title || certConfig?.name || ''));
+                  finalVal = finalVal.replace(/\{(EVENT_DATE|EVENT DATE|DATE)\}/gi, () => (certConfig?.date || fieldsData?.['Date'] || fieldsData?.['Submission Date'] || ''));
+                  finalVal = finalVal.replace(/\{(EVENT_VENUE|EVENT VENUE|VENUE)\}/gi, () => (certConfig?.venue || ''));
+                  finalVal = finalVal.replace(/\{(TRUST_NAME|TRUST NAME)\}/gi, () => 'Mumbai Meghwal Panchayat & Vidya Gohil Charitable Trust');
+
+                  if (finalVal.includes('{Total Count}') || finalVal.includes('{TOTAL_COUNT}')) {
+                    const totalCountVal = evaluateUniversalPivotTag('{Total Count}', { allRegs: (typeof window !== 'undefined' && window.__MMP_INVITE_REGS__) || [], format: 'text' });
+                    finalVal = finalVal.replace(/\{(Total Count|TOTAL_COUNT)\}/gi, () => String(totalCountVal));
+                  }
+
+                  // Strip any remaining pipe (|) delimiters from names or text
+                  finalVal = finalVal.replace(/\|/g, ' ').replace(/[ \t]{2,}/g, ' ');
                   
                   // Use html2canvas to render text with native browser fonts (supports Gujarati & Emojis)
-                  const blockW = pos.w ? (parseFloat(pos.w) / 100) * targetW : (300 * (targetW / 842));
+                  // Default to full-width (84% of targetW) if pos.w is not explicitly set
+                  const wPct = pos.w ? parseFloat(pos.w) : 84;
+                  const blockW = Math.min(targetW - 40, (wPct / 100) * targetW);
                   
                   const div = document.createElement("div");
                   div.style.position = "absolute"; // Must be absolute so it can grow taller than the viewport without getting clipped!
@@ -5303,10 +5349,10 @@ export const generateCertificatePDF = async (certConfig, fieldsData, fallbackNam
                   div.style.width = blockW + "px";
                   div.style.fontSize = currentFontSize + "px";
                   div.style.color = currentFontColor;
-                  div.style.textAlign = alignOpt;
+                  div.style.textAlign = pos.align || "left";
                   div.style.fontFamily = "sans-serif";
                   div.style.whiteSpace = "pre-wrap";
-                  div.style.lineHeight = "1.25";
+                  div.style.lineHeight = "1.3";
                   
                   // Simple markdown parsing for bold
                   div.innerHTML = finalVal.replace(/\*(.*?)\*/g, '<strong>$1</strong>');
@@ -5329,22 +5375,27 @@ export const generateCertificatePDF = async (certConfig, fieldsData, fallbackNam
                           useCORS: true
                       });
                       
-                      const targetPage = Math.floor(yPx / targetH) + 1;
+                      const renderedHeight = (canvas.height / canvas.width) * blockW;
+
+                      // In the editor canvas, badges are rendered with left: pos.x%, top: pos.y%, and transform: translate(-50%, -50%).
+                      // This means pos.x and pos.y are the CENTER of the element!
+                      // For jsPDF addImage, we need the TOP-LEFT corner:
+                      const leftPct = parseFloat(pos.x) - (wPct / 2);
+                      let renderX = Math.max(20, Math.min(targetW - blockW - 20, (leftPct / 100) * targetW));
+                      
+                      const pageIndex = Math.floor(parseFloat(pos.y) / 100);
+                      const targetPage = Math.max(1, pageIndex + 1);
                       while (doc.getNumberOfPages() < targetPage) {
                           doc.addPage();
                           doc.setPage(doc.getNumberOfPages());
                           drawBackground();
                       }
                       doc.setPage(targetPage);
-                      const localY = yPx % targetH;
-                      
-                      // In react-rnd, the saved pos.x and pos.y are the TOP-LEFT corner of the box.
-                      // Since doc.addImage uses the top-left corner, we do NOT subtract half the width/height.
-                      let renderX = xPx;
-                      const blockH = pos.h ? (parseFloat(pos.h) / 100) * targetH : (80 * (targetH / 595));
-                      let renderY = localY; // True top anchor
-                      
-                      const renderedHeight = (canvas.height / canvas.width) * blockW;
+
+                      // If pos.h is specified, top is pos.y - (pos.h / 2). If not, compute from renderedHeight.
+                      const hPct = pos.h ? parseFloat(pos.h) : Math.min(60, (renderedHeight / targetH) * 100);
+                      const pageYPct = (parseFloat(pos.y) - (pageIndex * 100)) - (hPct / 2);
+                      let renderY = Math.max(safeTopMargin, (pageYPct / 100) * targetH);
                       
                       let remainingHeight = renderedHeight;
                       let sourceY = 0;
@@ -5352,7 +5403,8 @@ export const generateCertificatePDF = async (certConfig, fieldsData, fallbackNam
                       let pageAvailableHeight = targetH - currentY - safeBottomMargin;
                       
                       while (remainingHeight > 0) {
-                          if (remainingHeight <= pageAvailableHeight || pageAvailableHeight <= 0) {
+                          // Allow 25px tolerance for font line-height/padding so a single-page letter never splits to page 2 unnecessarily
+                          if (remainingHeight <= pageAvailableHeight + 25 || pageAvailableHeight <= 0) {
                               // Render remaining part
                               const chunkHeight = Math.max(remainingHeight, 1);
                               const chunkPixelHeight = (chunkHeight / renderedHeight) * canvas.height;
@@ -23814,8 +23866,331 @@ function BulkWhatsAppBroadcastModal({ event, recipients = [], allRegs = [], C, a
   );
 }
 
-// ── Workspace-Specific Multi-Template Manager Modal (Unified WhatsApp & PDF Studio) ─────────
-function WorkspaceWhatsAppTemplateModal({ event, C, setC, auth, onClose, initialTab = "whatsapp", initialPdfTplId = null, allRegs = [] }) {
+// ── Envelope Text & Layout Formatting Helpers ─────────────────────────────
+export function formatEnvelopeAddress(addr, mode = "smart") {
+  if (!addr) return "";
+  const rawLines = String(addr).split(/\r?\n/);
+  const resultLines = [];
+
+  rawLines.forEach(line => {
+    const cleanLine = line.replace(/\s*\|\s*/g, ", ").trim();
+    if (!cleanLine) return;
+
+    if (mode === "every") {
+      const parts = cleanLine.split(/,\s*/).filter(Boolean);
+      parts.forEach((p, idx) => {
+        resultLines.push(idx < parts.length - 1 ? p + "," : p);
+      });
+    } else if (mode === "none") {
+      resultLines.push(cleanLine);
+    } else {
+      // mode === "smart" (default): break after commas into balanced ~32-36 char lines
+      if (cleanLine.includes(",") && cleanLine.length > 28) {
+        const parts = cleanLine.split(/(?<=,)\s*/);
+        let cur = "";
+        for (const part of parts) {
+          if (!cur) {
+            cur = part;
+          } else if ((cur + " " + part).length <= 36) {
+            cur += " " + part;
+          } else {
+            resultLines.push(cur.trim());
+            cur = part;
+          }
+        }
+        if (cur) resultLines.push(cur.trim());
+      } else {
+        resultLines.push(cleanLine);
+      }
+    }
+  });
+
+  return resultLines.join("\n");
+}
+
+export const formatEnvelopeTextForDisplay = (text, r = {}, C = {}, event = {}, envTpl = null) => {
+  if (!text) return "";
+  let res = String(text);
+  const rawName = r["Full Name"] || r["Name"] || r["Participant Name"] || r["Student Name"] || r.name || "Student";
+  const nameVal = String(rawName).replace(/\s*\|\s*/g, " ").trim();
+
+  const wrapMode = envTpl?.addressWrapMode || "smart";
+  const rawAddress = r["Address"] || r["Residential Address"] || r["Full Address"] || r.address || "";
+  const addressVal = formatEnvelopeAddress(rawAddress, wrapMode);
+  const mobileVal = r["Mobile Number"] || r["Mobile"] || r["WhatsApp Number"] || r.phone || r.mobile || "";
+  const vibhagVal = r["Vibhag"] || r["Vibhag Name"] || r["MMP Vibhag"] || r.vibhag || "";
+  const streamVal = r["Stream / Class"] || r["Stream"] || r["Course"] || "";
+  const txnVal = r["Transaction ID"] || r.transactionId || r.id || "";
+  const desigVal = r["Designation"] || r["Designation / Role"] || r["Post"] || r.role || "";
+  const groupVal = r["Group"] || (Array.isArray(r.groups) ? r.groups.join(', ') : "") || "";
+
+  res = res
+    .replace(/\{Full Name\}/gi, nameVal)
+    .replace(/\{STUDENT_NAME\}/gi, nameVal)
+    .replace(/\{NAME\}/gi, nameVal)
+    .replace(/\{Participant Name\}/gi, nameVal)
+    .replace(/\{INVITEE_NAME\}/gi, nameVal)
+    .replace(/\{Address\}/gi, addressVal)
+    .replace(/\{Residential Address\}/gi, addressVal)
+    .replace(/\{Full Address\}/gi, addressVal)
+    .replace(/\{Mobile Number\}/gi, mobileVal)
+    .replace(/\{Mobile\}/gi, mobileVal)
+    .replace(/\{WhatsApp Number\}/gi, mobileVal)
+    .replace(/\{PHONE\}/gi, mobileVal)
+    .replace(/\{Vibhag\}/gi, vibhagVal)
+    .replace(/\{Vibhag Name\}/gi, vibhagVal)
+    .replace(/\{Stream\}/gi, streamVal)
+    .replace(/\{Stream \/ Class\}/gi, streamVal)
+    .replace(/\{Transaction ID\}/gi, txnVal)
+    .replace(/\{TXN_ID\}/gi, txnVal)
+    .replace(/\{PASS_ID\}/gi, txnVal)
+    .replace(/\{Designation\}/gi, desigVal)
+    .replace(/\{Group\}/gi, groupVal)
+    .replace(/\{EVENT_NAME\}/gi, event?.title || event?.eventName || "Event")
+    .replace(/\{PORTAL_NAME\}/gi, C?.trust?.name || "MUMBAI MEGHWAL PANCHAYAT")
+    .replace(/\{HELPLINE_PHONES\}/gi, C?.whatsAppHelpline || C?.trust?.phone || "+91 9820785209 / +91 9967821964");
+
+  // Replace any remaining {Field_Name}
+  res = res.replace(/\{([^}]+)\}/g, (match, field) => {
+    if (r[field] !== undefined && r[field] !== null) return String(r[field]);
+    const foundKey = Object.keys(r).find(k => k.toLowerCase() === field.toLowerCase());
+    if (foundKey && r[foundKey] !== undefined && r[foundKey] !== null) return String(r[foundKey]);
+    return match;
+  });
+
+  return res;
+};
+
+export const renderEnvelopeOnDoc = (doc, envTpl, r, C, event) => {
+  const envSize = envTpl?.size || 'dl';
+  const pageW = envSize === 'c5' ? 229 : envSize === 'c6' ? 162 : 220;
+  const pageH = envSize === 'c5' ? 162 : envSize === 'c6' ? 114 : 110;
+
+  // 0. Event / Corner Badge Label (e.g. "Invite of Education Event")
+  if (envTpl?.showCornerLabel !== false && envTpl?.cornerLabelText) {
+    const rawLabel = envTpl.cornerLabelText;
+    const formattedLabel = formatEnvelopeTextForDisplay(rawLabel, r, C, event).trim();
+    if (formattedLabel) {
+      const pos = envTpl.cornerLabelPos || "top-right-cross";
+      const hexColor = envTpl.cornerLabelColor || "#991B1B";
+      const style = envTpl.cornerLabelStyle || (pos.includes("cross") ? "ribbon" : "badge");
+      const fontSize = Number(envTpl.cornerLabelFontSize) || 9.5;
+      const defaultRot = (pos === "top-right-cross" ? 45 : pos === "top-left-cross" ? -45 : 0);
+      const rotation = (typeof envTpl.cornerLabelRotation === "number") ? envTpl.cornerLabelRotation : defaultRot;
+
+      const cleanHex = (hexColor || "#991B1B").replace("#", "");
+      const num = parseInt(cleanHex.length === 3 ? cleanHex.split("").map(c => c + c).join("") : cleanHex, 16) || 0x991B1B;
+      const cR = (num >> 16) & 255;
+      const cG = (num >> 8) & 255;
+      const cB = num & 255;
+
+      const textUpper = formattedLabel.toUpperCase();
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(fontSize);
+      const tw = doc.getTextWidth(textUpper);
+
+      const isTopLeftCross = (pos === "top-left-cross" || (pos.includes("top-left") && (rotation === -45 || rotation === 45)));
+      const isTopRightCross = (pos === "top-right-cross" || (pos.includes("top-right") && (rotation === 45 || rotation === -45)));
+
+      if (isTopLeftCross) {
+        // Top-left diagonal ribbon across corner
+        const L = Math.max(38, tw + 10);
+        const D = L * 0.7071;
+        const ribbonThick = 8.0; // mm
+        const delta = (ribbonThick / 2) * Math.SQRT2; // ~5.65mm
+
+        doc.setFillColor(cR, cG, cB);
+        doc.setDrawColor(cR, cG, cB);
+        doc.setLineWidth(0.2);
+        // Quad ribbon (P1, P2, P3, P4) without any seam line
+        doc.triangle(D - delta, 0, D + delta, 0, 0, D + delta, "FD");
+        doc.triangle(D - delta, 0, 0, D + delta, 0, D - delta, "FD");
+
+        // Centered text along diagonal (angle 45 goes from (0, D) up-right to (D, 0))
+        doc.setTextColor(255, 255, 255);
+        const cx = D / 2;
+        const cy = D / 2;
+        const dx = Math.SQRT1_2;
+        const dy = Math.SQRT1_2;
+        const halfTw = tw / 2;
+        const startX = cx - halfTw * dx + 0.8 * dy;
+        const startY = cy + halfTw * dy + 0.8 * dx;
+        doc.text(textUpper, startX, startY, { angle: 45 });
+      } else if (isTopRightCross) {
+        // Top-right diagonal ribbon across corner
+        const L = Math.max(38, tw + 10);
+        const D = L * 0.7071;
+        const ribbonThick = 8.0; // mm
+        const delta = (ribbonThick / 2) * Math.SQRT2; // ~5.65mm
+
+        doc.setFillColor(cR, cG, cB);
+        doc.setDrawColor(cR, cG, cB);
+        doc.setLineWidth(0.2);
+        doc.triangle(pageW - (D + delta), 0, pageW - (D - delta), 0, pageW, D - delta, "FD");
+        doc.triangle(pageW - (D + delta), 0, pageW, D - delta, pageW, D + delta, "FD");
+
+        // Centered text along diagonal (angle -45 goes from top (pageW - D, 0) down-right to (pageW, D))
+        doc.setTextColor(255, 255, 255);
+        const cx = pageW - D / 2;
+        const cy = D / 2;
+        const dx = Math.SQRT1_2;
+        const dy = Math.SQRT1_2;
+        const halfTw = tw / 2;
+        const startX = cx - halfTw * dx - 0.8 * dy;
+        const startY = cy - halfTw * dy + 0.8 * dx;
+        doc.text(textUpper, startX, startY, { angle: -45 });
+      } else {
+        // Horizontal or custom-rotated badge
+        const isRight = pos.includes("right");
+        const isBottom = (pos === "bottom-left");
+        const bw = tw + 8;
+        const bh = 7.5;
+        const bx = isRight ? (pageW - bw - 14) : 12;
+        const by = isBottom ? (pageH - bh - 8) : 8;
+
+        if (rotation === 0) {
+          if (style === "filled" || style === "ribbon") {
+            doc.setFillColor(cR, cG, cB);
+            doc.roundedRect(bx, by, bw, bh, 1.5, 1.5, "F");
+            doc.setTextColor(255, 255, 255);
+            doc.text(textUpper, bx + bw / 2, by + 5.2, { align: "center" });
+          } else if (style === "clean") {
+            doc.setTextColor(cR, cG, cB);
+            doc.text(textUpper, bx, by + 5.5);
+          } else {
+            // badge (bordered)
+            doc.setDrawColor(cR, cG, cB);
+            doc.setFillColor(254, 242, 242);
+            doc.roundedRect(bx, by, bw, bh, 1.5, 1.5, "FD");
+            doc.setTextColor(cR, cG, cB);
+            doc.text(textUpper, bx + bw / 2, by + 5.2, { align: "center" });
+          }
+        } else {
+          // Custom angle
+          const cx = bx + bw / 2;
+          const cy = by + bh / 2;
+          const rad = (rotation * Math.PI) / 180;
+          const cos = Math.cos(rad);
+          const sin = Math.sin(rad);
+
+          if (style === "filled" || style === "ribbon") {
+            const hw = bw / 2;
+            const hh = bh / 2;
+            const corners = [
+              { x: -hw, y: -hh }, { x: hw, y: -hh }, { x: hw, y: hh }, { x: -hw, y: hh }
+            ].map(p => ({ x: cx + p.x * cos - p.y * sin, y: cy + p.x * sin + p.y * cos }));
+            doc.setFillColor(cR, cG, cB);
+            doc.triangle(corners[0].x, corners[0].y, corners[1].x, corners[1].y, corners[2].x, corners[2].y, "F");
+            doc.triangle(corners[0].x, corners[0].y, corners[2].x, corners[2].y, corners[3].x, corners[3].y, "F");
+            doc.setTextColor(255, 255, 255);
+          } else if (style === "badge") {
+            const hw = bw / 2;
+            const hh = bh / 2;
+            const corners = [
+              { x: -hw, y: -hh }, { x: hw, y: -hh }, { x: hw, y: hh }, { x: -hw, y: hh }
+            ].map(p => ({ x: cx + p.x * cos - p.y * sin, y: cy + p.x * sin + p.y * cos }));
+            doc.setFillColor(254, 242, 242);
+            doc.setDrawColor(cR, cG, cB);
+            doc.setLineWidth(0.2);
+            doc.triangle(corners[0].x, corners[0].y, corners[1].x, corners[1].y, corners[2].x, corners[2].y, "FD");
+            doc.triangle(corners[0].x, corners[0].y, corners[2].x, corners[2].y, corners[3].x, corners[3].y, "FD");
+            doc.setTextColor(cR, cG, cB);
+          } else {
+            doc.setTextColor(cR, cG, cB);
+          }
+
+          const startX = cx - (tw / 2) * cos - 0.8 * sin;
+          const startY = cy + (tw / 2) * sin + 0.8 * cos;
+          doc.text(textUpper, startX, startY, { angle: rotation });
+        }
+      }
+    }
+  }
+
+  // 1. Sender Address (FROM) in top-left if enabled
+  if (envTpl?.showSender !== false && envTpl?.senderText) {
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(8);
+    doc.setTextColor(60, 60, 60);
+    const fromX = Number(envTpl.fromLeftMargin) || 12;
+    let fromY = Number(envTpl.fromTopMargin) || 12;
+    if (envTpl?.showCornerLabel !== false && envTpl?.cornerLabelText) {
+      const p = envTpl.cornerLabelPos || "";
+      const rot = envTpl.cornerLabelRotation;
+      if (p === "top-left-cross" || (p.includes("top-left") && (rot === -45 || rot === 45))) {
+        fromY = Math.max(fromY, 36);
+      } else if (p === "top-left-start") {
+        fromY = Math.max(fromY, 19);
+      }
+    }
+    const formattedSender = formatEnvelopeTextForDisplay(envTpl.senderText, r, C, event);
+    const senderLines = formattedSender.split("\n");
+    senderLines.forEach((line) => {
+      const splitLine = doc.splitTextToSize(line, (pageW / 2) - 15);
+      splitLine.forEach(subLine => {
+        doc.text(subLine, fromX, fromY);
+        fromY += 3.8;
+      });
+    });
+  }
+
+  // 2. Recipient Address (TO)
+  const toX = Number(envTpl?.toLeftMargin) || 75;
+  let toY = Number(envTpl?.toTopMargin) || 35;
+  const fontSize = Number(envTpl?.fontSize) || 11;
+  const recipientRaw = envTpl?.recipientText || "TO,\n{Full Name}\n{Address}\nMobile: {Mobile Number}\nVibhag: {Vibhag}";
+  const formattedRecipient = formatEnvelopeTextForDisplay(recipientRaw, r, C, event, envTpl);
+  const recipientLines = formattedRecipient.split("\n");
+  const maxWidth = Math.max(50, Math.min(95, pageW - toX - 12));
+
+  recipientLines.forEach((line, idx) => {
+    const trimmed = line.trim();
+    if (!trimmed) {
+      toY += 4;
+      return;
+    }
+
+    // If an optional line ends with a colon (e.g. "Alt Mobile:" or "Stream:") because the variable was empty, skip it!
+    if (/^[A-Za-z0-9\s/._-]+:\s*$/.test(trimmed)) {
+      return;
+    }
+
+    if (trimmed.toUpperCase() === "TO," || trimmed.toUpperCase() === "TO") {
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(Math.max(9, fontSize - 1));
+      doc.setTextColor(0, 0, 0);
+      doc.text(trimmed, toX, toY);
+      toY += 5.5;
+    } else if (idx === 1 || (idx === 0 && trimmed.toUpperCase() !== "TO,")) {
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(Math.min(15, fontSize + 2));
+      doc.setTextColor(0, 0, 0);
+      const splitName = doc.splitTextToSize(trimmed.toUpperCase(), maxWidth);
+      splitName.forEach(sName => {
+        doc.text(sName, toX, toY);
+        toY += 6;
+      });
+    } else if (trimmed.toLowerCase().startsWith("mobile:") || trimmed.toLowerCase().startsWith("phone:") || trimmed.toLowerCase().startsWith("mo.:")) {
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(fontSize);
+      doc.setTextColor(0, 0, 0);
+      doc.text(trimmed, toX, toY);
+      toY += 5.5;
+    } else {
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(fontSize);
+      doc.setTextColor(30, 30, 30);
+      const splitLine = doc.splitTextToSize(trimmed, maxWidth);
+      splitLine.forEach(subLine => {
+        doc.text(subLine, toX, toY);
+        toY += 5.2;
+      });
+    }
+  });
+};
+
+// ── Workspace-Specific Multi-Template Manager Modal (Unified WhatsApp, PDF & Envelope Studio) ─────────
+function WorkspaceWhatsAppTemplateModal({ event, C, setC, auth, onClose, initialTab = "whatsapp", initialPdfTplId = null, allRegs = [], currentDocTpl = null, subWorkspaceRegs = [] }) {
   if (!event) return null;
 
   const defaultTemplates = [
@@ -23849,7 +24224,7 @@ function WorkspaceWhatsAppTemplateModal({ event, C, setC, auth, onClose, initial
     ? event.whatsAppTemplates 
     : defaultTemplates;
 
-  // ── Mode Switcher: "whatsapp" | "pdf" ──
+  // ── Mode Switcher: "whatsapp" | "pdf" | "envelope" ──
   const [studioTab, setStudioTab] = useState(initialTab || "whatsapp");
 
   // WhatsApp Templates State
@@ -23879,6 +24254,217 @@ function WorkspaceWhatsAppTemplateModal({ event, C, setC, auth, onClose, initial
       }).catch(e => console.error(e));
     }
   }, [allRegs, auth]);
+
+  // Sub-Workspace Scoped Envelope Templates State
+  const activeSubWsId = currentDocTpl?.id || initialPdfTplId || "invite";
+  const activeSubWsName = currentDocTpl?.name || (activeSubWsId === 'invite' ? 'Official Invite Letter' : 'Sub-Workspace');
+  const hasContactGroupDetails = (Array.isArray(subWorkspaceRegs) && subWorkspaceRegs.some(r => r && (r.Designation || r.Group || r['Designation / Role'])));
+
+  const defaultSubWsRecipient = hasContactGroupDetails
+    ? "TO,\n{Full Name}\n{Address}\nMobile: {Mobile Number}\nDesignation: {Designation}\nGroup: {Group}"
+    : "TO,\n{Full Name}\n{Address}\nMobile: {Mobile Number}\nVibhag: {Vibhag}";
+
+  const defaultEnvelopeTemplates = [
+    {
+      id: `env_${activeSubWsId}`,
+      name: `${activeSubWsName} Envelope`,
+      isDefault: true,
+      size: "dl",
+      orientation: "landscape",
+      fontSize: 11,
+      showSender: true,
+      senderText: `BOOK-POST\nFROM:\n${C?.trust?.name || "MUMBAI MEGHWAL PANCHAYAT"}\n(Central Working Committee)\nRegd. No. Ms.491/GB.BSD-PTR No.F-13507 (Mumbai)\nHelpline: {HELPLINE_PHONES}`,
+      recipientText: defaultSubWsRecipient,
+      toLeftMargin: 75,
+      toTopMargin: 35,
+      fromLeftMargin: 12,
+      fromTopMargin: 12,
+      showCornerLabel: true,
+      cornerLabelText: "Invite of Education Event",
+      cornerLabelPos: "top-right-cross",
+      cornerLabelColor: "#991B1B",
+      cornerLabelStyle: "ribbon",
+      cornerLabelFontSize: 10,
+      cornerLabelRotation: 45,
+      addressWrapMode: "smart"
+    }
+  ];
+
+  const initialEnvelopeList = (() => {
+    // Check if there is an envelope template explicitly saved for this sub-workspace
+    const subWsSaved = (event?.envelopeTemplatesByDoc && event.envelopeTemplatesByDoc[activeSubWsId])
+      || currentDocTpl?.envelopeTemplate
+      || currentDocTpl?.customTpl?.envelopeTemplate;
+    if (subWsSaved) {
+      if (Array.isArray(subWsSaved)) return subWsSaved;
+      return [{ ...defaultEnvelopeTemplates[0], ...subWsSaved, id: subWsSaved.id || `env_${activeSubWsId}` }];
+    }
+    if (Array.isArray(event?.envelopeTemplates) && event.envelopeTemplates.length > 0) {
+      return event.envelopeTemplates;
+    }
+    if (event?.envelopeTemplate && typeof event.envelopeTemplate === 'object') {
+      return [{ ...defaultEnvelopeTemplates[0], ...event.envelopeTemplate, id: event.envelopeTemplate.id || `env_${activeSubWsId}` }];
+    }
+    return defaultEnvelopeTemplates;
+  })();
+
+  const [envelopeTemplates, setEnvelopeTemplates] = useState(initialEnvelopeList);
+  const [activeEnvId, setActiveEnvId] = useState(envelopeTemplates[0]?.id || `env_${activeSubWsId}`);
+  const [activeEnvelopeFocus, setActiveEnvelopeFocus] = useState("recipient");
+  const [previewSampleIndex, setPreviewSampleIndex] = useState(0);
+  const envelopeRecipientRef = useRef(null);
+  const envelopeSenderRef = useRef(null);
+  const activeEnv = envelopeTemplates.find(e => e.id === activeEnvId) || envelopeTemplates[0];
+
+  const handleUpdateActiveEnv = (field, val) => {
+    setEnvelopeTemplates(prev => prev.map(env => {
+      if (env.id === activeEnvId) {
+        return { ...env, [field]: val };
+      }
+      if (field === 'isDefault' && val === true) {
+        return { ...env, isDefault: false };
+      }
+      return env;
+    }));
+  };
+
+  const handleAddNewEnvelope = () => {
+    const newId = "env_" + Date.now();
+    const newEnv = {
+      id: newId,
+      name: `Envelope Template ${envelopeTemplates.length + 1}`,
+      isDefault: false,
+      size: "dl",
+      orientation: "landscape",
+      fontSize: 11,
+      showSender: true,
+      senderText: `FROM:\n${C?.trust?.name || "MUMBAI MEGHWAL PANCHAYAT"}\nHelpline: {HELPLINE_PHONES}`,
+      recipientText: "TO,\n{Full Name}\n{Address}\nMobile: {Mobile Number}",
+      toLeftMargin: 75,
+      toTopMargin: 35,
+      fromLeftMargin: 12,
+      fromTopMargin: 12,
+      showCornerLabel: true,
+      cornerLabelText: "Invite of Education Event",
+      cornerLabelPos: "top-right-cross",
+      cornerLabelColor: "#991B1B",
+      cornerLabelStyle: "ribbon",
+      cornerLabelFontSize: 10,
+      cornerLabelRotation: 45,
+      addressWrapMode: "smart"
+    };
+    setEnvelopeTemplates(prev => [...prev, newEnv]);
+    setActiveEnvId(newId);
+  };
+
+  const handleDeleteEnvelope = (idToDelete) => {
+    if (envelopeTemplates.length <= 1) {
+      alert("At least one envelope template must remain in this workspace.");
+      return;
+    }
+    const target = envelopeTemplates.find(e => e.id === idToDelete);
+    if (target?.isDefault) {
+      alert("Cannot delete the default envelope template. Please mark another envelope as default first.");
+      return;
+    }
+    if (!window.confirm(`Delete envelope template "${target?.name}"?`)) return;
+    const rem = envelopeTemplates.filter(e => e.id !== idToDelete);
+    setEnvelopeTemplates(rem);
+    setActiveEnvId(rem[0].id);
+  };
+
+  const insertPlaceholderAtEnvelope = (ph) => {
+    if (!activeEnv) return;
+    const isSender = (activeEnvelopeFocus === 'sender' && envelopeSenderRef.current);
+    const targetRef = isSender ? envelopeSenderRef : envelopeRecipientRef;
+    const targetField = isSender ? 'senderText' : 'recipientText';
+    const textarea = targetRef.current;
+    if (textarea) {
+      let start = (typeof textarea.selectionStart === 'number') ? textarea.selectionStart : 0;
+      let end = (typeof textarea.selectionEnd === 'number') ? textarea.selectionEnd : 0;
+      const cur = activeEnv[targetField] || "";
+      
+      // If cursor was at position 0 without active focus, append to end on a new line
+      if (start === 0 && end === 0 && cur.trim().length > 0 && document.activeElement !== textarea) {
+        start = cur.length;
+        end = cur.length;
+      }
+      
+      const before = cur.substring(0, start);
+      const after = cur.substring(end);
+      
+      let toInsert = ph;
+      if (start === cur.length && before.length > 0 && !before.endsWith("\n") && !toInsert.startsWith("\n")) {
+        toInsert = "\n" + toInsert;
+      } else if (before.length > 0 && !before.endsWith(" ") && !before.endsWith("\n") && !toInsert.startsWith("\n") && !toInsert.startsWith(" ")) {
+        toInsert = " " + toInsert;
+      }
+
+      const updated = before + toInsert + after;
+      handleUpdateActiveEnv(targetField, updated);
+      setTimeout(() => {
+        textarea.focus();
+        const newPos = start + toInsert.length;
+        textarea.setSelectionRange(newPos, newPos);
+      }, 10);
+    } else {
+      const cur = activeEnv[targetField] || "";
+      handleUpdateActiveEnv(targetField, cur ? `${cur}\n${ph}` : ph);
+    }
+  };
+
+  const handleDropOnEnvelope = (e, targetField) => {
+    e.preventDefault();
+    const draggedText = e.dataTransfer.getData("text/plain");
+    if (!draggedText) return;
+    setActiveEnvelopeFocus(targetField === 'senderText' ? 'sender' : 'recipient');
+    insertPlaceholderAtEnvelope(draggedText);
+  };
+
+  const handleTestPrintEnvelope = () => {
+    try {
+      const sampleReg = sampleRegForPreview;
+      const doc = new jsPDF({ 
+        orientation: activeEnv.orientation || 'landscape', 
+        unit: 'mm', 
+        format: activeEnv.size || 'dl' 
+      });
+      renderEnvelopeOnDoc(doc, activeEnv, sampleReg, C, event);
+      doc.output('dataurlnewwindow');
+    } catch(e) {
+      alert("Error generating test envelope PDF: " + e.message);
+    }
+  };
+
+  const sampleRegForPreview = useMemo(() => {
+    if (Array.isArray(subWorkspaceRegs) && subWorkspaceRegs.length > 0) {
+      const safeIdx = Math.min(previewSampleIndex, subWorkspaceRegs.length - 1);
+      return subWorkspaceRegs[safeIdx] || subWorkspaceRegs[0];
+    }
+    if (Array.isArray(liveRegs) && liveRegs.length > 0) {
+      return liveRegs[0];
+    }
+    return {
+      "Full Name": "PARMAR PRADEEP BABUBHAI",
+      "Address": "Room No. 12, Jai Bhavani Chawl, Station Road, Bhandup West, Mumbai - 400078",
+      "Mobile Number": "9820785209",
+      "Vibhag": "Ghatkopar",
+      "Stream / Class": "B.Com",
+      "Transaction ID": "EDU-2026-001"
+    };
+  }, [subWorkspaceRegs, previewSampleIndex, liveRegs]);
+
+  const previewSenderFormatted = useMemo(() => {
+    if (!activeEnv?.senderText) return "";
+    return formatEnvelopeTextForDisplay(activeEnv.senderText, sampleRegForPreview, C, event);
+  }, [activeEnv?.senderText, sampleRegForPreview, C, event]);
+
+  const previewRecipientFormatted = useMemo(() => {
+    if (!activeEnv?.recipientText) return "";
+    return formatEnvelopeTextForDisplay(activeEnv.recipientText, sampleRegForPreview, C, event, activeEnv);
+  }, [activeEnv?.recipientText, sampleRegForPreview, C, event, activeEnv?.addressWrapMode]);
+
+
 
   // PDF Passes & Templates State
   const isDonorWs = Boolean(event?.isDonorWorkspace || String(event?.title || "").toLowerCase().includes("donor"));
@@ -23940,6 +24526,47 @@ function WorkspaceWhatsAppTemplateModal({ event, C, setC, auth, onClose, initial
 
   const [saving, setSaving] = useState(false);
   const [variableSearch, setVariableSearch] = useState("");
+  const [activeStaticTextKey, setActiveStaticTextKey] = useState(null);
+  const staticTextRefs = useRef({});
+
+  const insertVariableIntoStaticText = (key, varTag) => {
+    const curMap = activePdf?.map || {};
+    const item = curMap[key];
+    if (!item) return;
+
+    const textarea = staticTextRefs.current[key];
+    if (textarea) {
+      const start = textarea.selectionStart ?? (item.text || "").length;
+      const end = textarea.selectionEnd ?? (item.text || "").length;
+      const curText = item.text || "";
+      const before = curText.substring(0, start);
+      const after = curText.substring(end);
+      const spacePrefix = (before.length > 0 && !before.endsWith(" ") && !before.endsWith("\n") && !before.endsWith("*")) ? " " : "";
+      const spaceSuffix = (after.length > 0 && !after.startsWith(" ") && !after.startsWith("\n") && !after.startsWith(",") && !after.startsWith("*")) ? " " : "";
+      const inserted = spacePrefix + varTag + spaceSuffix;
+      const newText = before + inserted + after;
+      
+      handleUpdateActivePdf("map", {
+        ...curMap,
+        [key]: { ...item, text: newText }
+      });
+      
+      setTimeout(() => {
+        try {
+          textarea.focus();
+          const newCursorPos = start + inserted.length;
+          textarea.setSelectionRange(newCursorPos, newCursorPos);
+        } catch(e) {}
+      }, 30);
+    } else {
+      const curText = item.text || "";
+      const newText = curText ? (curText + " " + varTag) : varTag;
+      handleUpdateActivePdf("map", {
+        ...curMap,
+        [key]: { ...item, text: newText }
+      });
+    }
+  };
   const isEduWs = Boolean(event?.id === 'education2026' || String(event?.title || "").toLowerCase().includes("education"));
   // Pivot Table & Connected Summaries State (Excel-style)
   const [showPivotBuilder, setShowPivotBuilder] = useState(false);
@@ -24372,13 +24999,29 @@ function WorkspaceWhatsAppTemplateModal({ event, C, setC, auth, onClose, initial
       const inviteTpl = pdfTemplates.find(p => p.id === "invite");
       const certTpl = pdfTemplates.find(p => p.id === "cert");
       const customPdfTpls = pdfTemplates.filter(p => p.type === "custom");
+      const defaultEnv = envelopeTemplates.find(e => e.isDefault) || envelopeTemplates[0];
+      const activeDocId = currentDocTpl?.id || initialPdfTplId || "invite";
 
       const updatedEvents = (C.events || []).map(e => {
         if (e.id === event.id || e.title === event.title) {
+          const updatedByDoc = {
+            ...(e.envelopeTemplatesByDoc || {}),
+            [activeDocId]: defaultEnv
+          };
+          const updatedCustomPdfs = (customPdfTpls || []).map(p => {
+            if (p.id === activeDocId) {
+              return { ...p, envelopeTemplate: defaultEnv };
+            }
+            return p;
+          });
+
           const updated = { 
             ...e, 
             whatsAppTemplates: templates,
-            pdfTemplates: customPdfTpls
+            pdfTemplates: updatedCustomPdfs,
+            envelopeTemplates: envelopeTemplates,
+            envelopeTemplate: defaultEnv,
+            envelopeTemplatesByDoc: updatedByDoc
           };
           if (inviteTpl) {
             updated.inviteName = inviteTpl.name;
@@ -24408,7 +25051,7 @@ function WorkspaceWhatsAppTemplateModal({ event, C, setC, auth, onClose, initial
       const updatedC = { ...C, events: updatedEvents };
       if (setC) setC(updatedC);
       await fbSave(updatedC, auth?.idToken);
-      alert("✅ Workspace WhatsApp & PDF Templates saved successfully!");
+      alert("✅ Workspace WhatsApp, PDF & Envelope Templates saved successfully!");
       onClose();
     } catch (err) {
       console.error(err);
@@ -24445,8 +25088,15 @@ function WorkspaceWhatsAppTemplateModal({ event, C, setC, auth, onClose, initial
   const handlePaletteItemClick = (varTag) => {
     if (studioTab === "whatsapp") {
       insertPlaceholderAtCursor(varTag);
+    } else if (studioTab === "envelope") {
+      insertPlaceholderAtEnvelope(varTag);
     } else {
-      handleAddVariableToPdf(varTag);
+      // If a static text block is currently active/focused, insert the variable directly inside it at cursor!
+      if (activeStaticTextKey && activePdf?.map && activePdf.map[activeStaticTextKey]) {
+        insertVariableIntoStaticText(activeStaticTextKey, varTag);
+      } else {
+        handleAddVariableToPdf(varTag);
+      }
     }
   };
 
@@ -24573,8 +25223,39 @@ function WorkspaceWhatsAppTemplateModal({ event, C, setC, auth, onClose, initial
     return `Actual ${secName} field: ${f}`;
   };
 
+  // ── Extract Exact Sub-Workspace Fields from active imported contacts ──
+  const subWsFields = useMemo(() => {
+    const fields = new Set();
+    const sourceList = (Array.isArray(subWorkspaceRegs) && subWorkspaceRegs.length > 0)
+      ? subWorkspaceRegs
+      : [];
+    sourceList.forEach(r => {
+      if (!r || typeof r !== 'object') return;
+      Object.keys(r).forEach(k => {
+        if (!k.startsWith('_') && k.length < 40 && !['id', 'deleted', 'isDeleted', 'isTrash', 'inTrash', 'formId', 'targetTemplateId', 'assignedDocTypes', 'assignedWorkspaceIds', 'workspaceId', 'logHistory'].includes(k)) {
+          fields.add(k.trim());
+        }
+      });
+    });
+    return Array.from(fields);
+  }, [subWorkspaceRegs]);
+
   // Construct Simplified, Dynamically Linked Variable Categories by Exact Section
   const variableCategories = [
+    ...(subWsFields.length > 0 ? [
+      {
+        title: `🎯 Sub-Workspace: ${currentDocTpl?.name || 'Imported Contacts'}`,
+        color: "#0369A1",
+        bgColor: "#F0F9FF",
+        borderColor: "#38BDF8",
+        icon: "🎯",
+        vars: subWsFields.map(f => ({
+          tag: "{" + f + "}",
+          label: f,
+          desc: `Imported field in this sub-workspace (${subWorkspaceRegs.length} contacts available)`
+        }))
+      }
+    ] : []),
     {
       title: "📊 Pivot Table & Connected Summaries",
       color: "#047857",
@@ -24802,6 +25483,8 @@ function WorkspaceWhatsAppTemplateModal({ event, C, setC, auth, onClose, initial
               <div style={{fontSize:".74rem",opacity:0.9,marginTop:2}}>
                 {studioTab === "whatsapp" 
                   ? "Design rich WhatsApp messages with live student counts and dynamic data." 
+                  : studioTab === "envelope"
+                  ? "Design printable address envelopes with recipient & sender layout and dynamic variables."
                   : "Upload PDF template backgrounds and drag & drop variables directly onto the pass canvas."}
               </div>
             </div>
@@ -24851,6 +25534,28 @@ function WorkspaceWhatsAppTemplateModal({ event, C, setC, auth, onClose, initial
               >
                 <span>📑</span> PDF Passes & Templates ({pdfTemplates.length})
               </button>
+
+              <button
+                type="button"
+                onClick={() => setStudioTab("envelope")}
+                style={{
+                  padding:"6px 14px",
+                  borderRadius:8,
+                  border:"none",
+                  cursor:"pointer",
+                  fontSize:".78rem",
+                  fontWeight:800,
+                  background: studioTab === "envelope" ? "white" : "transparent",
+                  color: studioTab === "envelope" ? "#166534" : "rgba(255,255,255,0.9)",
+                  boxShadow: studioTab === "envelope" ? "0 2px 6px rgba(0,0,0,0.2)" : "none",
+                  display:"flex",
+                  alignItems:"center",
+                  gap:5,
+                  transition:"all 0.15s"
+                }}
+              >
+                <span>✉️</span> Envelope Editor ({envelopeTemplates.length})
+              </button>
             </div>
           </div>
 
@@ -24866,11 +25571,11 @@ function WorkspaceWhatsAppTemplateModal({ event, C, setC, auth, onClose, initial
           <div style={{width:240,borderRight:"1px solid #E2E8F0",background:"white",display:"flex",flexDirection:"column",flexShrink:0}}>
             <div style={{padding:"10px 12px",borderBottom:"1px solid #E2E8F0",display:"flex",justifyContent:"space-between",alignItems:"center",background:"#F8FAFC"}}>
               <span style={{fontSize:".74rem",fontWeight:800,color:"#475569",textTransform:"uppercase"}}>
-                {studioTab === "whatsapp" ? `TEMPLATES (${templates.length})` : `PASSES (${pdfTemplates.length})`}
+                {studioTab === "whatsapp" ? `TEMPLATES (${templates.length})` : studioTab === "envelope" ? `ENVELOPES (${envelopeTemplates.length})` : `PASSES (${pdfTemplates.length})`}
               </span>
               <button
                 type="button"
-                onClick={studioTab === "whatsapp" ? handleAddNewTemplate : handleAddNewPdfTemplate}
+                onClick={studioTab === "whatsapp" ? handleAddNewTemplate : studioTab === "envelope" ? handleAddNewEnvelope : handleAddNewPdfTemplate}
                 style={{padding:"4px 8px",background:"#15803D",color:"white",border:"none",borderRadius:6,fontSize:".72rem",fontWeight:800,cursor:"pointer",display:"flex",alignItems:"center",gap:4}}
               >
                 <span>+</span> Add New
@@ -24878,7 +25583,52 @@ function WorkspaceWhatsAppTemplateModal({ event, C, setC, auth, onClose, initial
             </div>
 
             <div style={{flex:1,overflowY:"auto",padding:10,display:"flex",flexDirection:"column",gap:6}}>
-              {studioTab === "whatsapp" ? (
+              {studioTab === "envelope" ? (
+                envelopeTemplates.map(env => {
+                  const isActive = env.id === activeEnvId;
+                  return (
+                    <div
+                      key={env.id}
+                      onClick={() => setActiveEnvId(env.id)}
+                      style={{
+                        padding:"9px 12px",
+                        borderRadius:8,
+                        border:isActive ? "2px solid #15803D" : "1px solid #E2E8F0",
+                        background:isActive ? "#F0FDF4" : "white",
+                        cursor:"pointer",
+                        display:"flex",
+                        flexDirection:"column",
+                        gap:3,
+                        boxShadow: isActive ? "0 2px 6px rgba(21,128,61,0.12)" : "none",
+                        transition:"all 0.15s"
+                      }}
+                    >
+                      <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:4}}>
+                        <span style={{fontSize:".8rem",fontWeight:700,color:isActive ? "#15803D" : "#0F172A",lineHeight:1.3}}>
+                          ✉️ {env.name}
+                        </span>
+                        {env.isDefault && (
+                          <span style={{background:"#DCFCE7",color:"#15803D",padding:"1px 5px",borderRadius:4,fontSize:".62rem",fontWeight:800,flexShrink:0}}>
+                            Default
+                          </span>
+                        )}
+                      </div>
+                      <div style={{fontSize:".66rem",color:"#64748B",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+                        <span>{(env.size || 'dl').toUpperCase()} • {env.fontSize || 11}pt</span>
+                        {envelopeTemplates.length > 1 && !env.isDefault && (
+                          <span 
+                            onClick={(e) => { e.stopPropagation(); handleDeleteEnvelope(env.id); }}
+                            style={{color:"#DC2626",fontWeight:800,cursor:"pointer"}}
+                            title="Delete envelope template"
+                          >
+                            🗑️
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })
+              ) : studioTab === "whatsapp" ? (
                 templates.map(t => {
                   const isActive = t.id === activeTplId;
                   return (
@@ -25213,7 +25963,718 @@ function WorkspaceWhatsAppTemplateModal({ event, C, setC, auth, onClose, initial
               </div>
             )}
 
-            {studioTab === "whatsapp" ? (
+            {studioTab === "envelope" ? (
+            activeEnv && (
+              <div style={{flex:1,padding:"16px 20px",display:"flex",flexDirection:"column",gap:12,overflowY:"auto",background:"white"}}>
+                
+                {/* 🎯 Sub-Workspace Connection Header Banner */}
+                <div style={{background:"#F0F9FF",border:"1.5px solid #BAE6FD",borderRadius:10,padding:"10px 14px",display:"flex",justifyContent:"space-between",alignItems:"center",gap:12,flexWrap:"wrap"}}>
+                  <div style={{display:"flex",alignItems:"center",gap:10}}>
+                    <span style={{fontSize:"1.3rem"}}>🎯</span>
+                    <div>
+                      <div style={{fontSize:".85rem",fontWeight:800,color:"#0369A1",display:"flex",alignItems:"center",gap:6}}>
+                        <span>Connected Sub-Workspace:</span>
+                        <span style={{background:"#E0F2FE",color:"#0284C7",padding:"2px 8px",borderRadius:6,border:"1px solid #BAE6FD"}}>
+                          {currentDocTpl?.name || "Official Invite Letter"}
+                        </span>
+                      </div>
+                      <div style={{fontSize:".72rem",color:"#0284C7",marginTop:2}}>
+                        {subWorkspaceRegs.length > 0 
+                          ? `Using actual imported contact details from this sub-workspace (${subWorkspaceRegs.length} contacts loaded). Variables on right match this sub-workspace.` 
+                          : "Connects to imported contact details in this sub-workspace. Click variables on the right palette to insert."}
+                      </div>
+                    </div>
+                  </div>
+
+                  {subWorkspaceRegs.length > 0 && (
+                    <div style={{display:"flex",alignItems:"center",gap:8,background:"white",padding:"4px 10px",borderRadius:8,border:"1px solid #BAE6FD",boxShadow:"0 1px 4px rgba(2,132,199,0.08)"}}>
+                      <span style={{fontSize:".72rem",fontWeight:700,color:"#475569"}}>Sample Contact:</span>
+                      <button
+                        type="button"
+                        disabled={previewSampleIndex <= 0}
+                        onClick={() => setPreviewSampleIndex(prev => Math.max(0, prev - 1))}
+                        style={{background:"#F1F5F9",border:"1px solid #CBD5E1",borderRadius:4,padding:"2px 6px",fontSize:".72rem",cursor:previewSampleIndex <= 0 ? "not-allowed" : "pointer",fontWeight:800}}
+                        title="Previous sample contact"
+                      >◀</button>
+                      <span style={{fontSize:".75rem",fontWeight:800,color:"#0F172A",minWidth:50,textAlign:"center"}}>
+                        {previewSampleIndex + 1} / {subWorkspaceRegs.length}
+                      </span>
+                      <button
+                        type="button"
+                        disabled={previewSampleIndex >= subWorkspaceRegs.length - 1}
+                        onClick={() => setPreviewSampleIndex(prev => Math.min(subWorkspaceRegs.length - 1, prev + 1))}
+                        style={{background:"#F1F5F9",border:"1px solid #CBD5E1",borderRadius:4,padding:"2px 6px",fontSize:".72rem",cursor:previewSampleIndex >= subWorkspaceRegs.length - 1 ? "not-allowed" : "pointer",fontWeight:800}}
+                        title="Next sample contact"
+                      >▶</button>
+                    </div>
+                  )}
+                </div>
+
+                {/* Envelope Top Controls Bar */}
+                <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:12,flexWrap:"wrap",paddingBottom:8,borderBottom:"1px solid #F1F5F9"}}>
+                  <div style={{flex:1,minWidth:200}}>
+                    <label style={{display:"block",fontSize:".72rem",fontWeight:800,color:"#64748B",textTransform:"uppercase",marginBottom:3}}>ENVELOPE TEMPLATE NAME</label>
+                    <input
+                      type="text"
+                      value={activeEnv.name || ""}
+                      onChange={e => handleUpdateActiveEnv("name", e.target.value)}
+                      style={{width:"100%",padding:"6px 12px",borderRadius:8,border:"1.5px solid #CBD5E1",fontSize:".88rem",fontWeight:700,color:"#0F172A",boxSizing:"border-box"}}
+                    />
+                  </div>
+
+                  <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap",paddingTop:14}}>
+                    {/* Size selector */}
+                    <div style={{display:"flex",flexDirection:"column"}}>
+                      <label style={{fontSize:".68rem",fontWeight:800,color:"#64748B",textTransform:"uppercase",marginBottom:2}}>SIZE</label>
+                      <select
+                        value={activeEnv.size || "dl"}
+                        onChange={e => handleUpdateActiveEnv("size", e.target.value)}
+                        style={{padding:"6px 10px",borderRadius:7,border:"1.5px solid #CBD5E1",fontSize:".78rem",fontWeight:700,color:"#0F172A",background:"white"}}
+                      >
+                        <option value="dl">Standard DL (220 × 110 mm)</option>
+                        <option value="c5">C5 (229 × 162 mm) - Half A4</option>
+                        <option value="c6">C6 (162 × 114 mm) - Quarter A4</option>
+                      </select>
+                    </div>
+
+                    {/* Font size */}
+                    <div style={{display:"flex",flexDirection:"column"}}>
+                      <label style={{fontSize:".68rem",fontWeight:800,color:"#64748B",textTransform:"uppercase",marginBottom:2}}>FONT SIZE</label>
+                      <select
+                        value={activeEnv.fontSize || 11}
+                        onChange={e => handleUpdateActiveEnv("fontSize", Number(e.target.value))}
+                        style={{padding:"6px 10px",borderRadius:7,border:"1.5px solid #CBD5E1",fontSize:".78rem",fontWeight:700,color:"#0F172A",background:"white"}}
+                      >
+                        {[9, 10, 11, 12, 13, 14, 16].map(s => (
+                          <option key={s} value={s}>{s} pt</option>
+                        ))}
+                      </select>
+                    </div>
+
+                    {/* Set Default */}
+                    <label style={{display:"flex",alignItems:"center",gap:6,cursor:"pointer",fontSize:".8rem",fontWeight:700,color:"#15803D",background:"#F0FDF4",padding:"6px 12px",borderRadius:8,border:"1px solid #BBF7D0",marginTop:14}}>
+                      <input
+                        type="checkbox"
+                        checked={activeEnv.isDefault || false}
+                        onChange={e => handleUpdateActiveEnv("isDefault", e.target.checked)}
+                        style={{cursor:"pointer",accentColor:"#15803D"}}
+                      />
+                      <span>Default</span>
+                    </label>
+
+                    {/* Sample Print Button */}
+                    <button
+                      type="button"
+                      onClick={handleTestPrintEnvelope}
+                      style={{
+                        padding:"6px 14px",
+                        background:"#15803D",
+                        color:"white",
+                        border:"none",
+                        borderRadius:8,
+                        fontSize:".8rem",
+                        fontWeight:800,
+                        cursor:"pointer",
+                        display:"flex",
+                        alignItems:"center",
+                        gap:5,
+                        marginTop:14,
+                        boxShadow:"0 2px 6px rgba(21,128,61,0.25)"
+                      }}
+                      title="Open 1-page sample envelope PDF to test your margins on printer"
+                    >
+                      <span>🖨️</span> Sample Print PDF
+                    </button>
+                  </div>
+                </div>
+
+                {/* Event / Corner Label Control Card */}
+                <div style={{
+                  background: "#FFF8F8",
+                  border: "1.5px solid #FECDD3",
+                  borderRadius: 8,
+                  padding: "10px 14px",
+                  display: "flex",
+                  flexDirection: "column",
+                  gap: 8,
+                  boxShadow: "0 1px 3px rgba(153,27,27,0.06)"
+                }}>
+                  <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:8}}>
+                    <div style={{display:"flex",alignItems:"center",gap:8}}>
+                      <span style={{fontSize:".85rem"}}>🏷️</span>
+                      <span style={{fontSize:".76rem",fontWeight:800,color:"#991B1B",textTransform:"uppercase",letterSpacing:0.5}}>
+                        EVENT BADGE / CORNER LABEL
+                      </span>
+                      <span style={{fontSize:".65rem",background:"#FEE2E2",color:"#991B1B",padding:"1px 6px",borderRadius:4,fontWeight:700,border:"1px solid #FCA5A5"}}>
+                        Customizable & Rotatable
+                      </span>
+                    </div>
+                    <label style={{display:"flex",alignItems:"center",gap:6,cursor:"pointer",fontSize:".74rem",fontWeight:800,color:"#475569"}}>
+                      <input
+                        type="checkbox"
+                        checked={activeEnv.showCornerLabel !== false}
+                        onChange={e => handleUpdateActiveEnv("showCornerLabel", e.target.checked)}
+                        style={{accentColor:"#991B1B",cursor:"pointer"}}
+                      />
+                      <span>Show Label on Envelope</span>
+                    </label>
+                  </div>
+
+                  {activeEnv.showCornerLabel !== false && (
+                    <div style={{display:"flex",flexDirection:"column",gap:8}}>
+                      {/* Label Text Input & Quick Preset Chips */}
+                      <div style={{display:"flex",flexDirection:"column",gap:4}}>
+                        <div style={{display:"flex",alignItems:"center",gap:8}}>
+                          <input
+                            type="text"
+                            value={activeEnv.cornerLabelText || ""}
+                            onChange={e => handleUpdateActiveEnv("cornerLabelText", e.target.value)}
+                            placeholder="e.g. Invite of Education Event"
+                            style={{
+                              flex: 1,
+                              padding: "6px 10px",
+                              borderRadius: 6,
+                              border: "1.5px solid #FCA5A5",
+                              fontSize: ".82rem",
+                              fontWeight: 800,
+                              color: activeEnv.cornerLabelColor || "#991B1B",
+                              background: "white"
+                            }}
+                          />
+                        </div>
+
+                        {/* Quick Presets */}
+                        <div style={{display:"flex",alignItems:"center",gap:5,flexWrap:"wrap"}}>
+                          <span style={{fontSize:".68rem",fontWeight:800,color:"#64748B"}}>QUICK PRESETS:</span>
+                          {[
+                            "Invite of Education Event",
+                            "Special Invitation",
+                            "Education Felicitation 2026",
+                            "Personal & Confidential",
+                            "Official Event Invite"
+                          ].map(preset => (
+                            <button
+                              key={preset}
+                              type="button"
+                              onClick={() => handleUpdateActiveEnv("cornerLabelText", preset)}
+                              style={{
+                                padding: "2px 7px",
+                                borderRadius: 4,
+                                border: activeEnv.cornerLabelText === preset ? "1px solid #991B1B" : "1px solid #E2E8F0",
+                                background: activeEnv.cornerLabelText === preset ? "#FEE2E2" : "white",
+                                color: activeEnv.cornerLabelText === preset ? "#991B1B" : "#475569",
+                                fontSize: ".68rem",
+                                fontWeight: 700,
+                                cursor: "pointer"
+                              }}
+                            >
+                              + {preset}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+
+                      {/* Placement, Rotation, Style, Color, Font Size Row */}
+                      <div style={{display:"flex",alignItems:"center",flexWrap:"wrap",gap:12,paddingTop:6,borderTop:"1px dashed #FECDD3"}}>
+                        {/* Placement */}
+                        <div style={{display:"flex",alignItems:"center",gap:6}}>
+                          <span style={{fontSize:".72rem",fontWeight:700,color:"#475569"}}>Placement:</span>
+                          <select
+                            value={activeEnv.cornerLabelPos || "top-right-cross"}
+                            onChange={e => {
+                              const newPos = e.target.value;
+                              handleUpdateActiveEnv("cornerLabelPos", newPos);
+                              // Auto update rotation suggestion if not explicitly overridden
+                              if (newPos === "top-right-cross") handleUpdateActiveEnv("cornerLabelRotation", 45);
+                              else if (newPos === "top-left-cross") handleUpdateActiveEnv("cornerLabelRotation", -45);
+                              else if (newPos === "top-left-start" || newPos === "top-right-box" || newPos === "bottom-left") handleUpdateActiveEnv("cornerLabelRotation", 0);
+                            }}
+                            style={{padding:"3px 6px",borderRadius:5,border:"1px solid #CBD5E1",fontSize:".73rem",fontWeight:700,color:"#1E293B",background:"white"}}
+                          >
+                            <option value="top-right-cross">🎀 Top-Right Corner (Diagonal Ribbon)</option>
+                            <option value="top-left-start">📍 Starting Alignment (Top-Left Header)</option>
+                            <option value="top-right-box">🏷️ Top-Right Box Stamp</option>
+                            <option value="top-left-cross">🎀 Top-Left Corner (Diagonal Ribbon)</option>
+                            <option value="bottom-left">📌 Bottom-Left Corner</option>
+                          </select>
+                        </div>
+
+                        {/* Rotation Angle with Slider & Quick Buttons */}
+                        <div style={{display:"flex",alignItems:"center",gap:6,background:"white",padding:"2px 8px",borderRadius:6,border:"1px solid #CBD5E1"}}>
+                          <span style={{fontSize:".72rem",fontWeight:800,color:"#475569"}}>🔄 Rotation:</span>
+                          <input
+                            type="range"
+                            min="-90"
+                            max="90"
+                            step="5"
+                            value={(typeof activeEnv.cornerLabelRotation === 'number') ? activeEnv.cornerLabelRotation : (activeEnv.cornerLabelPos === 'top-right-cross' ? 45 : activeEnv.cornerLabelPos === 'top-left-cross' ? -45 : 0)}
+                            onChange={e => handleUpdateActiveEnv("cornerLabelRotation", Number(e.target.value))}
+                            style={{width:70,accentColor:"#991B1B"}}
+                            title="Adjust rotation angle (-90° to +90°)"
+                          />
+                          <span style={{fontSize:".72rem",fontWeight:800,color:"#991B1B",minWidth:30}}>
+                            {((typeof activeEnv.cornerLabelRotation === 'number') ? activeEnv.cornerLabelRotation : (activeEnv.cornerLabelPos === 'top-right-cross' ? 45 : activeEnv.cornerLabelPos === 'top-left-cross' ? -45 : 0))}°
+                          </span>
+                          <div style={{display:"flex",gap:3}}>
+                            {[
+                              { label: "0°", val: 0 },
+                              { label: "45°", val: 45 },
+                              { label: "-45°", val: -45 },
+                              { label: "90°", val: 90 }
+                            ].map(btn => (
+                              <button
+                                key={btn.label}
+                                type="button"
+                                onClick={() => handleUpdateActiveEnv("cornerLabelRotation", btn.val)}
+                                style={{
+                                  padding: "1px 5px",
+                                  fontSize: ".65rem",
+                                  borderRadius: 3,
+                                  border: "1px solid #E2E8F0",
+                                  background: (activeEnv.cornerLabelRotation === btn.val) ? "#991B1B" : "#F8FAFC",
+                                  color: (activeEnv.cornerLabelRotation === btn.val) ? "white" : "#475569",
+                                  fontWeight: 700,
+                                  cursor: "pointer"
+                                }}
+                              >
+                                {btn.label}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+
+                        {/* Style */}
+                        <div style={{display:"flex",alignItems:"center",gap:6}}>
+                          <span style={{fontSize:".72rem",fontWeight:700,color:"#475569"}}>Style:</span>
+                          <select
+                            value={activeEnv.cornerLabelStyle || (activeEnv.cornerLabelPos?.includes("cross") ? "ribbon" : "badge")}
+                            onChange={e => handleUpdateActiveEnv("cornerLabelStyle", e.target.value)}
+                            style={{padding:"3px 6px",borderRadius:5,border:"1px solid #CBD5E1",fontSize:".73rem",fontWeight:700,color:"#1E293B",background:"white"}}
+                          >
+                            <option value="ribbon">Diagonal Cross Ribbon</option>
+                            <option value="badge">Bordered Badge Box</option>
+                            <option value="filled">Solid Colored Pill</option>
+                            <option value="clean">Clean Bold Text (No Box)</option>
+                          </select>
+                        </div>
+
+                        {/* Color Swatches */}
+                        <div style={{display:"flex",alignItems:"center",gap:5}}>
+                          <span style={{fontSize:".72rem",fontWeight:700,color:"#475569"}}>Color:</span>
+                          {[
+                            { label: "Dark Red", hex: "#991B1B" },
+                            { label: "Deep Maroon", hex: "#831843" },
+                            { label: "Navy Blue", hex: "#1E3A8A" },
+                            { label: "Forest Green", hex: "#14532D" },
+                            { label: "Gold/Bronze", hex: "#B45309" },
+                            { label: "Black", hex: "#0F172A" }
+                          ].map(cItem => {
+                            const isSelected = (activeEnv.cornerLabelColor || "#991B1B").toLowerCase() === cItem.hex.toLowerCase();
+                            return (
+                              <button
+                                key={cItem.hex}
+                                type="button"
+                                onClick={() => handleUpdateActiveEnv("cornerLabelColor", cItem.hex)}
+                                title={cItem.label}
+                                style={{
+                                  width: 18,
+                                  height: 18,
+                                  borderRadius: "50%",
+                                  background: cItem.hex,
+                                  border: isSelected ? "2.5px solid #000" : "1.5px solid #E2E8F0",
+                                  cursor: "pointer",
+                                  outline: isSelected ? "2px solid #991B1B" : "none",
+                                  outlineOffset: 1
+                                }}
+                              />
+                            );
+                          })}
+                          <input
+                            type="color"
+                            value={activeEnv.cornerLabelColor || "#991B1B"}
+                            onChange={e => handleUpdateActiveEnv("cornerLabelColor", e.target.value)}
+                            title="Custom Color"
+                            style={{width:24,height:22,padding:0,border:"none",cursor:"pointer",borderRadius:4,background:"transparent"}}
+                          />
+                        </div>
+
+                        {/* Font Size */}
+                        <div style={{display:"flex",alignItems:"center",gap:4}}>
+                          <span style={{fontSize:".72rem",fontWeight:700,color:"#475569"}}>Size:</span>
+                          <select
+                            value={activeEnv.cornerLabelFontSize || 10}
+                            onChange={e => handleUpdateActiveEnv("cornerLabelFontSize", Number(e.target.value))}
+                            style={{padding:"2px 5px",borderRadius:4,border:"1px solid #CBD5E1",fontSize:".73rem",fontWeight:700,background:"white"}}
+                          >
+                            <option value={8}>8 pt (Small)</option>
+                            <option value={10}>10 pt (Standard)</option>
+                            <option value={12}>12 pt (Bold Large)</option>
+                          </select>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {/* Quick Format & Variable Insertion Toolbar */}
+                <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:8,background:"#F8FAFC",padding:"8px 12px",borderRadius:8,border:"1px solid #E2E8F0"}}>
+                  <div style={{display:"flex",alignItems:"center",gap:6,flexWrap:"wrap"}}>
+                    <span style={{fontSize:".72rem",fontWeight:800,color:"#475569",marginRight:2}}>⚡ 1-CLICK ADD LINE:</span>
+                    <button
+                      type="button"
+                      onClick={() => insertPlaceholderAtEnvelope("Stream: {Stream}")}
+                      style={{padding:"3px 8px",borderRadius:5,border:"1.5px solid #93C5FD",background:"#EFF6FF",fontSize:".72rem",fontWeight:800,color:"#1D4ED8",cursor:"pointer"}}
+                      title="Add Stream line to envelope"
+                    >
+                      + Stream: &#123;Stream&#125;
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => insertPlaceholderAtEnvelope("Alt Mobile: {Alternate Mobile Number}")}
+                      style={{padding:"3px 8px",borderRadius:5,border:"1.5px solid #93C5FD",background:"#EFF6FF",fontSize:".72rem",fontWeight:800,color:"#1D4ED8",cursor:"pointer"}}
+                      title="Add Alternate Mobile Number line to envelope"
+                    >
+                      + Alt Mobile: &#123;Alternate Mobile Number&#125;
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => insertPlaceholderAtEnvelope("Designation: {Designation}")}
+                      style={{padding:"3px 8px",borderRadius:5,border:"1.5px solid #86EFAC",background:"#F0FDF4",fontSize:".72rem",fontWeight:800,color:"#15803D",cursor:"pointer"}}
+                      title="Add Designation line to envelope"
+                    >
+                      + Designation: &#123;Designation&#125;
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => insertPlaceholderAtEnvelope("Group: {Group}")}
+                      style={{padding:"3px 8px",borderRadius:5,border:"1.5px solid #86EFAC",background:"#F0FDF4",fontSize:".72rem",fontWeight:800,color:"#15803D",cursor:"pointer"}}
+                      title="Add Group line to envelope"
+                    >
+                      + Group: &#123;Group&#125;
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => insertPlaceholderAtEnvelope("Email: {Email Address}")}
+                      style={{padding:"3px 8px",borderRadius:5,border:"1px solid #CBD5E1",background:"white",fontSize:".72rem",fontWeight:700,color:"#334155",cursor:"pointer"}}
+                      title="Add Email line to envelope"
+                    >
+                      + Email: &#123;Email Address&#125;
+                    </button>
+                  </div>
+                  <div style={{fontSize:".7rem",color:"#15803D",fontWeight:700,display:"flex",alignItems:"center",gap:4}}>
+                    <span>💡</span> Click any variable on right to insert, or type directly in box!
+                  </div>
+                </div>
+
+                {/* Two Column / Section: Sender Box & Margins */}
+                <div style={{display:"flex",gap:12,flexWrap:"wrap"}}>
+                  {/* Sender (FROM) Address Section */}
+                  <div style={{flex:1,minWidth:260,background:"#FAFDF7",border:"1px solid #BBF7D0",borderRadius:8,padding:"10px 12px",display:"flex",flexDirection:"column",gap:6}}>
+                    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+                      <label style={{display:"flex",alignItems:"center",gap:6,fontSize:".74rem",fontWeight:800,color:"#14532D",cursor:"pointer"}}>
+                        <input
+                          type="checkbox"
+                          checked={activeEnv.showSender !== false}
+                          onChange={e => handleUpdateActiveEnv("showSender", e.target.checked)}
+                          style={{accentColor:"#15803D",cursor:"pointer"}}
+                        />
+                        <span>PRINT SENDER (FROM) ADDRESS</span>
+                      </label>
+                      <span style={{fontSize:".64rem",color:"#166534",fontStyle:"italic"}}>Top-Left Corner</span>
+                    </div>
+
+                    {activeEnv.showSender !== false && (
+                      <textarea
+                        ref={envelopeSenderRef}
+                        onFocus={() => setActiveEnvelopeFocus("sender")}
+                        value={activeEnv.senderText || ""}
+                        onChange={e => handleUpdateActiveEnv("senderText", e.target.value)}
+                        onDragOver={e => e.preventDefault()}
+                        onDrop={e => handleDropOnEnvelope(e, "senderText")}
+                        placeholder="e.g. BOOK-POST\nFROM:\nMUMBAI MEGHWAL PANCHAYAT\n..."
+                        rows={4}
+                        style={{
+                          width:"100%",
+                          padding:"8px 10px",
+                          borderRadius:6,
+                          border:"1px solid #CBD5E1",
+                          fontSize:".76rem",
+                          fontFamily:"Consolas, Monaco, monospace",
+                          boxSizing:"border-box",
+                          background:"white",
+                          color:"#0F172A",
+                          resize:"vertical"
+                        }}
+                      />
+                    )}
+                  </div>
+
+                  {/* Position / Margins Control */}
+                  <div style={{width:250,background:"#F8FAFC",border:"1px solid #E2E8F0",borderRadius:8,padding:"10px 12px",display:"flex",flexDirection:"column",gap:8}}>
+                    <span style={{fontSize:".74rem",fontWeight:800,color:"#334155",textTransform:"uppercase"}}>
+                      📐 Margins & Address Wrap
+                    </span>
+
+                    <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:8}}>
+                      <label style={{fontSize:".72rem",fontWeight:700,color:"#475569"}}>Left Margin:</label>
+                      <div style={{display:"flex",alignItems:"center",gap:4}}>
+                        <input
+                          type="range"
+                          min="20"
+                          max="120"
+                          step="5"
+                          value={activeEnv.toLeftMargin || 75}
+                          onChange={e => handleUpdateActiveEnv("toLeftMargin", Number(e.target.value))}
+                          style={{width:80,accentColor:"#15803D"}}
+                        />
+                        <span style={{fontSize:".75rem",fontWeight:800,color:"#0F172A",minWidth:36}}>{activeEnv.toLeftMargin || 75}mm</span>
+                      </div>
+                    </div>
+
+                    <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:8}}>
+                      <label style={{fontSize:".72rem",fontWeight:700,color:"#475569"}}>Top Margin:</label>
+                      <div style={{display:"flex",alignItems:"center",gap:4}}>
+                        <input
+                          type="range"
+                          min="15"
+                          max="60"
+                          step="5"
+                          value={activeEnv.toTopMargin || 35}
+                          onChange={e => handleUpdateActiveEnv("toTopMargin", Number(e.target.value))}
+                          style={{width:80,accentColor:"#15803D"}}
+                        />
+                        <span style={{fontSize:".75rem",fontWeight:800,color:"#0F172A",minWidth:36}}>{activeEnv.toTopMargin || 35}mm</span>
+                      </div>
+                    </div>
+
+                    <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:6,paddingTop:4,borderTop:"1px dashed #E2E8F0"}}>
+                      <label style={{fontSize:".72rem",fontWeight:800,color:"#15803D"}} title="Split long address lines cleanly at commas">Address Wrap:</label>
+                      <select
+                        value={activeEnv.addressWrapMode || "smart"}
+                        onChange={e => handleUpdateActiveEnv("addressWrapMode", e.target.value)}
+                        style={{padding:"2px 5px",borderRadius:4,border:"1px solid #CBD5E1",fontSize:".72rem",fontWeight:700,background:"white",maxWidth:135}}
+                      >
+                        <option value="smart">Smart Comma Break</option>
+                        <option value="every">Break Every Comma</option>
+                        <option value="none">Single Line Wrap</option>
+                      </select>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Recipient (TO) Textarea Editor */}
+                <div style={{display:"flex",flexDirection:"column",gap:4}}>
+                  <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+                    <label style={{fontSize:".74rem",fontWeight:800,color:"#15803D",textTransform:"uppercase"}}>
+                      📬 RECIPIENT (TO) ADDRESS FORMAT (Supports all dynamic variables)
+                    </label>
+                    <span style={{fontSize:".68rem",color:"#64748B"}}>
+                      Lines wrap automatically if address is long
+                    </span>
+                  </div>
+                  <textarea
+                    ref={envelopeRecipientRef}
+                    onFocus={() => setActiveEnvelopeFocus("recipient")}
+                    value={activeEnv.recipientText || ""}
+                    onChange={e => handleUpdateActiveEnv("recipientText", e.target.value)}
+                    onDragOver={e => e.preventDefault()}
+                    onDrop={e => handleDropOnEnvelope(e, "recipientText")}
+                    placeholder="TO,\n{Full Name}\n{Address}\nMobile: {Mobile Number}\nVibhag: {Vibhag}"
+                    rows={5}
+                    style={{
+                      width:"100%",
+                      padding:"10px 14px",
+                      borderRadius:8,
+                      border:"1.5px solid #10B981",
+                      fontSize:".85rem",
+                      lineHeight:1.5,
+                      fontFamily:"Consolas, Monaco, monospace",
+                      boxSizing:"border-box",
+                      background:"#FAFDF7",
+                      color:"#0F172A",
+                      resize:"vertical"
+                    }}
+                  />
+                </div>
+
+                {/* Real-time Visual Envelope Preview Card */}
+                <div style={{display:"flex",flexDirection:"column",gap:6,marginTop:4}}>
+                  <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+                    <span style={{fontSize:".74rem",fontWeight:800,color:"#334155",display:"flex",alignItems:"center",gap:6}}>
+                      <span>👁️</span> LIVE ENVELOPE PRINT PREVIEW
+                    </span>
+                    <span style={{fontSize:".65rem",background:"#DCFCE7",color:"#15803D",padding:"2px 8px",borderRadius:10,fontWeight:800,border:"1px solid #86EFAC"}}>
+                      Realistic First Registrant Preview
+                    </span>
+                  </div>
+
+                  {/* Envelope Preview Box */}
+                  <div style={{
+                    width:"100%",
+                    maxWidth: 580,
+                    aspectRatio: (activeEnv.size === 'c5' ? '229 / 162' : activeEnv.size === 'c6' ? '162 / 114' : '220 / 110'),
+                    background: "#FFFDF6",
+                    border: "2px solid #CBD5E1",
+                    borderRadius: 8,
+                    boxShadow: "0 6px 18px rgba(0,0,0,0.08)",
+                    position: "relative",
+                    overflow: "hidden",
+                    padding: 12,
+                    boxSizing: "border-box",
+                    fontFamily: "Arial, sans-serif"
+                  }}>
+                    {/* Event / Corner Label Live Preview */}
+                    {activeEnv.showCornerLabel !== false && Boolean(activeEnv.cornerLabelText) && (() => {
+                      const labelText = formatEnvelopeTextForDisplay(activeEnv.cornerLabelText, sampleRegForPreview, C, event);
+                      const pos = activeEnv.cornerLabelPos || "top-right-cross";
+                      const defaultRot = (pos === "top-right-cross" ? 45 : pos === "top-left-cross" ? -45 : 0);
+                      const rot = (typeof activeEnv.cornerLabelRotation === "number") ? activeEnv.cornerLabelRotation : defaultRot;
+                      const col = activeEnv.cornerLabelColor || "#991B1B";
+                      const style = activeEnv.cornerLabelStyle || (pos.includes("cross") ? "ribbon" : "badge");
+                      const fSize = Number(activeEnv.cornerLabelFontSize) || 9.5;
+
+                      const isTopLeftCross = (pos === "top-left-cross" || (pos.includes("top-left") && (rot === -45 || rot === 45)));
+                      const isTopRightCross = (pos === "top-right-cross" || (pos.includes("top-right") && (rot === 45 || rot === -45)));
+
+                      if (isTopLeftCross) {
+                        return (
+                          <div style={{
+                            position: "absolute",
+                            top: 20,
+                            left: -40,
+                            transform: "rotate(-45deg)",
+                            width: 170,
+                            background: col,
+                            color: "white",
+                            textAlign: "center",
+                            fontWeight: 900,
+                            fontSize: `${Math.max(7, Math.min(fSize, 9.5))}px`,
+                            letterSpacing: "0.5px",
+                            padding: "4px 0",
+                            boxShadow: "0 2px 8px rgba(0,0,0,0.25)",
+                            textTransform: "uppercase",
+                            pointerEvents: "none",
+                            zIndex: 10
+                          }}>
+                            {labelText}
+                          </div>
+                        );
+                      }
+
+                      if (isTopRightCross) {
+                        return (
+                          <div style={{
+                            position: "absolute",
+                            top: 20,
+                            right: -40,
+                            transform: "rotate(45deg)",
+                            width: 170,
+                            background: col,
+                            color: "white",
+                            textAlign: "center",
+                            fontWeight: 900,
+                            fontSize: `${Math.max(7, Math.min(fSize, 9.5))}px`,
+                            letterSpacing: "0.5px",
+                            padding: "4px 0",
+                            boxShadow: "0 2px 8px rgba(0,0,0,0.25)",
+                            textTransform: "uppercase",
+                            pointerEvents: "none",
+                            zIndex: 10
+                          }}>
+                            {labelText}
+                          </div>
+                        );
+                      }
+
+                      const isRight = pos.includes("right");
+                      const isBottom = (pos === "bottom-left");
+
+                      return (
+                        <div style={{
+                          position: "absolute",
+                          top: isBottom ? "auto" : 10,
+                          bottom: isBottom ? 10 : "auto",
+                          left: isRight ? "auto" : 12,
+                          right: isRight ? 12 : "auto",
+                          transform: `rotate(${rot}deg)`,
+                          transformOrigin: "center center",
+                          background: (style === "filled" || style === "ribbon") ? col : style === "clean" ? "transparent" : "#FEF2F2",
+                          color: (style === "filled" || style === "ribbon") ? "white" : col,
+                          border: style === "clean" ? "none" : `1.5px solid ${col}`,
+                          padding: style === "clean" ? "0" : "3px 10px",
+                          borderRadius: 6,
+                          fontWeight: 900,
+                          fontSize: `${fSize}px`,
+                          letterSpacing: "0.5px",
+                          textTransform: "uppercase",
+                          boxShadow: (style === "filled" || style === "ribbon") ? "0 2px 6px rgba(0,0,0,0.18)" : "none",
+                          pointerEvents: "none",
+                          zIndex: 10,
+                          whiteSpace: "nowrap"
+                        }}>
+                          {labelText}
+                        </div>
+                      );
+                    })()}
+
+                    {/* Postal stamp marker (hidden if top-right badge is active to prevent collision) */}
+                    {(!activeEnv.showCornerLabel || !activeEnv.cornerLabelText || (!activeEnv.cornerLabelPos?.includes("top-right"))) && (
+                      <div style={{
+                        position:"absolute",
+                        top: 10,
+                        right: 14,
+                        border: "1.5px dashed #94A3B8",
+                        borderRadius: 4,
+                        padding: "4px 8px",
+                        fontSize: ".58rem",
+                        fontWeight: 800,
+                        color: "#64748B",
+                        textTransform: "uppercase",
+                        letterSpacing: 0.5,
+                        pointerEvents: "none"
+                      }}>
+                        POSTAGE PAID
+                      </div>
+                    )}
+
+                    {/* Sender in top left */}
+                    {activeEnv.showSender !== false && activeEnv.senderText && (
+                      <div style={{
+                        position:"absolute",
+                        top: `${(Number(activeEnv.fromTopMargin || 12) / (activeEnv.size === 'c5' ? 162 : activeEnv.size === 'c6' ? 114 : 110)) * 100}%`,
+                        left: `${(Number(activeEnv.fromLeftMargin || 12) / (activeEnv.size === 'c5' ? 229 : activeEnv.size === 'c6' ? 162 : 220)) * 100}%`,
+                        maxWidth: "40%",
+                        fontSize: ".6rem",
+                        lineHeight: 1.3,
+                        color: "#475569",
+                        whiteSpace: "pre-wrap",
+                        fontWeight: 600,
+                        pointerEvents: "none"
+                      }}>
+                        {previewSenderFormatted}
+                      </div>
+                    )}
+
+                    {/* Recipient in middle/right */}
+                    <div style={{
+                      position:"absolute",
+                      top: `${(Number(activeEnv.toTopMargin || 35) / (activeEnv.size === 'c5' ? 162 : activeEnv.size === 'c6' ? 114 : 110)) * 100}%`,
+                      left: `${(Number(activeEnv.toLeftMargin || 75) / (activeEnv.size === 'c5' ? 229 : activeEnv.size === 'c6' ? 162 : 220)) * 100}%`,
+                      right: 16,
+                      fontSize: `${Math.max(10, Math.round((activeEnv.fontSize || 11) * 0.95))}px`,
+                      lineHeight: 1.4,
+                      color: "#0F172A",
+                      whiteSpace: "pre-wrap",
+                      pointerEvents: "none"
+                    }}>
+                      {previewRecipientFormatted}
+                    </div>
+                  </div>
+                </div>
+
+              </div>
+            )
+          ) : studioTab === "whatsapp" ? (
             activeTpl && (
               <div style={{flex:1,padding:"16px 20px",display:"flex",flexDirection:"column",gap:10,overflowY:"auto",background:"white"}}>
                 
@@ -25895,7 +27356,7 @@ function WorkspaceWhatsAppTemplateModal({ event, C, setC, auth, onClose, initial
                             alignItems: isPivotBadge ? "stretch" : ((pos.isStatic || key.includes("Static_Text")) ? "stretch" : "center"),
                             gap: ((pos.isStatic || key.includes("Static_Text")) ? 0 : 5),
                             boxShadow:"0 3px 10px rgba(0,0,0,0.35)",
-                            border: isBeingDragged ? "2px solid #93C5FD" : isPivotBadge ? "2px solid #6EE7B7" : ((pos.isStatic || key.includes("Static_Text")) ? "1.5px solid #CBD5E1" : "1.5px solid rgba(255,255,255,0.8)"),
+                            border: isBeingDragged ? "2px solid #93C5FD" : (activeStaticTextKey === key) ? "2.5px solid #2563EB" : isPivotBadge ? "2px solid #6EE7B7" : ((pos.isStatic || key.includes("Static_Text")) ? "1.5px solid #CBD5E1" : "1.5px solid rgba(255,255,255,0.8)"),
                             zIndex: isConnectOpen ? 120 : (isBeingDragged ? 100 : (pos.isStatic || key.includes("Static_Text") ? 20 : 10)),
                             touchAction:"none",
                             maxWidth: isPivotBadge ? (340 * canvasScale) : undefined,
@@ -25934,13 +27395,59 @@ function WorkspaceWhatsAppTemplateModal({ event, C, setC, auth, onClose, initial
                           )}
                           {/* Static Text Header/Drag Area with Formatting Toolbar */}
                           {(pos.isStatic || key.includes("Static_Text")) && (
-                            <div style={{display: "flex", justifyContent: "space-between", alignItems: "center", background: "#F1F5F9", padding: "4px 8px", borderBottom: "1px solid #E2E8F0"}} onPointerDown={(e) => handlePointerDownBadge(e, key)}>
-                              <span style={{fontSize: ".65rem", color: "#64748B", display: "flex", alignItems: "center", gap: 4, cursor: "grab"}}>
-                                <span>⠿</span> Drag
-                              </span>
+                            <div style={{display: "flex", justifyContent: "space-between", alignItems: "center", background: activeStaticTextKey === key ? "#EFF6FF" : "#F1F5F9", padding: "4px 8px", borderBottom: `1px solid ${activeStaticTextKey === key ? '#BFDBFE' : '#E2E8F0'}`}} onPointerDown={(e) => handlePointerDownBadge(e, key)}>
+                              <div style={{display: "flex", alignItems: "center", gap: 6}}>
+                                <span style={{fontSize: ".65rem", color: "#64748B", display: "flex", alignItems: "center", gap: 4, cursor: "grab"}}>
+                                  <span>⠿</span> Drag
+                                </span>
+                                {activeStaticTextKey === key && (
+                                  <span style={{fontSize: ".62rem", background: "#3B82F6", color: "white", padding: "1px 5px", borderRadius: 10, fontWeight: 700}}>
+                                    ✏️ Active
+                                  </span>
+                                )}
+                              </div>
                               <div style={{display: "flex", gap: 4, alignItems: "center"}} onPointerDown={e => e.stopPropagation()}>
+                                {/* Direct Insert Variable Dropdown */}
                                 <select 
-                                  value={pos.align || "center"} 
+                                  onChange={(e) => {
+                                    if (!e.target.value) return;
+                                    setActiveStaticTextKey(key);
+                                    insertVariableIntoStaticText(key, e.target.value);
+                                    e.target.value = "";
+                                  }}
+                                  style={{fontSize: ".65rem", fontWeight: 700, padding: "1px 4px", borderRadius: 3, border: "1px solid #3B82F6", background: "#EFF6FF", color: "#1D4ED8", cursor: "pointer"}}
+                                  title="Insert variable inside this text block at cursor position"
+                                >
+                                  <option value="">➕ Variable</option>
+                                  <optgroup label="🎓 Common Variables">
+                                    <option value="{Full Name}">{'{Full Name}'}</option>
+                                    <option value="{Student Name}">{'{Student Name}'}</option>
+                                    <option value="{Vibhag}">{'{Vibhag}'}</option>
+                                    <option value="{Stream}">{'{Stream / Class}'}</option>
+                                    <option value="{Mobile Number}">{'{Mobile Number}'}</option>
+                                    <option value="{Native Village}">{'{Native Village}'}</option>
+                                    <option value="{Address}">{'{Residential Address}'}</option>
+                                    <option value="{Transaction ID}">{'{Transaction ID}'}</option>
+                                    <option value="{Seat No}">{'{Seat No}'}</option>
+                                    <option value="{Token No}">{'{Token No}'}</option>
+                                    <option value="{Date}">{'{Date}'}</option>
+                                    <option value="{Total Count}">{'{Total Count}'}</option>
+                                  </optgroup>
+                                  {subWsFields.length > 0 && (
+                                    <optgroup label="🎯 Sub-Workspace Fields">
+                                      {subWsFields.map(f => (
+                                        <option key={f} value={`{${f}}`}>{`{${f}}`}</option>
+                                      ))}
+                                    </optgroup>
+                                  )}
+                                  <optgroup label="🏛️ Event Details">
+                                    <option value="{EVENT_NAME}">{'{Event Name}'}</option>
+                                    <option value="{EVENT_DATE}">{'{Event Date}'}</option>
+                                    <option value="{EVENT_VENUE}">{'{Event Venue}'}</option>
+                                  </optgroup>
+                                </select>
+                                <select 
+                                  value={pos.align || "left"} 
                                   onChange={(e) => handleUpdateActivePdf("map", { ...activePdf.map, [key]: { ...pos, align: e.target.value } })}
                                   style={{fontSize: ".65rem", padding: "1px 2px", borderRadius: 3, border: "1px solid #CBD5E1", background: "white"}}
                                   title="Text Alignment"
@@ -25994,9 +27501,20 @@ function WorkspaceWhatsAppTemplateModal({ event, C, setC, auth, onClose, initial
                             
                             {(pos.isStatic || key.includes("Static_Text")) ? (
                               <textarea
+                                ref={el => { if (el) staticTextRefs.current[key] = el; }}
                                 value={pos.text || ""}
+                                onFocus={() => setActiveStaticTextKey(key)}
+                                onClick={() => setActiveStaticTextKey(key)}
                                 onChange={(e) => {
                                   handleUpdateActivePdf("map", { ...activePdf.map, [key]: { ...pos, text: e.target.value } });
+                                }}
+                                onDragOver={(e) => e.preventDefault()}
+                                onDrop={(e) => {
+                                  e.preventDefault();
+                                  const dragged = e.dataTransfer.getData("text/plain");
+                                  if (dragged) {
+                                    insertVariableIntoStaticText(key, dragged);
+                                  }
                                 }}
                                 onPointerDown={e => e.stopPropagation()} 
                                 style={{
@@ -26005,10 +27523,10 @@ function WorkspaceWhatsAppTemplateModal({ event, C, setC, auth, onClose, initial
                                    border: "none", outline: "none",
                                    padding: "8px",
                                    fontFamily: "inherit", fontSize: pos.fontSize ? `${pos.fontSize}px` : "inherit",
-                                   textAlign: pos.align || "center",
+                                   textAlign: pos.align || "left",
                                    lineHeight: 1.4
                                 }}
-                                placeholder="Type your custom paragraph here..."
+                                placeholder="Type your custom paragraph here... Click any variable on right or use ➕ Variable to insert!"
                               />
                             ) : (
                               <span style={{display:"flex",alignItems:"center",gap:4}}>
@@ -26235,7 +27753,7 @@ function WorkspaceWhatsAppTemplateModal({ event, C, setC, auth, onClose, initial
                       onClick={() => {
                         const ts = Date.now();
                         const key = `{Static_Text_${ts}}`;
-                        handleUpdateActivePdf("map", { ...activePdf.map, [key]: { x: 50, y: 50, isStatic: true, text: "Enter your custom paragraph here...", w: 30, h: 10 } });
+                        handleUpdateActivePdf("map", { ...activePdf.map, [key]: { x: 50, y: 48, isStatic: true, text: "Enter your custom paragraph here...", w: 84, h: 40 } });
                       }}
                       style={{background:"#10B981",border:"none",color:"white",cursor:"pointer",fontWeight:800,fontSize:".72rem",padding:"4px 10px",borderRadius:6,boxShadow:"0 2px 4px rgba(16, 185, 129, 0.3)"}}
                       title="Add a custom text block to type a paragraph onto the template"
@@ -26299,8 +27817,8 @@ function WorkspaceWhatsAppTemplateModal({ event, C, setC, auth, onClose, initial
                 <span style={{fontSize:".76rem",fontWeight:800,color:"#1E293B",display:"flex",alignItems:"center",gap:6}}>
                   <span>🏷️</span> DYNAMIC VARIABLES PALETTE
                 </span>
-                <span style={{fontSize:".68rem",background: studioTab === "whatsapp" ? "#EFF6FF" : "#F0FDF4",color: studioTab === "whatsapp" ? "#2563EB" : "#15803D",padding:"1px 6px",borderRadius:4,fontWeight:800}}>
-                  {studioTab === "whatsapp" ? "Click to Type" : "Drag to Canvas"}
+                <span style={{fontSize:".68rem",background: (studioTab === "whatsapp" || studioTab === "envelope") ? "#EFF6FF" : "#F0FDF4",color: (studioTab === "whatsapp" || studioTab === "envelope") ? "#2563EB" : "#15803D",padding:"1px 6px",borderRadius:4,fontWeight:800}}>
+                  {(studioTab === "whatsapp" || studioTab === "envelope") ? "Click to Type" : "Drag to Canvas"}
                 </span>
               </div>
               <input
@@ -26428,7 +27946,7 @@ function WorkspaceWhatsAppTemplateModal({ event, C, setC, auth, onClose, initial
         {/* ── UNIFIED FOOTER BAR ── */}
         <div style={{padding:"12px 20px",borderTop:"1px solid #E2E8F0",display:"flex",justifyContent:"space-between",alignItems:"center",background:"white"}}>
           <div style={{fontSize:".76rem",color:"#64748B"}}>
-            Editing: <strong>{studioTab === "whatsapp" ? (activeTpl?.name || "Template") : (activePdf?.name || "Pass")}</strong>
+            Editing: <strong>{studioTab === "whatsapp" ? (activeTpl?.name || "Template") : studioTab === "envelope" ? (activeEnv?.name || "Envelope") : (activePdf?.name || "Pass")}</strong>
           </div>
 
           <div style={{display:"flex",gap:10}}>
@@ -29398,16 +30916,33 @@ function DashboardProfile({ globalProfile, globalAuthToken, mob }) {
   );
 }
 
-function BulkSelectionModal({ isOpen, onClose, title, items = [], actionLabel = "Download", onConfirm, isProcessing, progress = 0 }) {
+function BulkSelectionModal({ isOpen, onClose, title, items = [], actionLabel = "Download", onConfirm, isProcessing, progress = 0, isEnvelopeMode = false, activeDocId = 'invite' }) {
   const [selectedIds, setSelectedIds] = useState([]);
   const [filterQuery, setFilterQuery] = useState("");
 
+  const isItemEnvPrinted = (r) => {
+    if (!r) return false;
+    if (r.envelopePrintedByDoc && r.envelopePrintedByDoc[activeDocId]) {
+      return Boolean(r.envelopePrintedByDoc[activeDocId].printed !== false);
+    }
+    return Boolean(r.envelopePrinted);
+  };
+
   useEffect(() => {
     if (isOpen && items.length > 0) {
-      setSelectedIds(items.map(r => r.id));
+      if (isEnvelopeMode) {
+        const pendingItems = items.filter(r => !isItemEnvPrinted(r));
+        if (pendingItems.length > 0 && pendingItems.length < items.length) {
+          setSelectedIds(pendingItems.map(r => r.id || r['Transaction ID']));
+        } else {
+          setSelectedIds(items.map(r => r.id || r['Transaction ID']));
+        }
+      } else {
+        setSelectedIds(items.map(r => r.id || r['Transaction ID']));
+      }
       setFilterQuery("");
     }
-  }, [isOpen, items]);
+  }, [isOpen, items, isEnvelopeMode]);
 
   if (!isOpen) return null;
 
@@ -29467,6 +31002,45 @@ function BulkSelectionModal({ isOpen, onClose, title, items = [], actionLabel = 
             />
             <span>Select / Deselect All ({selectedIds.length} of {items.length} selected)</span>
           </label>
+          {isEnvelopeMode && (
+            <div style={{display:"flex",alignItems:"center",gap:6,flexWrap:"wrap",width:"100%",marginTop:4,paddingTop:6,borderTop:"1px dashed #CBD5E1"}}>
+              <span style={{fontSize:".74rem",fontWeight:800,color:"#334155"}}>Quick Select:</span>
+              <button
+                type="button"
+                onClick={() => setSelectedIds(items.map(r => r.id || r['Transaction ID']))}
+                style={{padding:"3px 8px",borderRadius:5,border:"1px solid #CBD5E1",background:"white",fontSize:".72rem",fontWeight:700,cursor:"pointer"}}
+              >
+                All ({items.length})
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  const pending = items.filter(r => !isItemEnvPrinted(r));
+                  setSelectedIds(pending.map(r => r.id || r['Transaction ID']));
+                }}
+                style={{padding:"3px 8px",borderRadius:5,border:"1.5px solid #FCD34D",background:"#FFFBEB",color:"#B45309",fontSize:".72rem",fontWeight:800,cursor:"pointer"}}
+              >
+                ⏳ Only Pending ({items.filter(r => !isItemEnvPrinted(r)).length})
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  const printed = items.filter(r => isItemEnvPrinted(r));
+                  setSelectedIds(printed.map(r => r.id || r['Transaction ID']));
+                }}
+                style={{padding:"3px 8px",borderRadius:5,border:"1.5px solid #86EFAC",background:"#F0FDF4",color:"#15803D",fontSize:".72rem",fontWeight:800,cursor:"pointer"}}
+              >
+                ✓ Only Printed ({items.filter(r => isItemEnvPrinted(r)).length})
+              </button>
+              <button
+                type="button"
+                onClick={() => setSelectedIds([])}
+                style={{padding:"3px 8px",borderRadius:5,border:"1px solid #CBD5E1",background:"white",fontSize:".72rem",color:"#64748B",fontWeight:600,cursor:"pointer"}}
+              >
+                Deselect All
+              </button>
+            </div>
+          )}
 
           <input 
             type="text" 
@@ -29509,8 +31083,24 @@ function BulkSelectionModal({ isOpen, onClose, title, items = [], actionLabel = 
                     style={{width:18,height:18,cursor:"pointer",flexShrink:0}} 
                   />
                   <div style={{flex:1,minWidth:0}}>
-                    <div style={{fontWeight:600,fontSize:".85rem",color:"var(--dt)",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>
-                      {name}
+                    <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:8}}>
+                      <div style={{fontWeight:600,fontSize:".85rem",color:"var(--dt)",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>
+                        {name}
+                      </div>
+                      {isEnvelopeMode && (
+                        <span style={{
+                          fontSize: ".68rem",
+                          fontWeight: 800,
+                          padding: "2px 6px",
+                          borderRadius: 4,
+                          background: isItemEnvPrinted(r) ? "#DCFCE7" : "#FEF3C7",
+                          color: isItemEnvPrinted(r) ? "#166534" : "#B45309",
+                          border: isItemEnvPrinted(r) ? "1px solid #86EFAC" : "1px solid #FDE68A",
+                          flexShrink: 0
+                        }}>
+                          {isItemEnvPrinted(r) ? "✓ Printed" : "⏳ Pending"}
+                        </span>
+                      )}
                     </div>
                     <div style={{fontSize:".75rem",color:"var(--mu)",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>
                       {subDetail} {serial ? " • Serial: " + serial : ""}
@@ -31531,7 +33121,7 @@ const getContactGroups = (contact) => {
   if (!contact) return ["General Committee"];
   if (Array.isArray(contact.groups) && contact.groups.length > 0) return contact.groups.map(s => String(s).trim()).filter(Boolean);
   if (Array.isArray(contact.Groups) && contact.Groups.length > 0) return contact.Groups.map(s => String(s).trim()).filter(Boolean);
-  const raw = contact.Group || contact.group || contact.Category || contact.category || contact.Team || contact.team || contact.Vibhag || "";
+  const raw = contact['Vibhag_Name'] || contact['Vibhag Name'] || contact.Group || contact.group || contact.Category || contact.category || contact.Team || contact.team || contact.Vibhag || contact.vibhag || "";
   if (!raw || typeof raw !== 'string') return ["General Committee"];
   const parts = raw.split(/[,/|;]+/).map(s => s.trim()).filter(Boolean);
   return parts.length > 0 ? parts : ["General Committee"];
@@ -31738,6 +33328,59 @@ function AdminInviteLetters({ mob, C, setC, auth }) {
   const [historyModalReg, setHistoryModalReg] = useState(null);
   const [inviteOpenPillFilter, setInviteOpenPillFilter] = useState(null);
   const [inviteReleasePillFilter, setInviteReleasePillFilter] = useState(null);
+  const [envelopePillFilter, setEnvelopePillFilter] = useState(null);
+
+  const isRecordEnvelopePrinted = (record, docId = (currentDocTpl?.id || "invite")) => {
+    if (!record) return false;
+    if (record.envelopePrintedByDoc && record.envelopePrintedByDoc[docId]) {
+      return Boolean(record.envelopePrintedByDoc[docId]?.printed !== false);
+    }
+    return Boolean(record.envelopePrinted);
+  };
+
+  const toggleEnvelopePrinted = async (r, e) => {
+    if (e && e.stopPropagation) e.stopPropagation();
+    const activeDocId = currentDocTpl?.id || "invite";
+    const currentStatus = isRecordEnvelopePrinted(r, activeDocId);
+    const newStatus = !currentStatus;
+    const now = new Date().toISOString();
+    
+    const existingByDoc = r.envelopePrintedByDoc || {};
+    const updatedByDoc = {
+      ...existingByDoc,
+      [activeDocId]: {
+        printed: newStatus,
+        printedAt: newStatus ? now : null
+      }
+    };
+
+    const rowId = r.id || r['Transaction ID'] || r.transactionId;
+    setRegs(prev => prev.map(x => {
+      const xId = x.id || x['Transaction ID'] || x.transactionId;
+      return xId === rowId ? {
+        ...x,
+        envelopePrinted: newStatus,
+        envelopePrintedAt: newStatus ? now : null,
+        envelopePrintedByDoc: updatedByDoc
+      } : x;
+    }));
+
+    if (r.id) {
+      try {
+        const cleanData = {
+          ...r,
+          envelopePrinted: newStatus,
+          envelopePrintedAt: newStatus ? now : null,
+          envelopePrintedByDoc: updatedByDoc
+        };
+        delete cleanData.id;
+        delete cleanData._submittedAt;
+        await fbUpdateRegistration(r.id, cleanData, auth?.idToken);
+      } catch (err) {
+        console.error("Failed to persist envelope status:", err);
+      }
+    }
+  };
 
   // Comprehensive Directory of all contacts, guests, and committee members
   const globalGuests = useMemo(() => {
@@ -31814,7 +33457,7 @@ function AdminInviteLetters({ mob, C, setC, auth }) {
             'Full Name': r['Full Name'] || r['Participant Name'] || r.name || 'Invitee',
             Designation: r.Designation || r.designation || r['Designation / Role'] || "",
             Mobile: r['Mobile Number'] || r.Mobile || r.mobile || r.phone || "",
-            Vibhag: r['Vibhag New'] || r.Vibhag || r.vibhag || "",
+            Vibhag: r['Vibhag_Name'] || r['Vibhag Name'] || r['Vibhag New'] || r.Vibhag || r.vibhag || "",
             groups: rGroups.length > 0 ? rGroups : (r.group ? [r.group] : ["General Committee"])
           });
         }
@@ -31841,7 +33484,7 @@ function AdminInviteLetters({ mob, C, setC, auth }) {
     if (Array.isArray(contact.groups) && contact.groups.length > 0) ownGroups = contact.groups.map(s => String(s).trim()).filter(Boolean);
     else if (Array.isArray(contact.Groups) && contact.Groups.length > 0) ownGroups = contact.Groups.map(s => String(s).trim()).filter(Boolean);
     else {
-      const raw = contact.Group || contact.group || contact.Category || contact.category || contact.Team || contact.team || contact.Vibhag || "";
+      const raw = contact['Vibhag_Name'] || contact['Vibhag Name'] || contact.Group || contact.group || contact.Category || contact.category || contact.Team || contact.team || contact.Vibhag || "";
       if (raw && typeof raw === 'string') {
         ownGroups = raw.split(/[,/|;]+/).map(s => s.trim()).filter(Boolean);
       }
@@ -31961,7 +33604,7 @@ function AdminInviteLetters({ mob, C, setC, auth }) {
 
   const resolveGuestVibhag = (r) => {
     if (!r) return "";
-    const cleanDirect = String(r.vibhag || r['Vibhag'] || r['Vibhag New'] || '').trim();
+    const cleanDirect = String(r['Vibhag_Name'] || r['Vibhag Name'] || r.vibhag || r['Vibhag'] || r['Vibhag New'] || '').trim();
     const isNonGeo = ['cwc member', 'committee', 'trustee', 'general committee', 'unspecified', 'cwc', '-', 'blank'].includes(cleanDirect.toLowerCase());
     if (cleanDirect && !isNonGeo) {
       return cleanDirect;
@@ -31969,7 +33612,7 @@ function AdminInviteLetters({ mob, C, setC, auth }) {
     const globalList = regs.filter(x => x.isGlobalGuest);
     if (r.globalGuestId) {
       const g = globalList.find(x => x.id === r.globalGuestId);
-      const gV = String(g?.vibhag || g?.['Vibhag'] || g?.['Vibhag New'] || '').trim();
+      const gV = String(g?.['Vibhag_Name'] || g?.['Vibhag Name'] || g?.vibhag || g?.['Vibhag'] || g?.['Vibhag New'] || '').trim();
       if (gV && !['cwc member', 'committee', 'trustee', 'general committee', 'unspecified', 'cwc', '-', 'blank'].includes(gV.toLowerCase())) {
         return gV;
       }
@@ -31980,7 +33623,7 @@ function AdminInviteLetters({ mob, C, setC, auth }) {
       return gName && (gName === rName || gName.includes(rName) || rName.includes(gName));
     });
     if (gByName) {
-      const gV = String(gByName.vibhag || gByName['Vibhag'] || gByName['Vibhag New'] || '').trim();
+      const gV = String(gByName['Vibhag_Name'] || gByName['Vibhag Name'] || gByName.vibhag || gByName['Vibhag'] || gByName['Vibhag New'] || '').trim();
       if (gV && !['cwc member', 'committee', 'trustee', 'general committee', 'unspecified', 'cwc', '-', 'blank'].includes(gV.toLowerCase())) {
         return gV;
       }
@@ -32179,6 +33822,12 @@ function AdminInviteLetters({ mob, C, setC, auth }) {
       const st = getDocReleaseStatus(r, activeDocId);
       if (inviteReleasePillFilter === "released" && !st.isReleased) return false;
       if (inviteReleasePillFilter === "pending" && (st.isReleased || st.isHeld)) return false;
+    }
+    if (envelopePillFilter) {
+      const activeDocId = currentDocTpl?.id || 'invite';
+      const isPrinted = isRecordEnvelopePrinted(r, activeDocId);
+      if (envelopePillFilter === "printed" && !isPrinted) return false;
+      if (envelopePillFilter === "pending" && isPrinted) return false;
     }
     if (selectedContactGroup && selectedContactGroup !== "All") {
       const rGroups = getContactGroups(r);
@@ -32551,9 +34200,14 @@ function AdminInviteLetters({ mob, C, setC, auth }) {
         }
         const finalVibhag = matchedVibhag || rawVibhag || "General";
 
-        const rawGroup = row.Group || row.group || row.Groups || row.groups || row["Contact Group"] || row.Category || row.category || row.Team || row.team || "CWC Member";
-        const assignedGroups = getContactGroups({ group: String(rawGroup) });
-        const groupStr = assignedGroups.join(", ");
+        const rawGroup = row.Group || row.group || row.Groups || row.groups || row["Contact Group"] || row.Category || row.category || row.Team || row.team || "";
+        // Build groups array: use explicit group from Excel, or fall back to vibhag name, or "CWC Member"
+        const baseGroups = rawGroup ? getContactGroups({ group: String(rawGroup) }) : [];
+        // Always include the vibhag as a group so contacts appear in the right vibhag tab
+        const vibhagGroup = (finalVibhag && finalVibhag !== "General") ? [finalVibhag] : [];
+        const assignedGroups = Array.from(new Set([...baseGroups, ...vibhagGroup])).filter(Boolean);
+        const finalGroups = assignedGroups.length > 0 ? assignedGroups : ["CWC Member"];
+        const groupStr = finalGroups.join(", ");
 
         const newGlobalGuest = {
           "Transaction ID": "GST-" + Date.now().toString().slice(-6) + "-" + (successCount + 1),
@@ -32570,9 +34224,11 @@ function AdminInviteLetters({ mob, C, setC, auth }) {
           "Category": groupStr,
           "Vibhag": finalVibhag,
           "Vibhag New": finalVibhag,
+          "Vibhag Name": finalVibhag,
+          "Vibhag_Name": finalVibhag,
           vibhag: finalVibhag,
-          groups: assignedGroups,
-          Groups: assignedGroups,
+          groups: finalGroups,
+          Groups: finalGroups,
           isGlobalGuest: true,
           _submittedAt: Date.now() + successCount,
           formId: "global_guest_directory_import"
@@ -32961,6 +34617,8 @@ This cannot be undone.`)) return;
       bgFit: currentDocTpl?.customTpl?.bgFit || (currentDocTpl?.id === 'cert' ? targetEv?.certBgFit : targetEv?.inviteBgFit) || 'letterhead',
       fontSize: currentDocTpl?.customTpl?.fontSize || (currentDocTpl?.id === 'cert' ? targetEv?.certFontSize : targetEv?.inviteFontSize) || 16,
       fontColor: currentDocTpl?.customTpl?.fontColor || (currentDocTpl?.id === 'cert' ? targetEv?.certFontColor : targetEv?.inviteFontColor) || '#000000',
+      marginTop: currentDocTpl?.customTpl?.marginTop ?? currentDocTpl?.marginTop ?? (currentDocTpl?.id === 'cert' ? targetEv?.certMarginTop : targetEv?.inviteMarginTop) ?? targetEv?._marginTop ?? 160,
+      marginBottom: currentDocTpl?.customTpl?.marginBottom ?? currentDocTpl?.marginBottom ?? (currentDocTpl?.id === 'cert' ? targetEv?.certMarginBottom : targetEv?.inviteMarginBottom) ?? targetEv?._marginBottom ?? 15,
       fields: currentDocTpl?.customTpl?.fields || []
     };
 
@@ -32981,43 +34639,142 @@ This cannot be undone.`)) return;
   const executeBulkDownloadEnvelopes = (targetList) => {
     setDownloadingEnvelopes(true);
     try {
-      const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'dl' });
+      const activeDocId = currentDocTpl?.id || "invite";
+      const envTpl = (activeEvent?.envelopeTemplatesByDoc && activeEvent.envelopeTemplatesByDoc[activeDocId])
+        || currentDocTpl?.envelopeTemplate
+        || currentDocTpl?.customTpl?.envelopeTemplate
+        || activeEvent?.envelopeTemplate
+        || (activeEvent?.envelopeTemplates && activeEvent.envelopeTemplates.find(e => e.isDefault))
+        || (activeEvent?.envelopeTemplates && activeEvent.envelopeTemplates[0])
+        || {
+          size: "dl",
+          orientation: "landscape",
+          fontSize: 11,
+          showSender: true,
+          senderText: `BOOK-POST\nFROM:\n${C?.trust?.name || "MUMBAI MEGHWAL PANCHAYAT"}\n(Central Working Committee)\nRegd. No. Ms.491/GB.BSD-PTR No.F-13507 (Mumbai)\nHelpline: {HELPLINE_PHONES}`,
+          recipientText: (targetList.some(r => r.Designation || r.Group))
+            ? "TO,\n{Full Name}\n{Address}\nMobile: {Mobile Number}\nDesignation: {Designation}\nGroup: {Group}"
+            : "TO,\n{Full Name}\n{Address}\nMobile: {Mobile Number}\nVibhag: {Vibhag}",
+          toLeftMargin: 75,
+          toTopMargin: 35,
+          fromLeftMargin: 12,
+          fromTopMargin: 12
+        };
+
+      const doc = new jsPDF({ 
+        orientation: envTpl.orientation || 'landscape', 
+        unit: 'mm', 
+        format: envTpl.size || 'dl' 
+      });
+
       targetList.forEach((r, index) => {
         if (index > 0) doc.addPage();
-        
-        doc.setFont("helvetica", "bold");
-        doc.setFontSize(10);
-        doc.text("TO,", 20, 25);
-        
-        doc.setFontSize(14);
-        const nameVal = r["Full Name"] || r["Name"] || r["Participant Name"] || "Student";
-        doc.text(String(nameVal).toUpperCase(), 25, 33);
-        
-        doc.setFont("helvetica", "normal");
-        doc.setFontSize(11);
-        
-        let addressVal = r["Address"] || r["Residential Address"] || r["Full Address"] || "";
-        const mobileVal = r["Mobile Number"] || r["Mobile"] || r["WhatsApp Number"] || "";
-        
-        const splitAddress = doc.splitTextToSize(addressVal, 160);
-        let currentY = 41;
-        splitAddress.forEach(line => {
-          doc.text(line, 25, currentY);
-          currentY += 6;
-        });
-        
-        if (mobileVal) {
-          doc.setFont("helvetica", "bold");
-          doc.text(`Mobile: ${mobileVal}`, 25, currentY + 4);
-        }
+        renderEnvelopeOnDoc(doc, envTpl, r, C, activeEvent);
       });
       
-      doc.save(`Envelopes_${new Date().getTime()}.pdf`);
+      const subWsTitle = (currentDocTpl?.name || activeEvent?.title || "Workspace").replace(/[^a-zA-Z0-9_-]/g, '_');
+      doc.save(`Envelopes_${subWsTitle}_${new Date().getTime()}.pdf`);
       setBulkSelectMode(null);
+
+      // Mark all target records as envelope-printed for this sub-workspace
+      const now = new Date().toISOString();
+      const targetIds = new Set(targetList.map(x => x.id || x['Transaction ID'] || x.transactionId).filter(Boolean));
+
+      setRegs(prev => prev.map(x => {
+        const key = x.id || x['Transaction ID'] || x.transactionId;
+        if (targetIds.has(key)) {
+          const existingByDoc = x.envelopePrintedByDoc || {};
+          return {
+            ...x,
+            envelopePrinted: true,
+            envelopePrintedAt: now,
+            envelopePrintedByDoc: {
+              ...existingByDoc,
+              [activeDocId]: { printed: true, printedAt: now }
+            }
+          };
+        }
+        return x;
+      }));
+
+      // Background persist to Firebase
+      targetList.forEach(r => {
+        if (r.id) {
+          const existingByDoc = r.envelopePrintedByDoc || {};
+          const updatedByDoc = { ...existingByDoc, [activeDocId]: { printed: true, printedAt: now } };
+          const cleanData = { ...r, envelopePrinted: true, envelopePrintedAt: now, envelopePrintedByDoc: updatedByDoc };
+          delete cleanData.id; delete cleanData._submittedAt;
+          fbUpdateRegistration(r.id, cleanData, auth?.idToken).catch(err => console.error("Persist bulk env error:", err));
+        }
+      });
+
+      alert(`✅ ${targetList.length} Envelope(s) generated for "${currentDocTpl?.name || 'this sub-workspace'}" and marked as printed!`);
     } catch (e) {
+      console.error(e);
       alert("Error generating envelopes: " + e.message);
     }
     setDownloadingEnvelopes(false);
+  };
+
+  const handlePrintSingleEnvelope = (r) => {
+    try {
+      const activeDocId = currentDocTpl?.id || "invite";
+      const envTpl = (activeEvent?.envelopeTemplatesByDoc && activeEvent.envelopeTemplatesByDoc[activeDocId])
+        || currentDocTpl?.envelopeTemplate
+        || currentDocTpl?.customTpl?.envelopeTemplate
+        || activeEvent?.envelopeTemplate
+        || (activeEvent?.envelopeTemplates && activeEvent.envelopeTemplates.find(e => e.isDefault))
+        || (activeEvent?.envelopeTemplates && activeEvent.envelopeTemplates[0])
+        || {
+          size: "dl",
+          orientation: "landscape",
+          fontSize: 11,
+          showSender: true,
+          senderText: `BOOK-POST\nFROM:\n${C?.trust?.name || "MUMBAI MEGHWAL PANCHAYAT"}\n(Central Working Committee)\nRegd. No. Ms.491/GB.BSD-PTR No.F-13507 (Mumbai)\nHelpline: {HELPLINE_PHONES}`,
+          recipientText: (r.Designation || r.Group)
+            ? "TO,\n{Full Name}\n{Address}\nMobile: {Mobile Number}\nDesignation: {Designation}\nGroup: {Group}"
+            : "TO,\n{Full Name}\n{Address}\nMobile: {Mobile Number}\nVibhag: {Vibhag}",
+          toLeftMargin: 75,
+          toTopMargin: 35,
+          fromLeftMargin: 12,
+          fromTopMargin: 12
+        };
+      const doc = new jsPDF({ 
+        orientation: envTpl.orientation || 'landscape', 
+        unit: 'mm', 
+        format: envTpl.size || 'dl' 
+      });
+      renderEnvelopeOnDoc(doc, envTpl, r, C, activeEvent);
+      const safeName = (r["Full Name"] || r["Name"] || "Recipient").replace(/[^a-zA-Z0-9_-]/g, '_');
+      doc.save(`Envelope_${safeName}.pdf`);
+
+      // Automatically mark this record as envelope printed for this sub-workspace
+      const now = new Date().toISOString();
+      const existingByDoc = r.envelopePrintedByDoc || {};
+      const updatedByDoc = {
+        ...existingByDoc,
+        [activeDocId]: { printed: true, printedAt: now }
+      };
+      const rowId = r.id || r['Transaction ID'] || r.transactionId;
+      setRegs(prev => prev.map(x => {
+        const xId = x.id || x['Transaction ID'] || x.transactionId;
+        return xId === rowId ? {
+          ...x,
+          envelopePrinted: true,
+          envelopePrintedAt: now,
+          envelopePrintedByDoc: updatedByDoc
+        } : x;
+      }));
+
+      if (r.id) {
+        const cleanData = { ...r, envelopePrinted: true, envelopePrintedAt: now, envelopePrintedByDoc: updatedByDoc };
+        delete cleanData.id; delete cleanData._submittedAt;
+        fbUpdateRegistration(r.id, cleanData, auth?.idToken).catch(err => console.error("Persist single env error:", err));
+      }
+    } catch(e) {
+      console.error(e);
+      alert("Error printing envelope: " + e.message);
+    }
   };
 
   const handleBulkDownload = () => {
@@ -33051,6 +34808,8 @@ This cannot be undone.`)) return;
         bgFit: currentDocTpl?.customTpl?.bgFit || (currentDocTpl?.id === 'cert' ? targetEv?.certBgFit : targetEv?.inviteBgFit) || 'letterhead',
         fontSize: currentDocTpl?.customTpl?.fontSize || (currentDocTpl?.id === 'cert' ? targetEv?.certFontSize : targetEv?.inviteFontSize) || 16,
         fontColor: currentDocTpl?.customTpl?.fontColor || (currentDocTpl?.id === 'cert' ? targetEv?.certFontColor : targetEv?.inviteFontColor) || '#000000',
+        marginTop: currentDocTpl?.customTpl?.marginTop ?? currentDocTpl?.marginTop ?? (currentDocTpl?.id === 'cert' ? targetEv?.certMarginTop : targetEv?.inviteMarginTop) ?? targetEv?._marginTop ?? 160,
+        marginBottom: currentDocTpl?.customTpl?.marginBottom ?? currentDocTpl?.marginBottom ?? (currentDocTpl?.id === 'cert' ? targetEv?.certMarginBottom : targetEv?.inviteMarginBottom) ?? targetEv?._marginBottom ?? 15,
         fields: currentDocTpl?.customTpl?.fields || []
       };
 
@@ -34096,8 +35855,10 @@ This cannot be undone.`)) return;
           setC={setC}
           auth={auth}
           allRegs={regs || []}
+          subWorkspaceRegs={filteredRegs || []}
+          currentDocTpl={currentDocTpl}
           initialTab={tplModalMode || "whatsapp"}
-          initialPdfTplId={selectedPdfTplId || null}
+          initialPdfTplId={selectedPdfTplId || currentDocTpl?.id || null}
           onClose={() => {
             setShowWorkspaceTplModal(false);
             setTplModalMode("whatsapp");
@@ -34564,6 +36325,32 @@ This cannot be undone.`)) return;
             <button onClick={handleBulkDownloadEnvelopes} disabled={downloadingEnvelopes || downloadingBulk || releasingAll || refreshing} style={{padding:"8px 16px",borderRadius:8,fontSize:".85rem",fontWeight:600,display:"flex",alignItems:"center",gap:6,background:"#2E7D32",color:"white",border:"none",cursor:(downloadingEnvelopes || downloadingBulk || releasingAll || refreshing)?"wait":"pointer",boxShadow:"0 2px 8px rgba(0,0,0,0.1)",whiteSpace:"nowrap"}}>
               {downloadingEnvelopes ? "Generating Envelopes..." : "✉️ Print Envelopes"}
             </button>
+            <button 
+              type="button"
+              onClick={() => {
+                setTplModalMode("envelope");
+                setSelectedPdfTplId(currentDocTpl?.id || "invite");
+                setShowWorkspaceTplModal(true);
+              }} 
+              style={{
+                padding:"8px 14px",
+                borderRadius:8,
+                fontSize:".85rem",
+                fontWeight:700,
+                display:"flex",
+                alignItems:"center",
+                gap:5,
+                background:"#F0FDF4",
+                border:"1.5px solid #86EFAC",
+                color:"#166534",
+                cursor:"pointer",
+                boxShadow:"0 2px 8px rgba(22,101,52,0.12)",
+                whiteSpace:"nowrap"
+              }}
+              title={`Open Envelope Template Editor for ${currentDocTpl?.name || 'this sub-workspace'}`}
+            >
+              <span>✉️</span> Envelope Editor
+            </button>
           </div>
         </div>
 
@@ -34583,7 +36370,9 @@ This cannot be undone.`)) return;
             const cReleased = basePool.filter(r => getDocReleaseStatus(r, activeDocId).isReleased).length;
             const cPendingRel = basePool.filter(r => !getDocReleaseStatus(r, activeDocId).isReleased && !getDocReleaseStatus(r, activeDocId).isHeld).length;
 
-            const isAnyFilterActive = inviteOpenPillFilter !== null || inviteReleasePillFilter !== null;
+            const cEnvPrinted = basePool.filter(r => isRecordEnvelopePrinted(r, activeDocId)).length;
+            const cEnvPending = basePool.length - cEnvPrinted;
+            const isAnyFilterActive = inviteOpenPillFilter !== null || inviteReleasePillFilter !== null || envelopePillFilter !== null;
 
             return (
               <div style={{display:"flex",alignItems:"center",gap:6,background:"#F8FAFC",padding:"4px 8px",borderRadius:10,border:"1.5px solid #CBD5E1",flexWrap:"wrap"}}>
@@ -34685,6 +36474,54 @@ This cannot be undone.`)) return;
                   <span>⏳</span> Pending ({cPendingRel}) {inviteReleasePillFilter === "pending" && "✓"}
                 </button>
 
+                <span style={{color:"#CBD5E1",fontSize:".8rem",margin:"0 2px"}}>|</span>
+
+                {/* Envelope Printed Pill */}
+                <button
+                  type="button"
+                  onClick={() => setEnvelopePillFilter(prev => prev === "printed" ? null : "printed")}
+                  style={{
+                    padding: "4px 9px",
+                    borderRadius: 6,
+                    border: envelopePillFilter === "printed" ? "2px solid #15803D" : "1px solid #BBF7D0",
+                    background: envelopePillFilter === "printed" ? "#15803D" : "#F0FDF4",
+                    color: envelopePillFilter === "printed" ? "white" : "#15803D",
+                    fontSize: ".74rem",
+                    fontWeight: 800,
+                    cursor: "pointer",
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 4,
+                    boxShadow: envelopePillFilter === "printed" ? "0 2px 6px rgba(21,128,61,0.35)" : "none"
+                  }}
+                  title="Filter ONLY contacts whose envelopes have been printed"
+                >
+                  <span>✉️✓</span> Printed ({cEnvPrinted}) {envelopePillFilter === "printed" && "✓"}
+                </button>
+
+                {/* Envelope Pending Pill */}
+                <button
+                  type="button"
+                  onClick={() => setEnvelopePillFilter(prev => prev === "pending" ? null : "pending")}
+                  style={{
+                    padding: "4px 9px",
+                    borderRadius: 6,
+                    border: envelopePillFilter === "pending" ? "2px solid #B45309" : "1px solid #FDE68A",
+                    background: envelopePillFilter === "pending" ? "#B45309" : "#FFFBEB",
+                    color: envelopePillFilter === "pending" ? "white" : "#B45309",
+                    fontSize: ".74rem",
+                    fontWeight: 800,
+                    cursor: "pointer",
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 4,
+                    boxShadow: envelopePillFilter === "pending" ? "0 2px 6px rgba(180,83,9,0.35)" : "none"
+                  }}
+                  title="Filter ONLY contacts whose envelopes are pending print"
+                >
+                  <span>✉️⏳</span> Env Pending ({cEnvPending}) {envelopePillFilter === "pending" && "✓"}
+                </button>
+
                 {/* Reset Filters */}
                 {isAnyFilterActive && (
                   <button
@@ -34692,6 +36529,7 @@ This cannot be undone.`)) return;
                     onClick={() => {
                       setInviteOpenPillFilter(null);
                       setInviteReleasePillFilter(null);
+                      setEnvelopePillFilter(null);
                     }}
                     style={{
                       padding: "4px 8px",
@@ -35231,6 +37069,51 @@ This cannot be undone.`)) return;
                     <span style={{fontSize: ".75rem", color: "#64748B", background: "#F1F5F9", padding: "1px 8px", borderRadius: 6, fontWeight: 600}}>
                       📍 {mappedFieldCount} Field{mappedFieldCount === 1 ? '' : 's'} Mapped
                     </span>
+                    <span 
+                      onClick={() => {
+                        setTplModalMode("envelope");
+                        setSelectedPdfTplId(currentDocTpl?.id || "invite");
+                        setShowWorkspaceTplModal(true);
+                      }}
+                      style={{fontSize: ".75rem", color: "#166534", background: "#F0FDF4", border: "1px solid #86EFAC", padding: "1px 8px", borderRadius: 6, fontWeight: 700, cursor: "pointer"}}
+                      title="Click to edit envelope template"
+                    >
+                      ✉️ Envelope Template
+                    </span>
+                    {(() => {
+                      const activeSubWsDocId = currentDocTpl?.id || "invite";
+                      const printedCount = filteredRegs.filter(r => isRecordEnvelopePrinted(r, activeSubWsDocId)).length;
+                      const pendingCount = filteredRegs.length - printedCount;
+                      const isAllDone = pendingCount === 0 && filteredRegs.length > 0;
+                      return (
+                        <span
+                          onClick={() => {
+                            setEnvelopePillFilter(prev => prev === "pending" ? null : "pending");
+                          }}
+                          style={{
+                            fontSize: ".75rem",
+                            color: isAllDone ? "#166534" : "#92400E",
+                            background: isAllDone ? "#DCFCE7" : "#FEF3C7",
+                            border: isAllDone ? "1.5px solid #86EFAC" : "1.5px solid #FCD34D",
+                            padding: "2px 9px",
+                            borderRadius: 6,
+                            fontWeight: 800,
+                            cursor: "pointer",
+                            display: "inline-flex",
+                            alignItems: "center",
+                            gap: 5,
+                            boxShadow: "0 1px 3px rgba(0,0,0,0.05)"
+                          }}
+                          title="Sub-workspace envelope printing progress. Click to toggle pending filter."
+                        >
+                          <span>✉️ Envelopes:</span>
+                          <span style={{color: "#166534", fontWeight: 900}}>{printedCount} Printed</span>
+                          <span style={{opacity: 0.4}}>•</span>
+                          <span style={{color: pendingCount > 0 ? "#B45309" : "#166534", fontWeight: 900}}>{pendingCount} Pending</span>
+                          <span style={{fontSize: ".7rem", color: "#64748B"}}>({filteredRegs.length} total)</span>
+                        </span>
+                      );
+                    })()}
                     {currentDocTpl?.bgUrl?.startsWith("media://") && (
                       <span style={{fontSize: ".7rem", color: "#0284C7", background: "#E0F2FE", padding: "1px 8px", borderRadius: 6, fontWeight: 700}}>
                         📁 Linked via Media Library
@@ -35276,6 +37159,65 @@ This cannot be undone.`)) return;
                   title="Open Canvas Editor to edit letterhead, adjust field positions or styles"
                 >
                   <span>⚙️</span> Edit / Change Attached Letterhead
+                </button>
+
+                {/* ✉️ Dedicated Sub-Workspace Envelope Editor Button */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setTplModalMode("envelope");
+                    setSelectedPdfTplId(currentDocTpl?.id || "invite");
+                    setShowWorkspaceTplModal(true);
+                  }}
+                  style={{
+                    padding: "8px 14px",
+                    borderRadius: 8,
+                    fontSize: ".78rem",
+                    fontWeight: 800,
+                    background: "#F0FDF4",
+                    color: "#166534",
+                    border: "1.5px solid #86EFAC",
+                    cursor: "pointer",
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 6,
+                    boxShadow: "0 2px 6px rgba(22,101,52,0.15)"
+                  }}
+                  title={`Open Envelope Editor to configure envelope template and variables for ${currentDocTpl?.name || 'this sub-workspace'}`}
+                >
+                  <span>✉️</span> Edit Envelope Template
+                </button>
+
+                {/* Dedicated Sub-Workspace Envelope Print Button */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (filteredRegs.length === 0) return alert("No contacts available in this sub-workspace.");
+                    setBulkSelectMode("envelopes");
+                  }}
+                  disabled={downloadingEnvelopes}
+                  style={{
+                    padding: "8px 14px",
+                    borderRadius: 8,
+                    fontSize: ".78rem",
+                    fontWeight: 800,
+                    background: downloadingEnvelopes ? "#86EFAC" : "linear-gradient(135deg, #15803D, #166534)",
+                    color: "white",
+                    border: "none",
+                    cursor: downloadingEnvelopes ? "wait" : "pointer",
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 6,
+                    boxShadow: "0 2px 8px rgba(21,128,61,0.3)"
+                  }}
+                  title={`Print envelopes strictly for ${currentDocTpl?.name || 'this sub-workspace'} (${filteredRegs.length - filteredRegs.filter(r => isRecordEnvelopePrinted(r, currentDocTpl?.id || 'invite')).length} pending)`}
+                >
+                  <span>🖨️ ✉️</span>
+                  <span>
+                    {downloadingEnvelopes 
+                      ? "Printing..." 
+                      : `Print Envelopes (${filteredRegs.length - filteredRegs.filter(r => isRecordEnvelopePrinted(r, currentDocTpl?.id || 'invite')).length} Pending)`}
+                  </span>
                 </button>
 
                 <div
@@ -35452,6 +37394,59 @@ This cannot be undone.`)) return;
                             >
                               <span>👁️</span> Preview
                             </button>
+                            {(() => {
+                              const activeSubWsDocId = currentDocTpl?.id || "invite";
+                              const isEnvDone = isRecordEnvelopePrinted(r, activeSubWsDocId);
+                              const printDateStr = r.envelopePrintedByDoc?.[activeSubWsDocId]?.printedAt || r.envelopePrintedAt;
+                              let printTimeTooltip = isEnvDone ? `Envelope printed${printDateStr ? ` on ${new Date(printDateStr).toLocaleDateString()}` : ''}. Click to toggle status.` : "Envelope pending print. Click to toggle status.";
+                              return (
+                                <div style={{display:"inline-flex",alignItems:"center",borderRadius:6,border: isEnvDone ? "1.5px solid #86EFAC" : "1.5px solid #FCD34D",overflow:"hidden",background: isEnvDone ? "#F0FDF4" : "#FFFBEB"}}>
+                                  <button 
+                                    type="button"
+                                    onClick={(e)=>{e.stopPropagation(); handlePrintSingleEnvelope(r);}} 
+                                    style={{padding:"4px 7px",border:"none",background:"transparent",color: isEnvDone ? "#166534" : "#92400E",cursor:"pointer",fontSize:".74rem",fontWeight:800,display:"flex",alignItems:"center",gap:3}}
+                                    title={`Print address envelope for ${r['Full Name'] || 'recipient'}`}
+                                  >
+                                    <span>✉️</span> Envelope
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={(e) => toggleEnvelopePrinted(r, e)}
+                                    style={{
+                                      padding: "4px 6px",
+                                      borderLeft: isEnvDone ? "1px solid #BBF7D0" : "1px solid #FDE68A",
+                                      borderRight: isEnvDone ? "1px solid #BBF7D0" : "1px solid #FDE68A",
+                                      borderTop: "none",
+                                      borderBottom: "none",
+                                      background: isEnvDone ? "#DCFCE7" : "#FEF3C7",
+                                      color: isEnvDone ? "#15803D" : "#B45309",
+                                      cursor: "pointer",
+                                      fontSize: ".70rem",
+                                      fontWeight: 800,
+                                      display: "flex",
+                                      alignItems: "center",
+                                      gap: 2
+                                    }}
+                                    title={printTimeTooltip}
+                                  >
+                                    <span>{isEnvDone ? "✓ Printed" : "⏳ Pending"}</span>
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={(e)=>{
+                                      e.stopPropagation();
+                                      setTplModalMode("envelope");
+                                      setSelectedPdfTplId(currentDocTpl?.id || "invite");
+                                      setShowWorkspaceTplModal(true);
+                                    }}
+                                    style={{padding:"4px 6px",border:"none",background:"transparent",color:"#475569",cursor:"pointer",fontSize:".74rem"}}
+                                    title="Configure Envelope Template"
+                                  >
+                                    ⚙️
+                                  </button>
+                                </div>
+                              );
+                            })()}
                             <button 
                               onClick={(e)=>{
                                 e.stopPropagation(); 
@@ -36838,12 +38833,14 @@ This cannot be undone.`)) return;
       <BulkSelectionModal 
         isOpen={Boolean(bulkSelectMode)} 
         onClose={() => setBulkSelectMode(null)} 
-        title={bulkSelectMode === "letters" ? "Select Invite Letters to Download" : "Select Address Envelopes to Print"} 
+        title={bulkSelectMode === "letters" ? `Select Invite Letters to Download (${currentDocTpl?.name || 'Workspace'})` : `Select Envelopes to Print - ${currentDocTpl?.name || 'Sub-Workspace'}`} 
         items={filteredRegs} 
-        actionLabel={bulkSelectMode === "letters" ? "Download Selected ZIP" : "Print Selected Envelopes"} 
+        actionLabel={bulkSelectMode === "letters" ? "Download Selected Letters" : "Print Selected Envelopes"} 
         onConfirm={list => { if(bulkSelectMode === "letters") executeBulkDownloadLetters(list); else executeBulkDownloadEnvelopes(list); }} 
         isProcessing={downloadingBulk || downloadingEnvelopes} 
-        progress={downloadProgress} 
+        progress={downloadProgress}
+        isEnvelopeMode={bulkSelectMode === "envelopes"}
+        activeDocId={currentDocTpl?.id || "invite"}
       />
     </div>
   );
@@ -38264,7 +40261,7 @@ export const generateDonorPosterCanvas = (donation, templateImgUrl, customPositi
 };
 
 // ── Canvas-based Certificate + Ceremony Photo Merger ──
-export const generateMergedDonorPosterCanvas = (certificateDataUrl, photoDataUrl, layout = "side-by-side", donation = {}) => {
+export const generateMergedDonorPosterCanvas = (certificateDataUrl, photoDataUrl, layout = "side-by-side", donation = {}, C = {}, customMsg = "") => {
   return new Promise((resolve, reject) => {
     const certImg = new Image();
     const photoImg = new Image();
@@ -38382,11 +40379,51 @@ export const generateMergedDonorPosterCanvas = (certificateDataUrl, photoDataUrl
           ctx.fillText(`Contribution: ₹${Number(donation.amount || 0).toLocaleString('en-IN')}/-  •  Education Felicitation 2026`, photoX + (photoW / 2), photoY + photoH - 12);
           ctx.restore();
 
-          // Bottom Footer Bar
-          ctx.fillStyle = "#CBD5E1";
-          ctx.font = "bold 14px 'Montserrat', sans-serif";
+          // Bottom Footer Message Bar (Fetched from Template Editor)
+          const bottomMsgRaw = customMsg || C?.whatsappTemplates?.posterCaptionMsg || "શૈક્ષણિક કાર્યક્રમ વિદ્યાર્થી ગુણ ગૌરવ પુરસ્કાર માટે ડોનેશન (દાન) આપનાર દાતા ને આરીતે સર્ટિફિકેટ આપી તેમને નવાજવામા આવશે\nઆભાર 🌷🙏";
+          const dName = donation.name || "Respected Donor";
+          const amt = Number(donation.amount || 0).toLocaleString('en-IN');
+          const rawRNo = donation.receiptNo || donation.internalReceiptNo || '';
+          const rNo = (rawRNo && String(rawRNo).trim() !== '' && String(rawRNo).trim().toUpperCase() !== 'N/A')
+            ? String(rawRNo).trim()
+            : 'Receipt under process';
+          const vib = donation.vibhag || "General";
+          const dt = donation.date || new Date().toISOString().split('T')[0];
+          const pur = donation.purpose || donation.program || 'Education Activity 2026';
+
+          const formattedBottomMsg = bottomMsgRaw
+            .split('{NAME}').join(dName)
+            .split('{AMOUNT}').join(amt)
+            .split('{RECEIPT}').join(rNo)
+            .split('{VIBHAG}').join(vib)
+            .split('{DATE}').join(dt)
+            .split('{PURPOSE}').join(pur);
+
+          const msgLines = formattedBottomMsg.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+
+          ctx.save();
+          // Draw an elegant banner container
+          ctx.fillStyle = "rgba(2, 6, 23, 0.88)";
+          ctx.fillRect(35, 1020, 1890, 64);
+          ctx.strokeStyle = "rgba(212, 175, 55, 0.5)";
+          ctx.lineWidth = 1.5;
+          ctx.strokeRect(35, 1020, 1890, 64);
+
           ctx.textAlign = "center";
-          ctx.fillText("CENTRAL WORKING COMMITTEE  •  EDUCATION ACTIVITY 2026  •  OFFICIAL COMMUNITY PORTAL", canvas.width / 2, 1060);
+          if (msgLines.length <= 1) {
+            ctx.fillStyle = "#FEF08A";
+            ctx.font = "bold 20px 'Noto Sans Gujarati', 'Shruti', 'Gujarati Sangam MN', Arial, sans-serif";
+            ctx.fillText(msgLines[0] || "CENTRAL WORKING COMMITTEE  •  EDUCATION ACTIVITY 2026", canvas.width / 2, 1059);
+          } else {
+            ctx.fillStyle = "#FEF08A";
+            ctx.font = "bold 19px 'Noto Sans Gujarati', 'Shruti', 'Gujarati Sangam MN', Arial, sans-serif";
+            ctx.fillText(msgLines[0], canvas.width / 2, 1047);
+
+            ctx.fillStyle = "#FFFFFF";
+            ctx.font = "bold 16px 'Noto Sans Gujarati', 'Shruti', 'Gujarati Sangam MN', Arial, sans-serif";
+            ctx.fillText(msgLines.slice(1).join("  •  "), canvas.width / 2, 1073);
+          }
+          ctx.restore();
 
         } else {
           // ── Stacked Mode (Top/Bottom) ──
@@ -38448,11 +40485,50 @@ export const generateMergedDonorPosterCanvas = (certificateDataUrl, photoDataUrl
           ctx.fillText(`Contribution: ₹${Number(donation.amount || 0).toLocaleString('en-IN')}/-  •  Education Felicitation 2026`, photoX + (photoW / 2), photoY + photoH - 9);
           ctx.restore();
 
-          // Footer
-          ctx.fillStyle = "#CBD5E1";
-          ctx.font = "bold 14px 'Montserrat', sans-serif";
+          // Bottom Footer Message Bar (Fetched from Template Editor)
+          const bottomMsgRawStacked = customMsg || C?.whatsappTemplates?.posterCaptionMsg || "શૈક્ષણિક કાર્યક્રમ વિદ્યાર્થી ગુણ ગૌરવ પુરસ્કાર માટે ડોનેશન (દાન) આપનાર દાતા ને આરીતે સર્ટિફિકેટ આપી તેમને નવાજવામા આવશે\nઆભાર 🌷🙏";
+          const dNameStacked = donation.name || "Respected Donor";
+          const amtStacked = Number(donation.amount || 0).toLocaleString('en-IN');
+          const rawRNoStacked = donation.receiptNo || donation.internalReceiptNo || '';
+          const rNoStacked = (rawRNoStacked && String(rawRNoStacked).trim() !== '' && String(rawRNoStacked).trim().toUpperCase() !== 'N/A')
+            ? String(rawRNoStacked).trim()
+            : 'Receipt under process';
+          const vibStacked = donation.vibhag || "General";
+          const dtStacked = donation.date || new Date().toISOString().split('T')[0];
+          const purStacked = donation.purpose || donation.program || 'Education Activity 2026';
+
+          const formattedBottomMsgStacked = bottomMsgRawStacked
+            .split('{NAME}').join(dNameStacked)
+            .split('{AMOUNT}').join(amtStacked)
+            .split('{RECEIPT}').join(rNoStacked)
+            .split('{VIBHAG}').join(vibStacked)
+            .split('{DATE}').join(dtStacked)
+            .split('{PURPOSE}').join(purStacked);
+
+          const msgLinesStacked = formattedBottomMsgStacked.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+
+          ctx.save();
+          ctx.fillStyle = "rgba(2, 6, 23, 0.88)";
+          ctx.fillRect(25, 1656, 974, 54);
+          ctx.strokeStyle = "rgba(212, 175, 55, 0.5)";
+          ctx.lineWidth = 1.5;
+          ctx.strokeRect(25, 1656, 974, 54);
+
           ctx.textAlign = "center";
-          ctx.fillText("CENTRAL WORKING COMMITTEE  •  EDUCATION ACTIVITY 2026", canvas.width / 2, 1690);
+          if (msgLinesStacked.length <= 1) {
+            ctx.fillStyle = "#FEF08A";
+            ctx.font = "bold 17px 'Noto Sans Gujarati', 'Shruti', 'Gujarati Sangam MN', Arial, sans-serif";
+            ctx.fillText(msgLinesStacked[0] || "CENTRAL WORKING COMMITTEE  •  EDUCATION ACTIVITY 2026", canvas.width / 2, 1690);
+          } else {
+            ctx.fillStyle = "#FEF08A";
+            ctx.font = "bold 16px 'Noto Sans Gujarati', 'Shruti', 'Gujarati Sangam MN', Arial, sans-serif";
+            ctx.fillText(msgLinesStacked[0], canvas.width / 2, 1680);
+
+            ctx.fillStyle = "#FFFFFF";
+            ctx.font = "bold 14px 'Noto Sans Gujarati', 'Shruti', 'Gujarati Sangam MN', Arial, sans-serif";
+            ctx.fillText(msgLinesStacked.slice(1).join("  •  "), canvas.width / 2, 1700);
+          }
+          ctx.restore();
         }
 
         resolve(canvas.toDataURL("image/png"));
@@ -38822,7 +40898,8 @@ function OfflineDonationSuccessCard({ donation, C, setC, auth, onReload }) {
       setBaseCertUrl(certUrl);
 
       if (attachedPhotoUrl) {
-        const mergedUrl = await generateMergedDonorPosterCanvas(certUrl, attachedPhotoUrl, mergeLayout, donation);
+        const posterCaptionText = getPosterCaptionMsg();
+        const mergedUrl = await generateMergedDonorPosterCanvas(certUrl, attachedPhotoUrl, mergeLayout, donation, C, posterCaptionText);
         setPosterUrl(mergedUrl);
       } else {
         setPosterUrl(certUrl);
@@ -38853,7 +40930,7 @@ function OfflineDonationSuccessCard({ donation, C, setC, auth, onReload }) {
 
   useEffect(() => {
     loadPoster();
-  }, [donation, C, C?.donorPosterPositions, attachedPhotoUrl, mergeLayout]);
+  }, [donation, C, C?.donorPosterPositions, C?.whatsappTemplates?.posterCaptionMsg, attachedPhotoUrl, mergeLayout]);
 
 
 
@@ -38873,6 +40950,7 @@ function OfflineDonationSuccessCard({ donation, C, setC, auth, onReload }) {
   };
 
   const [downloadingPoster, setDownloadingPoster] = useState(false);
+  const [selectedMsgType, setSelectedMsgType] = useState("poster_caption");
 
   const handleDownloadPoster = async () => {
     if (!posterUrl || downloadingPoster) return;
@@ -38887,7 +40965,35 @@ function OfflineDonationSuccessCard({ donation, C, setC, auth, onReload }) {
     }
   };
 
-      const getThankYouWhatsAppMsg = () => {
+  const getPosterCaptionMsg = () => {
+    const dName = donation.name || "Respected Donor";
+    const amt = Number(donation.amount || 0).toLocaleString('en-IN');
+    const rawRNo = donation.receiptNo || donation.internalReceiptNo || '';
+    const rNo = (rawRNo && String(rawRNo).trim() !== '' && String(rawRNo).trim().toUpperCase() !== 'N/A')
+      ? String(rawRNo).trim()
+      : 'Receipt under process';
+    const vib = donation.vibhag || "General";
+    const dt = donation.date || new Date().toISOString().split('T')[0];
+
+    const defaultCaption = "શૈક્ષણિક કાર્યક્રમ વિદ્યાર્થી ગુણ ગૌરવ પુરસ્કાર માટે ડોનેશન (દાન) આપનાર દાતા ને આરીતે સર્ટિફિકેટ આપી તેમને નવાજવામા આવશે\n\nઆભાર 🌷🙏";
+    const tpl = C?.whatsappTemplates?.posterCaptionMsg || defaultCaption;
+    return tpl
+      .split('{NAME}').join(dName)
+      .split('{AMOUNT}').join(amt)
+      .split('{RECEIPT}').join(rNo)
+      .split('{VIBHAG}').join(vib)
+      .split('{DATE}').join(dt)
+      .split('{PURPOSE}').join(donation.purpose || donation.program || 'Education Activity 2026');
+  };
+
+  const getActiveWhatsAppMsg = () => {
+    if (selectedMsgType === "receipt_letter") {
+      return getThankYouWhatsAppMsg();
+    }
+    return getPosterCaptionMsg();
+  };
+
+  const getThankYouWhatsAppMsg = () => {
       const dName = donation.name || "Respected Donor";
       const amt = Number(donation.amount || 0).toLocaleString('en-IN');
       const rawRNo = donation.receiptNo || donation.internalReceiptNo || '';
@@ -38910,13 +41016,13 @@ function OfflineDonationSuccessCard({ donation, C, setC, auth, onReload }) {
     };
 
   const handleCopyText = () => {
-    navigator.clipboard.writeText(getThankYouWhatsAppMsg());
+    navigator.clipboard.writeText(getActiveWhatsAppMsg());
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
   };
 
   const handleShareWhatsApp = async () => {
-    const text = getThankYouWhatsAppMsg();
+    const text = getActiveWhatsAppMsg();
     const cleanPhone = String(targetPhone || donation.phone || donation.mobile || donation['Mobile Number'] || '').replace(/\D/g, '').slice(-10);
 
     // 1. Try copying poster image to clipboard for instant Ctrl+V pasting in WhatsApp Web
@@ -39105,8 +41211,52 @@ function OfflineDonationSuccessCard({ donation, C, setC, auth, onReload }) {
                 onClick={handleCopyText}
                 style={{padding:"6px 10px",borderRadius:6,background:"#F1F5F9",color:"#334155",border:"1px solid #CBD5E1",fontWeight:700,fontSize:".74rem",cursor:"pointer"}}
               >
-                {copied ? "✓ Text Copied!" : "📋 Copy Message"}
+                {copied ? "✓ Copied!" : (selectedMsgType === "poster_caption" ? "📋 Copy Poster Caption" : "📋 Copy Receipt Text")}
               </button>
+            </div>
+
+            {/* Message Type Selector & Preview Box */}
+            <div style={{background:"#F8FAFC",border:"1px solid #E2E8F0",borderRadius:8,padding:"8px 10px",marginBottom:8,textAlign:"left"}}>
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:6,flexWrap:"wrap",gap:4}}>
+                <span style={{fontSize:".7rem",fontWeight:800,color:"#475569"}}>Message Attached to Poster:</span>
+                <div style={{display:"flex",gap:4}}>
+                  <button
+                    type="button"
+                    onClick={() => setSelectedMsgType("poster_caption")}
+                    style={{
+                      padding:"3px 8px",
+                      borderRadius:5,
+                      fontSize:".68rem",
+                      fontWeight:800,
+                      cursor:"pointer",
+                      background: selectedMsgType === "poster_caption" ? "#2563EB" : "white",
+                      color: selectedMsgType === "poster_caption" ? "white" : "#334155",
+                      border: selectedMsgType === "poster_caption" ? "1px solid #1D4ED8" : "1px solid #CBD5E1"
+                    }}
+                  >
+                    🖼️ Poster Caption
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setSelectedMsgType("receipt_letter")}
+                    style={{
+                      padding:"3px 8px",
+                      borderRadius:5,
+                      fontSize:".68rem",
+                      fontWeight:800,
+                      cursor:"pointer",
+                      background: selectedMsgType === "receipt_letter" ? "#15803D" : "white",
+                      color: selectedMsgType === "receipt_letter" ? "white" : "#334155",
+                      border: selectedMsgType === "receipt_letter" ? "1px solid #166534" : "1px solid #CBD5E1"
+                    }}
+                  >
+                    🌷 Detailed Receipt
+                  </button>
+                </div>
+              </div>
+              <div style={{fontSize:".72rem",color:"#334155",background:"white",padding:"6px 8px",borderRadius:6,border:"1px solid #CBD5E1",whiteSpace:"pre-wrap",fontStyle:"normal",maxHeight:72,overflowY:"auto",lineHeight:1.4}}>
+                {getActiveWhatsAppMsg()}
+              </div>
             </div>
 
             {/* Direct WhatsApp Recipient & Dispatch Bar */}
@@ -39679,7 +41829,9 @@ function DonorListCard({ donorData, auth, onRefresh, C, setC }) {
   const [customSignatory, setCustomSignatory] = useState(tpls.gujaratiSignatory !== undefined ? tpls.gujaratiSignatory : "લિ. વિનોદભાઈ મકવાણા / સેન્ટ્રલ વર્કિંગ કમિટી");
   const [customQrHeader, setCustomQrHeader] = useState(tpls.qrHeader || "💳 *GPay / BHIM QR સ્કેનર & Direct Pay:*");
   const [customUpiId, setCustomUpiId] = useState(tpls.upiId || "mumba98697331@barodampay");
-    const [customAppreciationMsg, setCustomAppreciationMsg] = useState(tpls.appreciationMsg || "🌷 || મુંબઈ મેઘવાળ પંચાયત || 🌷\n         [NGO]\n   •••• સેન્ટ્રલ વર્કિંગ કમિટી ••••\n☸~~~~~~~~~~~~~~~~~☸\n\nવિષય: શૈક્ષણિક કાર્યક્રમ દાન રસીદ & સન્માન પત્રક\n\nનમસ્તે શ્રીમાન/શ્રીમતી *{NAME}*,\nવિદ્યાર્થી ગુણગૌરવ પુરસ્કાર ૨૦૨૬ માટે આપના ઉદાર દાન બદલ મુંબઈ મેઘવાળ પંચાયત આપનો હૃદયપૂર્વક આભાર માને છે.\n\n🧾 *દાન પાવતી વિગત:*\n• દાતા: *{NAME}*\n• રકમ: *₹{AMOUNT}/-*\n• પાવતી નં.: *{RECEIPT}*\n• વિભાગ: *{VIBHAG}*\n• તારીખ: *{DATE}*\n• હેતુ: *{PURPOSE}*\n\n📜 આપનું ડિજિટલ સન્માન પ્રમાણપત્ર (Certificate of Appreciation) તૈયાર થઈ ગયું છે.\n\nલિ. સેન્ટ્રલ વર્કિંગ કમિટી\nમુંબઈ મેઘવાળ પંચાયત\n🌐 https://www.mmp-cwc.com");
+  const defaultPosterCaptionMsg = "શૈક્ષણિક કાર્યક્રમ વિદ્યાર્થી ગુણ ગૌરવ પુરસ્કાર માટે ડોનેશન (દાન) આપનાર દાતા ને આરીતે સર્ટિફિકેટ આપી તેમને નવાજવામા આવશે\n\nઆભાર 🌷🙏";
+  const [customPosterCaptionMsg, setCustomPosterCaptionMsg] = useState(tpls.posterCaptionMsg || defaultPosterCaptionMsg);
+  const [customAppreciationMsg, setCustomAppreciationMsg] = useState(tpls.appreciationMsg || "🌷 || મુંબઈ મેઘવાળ પંચાયત || 🌷\n         [NGO]\n   •••• સેન્ટ્રલ વર્કિંગ કમિટી ••••\n☸~~~~~~~~~~~~~~~~~☸\n\nવિષય: શૈક્ષણિક કાર્યક્રમ દાન રસીદ & સન્માન પત્રક\n\nનમસ્તે શ્રીમાન/શ્રીમતી *{NAME}*,\nવિદ્યાર્થી ગુણગૌરવ પુરસ્કાર ૨૦૨૬ માટે આપના ઉદાર દાન બદલ મુંબઈ મેઘવાળ પંચાયત આપનો હૃદયપૂર્વક આભાર માને છે.\n\n🧾 *દાન પાવતી વિગત:*\n• દાતા: *{NAME}*\n• રકમ: *₹{AMOUNT}/-*\n• પાવતી નં.: *{RECEIPT}*\n• વિભાગ: *{VIBHAG}*\n• તારીખ: *{DATE}*\n• હેતુ: *{PURPOSE}*\n\n📜 આપનું ડિજિટલ સન્માન પ્રમાણપત્ર (Certificate of Appreciation) તૈયાર થઈ ગયું છે.\n\nલિ. સેન્ટ્રલ વર્કિંગ કમિટી\nમુંબઈ મેઘવાળ પંચાયત\n🌐 https://www.mmp-cwc.com");
 
   const handleSaveTemplate = async () => {
     setSavingTemplate(true);
@@ -39692,7 +41844,8 @@ function DonorListCard({ donorData, auth, onRefresh, C, setC }) {
         gujaratiSignatory: customSignatory,
         qrHeader: customQrHeader,
         upiId: customUpiId,
-        appreciationMsg: customAppreciationMsg
+        appreciationMsg: customAppreciationMsg,
+        posterCaptionMsg: customPosterCaptionMsg
       };
       if (C) {
         C.whatsappTemplates = updatedTpls;
@@ -40165,10 +42318,46 @@ function DonorListCard({ donorData, auth, onRefresh, C, setC }) {
               />
             </div>
 
-            {/* Section 2: Bulk Appeal Broadcast Settings */}
+            {/* Section 2: Donor Poster Caption / Broadcast Message */}
+            <div style={{background:"#EFF6FF",border:"1.5px solid #93C5FD",borderRadius:10,padding:14}}>
+              <div style={{fontWeight:800,fontSize:".88rem",color:"#1E40AF",marginBottom:4,display:"flex",alignItems:"center",gap:6}}>
+                <span>🖼️</span> 2. Donor Poster Caption / Sharing Message (Attached to Poster):
+              </div>
+              <p style={{fontSize:".72rem",color:"#475569",margin:"0 0 8px 0"}}>
+                Message text sent at the bottom of the Certificate Poster image in WhatsApp (as seen in poster shares).
+              </p>
+
+              {/* Variable badges */}
+              <div style={{marginBottom:8}}>
+                <span style={{fontSize:".7rem",fontWeight:700,color:"#334155",marginRight:6}}>Click variable to insert:</span>
+                <div style={{display:"flex",gap:4,flexWrap:"wrap",marginTop:4}}>
+                  {["{NAME}", "{AMOUNT}", "{RECEIPT}", "{VIBHAG}", "{DATE}", "{PURPOSE}"].map(v => (
+                    <button 
+                      key={v}
+                      type="button"
+                      onClick={() => setCustomPosterCaptionMsg(prev => prev + " " + v)}
+                      title={"Click to insert " + v}
+                      style={{background:"#DBEAFE",color:"#1D4ED8",border:"1px solid #93C5FD",padding:"3px 8px",borderRadius:4,fontSize:".72rem",fontFamily:"monospace",fontWeight:800,cursor:"pointer"}}
+                    >
+                      +{v}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <textarea
+                rows={5}
+                value={customPosterCaptionMsg}
+                onChange={e => setCustomPosterCaptionMsg(e.target.value)}
+                placeholder="Write message to attach at the bottom of the poster..."
+                style={{width:"100%",padding:"10px",borderRadius:8,border:"1px solid #CBD5E1",fontSize:".8rem",boxSizing:"border-box",lineHeight:"1.5",fontFamily:"inherit",background:"white"}}
+              />
+            </div>
+
+            {/* Section 3: Bulk Appeal Broadcast Settings */}
             <div style={{background:"#F8FAFC",border:"1.5px solid #E2E8F0",borderRadius:10,padding:14}}>
               <div style={{fontWeight:800,fontSize:".88rem",color:"#334155",marginBottom:4,display:"flex",alignItems:"center",gap:6}}>
-                <span>📢</span> 2. Bulk Donor List Broadcast Settings:
+                <span>📢</span> 3. Bulk Donor List Broadcast Settings:
               </div>
 
               <div style={{display:"flex",flexDirection:"column",gap:10,marginTop:8}}>
