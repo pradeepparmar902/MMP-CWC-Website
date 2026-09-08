@@ -38095,8 +38095,23 @@ export const generateDonorPosterCanvas = (donation, templateImgUrl, customPositi
           if (dName.length > 28) fSize = Math.max(15, fSize - 4);
           ctx.font = `bold ${fSize}px 'Playfair Display', Georgia, serif`;
           ctx.textAlign = "center";
-          const px = (pos.name.x / 100) * 994;
-          const py = (pos.name.y / 100) * 1024;
+          ctx.direction = "ltr";
+          let px = (pos.name.x / 100) * 994;
+          let py = (pos.name.y / 100) * 1024;
+
+          // Auto-shrink font if name exceeds printable width
+          let mWidth = ctx.measureText(dName).width;
+          const maxNameWidth = 740;
+          while (mWidth > maxNameWidth && fSize > 12) {
+            fSize -= 1;
+            ctx.font = `bold ${fSize}px 'Playfair Display', Georgia, serif`;
+            mWidth = ctx.measureText(dName).width;
+          }
+
+          // Boundary clamp: Keep centered between inner poster borders (margin: 95px)
+          const halfW = mWidth / 2;
+          if (px - halfW < 95) px = 95 + halfW;
+          if (px + halfW > 899) px = 899 - halfW;
 
           // Crisp subtle white backing stroke for high contrast
           ctx.strokeStyle = "rgba(255, 255, 255, 0.9)";
@@ -38116,12 +38131,27 @@ export const generateDonorPosterCanvas = (donation, templateImgUrl, customPositi
           if (dNameGu.length > 28) fSizeGu = Math.max(14, fSizeGu - 3);
           ctx.font = `bold ${fSizeGu}px 'Noto Sans Gujarati', 'Shruti', 'Gujarati MT', sans-serif`;
           ctx.textAlign = "center";
+          ctx.direction = "ltr";
 
           // If Gujarati position was not independently customized, sit right below English line
-          const pxGu = customPositions?.nameGu?.x ? (pos.nameGu.x / 100) * 994 : (pos.name.x / 100) * 994;
-          const pyGu = customPositions?.nameGu?.y ? (pos.nameGu.y / 100) * 1024 : ((pos.name.y / 100) * 1024) + 24;
+          let pxGu = customPositions?.nameGu?.x ? (pos.nameGu.x / 100) * 994 : (pos.name.x / 100) * 994;
+          let pyGu = customPositions?.nameGu?.y ? (pos.nameGu.y / 100) * 1024 : ((pos.name.y / 100) * 1024) + 24;
 
           const guDisplay = dNameGu.startsWith("(") ? dNameGu : `(${dNameGu})`;
+
+          // Auto-shrink font if Gujarati text exceeds printable width
+          let mWidthGu = ctx.measureText(guDisplay).width;
+          const maxGuWidth = 720;
+          while (mWidthGu > maxGuWidth && fSizeGu > 11) {
+            fSizeGu -= 1;
+            ctx.font = `bold ${fSizeGu}px 'Noto Sans Gujarati', 'Shruti', 'Gujarati MT', sans-serif`;
+            mWidthGu = ctx.measureText(guDisplay).width;
+          }
+
+          // Strict Boundary clamp: Keep text completely within the inner certificate border (95px to 899px)
+          const halfWGu = mWidthGu / 2;
+          if (pxGu - halfWGu < 95) pxGu = 95 + halfWGu;
+          if (pxGu + halfWGu > 899) pxGu = 899 - halfWGu;
 
           ctx.strokeStyle = "rgba(255, 255, 255, 0.9)";
           ctx.lineWidth = 2.5;
@@ -38140,8 +38170,13 @@ export const generateDonorPosterCanvas = (donation, templateImgUrl, customPositi
           ctx.save();
           ctx.font = `bold ${Number(pos.amount.fontSize) || 23}px 'Montserrat', Arial, sans-serif`;
           ctx.textAlign = "center";
-          const px = (pos.amount.x / 100) * 994;
-          const py = (pos.amount.y / 100) * 1024;
+          ctx.direction = "ltr";
+          let px = (pos.amount.x / 100) * 994;
+          let py = (pos.amount.y / 100) * 1024;
+
+          const halfW = ctx.measureText(amtStr).width / 2;
+          if (px - halfW < 95) px = 95 + halfW;
+          if (px + halfW > 899) px = 899 - halfW;
 
           // Crisp white backing stroke for bold contrast
           ctx.strokeStyle = "rgba(255, 255, 255, 0.95)";
@@ -38458,8 +38493,8 @@ export function DonorPosterVisualMapperModal({ C, setC, auth, onClose, onSaveSuc
     const rect = containerRef.current.getBoundingClientRect();
     let x = ((e.clientX - rect.left) / rect.width) * 100;
     let y = ((e.clientY - rect.top) / rect.height) * 100;
-    x = Math.max(2, Math.min(98, x));
-    y = Math.max(2, Math.min(98, y));
+    x = Math.max(12, Math.min(88, x));
+    y = Math.max(8, Math.min(92, y));
     setPositions(prev => ({
       ...prev,
       [dragging]: { ...prev[dragging], x: Number(x.toFixed(1)), y: Number(y.toFixed(1)) }
