@@ -38099,19 +38099,23 @@ export const generateDonorPosterCanvas = (donation, templateImgUrl, customPositi
           let px = (pos.name.x / 100) * 994;
           let py = (pos.name.y / 100) * 1024;
 
+          // Inner gold frame safe bounds: [165px, 825px]
+          const minLeft = 165;
+          const maxRight = 825;
+          const maxNameWidth = 650;
+
           // Auto-shrink font if name exceeds printable width
           let mWidth = ctx.measureText(dName).width;
-          const maxNameWidth = 740;
           while (mWidth > maxNameWidth && fSize > 12) {
-            fSize -= 1;
+            fSize -= 0.5;
             ctx.font = `bold ${fSize}px 'Playfair Display', Georgia, serif`;
             mWidth = ctx.measureText(dName).width;
           }
 
-          // Boundary clamp: Keep centered between inner poster borders (margin: 95px)
-          const halfW = mWidth / 2;
-          if (px - halfW < 95) px = 95 + halfW;
-          if (px + halfW > 899) px = 899 - halfW;
+          // Boundary clamp: Keep strictly inside inner poster frame
+          let halfW = mWidth / 2;
+          if (px + halfW > maxRight) px = maxRight - halfW;
+          if (px - halfW < minLeft) px = minLeft + halfW;
 
           // Crisp subtle white backing stroke for high contrast
           ctx.strokeStyle = "rgba(255, 255, 255, 0.9)";
@@ -38139,19 +38143,34 @@ export const generateDonorPosterCanvas = (donation, templateImgUrl, customPositi
 
           const guDisplay = dNameGu.startsWith("(") ? dNameGu : `(${dNameGu})`;
 
-          // Auto-shrink font if Gujarati text exceeds printable width
+          // Inner gold frame safe bounds: [165px, 825px]
+          const minLeftGu = 165;
+          const maxRightGu = 825;
+          const maxGuWidth = 630;
+
+          // Auto-shrink font if Gujarati text is too wide for the inner frame
           let mWidthGu = ctx.measureText(guDisplay).width;
-          const maxGuWidth = 720;
           while (mWidthGu > maxGuWidth && fSizeGu > 11) {
-            fSizeGu -= 1;
+            fSizeGu -= 0.5;
             ctx.font = `bold ${fSizeGu}px 'Noto Sans Gujarati', 'Shruti', 'Gujarati MT', sans-serif`;
             mWidthGu = ctx.measureText(guDisplay).width;
           }
 
-          // Strict Boundary clamp: Keep text completely within the inner certificate border (95px to 899px)
-          const halfWGu = mWidthGu / 2;
-          if (pxGu - halfWGu < 95) pxGu = 95 + halfWGu;
-          if (pxGu + halfWGu > 899) pxGu = 899 - halfWGu;
+          // Strict Boundary clamp: Keep text completely within the inner decorative gold frame
+          let halfWGu = mWidthGu / 2;
+          if (pxGu + halfWGu > maxRightGu) {
+            pxGu = maxRightGu - halfWGu;
+          }
+          if (pxGu - halfWGu < minLeftGu) {
+            pxGu = minLeftGu + halfWGu;
+          }
+
+          // Extra safety: If right edge still exceeds maxRightGu, shrink font incrementally
+          while (pxGu + (ctx.measureText(guDisplay).width / 2) > maxRightGu && fSizeGu > 10) {
+            fSizeGu -= 0.5;
+            ctx.font = `bold ${fSizeGu}px 'Noto Sans Gujarati', 'Shruti', 'Gujarati MT', sans-serif`;
+            pxGu = maxRightGu - (ctx.measureText(guDisplay).width / 2);
+          }
 
           ctx.strokeStyle = "rgba(255, 255, 255, 0.9)";
           ctx.lineWidth = 2.5;
@@ -38175,8 +38194,8 @@ export const generateDonorPosterCanvas = (donation, templateImgUrl, customPositi
           let py = (pos.amount.y / 100) * 1024;
 
           const halfW = ctx.measureText(amtStr).width / 2;
-          if (px - halfW < 95) px = 95 + halfW;
-          if (px + halfW > 899) px = 899 - halfW;
+          if (px + halfW > 825) px = 825 - halfW;
+          if (px - halfW < 165) px = 165 + halfW;
 
           // Crisp white backing stroke for bold contrast
           ctx.strokeStyle = "rgba(255, 255, 255, 0.95)";
@@ -38493,8 +38512,8 @@ export function DonorPosterVisualMapperModal({ C, setC, auth, onClose, onSaveSuc
     const rect = containerRef.current.getBoundingClientRect();
     let x = ((e.clientX - rect.left) / rect.width) * 100;
     let y = ((e.clientY - rect.top) / rect.height) * 100;
-    x = Math.max(12, Math.min(88, x));
-    y = Math.max(8, Math.min(92, y));
+    x = Math.max(18, Math.min(82, x));
+    y = Math.max(12, Math.min(88, y));
     setPositions(prev => ({
       ...prev,
       [dragging]: { ...prev[dragging], x: Number(x.toFixed(1)), y: Number(y.toFixed(1)) }
