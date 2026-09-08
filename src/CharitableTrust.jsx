@@ -246,17 +246,6 @@ const SearchableDropdown = ({ value, onChange, options, placeholder, required, i
         onClick={() => setOpen(!open)}
         style={{position:"absolute", right:8, top:"50%", transform:"translateY(-50%)", cursor:"pointer", color:"#64748B", fontSize:".7rem", padding:"6px", display:"flex", alignItems:"center", justifyContent:"center", background:"#F8FAFC", borderRadius:4}}
       >▼</div>
-
-              <div style={{marginTop: 8, paddingTop: 8, borderTop: "1px dashed #CBD5E1"}}>
-                <label style={{display:"block",fontSize:".7rem",color:"#15803D",fontWeight:800,marginBottom:4}}>Appreciation Certificate Message:</label>
-                <p style={{fontSize:".65rem",color:"#64748B",marginBottom:4}}>Use variables: {NAME}, {AMOUNT}, {RECEIPT}, {VIBHAG}, {DATE}, {PURPOSE}</p>
-                <textarea
-                  rows={8}
-                  value={customAppreciationMsg}
-                  onChange={e=>setCustomAppreciationMsg(e.target.value)}
-                  style={{width:"100%",padding:"6px 8px",borderRadius:6,border:"1px solid #CBD5E1",fontSize:".72rem",boxSizing:"border-box"}}
-                />
-              </div>
       {open && (
         <div style={{position:"absolute", top:"100%", left:0, right:0, zIndex:1000, background:"white", border:"1px solid var(--bd)", borderRadius:8, maxHeight:200, overflowY:"auto", boxShadow:"0 4px 12px rgba(0,0,0,0.1)", marginTop:4}}>
           {filtered.length === 0 ? <div style={{padding:"10px", color:"var(--mu)", fontSize:".9rem"}}>No matches</div> : null}
