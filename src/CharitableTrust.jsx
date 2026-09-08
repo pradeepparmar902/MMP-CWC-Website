@@ -37978,6 +37978,66 @@ export const getAppreciationTemplateDefaultUrl = () => {
   return "/donor_appreciation_poster_tpl.jpg";
 };
 
+// ── Bulletproof Mobile & Desktop Image Downloader ──
+export async function downloadPosterImage(dataUrl, fileName = "Certificate.png") {
+  if (!dataUrl) return;
+  try {
+    const res = await fetch(dataUrl);
+    const blob = await res.blob();
+    const cleanName = fileName.endsWith('.png') ? fileName : (fileName + '.png');
+    const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent || '');
+
+    // 1. Mobile Web Share API: Natively presents "Save Image" to Photos / Gallery on iOS & Android
+    if (isMobile && navigator.share && navigator.canShare) {
+      try {
+        const file = new File([blob], cleanName, { type: 'image/png' });
+        if (navigator.canShare({ files: [file] })) {
+          await navigator.share({
+            files: [file],
+            title: cleanName,
+            text: "MMP Certificate of Appreciation"
+          });
+          return;
+        }
+      } catch (shareErr) {
+        if (shareErr.name === 'AbortError') return; // User closed share menu
+        console.warn("Native share error, using blob download:", shareErr);
+      }
+    }
+
+    // 2. Blob URL Download (Standard for Desktop & Android Chrome)
+    const blobUrl = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = blobUrl;
+    link.download = cleanName;
+    link.target = "_blank";
+    link.rel = "noopener noreferrer";
+    document.body.appendChild(link);
+    link.click();
+
+    // 3. iOS Safari fallback: If anchor download is blocked, open blob directly in new tab so user can Save Image
+    const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent || '') && !window.MSStream;
+    if (isIOS) {
+      window.open(blobUrl, '_blank');
+    }
+
+    setTimeout(() => {
+      document.body.removeChild(link);
+      URL.revokeObjectURL(blobUrl);
+    }, 5000);
+  } catch (err) {
+    console.error("downloadPosterImage error:", err);
+    // 4. Direct Fallback
+    const link = document.createElement("a");
+    link.href = dataUrl;
+    link.download = fileName;
+    link.target = "_blank";
+    document.body.appendChild(link);
+    link.click();
+    setTimeout(() => document.body.removeChild(link), 2000);
+  }
+}
+
 // ── Canvas-based Donor Appreciation Poster Generator ──
 export const generateDonorPosterCanvas = (donation, templateImgUrl, customPositions) => {
   return new Promise(async (resolve, reject) => {
@@ -38758,14 +38818,19 @@ function OfflineDonationSuccessCard({ donation, C, setC, auth, onReload }) {
     setAttachedPhotoUrl(null);
   };
 
-  const handleDownloadPoster = () => {
-    if (!posterUrl) return;
-    const link = document.createElement("a");
-    link.href = posterUrl;
-    link.download = `MMP_Appreciation_Certificate_${(donation.name || 'Donor').replace(/[^a-zA-Z0-9]/g, '_')}.png`;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+  const [downloadingPoster, setDownloadingPoster] = useState(false);
+
+  const handleDownloadPoster = async () => {
+    if (!posterUrl || downloadingPoster) return;
+    setDownloadingPoster(true);
+    try {
+      const fileName = `MMP_Appreciation_Certificate_${(donation.name || 'Donor').replace(/[^a-zA-Z0-9]/g, '_')}.png`;
+      await downloadPosterImage(posterUrl, fileName);
+    } catch(err) {
+      alert("Download error: " + err.message);
+    } finally {
+      setDownloadingPoster(false);
+    }
   };
 
       const getThankYouWhatsAppMsg = () => {
@@ -38955,8 +39020,11 @@ function OfflineDonationSuccessCard({ donation, C, setC, auth, onReload }) {
             <img 
               src={posterUrl} 
               alt="Donation Appreciation Certificate" 
-              style={{width:"100%",maxWidth:340,borderRadius:8,boxShadow:"0 3px 10px rgba(0,0,0,0.15)",border:"1px solid #CBD5E1",marginBottom:8}} 
+              style={{width:"100%",maxWidth:340,borderRadius:8,boxShadow:"0 3px 10px rgba(0,0,0,0.15)",border:"1px solid #CBD5E1",marginBottom:4}} 
             />
+            <div style={{fontSize:".68rem",color:"#64748B",marginBottom:8}}>
+              📱 Mobile tip: Tap <b>Download Poster</b>, or long-press the certificate above to save directly.
+            </div>
 
             {/* Action Buttons Bar */}
             <div style={{display:"flex",gap:6,justifyContent:"center",flexWrap:"wrap",marginBottom:8}}>
@@ -38972,9 +39040,10 @@ function OfflineDonationSuccessCard({ donation, C, setC, auth, onReload }) {
               <button
                 type="button"
                 onClick={handleDownloadPoster}
-                style={{padding:"6px 12px",borderRadius:6,background:"#0D4B5E",color:"white",border:"none",fontWeight:800,fontSize:".74rem",cursor:"pointer",display:"flex",alignItems:"center",gap:4}}
+                disabled={downloadingPoster}
+                style={{padding:"6px 12px",borderRadius:6,background:"#0D4B5E",color:"white",border:"none",fontWeight:800,fontSize:".74rem",cursor:downloadingPoster?"wait":"pointer",display:"flex",alignItems:"center",gap:4,opacity:downloadingPoster?0.7:1}}
               >
-                <span>📥</span> Download Poster
+                <span>📥</span> {downloadingPoster ? "Saving..." : "Download Poster"}
               </button>
 
               <button
@@ -39459,12 +39528,8 @@ function DonorListCard({ donorData, auth, onRefresh, C, setC }) {
     try {
       const tplUrl = C?.donorPosterTemplateUrl || getAppreciationTemplateDefaultUrl();
       const posterDataUrl = await generateDonorPosterCanvas(d, tplUrl, C?.donorPosterPositions);
-      const link = document.createElement("a");
-      link.href = posterDataUrl;
-      link.download = `MMP_Appreciation_Certificate_${(d.name || 'Donor').replace(/[^a-zA-Z0-9]/g, '_')}_₹${d.amount || 0}.png`;
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
+      const fileName = `MMP_Appreciation_Certificate_${(d.name || 'Donor').replace(/[^a-zA-Z0-9]/g, '_')}_₹${d.amount || 0}.png`;
+      await downloadPosterImage(posterDataUrl, fileName);
     } catch(err) {
       alert("Failed to save poster: " + err.message);
     } finally {
