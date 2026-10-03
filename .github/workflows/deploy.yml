@@ -23,7 +23,7 @@ jobs:
 
     # 3. Install dependencies and build the project
     - name: Install dependencies
-      run: npm install
+      run: npm install --ignore-scripts
 
     - name: Build project
       run: npm run build
