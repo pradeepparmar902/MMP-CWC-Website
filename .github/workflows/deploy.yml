@@ -23,7 +23,10 @@ jobs:
 
     # 3. Install dependencies and build the project
     - name: Install dependencies
-      run: PUPPETEER_SKIP_DOWNLOAD=true npm install
+      run: npm install
+      env:
+        PUPPETEER_SKIP_CHROMIUM_DOWNLOAD: true
+        PUPPETEER_SKIP_DOWNLOAD: true
 
     - name: Build project
       run: npm run build
