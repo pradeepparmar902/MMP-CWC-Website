@@ -1004,20 +1004,22 @@ const fbFetchAllUsers = async (idToken) => {
 const fbUploadLogo = async (file, idToken) => {
   const ext  = file.name.split(".").pop();
   const name = encodeURIComponent(`logos/logo_${Date.now()}.${ext}`);
-  const res  = await fetch(`${STG_URL()}?uploadType=media&name=${name}`, {
+  const uUrl = (import.meta.env.VITE_API_BASE_URL || 'https://www.mmp-cwc.com/api.php').replace('/api.php', '/upload.php');
+  const res  = await fetch(`${uUrl}?name=${name}`, {
     method: "POST",
     headers: { "Content-Type": file.type, "Authorization": `Bearer ${idToken}` },
     body: file,
   });
   if (!res.ok) throw new Error("Upload failed");
-  const data = await res.json();
-  return `${STG_URL()}/${name}?alt=media&token=${data.downloadTokens}`;
+  const bUrl = (import.meta.env.VITE_API_BASE_URL || 'https://www.mmp-cwc.com/api.php').replace('/api.php', '/uploads');
+  return `${bUrl}/${decodeURIComponent(name)}`;
 };
 
 const fbUploadPhoto = async (file, idToken) => {
   const ext  = file.name.split(".").pop();
   const name = encodeURIComponent(`gallery/photo_${Date.now()}.${ext}`);
-  const res  = await fetch(`${STG_URL()}?uploadType=media&name=${name}`, {
+  const uUrl = (import.meta.env.VITE_API_BASE_URL || 'https://www.mmp-cwc.com/api.php').replace('/api.php', '/upload.php');
+  const res  = await fetch(`${uUrl}?name=${name}`, {
     method: "POST",
     headers: { "Content-Type": file.type, "Authorization": `Bearer ${idToken}` },
     body: file,
@@ -1026,8 +1028,8 @@ const fbUploadPhoto = async (file, idToken) => {
     const errText = await res.text();
     throw new Error(`Upload failed (${res.status}): ${errText}`);
   }
-  const data = await res.json();
-  return `${STG_URL()}/${name}?alt=media&token=${data.downloadTokens}`;
+  const bUrl = (import.meta.env.VITE_API_BASE_URL || 'https://www.mmp-cwc.com/api.php').replace('/api.php', '/uploads');
+  return `${bUrl}/${decodeURIComponent(name)}`;
 };
 
 const cleanFormInstructions = (rawStr) => {
@@ -1064,7 +1066,8 @@ const fbUploadPublicFile = async (file, idToken) => {
   const headers = { "Content-Type": cType };
   if (idToken) headers["Authorization"] = `Bearer ${idToken}`;
 
-  const res = await fetch(`${STG_URL()}?uploadType=media&name=${name}`, {
+  const uUrl = (import.meta.env.VITE_API_BASE_URL || 'https://www.mmp-cwc.com/api.php').replace('/api.php', '/upload.php');
+  const res = await fetch(`${uUrl}?name=${name}`, {
     method: "POST",
     headers: headers,
     body: file,
@@ -1073,8 +1076,8 @@ const fbUploadPublicFile = async (file, idToken) => {
     const errText = await res.text();
     throw new Error(`Upload failed (${res.status}): ${errText}`);
   }
-  const data = await res.json();
-  return `${STG_URL()}/${name}?alt=media&token=${data.downloadTokens}`;
+  const bUrl = (import.meta.env.VITE_API_BASE_URL || 'https://www.mmp-cwc.com/api.php').replace('/api.php', '/uploads');
+  return `${bUrl}/${decodeURIComponent(name)}`;
 };
 
 
