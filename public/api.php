@@ -22,8 +22,8 @@ header("Content-Type: application/json");
 // ==========================================
 $db_host = 'localhost';
 $db_name = 'u485225710_community';
-$db_user = 'u485225710_mmp_user'; // UPDATE THIS IN HOSTINGER
-$db_pass = 'YourSecurePassword123!'; // UPDATE THIS IN HOSTINGER
+$db_user = 'u485225710_admin; // UPDATE THIS IN HOSTINGER
+$db_pass = 'Pindia@2025'; // UPDATE THIS IN HOSTINGER
 
 try {
     $pdo = new PDO("mysql:host=$db_host;dbname=$db_name;charset=utf8mb4", $db_user, $db_pass);
