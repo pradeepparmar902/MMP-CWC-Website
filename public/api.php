@@ -22,7 +22,7 @@ header("Content-Type: application/json");
 // ==========================================
 $db_host = 'localhost';
 $db_name = 'u485225710_community';
-$db_user = 'u485225710_admin; // UPDATE THIS IN HOSTINGER
+$db_user = 'u485225710_admin'; // UPDATE THIS IN HOSTINGER
 $db_pass = 'Pindia@2025'; // UPDATE THIS IN HOSTINGER
 
 try {
