@@ -17,13 +17,114 @@ if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
 
 header("Content-Type: application/json");
 
+// Proxy Google Apps Script Web App requests to avoid browser CORS & inspect HTML error pages
+if (isset($_GET['action']) && $_GET['action'] === 'gdrive_proxy' && $_SERVER['REQUEST_METHOD'] === 'POST') {
+    $rawInput = file_get_contents('php://input');
+    $reqData = json_decode($rawInput, true) ?: [];
+    $scriptUrl = trim($reqData['scriptUrl'] ?? '');
+    $payload = $reqData['payload'] ?? [];
+    if (!$scriptUrl) {
+        http_response_code(400);
+        echo json_encode(["success" => false, "error" => "Missing scriptUrl"]);
+        exit;
+    }
+    $ch = curl_init($scriptUrl);
+    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+    curl_setopt($ch, CURLOPT_FOLLOWLOCATION, true);
+    curl_setopt($ch, CURLOPT_MAXREDIRS, 5);
+    curl_setopt($ch, CURLOPT_POST, true);
+    curl_setopt($ch, CURLOPT_HTTPHEADER, ['Content-Type: text/plain;charset=utf-8']);
+    curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($payload));
+    curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
+    $respText = curl_exec($ch);
+    $curlErr = curl_error($ch);
+    $finalUrl = curl_getinfo($ch, CURLINFO_EFFECTIVE_URL);
+    curl_close($ch);
+    if ($respText === false) {
+        echo json_encode(["success" => false, "error" => "cURL error: " . $curlErr]);
+        exit;
+    }
+    $decoded = json_decode($respText, true);
+    if (is_array($decoded)) {
+        echo json_encode($decoded);
+        exit;
+    }
+    $friendly = "Google Script returned an HTML page instead of JSON.";
+    if (strpos($finalUrl, 'accounts.google.com') !== false || strpos($respText, 'accounts.google.com') !== false || strpos($respText, 'ServiceLogin') !== false) {
+        $friendly = "Access Denied by Google: In script.google.com, click Deploy -> Manage deployments -> Edit -> set 'Who has access' to 'Anyone' and click Deploy.";
+    } elseif (strpos($respText, 'Authorization is required') !== false || strpos($respText, 'permission') !== false || strpos($respText, 'DriveApp') !== false) {
+        $friendly = "Drive Permission Needed: In script.google.com editor, click 'Run' at the top toolbar once and click 'Review Permissions -> Advanced -> Allow', then Deploy -> Manage deployments -> Edit -> Version: 'New version' -> Deploy.";
+    }
+    echo json_encode(["success" => false, "error" => $friendly]);
+    exit;
+}
+
+// Delete a single file from /uploads/
+if (isset($_GET['action']) && $_GET['action'] === 'delete') {
+    $upload_dir = __DIR__ . '/uploads/';
+    $name = $_GET['name'] ?? null;
+    if (!$name) {
+        $raw = json_decode(file_get_contents('php://input'), true);
+        $name = $raw['name'] ?? null;
+    }
+    if (!$name) {
+        http_response_code(400);
+        echo json_encode(["success" => false, "error" => "No file name provided"]);
+        exit;
+    }
+    $name = str_replace(['..', '\\'], '', $name);
+    $name = preg_replace('#^/?uploads/#', '', ltrim($name, '/'));
+    $target_file = $upload_dir . ltrim($name, '/');
+
+    if (file_exists($target_file) && is_file($target_file)) {
+        @unlink($target_file);
+        echo json_encode(["success" => true, "deleted" => $name]);
+    } else {
+        echo json_encode(["success" => true, "deleted" => false, "message" => "File already removed"]);
+    }
+    exit;
+}
+
+// Clean orphan files inside a subfolder of /uploads/
+if (isset($_GET['action']) && $_GET['action'] === 'clean_folder') {
+    $upload_dir = __DIR__ . '/uploads/';
+    $raw = json_decode(file_get_contents('php://input'), true) ?: [];
+    $folder = $_GET['folder'] ?? ($raw['folder'] ?? '');
+    $keepFiles = $raw['keepFiles'] ?? [];
+    $folder = str_replace(['..', '\\'], '', $folder);
+    $folder = trim($folder, '/');
+
+    if (!$folder) {
+        http_response_code(400);
+        echo json_encode(["success" => false, "error" => "No folder specified"]);
+        exit;
+    }
+
+    $target_dir = $upload_dir . $folder;
+    $deleted = [];
+    if (is_dir($target_dir)) {
+        $items = scandir($target_dir);
+        foreach ($items as $item) {
+            if ($item === '.' || $item === '..') continue;
+            $full = $target_dir . '/' . $item;
+            if (is_file($full) && !in_array($item, $keepFiles, true)) {
+                if (@unlink($full)) {
+                    $deleted[] = $item;
+                }
+            }
+        }
+    }
+    echo json_encode(["success" => true, "deletedCount" => count($deleted), "deletedFiles" => $deleted]);
+    exit;
+}
+
 // ==========================================
 // DATABASE CONFIGURATION (HOSTINGER MYSQL)
 // ==========================================
 $db_host = 'localhost';
 $db_name = 'u485225710_community';
-$db_user = 'u485225710_mmp_user'; // UPDATE THIS IN HOSTINGER
-$db_pass = 'YourSecurePassword123!'; // UPDATE THIS IN HOSTINGER
+$db_user = 'u485225710_admin'; // UPDATE THIS IN HOSTINGER
+$db_pass = 'Pindia@2025'; // UPDATE THIS IN HOSTINGER
 
 try {
     $pdo = new PDO("mysql:host=$db_host;dbname=$db_name;charset=utf8mb4", $db_user, $db_pass);
