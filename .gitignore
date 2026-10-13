@@ -24,7 +24,5 @@ dist-ssr
 
 *-firebase-adminsdk-*.json
 *.sql
-# Allow .env for Hostinger cloud builds
-!.env
-.env.local
-.env.*.local
+.env
+.env.*
