@@ -3557,10 +3557,58 @@ function Events({ C, lang, globalAuthToken, globalProfile, onPublicLogin, forceS
   const [otp, setOtp] = useState("");
   const [otpSent, setOtpSent] = useState(false);
   const [confirmationResult, setConfirmationResult] = useState(null);
+  const [directUid, setDirectUid] = useState("");
+  const otpEnabled = C?.authSettings?.otpEnabled === true;
 
   const handleSendOtp = async (e) => {
     e.preventDefault();
-    if (!mobile || mobile.length < 10) { setAuthError("Please enter a valid 10-digit mobile number"); return; }
+    const cleanNum = mobile.replace(/\D/g, '').slice(-10);
+    if (!mobile || cleanNum.length < 10) { setAuthError("Please enter a valid 10-digit mobile number"); return; }
+
+    if (!otpEnabled) {
+      setSubmitting(true); setAuthError("");
+      try {
+        const ccDigits = countryCode.replace(/\D/g, '') || "91";
+        const defaultUid = `mob_${ccDigits}${cleanNum}`;
+        const directToken = `direct_${defaultUid}`;
+        let targetUid = defaultUid;
+        let pData = await fbFetchUserProfile(defaultUid, directToken).catch(() => null);
+        if (!pData) {
+          const allUsers = await fbFetchAllUsers(directToken).catch(() => []);
+          const matched = allUsers.find(u => String(u.mobile || u['Mobile Number'] || "").replace(/\D/g, '').slice(-10) === cleanNum);
+          if (matched) {
+            targetUid = matched.id || defaultUid;
+            pData = matched;
+          }
+        }
+        setDirectUid(targetUid);
+        setAuthToken(directToken);
+        const fullMobile = `${countryCode} ${cleanNum}`;
+        if (pData && pData.name && pData.address) {
+          const mergedProfile = { ...pData, uid: targetUid, mobile: pData.mobile || fullMobile };
+          if (onPublicLogin) onPublicLogin(directToken, mergedProfile);
+          setAuthStep(1);
+          const newForm = { ...formData, "Submitted By": mergedProfile.name || fullMobile };
+          const formSpec = getForm(selectedEvent?.event?.formId);
+          formSpec.fields.forEach(f => {
+            const fKey = f.label?.trim() || "Field";
+            const kLow = fKey.toLowerCase();
+            if (f.type === 'tel' || kLow.includes('mobile') || kLow.includes('phone')) newForm[fKey] = mergedProfile.mobile || fullMobile;
+            if (kLow.includes('name') && !kLow.includes('event')) newForm[fKey] = mergedProfile.name || "";
+            if (kLow.includes('address')) newForm[fKey] = mergedProfile.address || "";
+            if (kLow.includes('gender') || kLow === 'sex') newForm[fKey] = mergedProfile.gender || "";
+          });
+          setFormData(newForm);
+        } else {
+          setAuthStep('complete_profile');
+        }
+      } catch (err) {
+        setAuthError(err?.message || "Failed to continue. Please try again.");
+      } finally {
+        setSubmitting(false);
+      }
+      return;
+    }
     
     if (!fbAuth) {
       try {
@@ -3670,14 +3718,15 @@ function Events({ C, lang, globalAuthToken, globalProfile, onPublicLogin, forceS
         pUrl = await fbUploadPublicFile(regImageFile, authToken).catch(()=>"");
       }
       
-      const user = fbAuth.currentUser;
-      if (!user) throw new Error("Not authenticated");
+      const user = fbAuth?.currentUser;
+      const uid = user?.uid || directUid;
+      if (!uid) throw new Error("Not authenticated");
       
       const fullMobile = `${countryCode} ${mobile.replace(/\D/g, '').slice(-10)}`;
-      let profileData = { name: regName, address: regAddress, gender: regGender, mobile: fullMobile, photoUrl: pUrl };
+      let profileData = { uid, name: regName, address: regAddress, gender: regGender, mobile: fullMobile, photoUrl: pUrl };
       
-      await fbUpdateProfile(authToken, regName, pUrl).catch(()=>null);
-      await fbSaveUserProfile(user.uid, profileData, authToken).catch(()=>null);
+      if (user) await fbUpdateProfile(authToken, regName, pUrl).catch(()=>null);
+      await fbSaveUserProfile(uid, profileData, authToken).catch(()=>null);
       
       if (onPublicLogin) onPublicLogin(authToken, profileData);
       setAuthStep(1);
@@ -4057,7 +4106,7 @@ function Events({ C, lang, globalAuthToken, globalProfile, onPublicLogin, forceS
                 {authError && <div style={{background:"#FDECEA",color:"#C0392B",padding:"10px",borderRadius:8,fontSize:".8rem",fontWeight:600}}>{authError}</div>}
                 {!otpSent ? (
                   <button type="submit" className="bs" style={{padding:"12px",borderRadius:8,fontWeight:700,opacity:submitting?0.7:1}} disabled={submitting}>
-                    {submitting ? "Sending OTP..." : "Send OTP"}
+                    {submitting ? (otpEnabled ? "Sending OTP..." : "Continuing...") : (otpEnabled ? "Send OTP" : "Continue")}
                   </button>
                 ) : (
                   <div style={{display:"flex",flexDirection:"column",gap:12}}>
@@ -4666,7 +4715,7 @@ function Events({ C, lang, globalAuthToken, globalProfile, onPublicLogin, forceS
                         </div>
                       </div>
                       <button type="submit" className="bs" style={{width:"100%",padding:"12px",borderRadius:8,fontWeight:700,marginTop:8,opacity:submitting?0.7:1, fontSize:".9rem", boxShadow:"0 4px 14px rgba(0,0,0,0.15)", cursor:"pointer", border:"none", color:"white"}} disabled={submitting}>
-                        {submitting ? "Processing..." : "Send OTP"}
+                        {submitting ? "Processing..." : (otpEnabled ? "Send OTP" : "Continue")}
                       </button>
                     </form>
                     ) : (
@@ -12282,7 +12331,25 @@ function Admin({ C, setC, setPage, auth, onLogout, onShowLogin }) {
         <div style={{padding:mob?"60px 16px 16px":"24px"}}>
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10,paddingBottom:6,borderBottom:"1px solid var(--bd)",fontSize:".8rem",color:"var(--mu)",flexWrap:"wrap",gap:8}}>
             <div>Logged in as: <strong style={{color:"var(--dt)"}}>{auth?.email}</strong></div>
-            <div style={{display:"flex",alignItems:"center",gap:8}}>
+            <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
+              {master && (
+                <button
+                  onClick={async () => {
+                    const nextVal = !(C?.authSettings?.otpEnabled === true);
+                    const newC = { ...C, authSettings: { ...(C?.authSettings || {}), otpEnabled: nextVal } };
+                    setC(newC);
+                    try {
+                      if (auth?.idToken) await fbSave(newC, auth.idToken);
+                    } catch (e) {
+                      alert("Failed to save OTP setting: " + e.message);
+                    }
+                  }}
+                  style={{padding:"4px 12px",borderRadius:16,background:C?.authSettings?.otpEnabled === true ? "linear-gradient(135deg, #0D9488, #0F766E)" : "linear-gradient(135deg, #D97706, #B45309)",color:"white",border:"none",fontWeight:700,fontSize:".78rem",cursor:"pointer",display:"flex",alignItems:"center",gap:6,boxShadow:"0 2px 6px rgba(0,0,0,0.18)",transition:"all 0.2s"}}
+                  title="Toggle SMS OTP verification for public member login & event registration"
+                >
+                  {C?.authSettings?.otpEnabled === true ? "🔐 SMS OTP: ON" : "🔓 SMS OTP: OFF (Direct Login)"}
+                </button>
+              )}
               <button 
                 onClick={() => setShowUserPickerModal(true)} 
                 style={{padding:"4px 12px",borderRadius:16,background:"linear-gradient(135deg, #10B981, #059669)",color:"white",border:"none",fontWeight:700,fontSize:".78rem",cursor:"pointer",display:"flex",alignItems:"center",gap:6,boxShadow:"0 2px 6px rgba(16,185,129,0.25)",transition:"all 0.2s"}}
@@ -22919,14 +22986,16 @@ function Public({ C, lang, setLang, setPage, auth, onShowLogin }) {
           👤
         </button>
       )}
-      {showUserLogin && <UserLoginModal onClose={()=>setShowUserLogin("")} onPublicLogin={(t, p)=>{handlePublicLogin(t,p); const intent = showUserLogin; setShowUserLogin(""); if(intent === "nav") setShowDashboard(true);}}/>}
+      {showUserLogin && <UserLoginModal C={C} onClose={()=>setShowUserLogin("")} onPublicLogin={(t, p)=>{handlePublicLogin(t,p); const intent = showUserLogin; setShowUserLogin(""); if(intent === "nav") setShowDashboard(true);}}/>}
       {showDashboard && <UserDashboard C={C} globalProfile={globalProfile} globalAuthToken={globalAuthToken} onClose={()=>setShowDashboard(false)} />}
     </div>
   );
 }
 
 // ── PUBLIC USER LOGIN MODAL ───────────────────────────────────────────────────
-export function UserLoginModal({ onClose, onPublicLogin, subtitle }) {
+export function UserLoginModal({ C, onClose, onPublicLogin, subtitle }) {
+  const effectiveC = C || (typeof window !== "undefined" ? window.__COMMUNITY_CONFIG : null);
+  const otpEnabled = effectiveC?.authSettings?.otpEnabled === true;
   const [isLoginMode, setIsLoginMode] = useState(true);
   const [mobile, setMobile] = useState("");
   const [countryCode, setCountryCode] = useState("+91");
@@ -22961,6 +23030,42 @@ export function UserLoginModal({ onClose, onPublicLogin, subtitle }) {
     const cleanNum = mobile.replace(/\D/g, '').slice(-10);
     if (cleanNum.length < 10) { setAuthError("Please enter a valid 10-digit mobile number"); return; }
     if (!isLoginMode && (!regName || !regAddress || !regGender || !regEmail)) { setAuthError("Please fill out Name, Email, Address, and Gender."); return; }
+
+    if (!otpEnabled) {
+      setSubmitting(true); setAuthError("");
+      try {
+        const ccDigits = countryCode.replace(/\D/g, '') || "91";
+        const defaultUid = `mob_${ccDigits}${cleanNum}`;
+        const directToken = `direct_${defaultUid}`;
+        let targetUid = defaultUid;
+        let existingProfile = await fbFetchUserProfile(defaultUid, directToken).catch(() => null);
+        if (!existingProfile) {
+          const allUsers = await fbFetchAllUsers(directToken).catch(() => []);
+          const matched = allUsers.find(u => String(u.mobile || u['Mobile Number'] || "").replace(/\D/g, '').slice(-10) === cleanNum);
+          if (matched) {
+            targetUid = matched.id || defaultUid;
+            existingProfile = matched;
+          }
+        }
+        const fullMobile = `${countryCode} ${cleanNum}`;
+        let profileData = { uid: targetUid, name: regName, email: regEmail, address: regAddress, gender: regGender, mobile: fullMobile, photoUrl: "" };
+        if (!isLoginMode) {
+          if (regImageFile) {
+            profileData.photoUrl = await fbUploadPublicFile(regImageFile, directToken).catch(() => "");
+          }
+          await fbSaveUserProfile(targetUid, profileData, directToken).catch(() => null);
+        } else if (existingProfile) {
+          profileData = { ...profileData, ...existingProfile, uid: targetUid, mobile: existingProfile.mobile || fullMobile };
+        }
+        if (onPublicLogin) onPublicLogin(directToken, profileData);
+        onClose();
+      } catch (err) {
+        setAuthError(err?.message || "Login failed. Please try again.");
+      } finally {
+        setSubmitting(false);
+      }
+      return;
+    }
     
     if (!fbAuth) {
       try {
@@ -23056,7 +23161,7 @@ export function UserLoginModal({ onClose, onPublicLogin, subtitle }) {
       <div style={{background:"white",borderRadius:24,width:"100%",maxWidth:400,padding:"24px",boxShadow:"0 32px 80px rgba(0,0,0,.3)",position:"relative"}}>
         <button onClick={onClose} style={{position:"absolute",top:16,right:16,background:"#F5F5F5",border:"none",borderRadius:"50%",width:32,height:32,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",fontWeight:700,color:"var(--dt)"}}>✕</button>
         <h2 style={{fontFamily:"'Playfair Display',serif",fontSize:"1.6rem",color:"var(--dt)",marginBottom:6,fontWeight:700}}>{isLoginMode ? "Welcome Back" : "Create Profile"}</h2>
-        <p style={{color:"var(--mu)",fontSize:".85rem",marginBottom:20}}>{subtitle || (isLoginMode ? "Login securely via SMS OTP." : "Register once to easily apply for events and awards.")}</p>
+        <p style={{color:"var(--mu)",fontSize:".85rem",marginBottom:20}}>{subtitle || (isLoginMode ? (otpEnabled ? "Login securely via SMS OTP." : "Login directly with your mobile number (OTP temporarily disabled).") : "Register once to easily apply for events and awards.")}</p>
         
         {authError && <div style={{background:"#FEF0F0",color:"#C0392B",padding:"10px 14px",borderRadius:10,fontSize:".8rem",marginBottom:16,fontWeight:600}}>{authError}</div>}
         <div id="recaptcha-container-login"></div>
@@ -23131,7 +23236,7 @@ export function UserLoginModal({ onClose, onPublicLogin, subtitle }) {
           )}
 
           <button type="submit" disabled={submitting} style={{background:"linear-gradient(135deg, var(--sf), var(--gd))",color:"white",padding:"14px",borderRadius:12,fontWeight:800,fontSize:"1rem",border:"none",cursor:submitting?"not-allowed":"pointer",marginTop:8,boxShadow:"0 8px 20px rgba(232,101,10,.3)",transition:"all .2s",letterSpacing:.5}} onMouseEnter={e=>e.currentTarget.style.transform="translateY(-2px)"} onMouseLeave={e=>e.currentTarget.style.transform="translateY(0)"}>
-            {submitting ? "Processing..." : "Send OTP"}
+            {submitting ? "Processing..." : (otpEnabled ? "Send OTP" : (isLoginMode ? "Login" : "Create Profile & Login"))}
           </button>
         </form>
         ) : (
@@ -36160,6 +36265,29 @@ function AdminAccess({ C, setC, master, auth }) {
 
   return (
     <div className="card">
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:16,flexWrap:"wrap",padding:"14px 18px",marginBottom:20,borderRadius:12,background:C?.authSettings?.otpEnabled === true ? "#F0FDF4" : "#FFFBEB",border:`1px solid ${C?.authSettings?.otpEnabled === true ? "#86EFAC" : "#FCD34D"}`}}>
+        <div>
+          <div style={{fontWeight:800,fontSize:".95rem",color:"var(--dt)",marginBottom:2}}>
+            {C?.authSettings?.otpEnabled === true ? "🔐 Member SMS OTP Verification: ENABLED" : "🔓 Member SMS OTP Verification: TEMPORARILY DISABLED"}
+          </div>
+          <div style={{fontSize:".8rem",color:"var(--mu)"}}>
+            {C?.authSettings?.otpEnabled === true
+              ? "Users must verify their mobile number via SMS OTP to log in or register for events."
+              : "Users can log in directly with their 10-digit mobile number without SMS OTP."}
+          </div>
+        </div>
+        <button
+          onClick={() => {
+            const nextVal = !(C?.authSettings?.otpEnabled === true);
+            const newC = { ...C, authSettings: { ...(C?.authSettings || {}), otpEnabled: nextVal } };
+            setC(newC);
+            saveToFirebase(newC);
+          }}
+          style={{padding:"8px 18px",borderRadius:20,border:"none",cursor:"pointer",fontWeight:700,fontSize:".82rem",color:"white",background:C?.authSettings?.otpEnabled === true ? "#DC2626" : "#059669",boxShadow:"0 2px 8px rgba(0,0,0,0.15)"}}
+        >
+          {C?.authSettings?.otpEnabled === true ? "Disable OTP" : "Enable OTP"}
+        </button>
+      </div>
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:20,flexWrap:"wrap",gap:16}}>
         <div>
           <h2 className="sh" style={{fontSize:"1.4rem",color:"var(--dt)",marginBottom:4}}>Access Control</h2>
@@ -48367,14 +48495,17 @@ function DashboardProfile({ globalProfile, globalAuthToken, mob, isAdminPreview 
         photoUrl: data.photo // support both
       };
       
-      // Re-fetch user localId to save to users collection
-      const res = await fetch("https://identitytoolkit.googleapis.com/v1/accounts:lookup?key=" + getFB().apiKey, {
-        method:"POST", headers:{"Content-Type":"application/json"},
-        body: JSON.stringify({idToken: globalAuthToken})
-      });
-      const authData = await res.json();
-      if (!authData.users || !authData.users[0]) throw new Error("Could not find user.");
-      const localId = authData.users[0].localId;
+      // Resolve user localId (direct mobile login or Firebase Auth)
+      let localId = globalProfile?.uid || (String(globalAuthToken || "").startsWith("direct_") ? String(globalAuthToken).replace(/^direct_/, "") : "");
+      if (!localId) {
+        const res = await fetch("https://identitytoolkit.googleapis.com/v1/accounts:lookup?key=" + getFB().apiKey, {
+          method:"POST", headers:{"Content-Type":"application/json"},
+          body: JSON.stringify({idToken: globalAuthToken})
+        });
+        const authData = await res.json();
+        if (!authData.users || !authData.users[0]) throw new Error("Could not find user.");
+        localId = authData.users[0].localId;
+      }
       
       await fbSaveUserProfile(localId, payload, globalAuthToken);
       
