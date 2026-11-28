@@ -271,8 +271,11 @@ export const resolveMasterDataOptions = (optionsInput, masterTables = []) => {
   return String(optionsInput).split(/[\n,]+/).map(s => s.trim()).filter(Boolean);
 };
 
-export const getMasterDataAutoPopulate = (optsString, selectedValue, config) => {
+export const getMasterDataAutoPopulate = (optsString, selectedValue, config, fieldConfig = null) => {
   if (!optsString || typeof optsString !== 'string' || !optsString.startsWith("@master:")) return {};
+  if (fieldConfig?.extractMode === "dropdown_only") return {};
+  if (Array.isArray(fieldConfig?.extractColumns) && fieldConfig.extractColumns.length === 0) return {};
+
   const parts = optsString.split(":");
   if (parts.length < 3) return {};
   const tableId = parts[1];
@@ -286,89 +289,168 @@ export const getMasterDataAutoPopulate = (optsString, selectedValue, config) => 
   );
   if (!table || !Array.isArray(table.rows)) return {};
   
-  const row = table.rows.find(r => {
+  const cleanSelected = String(selectedValue || "").replace(/\s*\*$/, "").trim().toUpperCase();
+  const row = cleanSelected ? table.rows.find(r => {
     if (!r) return false;
     const val = r[colName] !== undefined ? r[colName] : Object.entries(r).find(([k]) => k.trim().toLowerCase() === colName.trim().toLowerCase())?.[1];
-    return String(val || "").trim() === String(selectedValue || "").trim();
-  });
-  if (!row) return {};
-  
+    return String(val || "").trim().toUpperCase() === cleanSelected;
+  }) : null;
+
+  const allowedCols = Array.isArray(fieldConfig?.extractColumns) && fieldConfig.extractColumns.length > 0
+    ? fieldConfig.extractColumns
+    : null;
+
   const result = {};
+  if (!row) {
+    if (allowedCols) {
+      for (const c of allowedCols) result[c] = "";
+    }
+    return result;
+  }
+
   for (const [k, v] of Object.entries(row)) {
     if (k !== 'id' && k !== colName && k.trim().toLowerCase() !== colName.trim().toLowerCase()) {
-      result[k] = v;
+      if (!allowedCols || allowedCols.some(ac => ac.trim().toLowerCase() === k.trim().toLowerCase())) {
+        result[k] = v;
+      }
     }
   }
   return result;
 };
 
-const SearchableDropdown = ({ value, onChange, options, masterTables, placeholder, required, isError }) => {
+const SearchableDropdown = ({ value, onChange, options, masterTables, placeholder, required, isError, allowOther = false }) => {
   const [open, setOpen] = useState(false);
-  const [search, setSearch] = useState(value || "");
+  const [otherSelected, setOtherSelected] = useState(false);
   const wrapperRef = useRef(null);
   
   const resolvedOptions = useMemo(() => {
     return resolveMasterDataOptions(options, masterTables);
   }, [options, masterTables]);
 
+  const rawVal = String(value || "");
+  const cleanVal = rawVal.replace(/\s*\*$/, "").trim();
+  const matchedOpt = (resolvedOptions || []).find(o => String(o).trim().toLowerCase() === cleanVal.toLowerCase()) || "";
+  const isInList = !cleanVal || Boolean(matchedOpt);
+  const showFreeBox = allowOther && (otherSelected || (!isInList && cleanVal !== ""));
+
+  const [search, setSearch] = useState(showFreeBox ? "Other" : (matchedOpt || rawVal));
+
   useEffect(() => {
-    setSearch(value || "");
-  }, [value]);
+    if (!allowOther && otherSelected) setOtherSelected(false);
+  }, [allowOther, otherSelected]);
+
+  useEffect(() => {
+    if (showFreeBox) {
+      setSearch("Other");
+    } else {
+      setSearch(matchedOpt || (!allowOther ? rawVal : ""));
+    }
+  }, [value, showFreeBox, matchedOpt, allowOther, rawVal]);
 
   useEffect(() => {
     function handleClickOutside(event) {
       if (wrapperRef.current && !wrapperRef.current.contains(event.target)) {
         setOpen(false);
-        if (resolvedOptions && resolvedOptions.length > 0 && search && !resolvedOptions.includes(search)) {
-          setSearch(value || "");
-          if (value && !resolvedOptions.includes(value)) onChange("");
+        if (showFreeBox) {
+          setSearch("Other");
+          return;
+        }
+        if (resolvedOptions && resolvedOptions.length > 0 && search && !resolvedOptions.some(o => String(o).toLowerCase() === String(search).toLowerCase())) {
+          setSearch(matchedOpt || "");
+          if (value && !matchedOpt && !allowOther) onChange("");
         }
       }
     }
     document.addEventListener("mousedown", handleClickOutside);
     return () => document.removeEventListener("mousedown", handleClickOutside);
-  }, [search, resolvedOptions, value, onChange]);
+  }, [search, resolvedOptions, value, onChange, showFreeBox, matchedOpt, allowOther]);
 
-  const filtered = (resolvedOptions || []).filter(o => o && String(o).toLowerCase().includes(String(search || "").toLowerCase()));
+  const searchLower = String(search || "").trim().toLowerCase();
+  const filtered = (resolvedOptions || []).filter(o => {
+    if (!o) return false;
+    if (showFreeBox && searchLower === "other") return true;
+    return String(o).toLowerCase().includes(searchLower);
+  });
 
   return (
     <div ref={wrapperRef} style={{position: "relative", width: "100%"}}>
-      <input
-        required={required}
-        value={search}
-        onChange={e => { setSearch(e.target.value); setOpen(true); }}
-        onFocus={() => setOpen(true)}
-        placeholder={placeholder || "-- Select --"}
-        className="modern-input" 
-        style={{
-          paddingRight: 32,
-          border: isError ? "2px solid #EF4444" : undefined,
-          background: isError ? "#FFF5F5" : undefined,
-          boxShadow: isError ? "0 0 0 3px rgba(239, 68, 68, 0.2)" : undefined
-        }}
-      />
-      <div 
-        onClick={() => setOpen(!open)}
-        style={{position:"absolute", right:8, top:"50%", transform:"translateY(-50%)", cursor:"pointer", color:"#64748B", fontSize:".7rem", padding:"6px", display:"flex", alignItems:"center", justifyContent:"center", background:"#F8FAFC", borderRadius:4}}
-      >▼</div>
-      {open && (
-        <div style={{position:"absolute", top:"100%", left:0, right:0, zIndex:1000, background:"white", border:"1px solid var(--bd)", borderRadius:8, maxHeight:200, overflowY:"auto", boxShadow:"0 4px 12px rgba(0,0,0,0.1)", marginTop:4}}>
-          {filtered.length === 0 ? <div style={{padding:"10px", color:"var(--mu)", fontSize:".9rem"}}>No matches</div> : null}
-          {filtered.map((opt, i) => (
-            <div
-              key={i}
-              onClick={() => {
-                setSearch(opt);
-                onChange(opt);
-                setOpen(false);
-              }}
-              style={{padding:"10px", cursor:"pointer", fontSize:".9rem", borderBottom: i < filtered.length-1 ? "1px solid #f0f0f0" : "none", color:"var(--dt)"}}
-              onMouseEnter={e => e.target.style.background="#f5f5f5"}
-              onMouseLeave={e => e.target.style.background="white"}
-            >
-              {opt}
-            </div>
-          ))}
+      <div style={{position: "relative", width: "100%"}}>
+        <input
+          required={required && !showFreeBox}
+          value={search}
+          onChange={e => {
+            if (showFreeBox) setOtherSelected(false);
+            setSearch(e.target.value);
+            setOpen(true);
+          }}
+          onFocus={() => setOpen(true)}
+          placeholder={placeholder || "-- Select --"}
+          className="modern-input" 
+          style={{
+            paddingRight: 32,
+            border: isError ? "2px solid #EF4444" : undefined,
+            background: isError ? "#FFF5F5" : undefined,
+            boxShadow: isError ? "0 0 0 3px rgba(239, 68, 68, 0.2)" : undefined
+          }}
+        />
+        <div 
+          onClick={() => setOpen(!open)}
+          style={{position:"absolute", right:8, top:"50%", transform:"translateY(-50%)", cursor:"pointer", color:"#64748B", fontSize:".7rem", padding:"6px", display:"flex", alignItems:"center", justifyContent:"center", background:"#F8FAFC", borderRadius:4}}
+        >▼</div>
+        {open && (
+          <div style={{position:"absolute", top:"100%", left:0, right:0, zIndex:1000, background:"white", border:"1px solid var(--bd)", borderRadius:8, maxHeight:220, overflowY:"auto", boxShadow:"0 4px 12px rgba(0,0,0,0.1)", marginTop:4}}>
+            {filtered.length === 0 && !allowOther ? <div style={{padding:"10px", color:"var(--mu)", fontSize:".9rem"}}>No matches</div> : null}
+            {filtered.map((opt, i) => (
+              <div
+                key={i}
+                onClick={() => {
+                  setOtherSelected(false);
+                  setSearch(opt);
+                  onChange(opt);
+                  setOpen(false);
+                }}
+                style={{padding:"10px", cursor:"pointer", fontSize:".9rem", borderBottom: (i < filtered.length - 1 || allowOther) ? "1px solid #f0f0f0" : "none", color:"var(--dt)"}}
+                onMouseEnter={e => e.currentTarget.style.background="#f5f5f5"}
+                onMouseLeave={e => e.currentTarget.style.background="white"}
+              >
+                {opt}
+              </div>
+            ))}
+            {allowOther && (
+              <div
+                onClick={() => {
+                  setOtherSelected(true);
+                  setSearch("Other");
+                  onChange("");
+                  setOpen(false);
+                }}
+                style={{padding:"10px", cursor:"pointer", fontSize:".9rem", fontWeight:700, color:"#92400E", background:"#FFFBEB", borderTop:"1px solid #FDE68A"}}
+                onMouseEnter={e => e.currentTarget.style.background="#FEF3C7"}
+                onMouseLeave={e => e.currentTarget.style.background="#FFFBEB"}
+              >
+                Other (Type custom value...)
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+      {showFreeBox && (
+        <div style={{marginTop: 6}}>
+          <input
+            type="text"
+            required={required}
+            value={rawVal.replace(/\s*\*$/, "")}
+            onChange={e => onChange(e.target.value)}
+            placeholder="Type your custom value..."
+            className="modern-input"
+            style={{
+              border: isError ? "2px solid #EF4444" : "1.5px solid #D97706",
+              background: isError ? "#FFF5F5" : "#FFFDF5"
+            }}
+          />
+          <div style={{fontSize:".72rem", color:"#92400E", marginTop:3, fontWeight:600}}>
+            * Custom &quot;Other&quot; entry will be saved with a <strong>*</strong> mark
+          </div>
         </div>
       )}
     </div>
@@ -582,6 +664,15 @@ export const DEFAULT_STORAGE_ROUTING = {
       mediaProvider: "hostinger",
       folderName: "Site_Branding",
       supportsDataToggle: false
+    },
+    matrimony: {
+      label: "Community Matrimony & Biodata",
+      desc: "Matrimony profiles, contact requests, fee settings & candidate photos",
+      icon: "💍",
+      dataProvider: "gdrive",
+      mediaProvider: "gdrive",
+      folderName: "Matrimony_Profiles",
+      supportsDataToggle: true
     }
   }
 };
@@ -1150,12 +1241,13 @@ export const migrateSingleFileUrl = async (url, targetProvider, sectionKey, idTo
   return newUrl;
 };
 
-// Route Database Collection Requests (registrations, donations, volunteers, contacts) between Hostinger & Google Drive
+// Route Database Collection Requests (registrations, donations, volunteers, contacts, matrimony) between Hostinger & Google Drive
 export const getCollectionSectionKey = (collection) => {
   const c = String(collection || "").toLowerCase();
   if (c === "registrations") return "registrations";
   if (c === "donations") return "donations";
   if (c === "volunteers" || c === "contacts") return "volunteers";
+  if (c === "matrimony") return "matrimony";
   return "registrations";
 };
 
@@ -1189,6 +1281,42 @@ export const storageDbFetch = async (collectionAndPath, options = {}, forceProvi
 
   const url = `${import.meta.env.VITE_API_BASE_URL || '/api.php'}/${collectionAndPath}`;
   return await fetch(url, options);
+};
+
+export const fbFetchMatrimonyStore = async (idToken = "", forceProvider = null) => {
+  try {
+    const headers = {};
+    if (idToken) headers["Authorization"] = `Bearer ${idToken}`;
+    const res = await storageDbFetch(`matrimony/main?t=${Date.now()}`, { headers, cache: "no-store" }, forceProvider);
+    if (!res.ok) return null;
+    const doc = await res.json();
+    const raw = doc?.fields?.data?.stringValue || (typeof doc?.data === "string" ? doc.data : null);
+    if (raw) return JSON.parse(raw);
+    if (doc && (Array.isArray(doc.profiles) || doc.settings)) return doc;
+    return null;
+  } catch (e) {
+    return null;
+  }
+};
+
+export const fbSaveMatrimonyStore = async (payloadData, idToken = "", forceProvider = null) => {
+  const headers = { "Content-Type": "application/json" };
+  if (idToken) headers["Authorization"] = `Bearer ${idToken}`;
+  const res = await storageDbFetch(
+    "matrimony/main",
+    {
+      method: "PATCH",
+      headers,
+      body: JSON.stringify({
+        fields: {
+          data: { stringValue: JSON.stringify(payloadData) },
+          updatedAt: { timestampValue: payloadData?.updatedAt || new Date().toISOString() }
+        }
+      })
+    },
+    forceProvider
+  );
+  return res.ok;
 };
 
 const fbLoad = async () => {
@@ -2653,6 +2781,10 @@ function Navbar({ C, lang, setLang, setPage, auth, onShowLogin, globalProfile, o
                 {lang==="en" ? item.label : item.labelGu}
               </button>
             ))}
+            <button onClick={()=>{window.location.hash="#/matrimony"}}
+              style={{background:"#FFF4EC",border:"1px solid #FDBA74",cursor:"pointer",padding:"6px 11px",fontSize:".82rem",fontWeight:700,color:"#C2410C",borderRadius:6,transition:"all .2s",whiteSpace:"nowrap",marginLeft:4}}>
+              💍 {lang==="en" ? "Matrimony" : "લગ્ન પરિચય"}
+            </button>
           </div>
         )}
 
@@ -2709,6 +2841,11 @@ function Navbar({ C, lang, setLang, setPage, auth, onShowLogin, globalProfile, o
                   {lang==="en" ? item.label : item.labelGu}
                 </button>
               ))}
+              <button onClick={()=>{setDrawer(false);window.location.hash="#/matrimony"}}
+                style={{display:"flex",alignItems:"center",gap:12,width:"100%",padding:"12px 14px",background:"#FFF4EC",border:"1px solid #FDBA74",borderRadius:10,cursor:"pointer",fontSize:".92rem",fontWeight:700,color:"#C2410C",marginTop:6,textAlign:"left"}}>
+                <span>💍</span>
+                {lang==="en" ? "Matrimony Portal" : "લગ્ન પરિચય પોર્ટલ"}
+              </button>
             </div>
 
             {/* Bottom action buttons */}
@@ -3420,58 +3557,10 @@ function Events({ C, lang, globalAuthToken, globalProfile, onPublicLogin, forceS
   const [otp, setOtp] = useState("");
   const [otpSent, setOtpSent] = useState(false);
   const [confirmationResult, setConfirmationResult] = useState(null);
-  const [directUid, setDirectUid] = useState("");
-  const otpEnabled = C?.authSettings?.otpEnabled === true;
 
   const handleSendOtp = async (e) => {
     e.preventDefault();
-    const cleanNum = mobile.replace(/\D/g, '').slice(-10);
-    if (!mobile || cleanNum.length < 10) { setAuthError("Please enter a valid 10-digit mobile number"); return; }
-
-    if (!otpEnabled) {
-      setSubmitting(true); setAuthError("");
-      try {
-        const ccDigits = countryCode.replace(/\D/g, '') || "91";
-        const defaultUid = `mob_${ccDigits}${cleanNum}`;
-        const directToken = `direct_${defaultUid}`;
-        let targetUid = defaultUid;
-        let pData = await fbFetchUserProfile(defaultUid, directToken).catch(() => null);
-        if (!pData) {
-          const allUsers = await fbFetchAllUsers(directToken).catch(() => []);
-          const matched = allUsers.find(u => String(u.mobile || u['Mobile Number'] || "").replace(/\D/g, '').slice(-10) === cleanNum);
-          if (matched) {
-            targetUid = matched.id || defaultUid;
-            pData = matched;
-          }
-        }
-        setDirectUid(targetUid);
-        setAuthToken(directToken);
-        const fullMobile = `${countryCode} ${cleanNum}`;
-        if (pData && pData.name && pData.address) {
-          const mergedProfile = { ...pData, uid: targetUid, mobile: pData.mobile || fullMobile };
-          if (onPublicLogin) onPublicLogin(directToken, mergedProfile);
-          setAuthStep(1);
-          const newForm = { ...formData, "Submitted By": mergedProfile.name || fullMobile };
-          const formSpec = getForm(selectedEvent?.event?.formId);
-          formSpec.fields.forEach(f => {
-            const fKey = f.label?.trim() || "Field";
-            const kLow = fKey.toLowerCase();
-            if (f.type === 'tel' || kLow.includes('mobile') || kLow.includes('phone')) newForm[fKey] = mergedProfile.mobile || fullMobile;
-            if (kLow.includes('name') && !kLow.includes('event')) newForm[fKey] = mergedProfile.name || "";
-            if (kLow.includes('address')) newForm[fKey] = mergedProfile.address || "";
-            if (kLow.includes('gender') || kLow === 'sex') newForm[fKey] = mergedProfile.gender || "";
-          });
-          setFormData(newForm);
-        } else {
-          setAuthStep('complete_profile');
-        }
-      } catch (err) {
-        setAuthError(err?.message || "Failed to continue. Please try again.");
-      } finally {
-        setSubmitting(false);
-      }
-      return;
-    }
+    if (!mobile || mobile.length < 10) { setAuthError("Please enter a valid 10-digit mobile number"); return; }
     
     if (!fbAuth) {
       try {
@@ -3581,15 +3670,14 @@ function Events({ C, lang, globalAuthToken, globalProfile, onPublicLogin, forceS
         pUrl = await fbUploadPublicFile(regImageFile, authToken).catch(()=>"");
       }
       
-      const user = fbAuth?.currentUser;
-      const uid = user?.uid || directUid;
-      if (!uid) throw new Error("Not authenticated");
+      const user = fbAuth.currentUser;
+      if (!user) throw new Error("Not authenticated");
       
       const fullMobile = `${countryCode} ${mobile.replace(/\D/g, '').slice(-10)}`;
-      let profileData = { uid, name: regName, address: regAddress, gender: regGender, mobile: fullMobile, photoUrl: pUrl };
+      let profileData = { name: regName, address: regAddress, gender: regGender, mobile: fullMobile, photoUrl: pUrl };
       
-      if (user) await fbUpdateProfile(authToken, regName, pUrl).catch(()=>null);
-      await fbSaveUserProfile(uid, profileData, authToken).catch(()=>null);
+      await fbUpdateProfile(authToken, regName, pUrl).catch(()=>null);
+      await fbSaveUserProfile(user.uid, profileData, authToken).catch(()=>null);
       
       if (onPublicLogin) onPublicLogin(authToken, profileData);
       setAuthStep(1);
@@ -3740,6 +3828,32 @@ function Events({ C, lang, globalAuthToken, globalProfile, onPublicLogin, forceS
     }
     
     // 3. MANDATORY DATABASE SUBMISSION (DO NOT PROCEED IF THIS FAILS!)
+    // Guarantee dependent/supporting Master Table columns are extracted & apply "*" mark to custom "Other" dropdown values
+    const finalFormData = { ...formData };
+    for (const f of formFields) {
+      if (f.type !== "dropdown") continue;
+      const fKey = (f.dataKey || f.label)?.trim();
+      if (!fKey) continue;
+      const rawVal = String(finalFormData[fKey] || "").trim();
+      if (!rawVal) continue;
+
+      // Auto-extract dependent/supporting columns from Master Table into transaction data
+      if (typeof f.options === "string" && f.options.startsWith("@master:")) {
+        const extracted = getMasterDataAutoPopulate(f.options, rawVal, C, f) || {};
+        Object.assign(finalFormData, extracted);
+      }
+
+      // Mark custom "Other" entries with "*" when allowOther is enabled
+      if (f.allowOther) {
+        const cleanVal = rawVal.replace(/\s*\*$/, "").trim();
+        const opts = resolveMasterDataOptions(f.options, C?.masterTables);
+        const inList = opts.some(o => String(o).trim().toLowerCase() === cleanVal.toLowerCase());
+        if (!inList && cleanVal) {
+          finalFormData[fKey] = `${cleanVal} *`;
+        }
+      }
+    }
+
     const initialLog = {
       timestamp: new Date().toISOString(),
       actor: "User",
@@ -3755,7 +3869,7 @@ function Events({ C, lang, globalAuthToken, globalProfile, onPublicLogin, forceS
         eventTitle: selectedEvent.event.title,
         submitterMob: (globalProfile?.mobile || `${countryCode} ${mobile.replace(/\D/g, '').slice(-10)}`),
         formData: {
-          ...formData,
+          ...finalFormData,
           "Transaction ID": txId,
           transactionId: txId,
           logHistory: [initialLog]
@@ -3773,7 +3887,7 @@ function Events({ C, lang, globalAuthToken, globalProfile, onPublicLogin, forceS
             eventTitle: selectedEvent.event.title,
             submitterMob: (globalProfile?.mobile || `${countryCode} ${mobile.replace(/\D/g, '').slice(-10)}`),
             formData: {
-              ...formData,
+              ...finalFormData,
               "Transaction ID": txId,
               transactionId: txId,
               logHistory: [initialLog]
@@ -3796,7 +3910,7 @@ function Events({ C, lang, globalAuthToken, globalProfile, onPublicLogin, forceS
     // 4. Sanitize form values and send to Google Sheets / Webhook & WhatsApp
     try {
       const sanitizedFormData = {};
-      Object.entries(formData).forEach(([k, v]) => {
+      Object.entries(finalFormData).forEach(([k, v]) => {
         if (typeof v === 'string') {
           let cleanV = v.replace(/\|/g, ' ').replace(/\s+/g, ' ').trim();
           if (cleanV.startsWith('+')) {
@@ -3943,7 +4057,7 @@ function Events({ C, lang, globalAuthToken, globalProfile, onPublicLogin, forceS
                 {authError && <div style={{background:"#FDECEA",color:"#C0392B",padding:"10px",borderRadius:8,fontSize:".8rem",fontWeight:600}}>{authError}</div>}
                 {!otpSent ? (
                   <button type="submit" className="bs" style={{padding:"12px",borderRadius:8,fontWeight:700,opacity:submitting?0.7:1}} disabled={submitting}>
-                    {submitting ? (otpEnabled ? "Sending OTP..." : "Continuing...") : (otpEnabled ? "Send OTP" : "Continue")}
+                    {submitting ? "Sending OTP..." : "Send OTP"}
                   </button>
                 ) : (
                   <div style={{display:"flex",flexDirection:"column",gap:12}}>
@@ -4045,8 +4159,9 @@ function Events({ C, lang, globalAuthToken, globalProfile, onPublicLogin, forceS
                           required={f.required} 
                           value={formData[fKey]||""} 
                           isError={isError}
+                          allowOther={Boolean(f.allowOther)}
                           onChange={val => {
-                            const autoPopulate = getMasterDataAutoPopulate(f.options, val, C) || {};
+                            const autoPopulate = getMasterDataAutoPopulate(f.options, val, C, f) || {};
                             setFormData(prev => ({...prev, [fKey]: val, ...autoPopulate}));
                             if (isError && val) setValidationErrors(prev => prev.filter(k => k !== fKey));
                           }} 
@@ -4054,6 +4169,18 @@ function Events({ C, lang, globalAuthToken, globalProfile, onPublicLogin, forceS
                           masterTables={C?.masterTables}
                           placeholder={f.placeholder || "-- Search & Select --"} 
                         />
+                        {f.showExtractedOnForm && formData[fKey] && typeof f.options === "string" && f.options.startsWith("@master:") && (() => {
+                          const autoPreview = getMasterDataAutoPopulate(f.options, formData[fKey], C, f) || {};
+                          const entries = Object.entries(autoPreview).filter(([, v]) => String(v || "").trim() !== "");
+                          if (!entries.length) return null;
+                          return (
+                            <div style={{marginTop:5, display:"flex", gap:8, flexWrap:"wrap", background:"#F0FDF4", border:"1px solid #BBF7D0", borderRadius:6, padding:"4px 8px", fontSize:".74rem", color:"#166534", fontWeight:600}}>
+                              {entries.map(([k, v]) => (
+                                <span key={k}>{k}: <strong>{v}</strong></span>
+                              ))}
+                            </div>
+                          );
+                        })()}
                         {f.placeholder && (
                           <div style={{fontSize:".74rem",color:"#64748B",marginTop:3,display:"flex",alignItems:"center",gap:4}}>
                             <span style={{color:"#3B82F6"}}>💡</span> {f.placeholder}
@@ -4539,7 +4666,7 @@ function Events({ C, lang, globalAuthToken, globalProfile, onPublicLogin, forceS
                         </div>
                       </div>
                       <button type="submit" className="bs" style={{width:"100%",padding:"12px",borderRadius:8,fontWeight:700,marginTop:8,opacity:submitting?0.7:1, fontSize:".9rem", boxShadow:"0 4px 14px rgba(0,0,0,0.15)", cursor:"pointer", border:"none", color:"white"}} disabled={submitting}>
-                        {submitting ? "Processing..." : (otpEnabled ? "Send OTP" : "Continue")}
+                        {submitting ? "Processing..." : "Send OTP"}
                       </button>
                     </form>
                     ) : (
@@ -4688,8 +4815,9 @@ function Events({ C, lang, globalAuthToken, globalProfile, onPublicLogin, forceS
                               required={f.required} 
                               value={formData[fKey]||""} 
                               isError={isError}
+                              allowOther={Boolean(f.allowOther)}
                               onChange={val => {
-                            const autoPopulate = getMasterDataAutoPopulate(f.options, val, C) || {};
+                            const autoPopulate = getMasterDataAutoPopulate(f.options, val, C, f) || {};
                             setFormData(prev => ({...prev, [fKey]: val, ...autoPopulate}));
                             if (isError && val) setValidationErrors(prev => prev.filter(k => k !== fKey));
                           }} 
@@ -4697,6 +4825,18 @@ function Events({ C, lang, globalAuthToken, globalProfile, onPublicLogin, forceS
                               masterTables={C?.masterTables}
                               placeholder={f.placeholder || "-- Search & Select --"} 
                             />
+                            {f.showExtractedOnForm && formData[fKey] && typeof f.options === "string" && f.options.startsWith("@master:") && (() => {
+                              const autoPreview = getMasterDataAutoPopulate(f.options, formData[fKey], C, f) || {};
+                              const entries = Object.entries(autoPreview).filter(([, v]) => String(v || "").trim() !== "");
+                              if (!entries.length) return null;
+                              return (
+                                <div style={{marginTop:5, display:"flex", gap:8, flexWrap:"wrap", background:"#F0FDF4", border:"1px solid #BBF7D0", borderRadius:6, padding:"4px 8px", fontSize:".74rem", color:"#166534", fontWeight:600}}>
+                                  {entries.map(([k, v]) => (
+                                    <span key={k}>{k}: <strong>{v}</strong></span>
+                                  ))}
+                                </div>
+                              );
+                            })()}
                             {f.placeholder && (
                               <div style={{fontSize:".74rem",color:"#64748B",marginTop:3,display:"flex",alignItems:"center",gap:4}}>
                                 <span style={{color:"#3B82F6"}}>💡</span> {f.placeholder}
@@ -10746,13 +10886,15 @@ function AdminStorageRouting({ mob, C, setC, auth }) {
     const activeC = overrideC || C;
     setScanning(true);
     try {
-      const [regs, dons, vols, cons] = await Promise.all([
+      const [regs, dons, vols, cons, matStore] = await Promise.all([
         fbFetchRegistrations(auth?.idToken).catch(() => []),
         fbFetchDonations(auth?.idToken).catch(() => []),
         fbFetchVolunteers(auth?.idToken).catch(() => []),
-        fbFetchContacts(auth?.idToken).catch(() => [])
+        fbFetchContacts(auth?.idToken).catch(() => []),
+        fbFetchMatrimonyStore(auth?.idToken).catch(() => null)
       ]);
-      setCachedCollections({ registrations: regs, donations: dons, volunteers: vols, contacts: cons });
+      const matProfiles = Array.isArray(matStore?.profiles) ? matStore.profiles : [];
+      setCachedCollections({ registrations: regs, donations: dons, volunteers: vols, contacts: cons, matrimony: matProfiles });
 
       const countProviders = (itemList) => {
         const counts = { hostinger: 0, gdrive: 0, inlineOrLegacy: 0, total: 0, files: [] };
@@ -10839,6 +10981,11 @@ function AdminStorageRouting({ mob, C, setC, auth }) {
         activeC?.hero?.image ? { label: "Hero Image", url: activeC.hero.image } : null
       ].filter(Boolean);
 
+      // 10. Community Matrimony & Biodata
+      const matUrls = matProfiles
+        .filter(p => p?.photo)
+        .map(p => ({ label: `${p.profileId || "Profile"} (${p.surname || "Photo"})`, url: p.photo }));
+
       const nextInv = {
         registrations: { ...countProviders(regUrls), recordCount: regs.length },
         gallery:       { ...countProviders(galUrls), recordCount: (activeC?.galleryItems || []).length },
@@ -10848,7 +10995,8 @@ function AdminStorageRouting({ mob, C, setC, auth }) {
         achievements:  { ...countProviders(achUrls), recordCount: (activeC?.achievements || []).length },
         team:          { ...countProviders(teamUrls), recordCount: (activeC?.teamItems || []).length },
         volunteers:    { ...countProviders(volUrls), recordCount: vols.length + cons.length },
-        branding:      { ...countProviders(brandUrls), recordCount: brandUrls.length }
+        branding:      { ...countProviders(brandUrls), recordCount: brandUrls.length },
+        matrimony:     { ...countProviders(matUrls), recordCount: matProfiles.length }
       };
       setInventory(nextInv);
       return nextInv;
@@ -11212,6 +11360,26 @@ function AdminStorageRouting({ mob, C, setC, auth }) {
         if (movedCount > 0) {
           latestC = nextC;
         }
+      } else if (sectionKey === "matrimony") {
+        const matStore = await fbFetchMatrimonyStore(auth?.idToken);
+        if (matStore && Array.isArray(matStore.profiles)) {
+          const nextProfiles = [...matStore.profiles];
+          setMigrationProgress({ current: 0, total: nextProfiles.length, label: `Migrating Matrimony photos to ${targetName}...` });
+          for (let i = 0; i < nextProfiles.length; i++) {
+            const p = { ...nextProfiles[i] };
+            if (p.photo && detectUrlStorageProvider(p.photo) !== targetProvider) {
+              setMigrationProgress({ current: i + 1, total: nextProfiles.length, label: `Matrimony ${p.profileId || i + 1} (${i + 1}/${nextProfiles.length})` });
+              try {
+                p.photo = await migrateSingleFileUrl(p.photo, targetProvider, "matrimony", auth?.idToken);
+                nextProfiles[i] = p;
+                movedCount++;
+              } catch (e) { skippedCount++; }
+            }
+          }
+          if (movedCount > 0) {
+            await fbSaveMatrimonyStore({ ...matStore, profiles: nextProfiles, updatedAt: new Date().toISOString() }, auth?.idToken);
+          }
+        }
       }
 
       // Also switch the active mediaProvider of that section to targetProvider and save latestC in one atomic step
@@ -11321,6 +11489,14 @@ function AdminStorageRouting({ mob, C, setC, auth }) {
           const c = cons[j];
           await fbRestoreDocument("contacts", c.id || `con_${j}`, c, auth?.idToken, targetProvider);
           count++;
+        }
+      } else if (sectionKey === "matrimony") {
+        const matStore = await fbFetchMatrimonyStore(auth?.idToken, sourceProvider);
+        if (matStore) {
+          const total = Array.isArray(matStore.profiles) ? matStore.profiles.length : 1;
+          setMigrationProgress({ current: 1, total: Math.max(total, 1), label: `Copying Matrimony database (${total} profiles) to ${targetName}...` });
+          await fbSaveMatrimonyStore(matStore, auth?.idToken, targetProvider);
+          count = Math.max(total, 1);
         }
       }
 
@@ -12106,25 +12282,7 @@ function Admin({ C, setC, setPage, auth, onLogout, onShowLogin }) {
         <div style={{padding:mob?"60px 16px 16px":"24px"}}>
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10,paddingBottom:6,borderBottom:"1px solid var(--bd)",fontSize:".8rem",color:"var(--mu)",flexWrap:"wrap",gap:8}}>
             <div>Logged in as: <strong style={{color:"var(--dt)"}}>{auth?.email}</strong></div>
-            <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
-              {master && (
-                <button
-                  onClick={async () => {
-                    const nextVal = !(C?.authSettings?.otpEnabled === true);
-                    const newC = { ...C, authSettings: { ...(C?.authSettings || {}), otpEnabled: nextVal } };
-                    setC(newC);
-                    try {
-                      if (auth?.idToken) await fbSave(newC, auth.idToken);
-                    } catch (e) {
-                      alert("Failed to save OTP setting: " + e.message);
-                    }
-                  }}
-                  style={{padding:"4px 12px",borderRadius:16,background:C?.authSettings?.otpEnabled === true ? "linear-gradient(135deg, #0D9488, #0F766E)" : "linear-gradient(135deg, #D97706, #B45309)",color:"white",border:"none",fontWeight:700,fontSize:".78rem",cursor:"pointer",display:"flex",alignItems:"center",gap:6,boxShadow:"0 2px 6px rgba(0,0,0,0.18)",transition:"all 0.2s"}}
-                  title="Toggle SMS OTP verification for public member login & event registration"
-                >
-                  {C?.authSettings?.otpEnabled === true ? "🔐 SMS OTP: ON" : "🔓 SMS OTP: OFF (Direct Login)"}
-                </button>
-              )}
+            <div style={{display:"flex",alignItems:"center",gap:8}}>
               <button 
                 onClick={() => setShowUserPickerModal(true)} 
                 style={{padding:"4px 12px",borderRadius:16,background:"linear-gradient(135deg, #10B981, #059669)",color:"white",border:"none",fontWeight:700,fontSize:".78rem",cursor:"pointer",display:"flex",alignItems:"center",gap:6,boxShadow:"0 2px 6px rgba(16,185,129,0.25)",transition:"all 0.2s"}}
@@ -16281,10 +16439,155 @@ function AdminForms({ C, setC, saveToFb, mob, auth }) {
   const [newLibType, setNewLibType] = useState("text");
   const [newLibOptions, setNewLibOptions] = useState("");
   const [newLibPlaceholder, setNewLibPlaceholder] = useState("");
+  const [newLibAllowOther, setNewLibAllowOther] = useState(false);
+  const [newLibExtractMode, setNewLibExtractMode] = useState("extract");
+  const [newLibExtractCols, setNewLibExtractCols] = useState([]);
+  const [newLibShowExtracted, setNewLibShowExtracted] = useState(false);
   const dragItem = useRef();
   const dragOverItem = useRef();
   const [showLogic, setShowLogic] = useState({});
   const [editingFieldId, setEditingFieldId] = useState(null);
+
+  const renderEventDropdownExtras = ({
+    options = "",
+    allowOther = false,
+    extractMode,
+    extractColumns,
+    showExtractedOnForm = false,
+    onPatch
+  }) => {
+    const isMaster = typeof options === "string" && options.startsWith("@master:");
+    const parts = isMaster ? options.split(":") : [];
+    const tblId = parts[1] || "";
+    const colName = parts.slice(2).join(":") || "";
+    const linkedTbl = isMaster
+      ? (C.masterTables || []).find(
+          (t) =>
+            t.id === tblId ||
+            t.name === tblId ||
+            String(t.id || "").toLowerCase() === tblId.toLowerCase() ||
+            String(t.name || "").toLowerCase() === tblId.toLowerCase()
+        )
+      : null;
+    const secondaryCols = linkedTbl
+      ? (linkedTbl.columns || []).filter((c) => c.trim().toLowerCase() !== colName.trim().toLowerCase())
+      : [];
+    const effectiveMode =
+      extractMode ||
+      (Array.isArray(extractColumns) && extractColumns.length === 0 ? "dropdown_only" : "extract");
+    const activeCols = Array.isArray(extractColumns) ? extractColumns : secondaryCols;
+
+    return (
+      <div style={{ display: "flex", flexDirection: "column", gap: 6, marginTop: 6, width: "100%" }}>
+        {linkedTbl && secondaryCols.length > 0 && (
+          <div
+            style={{
+              background: "#F0FDF4",
+              border: "1px solid #BBF7D0",
+              borderRadius: 6,
+              padding: "7px 9px",
+              fontSize: ".73rem",
+              color: "#166534",
+              display: "flex",
+              flexDirection: "column",
+              gap: 6
+            }}
+          >
+            <div style={{ fontWeight: 700 }}>
+              🔗 Master Table Supportive Columns ({linkedTbl.name} — {secondaryCols.length} dependent col{secondaryCols.length > 1 ? "s" : ""})
+            </div>
+            <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+              <label style={{ display: "flex", alignItems: "center", gap: 6, cursor: "pointer", fontWeight: effectiveMode === "dropdown_only" ? 700 : 500 }}>
+                <input
+                  type="radio"
+                  checked={effectiveMode === "dropdown_only"}
+                  onChange={() =>
+                    onPatch({
+                      extractMode: "dropdown_only",
+                      extractColumns: [],
+                      showExtractedOnForm: false
+                    })
+                  }
+                />
+                Normal Dropdown Only (Unique Values)
+              </label>
+              <label style={{ display: "flex", alignItems: "center", gap: 6, cursor: "pointer", fontWeight: effectiveMode === "extract" ? 700 : 500 }}>
+                <input
+                  type="radio"
+                  checked={effectiveMode === "extract"}
+                  onChange={() =>
+                    onPatch({
+                      extractMode: "extract",
+                      extractColumns: activeCols.length > 0 ? activeCols : secondaryCols
+                    })
+                  }
+                />
+                Auto-Extract Dependent Columns → DB &amp; Dashboard (Hidden on Form)
+              </label>
+            </div>
+            {effectiveMode === "extract" && (
+              <div style={{ paddingLeft: 18, display: "flex", flexDirection: "column", gap: 4 }}>
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+                  {secondaryCols.map((sc) => {
+                    const checked = activeCols.includes(sc);
+                    return (
+                      <label key={sc} style={{ display: "inline-flex", alignItems: "center", gap: 4, cursor: "pointer", fontWeight: 600 }}>
+                        <input
+                          type="checkbox"
+                          checked={checked}
+                          onChange={(e) => {
+                            const nextCols = e.target.checked
+                              ? [...activeCols, sc]
+                              : activeCols.filter((c) => c !== sc);
+                            onPatch({
+                              extractMode: nextCols.length > 0 ? "extract" : "dropdown_only",
+                              extractColumns: nextCols
+                            });
+                          }}
+                        />
+                        {sc}
+                      </label>
+                    );
+                  })}
+                </div>
+                <label style={{ display: "inline-flex", alignItems: "center", gap: 5, cursor: "pointer", fontSize: ".7rem", color: "#15803D" }}>
+                  <input
+                    type="checkbox"
+                    checked={Boolean(showExtractedOnForm)}
+                    onChange={(e) => onPatch({ showExtractedOnForm: e.target.checked })}
+                  />
+                  👁️ Also preview extracted values below dropdown on form
+                </label>
+              </div>
+            )}
+          </div>
+        )}
+
+        <label
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 6,
+            fontSize: ".74rem",
+            fontWeight: 600,
+            background: "#FFFBEB",
+            border: "1px solid #FDE68A",
+            borderRadius: 6,
+            padding: "5px 9px",
+            color: "#92400E",
+            cursor: "pointer"
+          }}
+        >
+          <input
+            type="checkbox"
+            checked={Boolean(allowOther)}
+            onChange={(e) => onPatch({ allowOther: e.target.checked })}
+          />
+          Allow &quot;Other&quot; option (adds &quot;Other&quot; at end → blank free-text box → saves value with * mark)
+        </label>
+      </div>
+    );
+  };
 
   const handleAddFieldToForm = (target) => {
     if (!target || !editingForm) return;
@@ -16298,6 +16601,10 @@ function AdminForms({ C, setC, saveToFb, mob, auth }) {
           type: target.type,
           options: target.options || "",
           placeholder: target.placeholder || "",
+          allowOther: Boolean(target.allowOther),
+          ...(target.extractMode ? { extractMode: target.extractMode } : {}),
+          ...(Array.isArray(target.extractColumns) ? { extractColumns: target.extractColumns } : {}),
+          showExtractedOnForm: Boolean(target.showExtractedOnForm),
           required: false
         }
       ]
@@ -16322,7 +16629,11 @@ function AdminForms({ C, setC, saveToFb, mob, auth }) {
           label: editingLibField.label.trim(),
           type: editingLibField.type,
           options: editingLibField.type === 'dropdown' ? (editingLibField.options || "").trim() : "",
-          placeholder: (editingLibField.placeholder || "").trim()
+          placeholder: (editingLibField.placeholder || "").trim(),
+          allowOther: editingLibField.type === 'dropdown' ? Boolean(editingLibField.allowOther) : false,
+          extractMode: editingLibField.type === 'dropdown' ? (editingLibField.extractMode || "extract") : undefined,
+          extractColumns: editingLibField.type === 'dropdown' ? editingLibField.extractColumns : undefined,
+          showExtractedOnForm: editingLibField.type === 'dropdown' ? Boolean(editingLibField.showExtractedOnForm) : false
         };
       }
       return fl;
@@ -16435,7 +16746,13 @@ function AdminForms({ C, setC, saveToFb, mob, auth }) {
       label: newLibLabel.trim(), 
       type: newLibType, 
       options: newLibType === 'dropdown' ? newLibOptions : "",
-      placeholder: (newLibPlaceholder || "").trim()
+      placeholder: (newLibPlaceholder || "").trim(),
+      allowOther: newLibType === 'dropdown' ? Boolean(newLibAllowOther) : false,
+      ...(newLibType === 'dropdown' ? {
+        extractMode: newLibExtractMode,
+        ...(newLibExtractMode === 'dropdown_only' ? { extractColumns: [] } : (newLibExtractCols.length > 0 ? { extractColumns: newLibExtractCols } : {})),
+        showExtractedOnForm: Boolean(newLibShowExtracted)
+      } : {})
     };
     
     const newLib = [...fieldLib, nf];
@@ -16450,6 +16767,10 @@ function AdminForms({ C, setC, saveToFb, mob, auth }) {
             type: nf.type, 
             options: nf.options, 
             placeholder: nf.placeholder,
+            allowOther: nf.allowOther,
+            ...(nf.extractMode ? { extractMode: nf.extractMode } : {}),
+            ...(Array.isArray(nf.extractColumns) ? { extractColumns: nf.extractColumns } : {}),
+            showExtractedOnForm: Boolean(nf.showExtractedOnForm),
             required: false 
           }
         ]
@@ -16458,6 +16779,10 @@ function AdminForms({ C, setC, saveToFb, mob, auth }) {
     }
     
     saveLib(newLib);
+    setNewLibAllowOther(false);
+    setNewLibExtractMode("extract");
+    setNewLibExtractCols([]);
+    setNewLibShowExtracted(false);
     setNewLibLabel("");
     setNewLibOptions("");
     setNewLibPlaceholder("");
@@ -16617,55 +16942,69 @@ function AdminForms({ C, setC, saveToFb, mob, auth }) {
                                  title="Guidance text displayed inside or below the field to instruct users what to enter"
                                />
                               {field.type === 'dropdown' && (
-                                <div style={{display:"flex", gap: 4, alignItems: "center"}}>
-                                  
-                                  <div style={{flex:1, display:"flex", gap:4}}>
-                                    <div style={{flex:1, display:"flex", flexDirection:"column", gap:2}}>
-                                      <input value={field.options||""} onChange={e => { const newF=[...editingForm.fields]; newF[fieldIdx].options=e.target.value; updateCurrentForm({...editingForm, fields:newF}); }} placeholder="Options (csv) or @master:id:col" style={{width:"100%", padding:4, border:"1px solid var(--bd)", borderRadius:4, fontSize:".75rem"}}/>
-                                      {String(field.options || "").startsWith("@master:") && (() => {
-                                        const p = (field.options || "").split(":");
-                                        const tbl = (C.masterTables || []).find(t => t.id === p[1]);
-                                        return tbl ? (
-                                          <span style={{fontSize:".68rem", color:"#15803D", fontWeight:700}}>
-                                            🔗 Master: {tbl.name} → Column: {p.slice(2).join(":")} ({tbl.rows?.length || 0} options)
-                                          </span>
-                                        ) : null;
-                                      })()}
+                                <div style={{display:"flex", flexDirection:"column", gap: 4}}>
+                                  <div style={{display:"flex", gap: 4, alignItems: "center"}}>
+                                    <div style={{flex:1, display:"flex", gap:4}}>
+                                      <div style={{flex:1, display:"flex", flexDirection:"column", gap:2}}>
+                                        <input value={field.options||""} onChange={e => { const newF=[...editingForm.fields]; newF[fieldIdx].options=e.target.value; updateCurrentForm({...editingForm, fields:newF}); }} placeholder="Options (csv) or @master:id:col" style={{width:"100%", padding:4, border:"1px solid var(--bd)", borderRadius:4, fontSize:".75rem"}}/>
+                                        {String(field.options || "").startsWith("@master:") && (() => {
+                                          const p = (field.options || "").split(":");
+                                          const tbl = (C.masterTables || []).find(t => t.id === p[1]);
+                                          return tbl ? (
+                                            <span style={{fontSize:".68rem", color:"#15803D", fontWeight:700}}>
+                                              🔗 Master: {tbl.name} → Column: {p.slice(2).join(":")} ({tbl.rows?.length || 0} options)
+                                            </span>
+                                          ) : null;
+                                        })()}
+                                      </div>
+                                      {C.masterTables?.length > 0 && (
+                                        <select style={{maxWidth:"115px", padding:4, border:"1px solid var(--bd)", borderRadius:4, fontSize:".75rem", background:"white"}} onChange={e => {
+                                          if(e.target.value) {
+                                            const newF=[...editingForm.fields]; 
+                                            newF[fieldIdx].options=e.target.value; 
+                                            delete newF[fieldIdx].extractColumns;
+                                            updateCurrentForm({...editingForm, fields:newF});
+                                          }
+                                        }}>
+                                          <option value="">Link Master</option>
+                                          {C.masterTables.map(mt => mt.columns.map(col => (
+                                            <option key={`${mt.id}:${col}`} value={`@master:${mt.id}:${col}`}>{mt.name} - {col}</option>
+                                          )))}
+                                        </select>
+                                      )}
                                     </div>
-                                    {C.masterTables?.length > 0 && (
-                                      <select style={{maxWidth:"100px", padding:4, border:"1px solid var(--bd)", borderRadius:4, fontSize:".75rem", background:"white"}} onChange={e => {
-                                        if(e.target.value) {
-                                          const newF=[...editingForm.fields]; 
-                                          newF[fieldIdx].options=e.target.value; 
-                                          updateCurrentForm({...editingForm, fields:newF});
-                                        }
-                                      }}>
-                                        <option value="">Link Master</option>
-                                        {C.masterTables.map(mt => mt.columns.map(col => (
-                                          <option key={`${mt.id}:${col}`} value={`@master:${mt.id}:${col}`}>{mt.name} - {col}</option>
-                                        )))}
-                                      </select>
-                                    )}
-                                  </div>
 
-                                  <label style={{cursor:"pointer", background:"#E8F5E9", border:"1px solid #C8E6C9", color:"#1A7A3E", padding:"4px 8px", borderRadius:4, fontSize:".7rem", fontWeight:600}} title="Upload CSV or Text file for options">
-                                    Upload File
-                                    <input type="file" accept=".txt,.csv" style={{display:"none"}} onChange={e => {
-                                      const file = e.target.files[0];
-                                      if(!file) return;
-                                      const reader = new FileReader();
-                                      reader.onload = (ev) => {
-                                        const txt = ev.target.result;
-                                        const opts = txt.split(/[\r\n,]+/).map(s=>s.trim()).filter(Boolean);
-                                        const newF=[...editingForm.fields];
-                                        const existingOpts = newF[fieldIdx].options ? newF[fieldIdx].options.split(",").map(s=>s.trim()).filter(Boolean) : [];
-                                        newF[fieldIdx].options = Array.from(new Set([...existingOpts, ...opts])).join(", ");
-                                        updateCurrentForm({...editingForm, fields:newF});
-                                      };
-                                      reader.readAsText(file);
-                                      e.target.value = null;
-                                    }}/>
-                                  </label>
+                                    <label style={{cursor:"pointer", background:"#E8F5E9", border:"1px solid #C8E6C9", color:"#1A7A3E", padding:"4px 8px", borderRadius:4, fontSize:".7rem", fontWeight:600}} title="Upload CSV or Text file for options">
+                                      Upload File
+                                      <input type="file" accept=".txt,.csv" style={{display:"none"}} onChange={e => {
+                                        const file = e.target.files[0];
+                                        if(!file) return;
+                                        const reader = new FileReader();
+                                        reader.onload = (ev) => {
+                                          const txt = ev.target.result;
+                                          const opts = txt.split(/[\r\n,]+/).map(s=>s.trim()).filter(Boolean);
+                                          const newF=[...editingForm.fields];
+                                          const existingOpts = newF[fieldIdx].options ? newF[fieldIdx].options.split(",").map(s=>s.trim()).filter(Boolean) : [];
+                                          newF[fieldIdx].options = Array.from(new Set([...existingOpts, ...opts])).join(", ");
+                                          updateCurrentForm({...editingForm, fields:newF});
+                                        };
+                                        reader.readAsText(file);
+                                        e.target.value = null;
+                                      }}/>
+                                    </label>
+                                  </div>
+                                  {renderEventDropdownExtras({
+                                    options: field.options || "",
+                                    allowOther: Boolean(field.allowOther),
+                                    extractMode: field.extractMode,
+                                    extractColumns: field.extractColumns,
+                                    showExtractedOnForm: Boolean(field.showExtractedOnForm),
+                                    onPatch: (patch) => {
+                                      const newF = [...editingForm.fields];
+                                      newF[fieldIdx] = { ...newF[fieldIdx], ...patch };
+                                      updateCurrentForm({ ...editingForm, fields: newF });
+                                    }
+                                  })}
                                 </div>
                               )}
                               { (() => {
@@ -16907,26 +17246,36 @@ function AdminForms({ C, setC, saveToFb, mob, auth }) {
                           </select>
 
                           {editingLibField.type === 'dropdown' && (
-                            <div style={{flex:1, minWidth:200, display:"flex", gap:4}}>
-                              <input 
-                                value={editingLibField.options || ""} 
-                                onChange={e => setEditingLibField({...editingLibField, options: e.target.value})} 
-                                placeholder="Options (csv) or @master:id:col" 
-                                style={{flex:1,padding:"6px 10px",fontSize:".8rem",border:"1px solid #CBD5E1",borderRadius:4,background:"white"}}
-                              />
-                              {C.masterTables?.length > 0 && (
-                                <select 
-                                  style={{maxWidth:130, padding:4, border:"1px solid #CBD5E1", borderRadius:4, fontSize:".75rem", background:"white"}} 
-                                  onChange={e => {
-                                    if(e.target.value) setEditingLibField({...editingLibField, options: e.target.value});
-                                  }}
-                                >
-                                  <option value="">Link Master</option>
-                                  {C.masterTables.map(mt => mt.columns.map(col => (
-                                    <option key={`${mt.id}:${col}`} value={`@master:${mt.id}:${col}`}>{mt.name} - {col}</option>
-                                  )))}
-                                </select>
-                              )}
+                            <div style={{flex:"1 1 100%", display:"flex", flexDirection:"column", gap:4}}>
+                              <div style={{display:"flex", gap:4}}>
+                                <input 
+                                  value={editingLibField.options || ""} 
+                                  onChange={e => setEditingLibField({...editingLibField, options: e.target.value})} 
+                                  placeholder="Options (csv) or @master:id:col" 
+                                  style={{flex:1,padding:"6px 10px",fontSize:".8rem",border:"1px solid #CBD5E1",borderRadius:4,background:"white"}}
+                                />
+                                {C.masterTables?.length > 0 && (
+                                  <select 
+                                    style={{maxWidth:140, padding:4, border:"1px solid #CBD5E1", borderRadius:4, fontSize:".75rem", background:"white"}} 
+                                    onChange={e => {
+                                      if(e.target.value) setEditingLibField({...editingLibField, options: e.target.value, extractColumns: undefined});
+                                    }}
+                                  >
+                                    <option value="">Link Master</option>
+                                    {C.masterTables.map(mt => mt.columns.map(col => (
+                                      <option key={`${mt.id}:${col}`} value={`@master:${mt.id}:${col}`}>{mt.name} - {col}</option>
+                                    )))}
+                                  </select>
+                                )}
+                              </div>
+                              {renderEventDropdownExtras({
+                                options: editingLibField.options || "",
+                                allowOther: Boolean(editingLibField.allowOther),
+                                extractMode: editingLibField.extractMode,
+                                extractColumns: editingLibField.extractColumns,
+                                showExtractedOnForm: Boolean(editingLibField.showExtractedOnForm),
+                                onPatch: (patch) => setEditingLibField({ ...editingLibField, ...patch })
+                              })}
                             </div>
                           )}
 
@@ -16956,42 +17305,59 @@ function AdminForms({ C, setC, saveToFb, mob, auth }) {
                         </button>
                       </div>
                     ) : (
-                      <div style={{display:"flex",gap:6,alignItems:"center",marginTop:6,background:"white",padding:10,borderRadius:6,border:"1px dashed var(--tl)"}}>
-                        <input value={newLibLabel} onChange={e => setNewLibLabel(e.target.value)} placeholder="Field Label (e.g. T-Shirt Size)" style={{flex:1,minWidth:140,padding:"6px",fontSize:".8rem",border:"1px solid var(--bd)",borderRadius:4}}/>
-                        <input value={newLibPlaceholder} onChange={e => setNewLibPlaceholder(e.target.value)} placeholder="Guidance / Placeholder (Optional)" style={{flex:1,minWidth:140,padding:"6px",fontSize:".8rem",border:"1px solid var(--bd)",borderRadius:4}}/>
-                        <select value={newLibType} onChange={e => setNewLibType(e.target.value)} style={{padding:"6px",fontSize:".8rem",border:"1px solid var(--bd)",borderRadius:4}}>
-                          <option value="text">Text</option>
-                          <option value="number">Number</option>
-                          <option value="email">Email</option>
-                          <option value="tel">Phone</option>
-                          <option value="date">Date</option>
-                          <option value="fullname">Full Name</option>
-                          <option value="address">Address</option>
-                          <option value="gender">Gender</option>
-                          <option value="image">Photo Upload (Image)</option>
-                          <option value="file">Document Upload (PDF/Word)</option>
-                          <option value="dropdown">Dropdown Options</option>
-                          <option value="percentage">Percentage (%) with Decimal</option>
-                        </select>
-                        {newLibType === 'dropdown' && (
-                          
-                          <div style={{flex:1, display:"flex", gap:4}}>
-                            <input value={newLibOptions} onChange={e => setNewLibOptions(e.target.value)} placeholder="Options (csv) or @master:id:col" style={{flex:1,padding:"6px",fontSize:".8rem",border:"1px solid var(--bd)",borderRadius:4}}/>
-                            {C.masterTables?.length > 0 && (
-                              <select style={{maxWidth:"120px", padding:4, border:"1px solid var(--bd)", borderRadius:4, fontSize:".75rem", background:"white"}} onChange={e => {
-                                if(e.target.value) setNewLibOptions(e.target.value);
-                              }}>
-                                <option value="">Link Master</option>
-                                {C.masterTables.map(mt => mt.columns.map(col => (
-                                  <option key={`${mt.id}:${col}`} value={`@master:${mt.id}:${col}`}>{mt.name} - {col}</option>
-                                )))}
-                              </select>
-                            )}
-                          </div>
-
-                        )}
-                        <button onClick={handleCreateStandardField} style={{padding:"6px 12px",background:"#1A7A3E",color:"white",border:"none",borderRadius:4,fontSize:".75rem",cursor:"pointer",fontWeight:700}}>Save</button>
-                        <button onClick={() => setIsAddingLib(false)} style={{padding:"6px 12px",background:"#EEE",border:"none",borderRadius:4,fontSize:".75rem",cursor:"pointer",fontWeight:600}}>Cancel</button>
+                      <div style={{display:"flex",flexDirection:"column",gap:8,marginTop:6,background:"white",padding:10,borderRadius:6,border:"1px dashed var(--tl)"}}>
+                        <div style={{display:"flex",gap:6,alignItems:"center",flexWrap:"wrap"}}>
+                          <input value={newLibLabel} onChange={e => setNewLibLabel(e.target.value)} placeholder="Field Label (e.g. T-Shirt Size)" style={{flex:1,minWidth:140,padding:"6px",fontSize:".8rem",border:"1px solid var(--bd)",borderRadius:4}}/>
+                          <input value={newLibPlaceholder} onChange={e => setNewLibPlaceholder(e.target.value)} placeholder="Guidance / Placeholder (Optional)" style={{flex:1,minWidth:140,padding:"6px",fontSize:".8rem",border:"1px solid var(--bd)",borderRadius:4}}/>
+                          <select value={newLibType} onChange={e => setNewLibType(e.target.value)} style={{padding:"6px",fontSize:".8rem",border:"1px solid var(--bd)",borderRadius:4}}>
+                            <option value="text">Text</option>
+                            <option value="number">Number</option>
+                            <option value="email">Email</option>
+                            <option value="tel">Phone</option>
+                            <option value="date">Date</option>
+                            <option value="fullname">Full Name</option>
+                            <option value="address">Address</option>
+                            <option value="gender">Gender</option>
+                            <option value="image">Photo Upload (Image)</option>
+                            <option value="file">Document Upload (PDF/Word)</option>
+                            <option value="dropdown">Dropdown Options</option>
+                            <option value="percentage">Percentage (%) with Decimal</option>
+                          </select>
+                          {newLibType === 'dropdown' && (
+                            <div style={{flex:"1 1 220px", display:"flex", gap:4}}>
+                              <input value={newLibOptions} onChange={e => setNewLibOptions(e.target.value)} placeholder="Options (csv) or @master:id:col" style={{flex:1,padding:"6px",fontSize:".8rem",border:"1px solid var(--bd)",borderRadius:4}}/>
+                              {C.masterTables?.length > 0 && (
+                                <select style={{maxWidth:"130px", padding:4, border:"1px solid var(--bd)", borderRadius:4, fontSize:".75rem", background:"white"}} onChange={e => {
+                                  if(e.target.value) {
+                                    setNewLibOptions(e.target.value);
+                                    setNewLibExtractCols([]);
+                                  }
+                                }}>
+                                  <option value="">Link Master</option>
+                                  {C.masterTables.map(mt => mt.columns.map(col => (
+                                    <option key={`${mt.id}:${col}`} value={`@master:${mt.id}:${col}`}>{mt.name} - {col}</option>
+                                  )))}
+                                </select>
+                              )}
+                            </div>
+                          )}
+                          <button onClick={handleCreateStandardField} style={{padding:"6px 12px",background:"#1A7A3E",color:"white",border:"none",borderRadius:4,fontSize:".75rem",cursor:"pointer",fontWeight:700}}>Save</button>
+                          <button onClick={() => setIsAddingLib(false)} style={{padding:"6px 12px",background:"#EEE",border:"none",borderRadius:4,fontSize:".75rem",cursor:"pointer",fontWeight:600}}>Cancel</button>
+                        </div>
+                        {newLibType === 'dropdown' &&
+                          renderEventDropdownExtras({
+                            options: newLibOptions,
+                            allowOther: newLibAllowOther,
+                            extractMode: newLibExtractMode,
+                            extractColumns: newLibExtractCols.length > 0 ? newLibExtractCols : undefined,
+                            showExtractedOnForm: newLibShowExtracted,
+                            onPatch: (patch) => {
+                              if ("allowOther" in patch) setNewLibAllowOther(Boolean(patch.allowOther));
+                              if ("extractMode" in patch) setNewLibExtractMode(patch.extractMode);
+                              if ("extractColumns" in patch) setNewLibExtractCols(patch.extractColumns || []);
+                              if ("showExtractedOnForm" in patch) setNewLibShowExtracted(Boolean(patch.showExtractedOnForm));
+                            }
+                          })}
                       </div>
                     )}
                  </div>
@@ -17048,6 +17414,7 @@ function AdminForms({ C, setC, saveToFb, mob, auth }) {
                      <select disabled className="modern-input" style={{opacity: 0.8, cursor: "not-allowed"}}>
                        <option value="">-- Select --</option>
                        {resolveMasterDataOptions(field.options, C?.masterTables).map((opt, oi) => opt.trim() && <option key={oi} value={opt.trim()}>{opt.trim()}</option>)}
+                       {field.allowOther && <option value="__OTHER__">Other (Type custom value...)</option>}
                      </select>
                    ) : field.type === 'gender' ? (
                      <select disabled className="modern-input" style={{opacity: 0.8, cursor: "not-allowed"}}>
@@ -17225,26 +17592,36 @@ function AdminForms({ C, setC, saveToFb, mob, auth }) {
                     </select>
 
                     {editingLibField.type === 'dropdown' && (
-                      <div style={{flex:1, minWidth:200, display:"flex", gap:4}}>
-                        <input 
-                          value={editingLibField.options || ""} 
-                          onChange={e => setEditingLibField({...editingLibField, options: e.target.value})} 
-                          placeholder="Options (csv) or @master:id:col" 
-                          style={{flex:1,padding:"6px 10px",fontSize:".8rem",border:"1px solid #CBD5E1",borderRadius:4,background:"white"}}
-                        />
-                        {C.masterTables?.length > 0 && (
-                          <select 
-                            style={{maxWidth:130, padding:4, border:"1px solid #CBD5E1", borderRadius:4, fontSize:".75rem", background:"white"}} 
-                            onChange={e => {
-                              if(e.target.value) setEditingLibField({...editingLibField, options: e.target.value});
-                            }}
-                          >
-                            <option value="">Link Master</option>
-                            {C.masterTables.map(mt => mt.columns.map(col => (
-                              <option key={`${mt.id}:${col}`} value={`@master:${mt.id}:${col}`}>{mt.name} - {col}</option>
-                            )))}
-                          </select>
-                        )}
+                      <div style={{flex:"1 1 100%", display:"flex", flexDirection:"column", gap:4}}>
+                        <div style={{display:"flex", gap:4}}>
+                          <input 
+                            value={editingLibField.options || ""} 
+                            onChange={e => setEditingLibField({...editingLibField, options: e.target.value})} 
+                            placeholder="Options (csv) or @master:id:col" 
+                            style={{flex:1,padding:"6px 10px",fontSize:".8rem",border:"1px solid #CBD5E1",borderRadius:4,background:"white"}}
+                          />
+                          {C.masterTables?.length > 0 && (
+                            <select 
+                              style={{maxWidth:140, padding:4, border:"1px solid #CBD5E1", borderRadius:4, fontSize:".75rem", background:"white"}} 
+                              onChange={e => {
+                                if(e.target.value) setEditingLibField({...editingLibField, options: e.target.value, extractColumns: undefined});
+                              }}
+                            >
+                              <option value="">Link Master</option>
+                              {C.masterTables.map(mt => mt.columns.map(col => (
+                                <option key={`${mt.id}:${col}`} value={`@master:${mt.id}:${col}`}>{mt.name} - {col}</option>
+                              )))}
+                            </select>
+                          )}
+                        </div>
+                        {renderEventDropdownExtras({
+                          options: editingLibField.options || "",
+                          allowOther: Boolean(editingLibField.allowOther),
+                          extractMode: editingLibField.extractMode,
+                          extractColumns: editingLibField.extractColumns,
+                          showExtractedOnForm: Boolean(editingLibField.showExtractedOnForm),
+                          onPatch: (patch) => setEditingLibField({ ...editingLibField, ...patch })
+                        })}
                       </div>
                     )}
 
@@ -22542,15 +22919,14 @@ function Public({ C, lang, setLang, setPage, auth, onShowLogin }) {
           👤
         </button>
       )}
-      {showUserLogin && <UserLoginModal C={C} onClose={()=>setShowUserLogin("")} onPublicLogin={(t, p)=>{handlePublicLogin(t,p); const intent = showUserLogin; setShowUserLogin(""); if(intent === "nav") setShowDashboard(true);}}/>}
+      {showUserLogin && <UserLoginModal onClose={()=>setShowUserLogin("")} onPublicLogin={(t, p)=>{handlePublicLogin(t,p); const intent = showUserLogin; setShowUserLogin(""); if(intent === "nav") setShowDashboard(true);}}/>}
       {showDashboard && <UserDashboard C={C} globalProfile={globalProfile} globalAuthToken={globalAuthToken} onClose={()=>setShowDashboard(false)} />}
     </div>
   );
 }
 
 // ── PUBLIC USER LOGIN MODAL ───────────────────────────────────────────────────
-function UserLoginModal({ C, onClose, onPublicLogin }) {
-  const otpEnabled = C?.authSettings?.otpEnabled === true;
+export function UserLoginModal({ onClose, onPublicLogin, subtitle }) {
   const [isLoginMode, setIsLoginMode] = useState(true);
   const [mobile, setMobile] = useState("");
   const [countryCode, setCountryCode] = useState("+91");
@@ -22567,47 +22943,24 @@ function UserLoginModal({ C, onClose, onPublicLogin }) {
   const [submitting, setSubmitting] = useState(false);
   const w = useW(); const mob = w < 640;
 
+  useEffect(() => {
+    return () => {
+      try {
+        if (window.recaptchaVerifierLogin) {
+          window.recaptchaVerifierLogin.clear();
+          window.recaptchaVerifierLogin = null;
+        }
+      } catch {
+        window.recaptchaVerifierLogin = null;
+      }
+    };
+  }, []);
+
   const handleSendOtp = async (e) => {
     e.preventDefault();
     const cleanNum = mobile.replace(/\D/g, '').slice(-10);
     if (cleanNum.length < 10) { setAuthError("Please enter a valid 10-digit mobile number"); return; }
     if (!isLoginMode && (!regName || !regAddress || !regGender || !regEmail)) { setAuthError("Please fill out Name, Email, Address, and Gender."); return; }
-
-    if (!otpEnabled) {
-      setSubmitting(true); setAuthError("");
-      try {
-        const ccDigits = countryCode.replace(/\D/g, '') || "91";
-        const defaultUid = `mob_${ccDigits}${cleanNum}`;
-        const directToken = `direct_${defaultUid}`;
-        let targetUid = defaultUid;
-        let existingProfile = await fbFetchUserProfile(defaultUid, directToken).catch(() => null);
-        if (!existingProfile) {
-          const allUsers = await fbFetchAllUsers(directToken).catch(() => []);
-          const matched = allUsers.find(u => String(u.mobile || u['Mobile Number'] || "").replace(/\D/g, '').slice(-10) === cleanNum);
-          if (matched) {
-            targetUid = matched.id || defaultUid;
-            existingProfile = matched;
-          }
-        }
-        const fullMobile = `${countryCode} ${cleanNum}`;
-        let profileData = { uid: targetUid, name: regName, email: regEmail, address: regAddress, gender: regGender, mobile: fullMobile, photoUrl: "" };
-        if (!isLoginMode) {
-          if (regImageFile) {
-            profileData.photoUrl = await fbUploadPublicFile(regImageFile, directToken).catch(() => "");
-          }
-          await fbSaveUserProfile(targetUid, profileData, directToken).catch(() => null);
-        } else if (existingProfile) {
-          profileData = { ...profileData, ...existingProfile, uid: targetUid, mobile: existingProfile.mobile || fullMobile };
-        }
-        if (onPublicLogin) onPublicLogin(directToken, profileData);
-        onClose();
-      } catch (err) {
-        setAuthError(err?.message || "Login failed. Please try again.");
-      } finally {
-        setSubmitting(false);
-      }
-      return;
-    }
     
     if (!fbAuth) {
       try {
@@ -22703,7 +23056,7 @@ function UserLoginModal({ C, onClose, onPublicLogin }) {
       <div style={{background:"white",borderRadius:24,width:"100%",maxWidth:400,padding:"24px",boxShadow:"0 32px 80px rgba(0,0,0,.3)",position:"relative"}}>
         <button onClick={onClose} style={{position:"absolute",top:16,right:16,background:"#F5F5F5",border:"none",borderRadius:"50%",width:32,height:32,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",fontWeight:700,color:"var(--dt)"}}>✕</button>
         <h2 style={{fontFamily:"'Playfair Display',serif",fontSize:"1.6rem",color:"var(--dt)",marginBottom:6,fontWeight:700}}>{isLoginMode ? "Welcome Back" : "Create Profile"}</h2>
-        <p style={{color:"var(--mu)",fontSize:".85rem",marginBottom:20}}>{isLoginMode ? (otpEnabled ? "Login securely via SMS OTP." : "Login directly with your mobile number (OTP temporarily disabled).") : "Register once to easily apply for events and awards."}</p>
+        <p style={{color:"var(--mu)",fontSize:".85rem",marginBottom:20}}>{subtitle || (isLoginMode ? "Login securely via SMS OTP." : "Register once to easily apply for events and awards.")}</p>
         
         {authError && <div style={{background:"#FEF0F0",color:"#C0392B",padding:"10px 14px",borderRadius:10,fontSize:".8rem",marginBottom:16,fontWeight:600}}>{authError}</div>}
         <div id="recaptcha-container-login"></div>
@@ -22778,7 +23131,7 @@ function UserLoginModal({ C, onClose, onPublicLogin }) {
           )}
 
           <button type="submit" disabled={submitting} style={{background:"linear-gradient(135deg, var(--sf), var(--gd))",color:"white",padding:"14px",borderRadius:12,fontWeight:800,fontSize:"1rem",border:"none",cursor:submitting?"not-allowed":"pointer",marginTop:8,boxShadow:"0 8px 20px rgba(232,101,10,.3)",transition:"all .2s",letterSpacing:.5}} onMouseEnter={e=>e.currentTarget.style.transform="translateY(-2px)"} onMouseLeave={e=>e.currentTarget.style.transform="translateY(0)"}>
-            {submitting ? "Processing..." : (otpEnabled ? "Send OTP" : (isLoginMode ? "Login" : "Create Profile & Login"))}
+            {submitting ? "Processing..." : "Send OTP"}
           </button>
         </form>
         ) : (
@@ -35807,29 +36160,6 @@ function AdminAccess({ C, setC, master, auth }) {
 
   return (
     <div className="card">
-      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:16,flexWrap:"wrap",padding:"14px 18px",marginBottom:20,borderRadius:12,background:C?.authSettings?.otpEnabled === true ? "#F0FDF4" : "#FFFBEB",border:`1px solid ${C?.authSettings?.otpEnabled === true ? "#86EFAC" : "#FCD34D"}`}}>
-        <div>
-          <div style={{fontWeight:800,fontSize:".95rem",color:"var(--dt)",marginBottom:2}}>
-            {C?.authSettings?.otpEnabled === true ? "🔐 Member SMS OTP Verification: ENABLED" : "🔓 Member SMS OTP Verification: TEMPORARILY DISABLED"}
-          </div>
-          <div style={{fontSize:".8rem",color:"var(--mu)"}}>
-            {C?.authSettings?.otpEnabled === true
-              ? "Users must verify their mobile number via SMS OTP to log in or register for events."
-              : "Users can log in directly with their 10-digit mobile number without SMS OTP."}
-          </div>
-        </div>
-        <button
-          onClick={() => {
-            const nextVal = !(C?.authSettings?.otpEnabled === true);
-            const newC = { ...C, authSettings: { ...(C?.authSettings || {}), otpEnabled: nextVal } };
-            setC(newC);
-            saveToFirebase(newC);
-          }}
-          style={{padding:"8px 18px",borderRadius:20,border:"none",cursor:"pointer",fontWeight:700,fontSize:".82rem",color:"white",background:C?.authSettings?.otpEnabled === true ? "#DC2626" : "#059669",boxShadow:"0 2px 8px rgba(0,0,0,0.15)"}}
-        >
-          {C?.authSettings?.otpEnabled === true ? "Disable OTP" : "Enable OTP"}
-        </button>
-      </div>
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:20,flexWrap:"wrap",gap:16}}>
         <div>
           <h2 className="sh" style={{fontSize:"1.4rem",color:"var(--dt)",marginBottom:4}}>Access Control</h2>
@@ -37148,14 +37478,17 @@ function VerificationModal({ viewing, setViewing, allRegs, saveVerification, C, 
                         return (
                           <div key={f.key}>
                             <label style={{display:"block",fontSize:".76rem",fontWeight:700,color:"#334155",marginBottom:4}}>{f.label}</label>
-                            <select value={editedReg[f.key] || ""} onChange={e => {
-                                const val = e.target.value;
-                                const autoPopulate = getMasterDataAutoPopulate(f.options, val, C) || {};
+                            <SearchableDropdown
+                              value={editedReg[f.key] || ""}
+                              allowOther={Boolean(f.allowOther)}
+                              options={resolveMasterDataOptions(f.options, C?.masterTables)}
+                              masterTables={C?.masterTables}
+                              placeholder="-- Select --"
+                              onChange={val => {
+                                const autoPopulate = getMasterDataAutoPopulate(f.options, val, C, f) || {};
                                 setEditedReg(p => ({ ...p, [f.key]: val, ...autoPopulate }));
-                            }} style={{width:"100%",padding:"8px 10px",borderRadius:6,border:"1px solid #CBD5E1",fontSize:".88rem",background:"white"}}>
-                              <option value="">-- Select --</option>
-                              {resolveMasterDataOptions(f.options, C?.masterTables).map((opt, oi) => opt.trim() && <option key={oi} value={opt.trim()}>{opt.trim()}</option>)}
-                            </select>
+                              }}
+                            />
                           </div>
                         );
                       }
@@ -48034,17 +48367,14 @@ function DashboardProfile({ globalProfile, globalAuthToken, mob, isAdminPreview 
         photoUrl: data.photo // support both
       };
       
-      // Resolve user localId (direct mobile login or Firebase Auth)
-      let localId = globalProfile?.uid || (String(globalAuthToken || "").startsWith("direct_") ? String(globalAuthToken).replace(/^direct_/, "") : "");
-      if (!localId) {
-        const res = await fetch("https://identitytoolkit.googleapis.com/v1/accounts:lookup?key=" + getFB().apiKey, {
-          method:"POST", headers:{"Content-Type":"application/json"},
-          body: JSON.stringify({idToken: globalAuthToken})
-        });
-        const authData = await res.json();
-        if (!authData.users || !authData.users[0]) throw new Error("Could not find user.");
-        localId = authData.users[0].localId;
-      }
+      // Re-fetch user localId to save to users collection
+      const res = await fetch("https://identitytoolkit.googleapis.com/v1/accounts:lookup?key=" + getFB().apiKey, {
+        method:"POST", headers:{"Content-Type":"application/json"},
+        body: JSON.stringify({idToken: globalAuthToken})
+      });
+      const authData = await res.json();
+      if (!authData.users || !authData.users[0]) throw new Error("Could not find user.");
+      const localId = authData.users[0].localId;
       
       await fbSaveUserProfile(localId, payload, globalAuthToken);
       

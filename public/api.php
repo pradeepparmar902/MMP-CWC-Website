@@ -136,7 +136,7 @@ try {
 }
 
 // Ensure tables exist (using a simple Document Store model: id (VARCHAR) + data (JSON))
-$tables = ['config', 'users', 'registrations', 'contacts', 'donations', 'volunteers', 'template_assets'];
+$tables = ['config', 'users', 'registrations', 'contacts', 'donations', 'volunteers', 'template_assets', 'matrimony'];
 foreach ($tables as $table) {
     $pdo->exec("CREATE TABLE IF NOT EXISTS `$table` (
         `id` VARCHAR(191) PRIMARY KEY,

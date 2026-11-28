@@ -139,7 +139,7 @@ try {
 }
 
 // Allowed logical collections from frontend
-$allowed_collections = ['config', 'users', 'registrations', 'contacts', 'donations', 'volunteers', 'template_assets'];
+$allowed_collections = ['config', 'users', 'registrations', 'contacts', 'donations', 'volunteers', 'template_assets', 'matrimony'];
 
 // Ensure isolated dev_ tables exist
 foreach ($allowed_collections as $col) {
